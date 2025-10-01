@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0a0a0a; /* grafite escuro */
+  --foreground: #ededed;
+}
+
+/* Fundo com degradê grafite moderno */
+body {
+  background: linear-gradient(135deg, #0a0a0a 0%, #121212 50%, #1a1a1a 100%);
+  color: var(--foreground);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* 🎠 Marquee infinito para logos */
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.animate-marquee {
+  display: flex;
+  animation: marquee 30s linear infinite;
+}
