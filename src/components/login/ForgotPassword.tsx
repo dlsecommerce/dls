@@ -26,8 +26,6 @@ import {
 } from "@/components/ui/form";
 import { toast } from "sonner";
 import { resetPassword } from "@/services/authService";
-
-// 🔹 Importa o LoadingBar
 import { LoadingBar, LoadingBarRef } from "@/components/ui/loading-bar";
 
 const errorMessages: Record<string, string> = {
@@ -57,10 +55,8 @@ export default function ForgotPassword() {
     defaultValues: { email: "" },
   });
 
-  // 🔹 Referência para LoadingBar
   const loadingBarRef = useRef<LoadingBarRef>(null);
 
-  // 🔹 Efeito para controlar barra
   useEffect(() => {
     if (isLoading) {
       loadingBarRef.current?.start();
@@ -91,7 +87,6 @@ export default function ForgotPassword() {
 
   return (
     <div className="relative min-h-screen flex items-center justify-center p-4">
-      {/* 🔹 Barra de carregamento no topo */}
       <LoadingBar ref={loadingBarRef} />
 
       <div className="w-[500px] animate-enter relative z-10">
@@ -127,14 +122,16 @@ export default function ForgotPassword() {
                   className="w-full flex items-center justify-center gap-2 rounded-lg px-3 h-12 py-2 text-white 
                             bg-gradient-to-r from-[#1780d4] via-[#2799fe] to-[#3ba9ff] 
                             hover:from-[#0f6bb7] hover:via-[#1780d4] hover:to-[#2799fe] 
-                            transition-all duration-300 border-0 shadow-none cursor-pointer"
+                            transition-all duration-300"
+                  aria-label="Enviar novamente o e-mail"
                 >
                   Enviar novamente
                 </Button>
                 <Button
                   onClick={() => router.push("/login")}
                   variant="ghost"
-                  className="text-white font-medium hover:underline duration-200 cursor-pointer"
+                  className="text-white font-medium hover:underline"
+                  aria-label="Voltar ao login"
                 >
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   Voltar ao login
@@ -157,7 +154,7 @@ export default function ForgotPassword() {
                               disabled={isLoading}
                               {...field}
                               style={{ backgroundColor: cardColor }}
-                              className="border border-neutral-700 text-white placeholder:text-neutral-500 rounded-md px-3 h-12 cursor-text focus:outline-none focus:ring-0 focus:border-2 focus:border-[#2799fe]"
+                              className="border border-neutral-700 text-white placeholder:text-neutral-500 rounded-md px-3 h-12 focus:border-[#2799fe]"
                             />
                           </FormControl>
                           <FormMessage />
@@ -166,7 +163,7 @@ export default function ForgotPassword() {
                     />
                     <Button
                       type="submit"
-                      className="w-full bg-gradient-to-r from-[#1780d4] via-[#2799fe] to-[#3ba9ff] text-white h-12 cursor-pointer"
+                      className="w-full bg-gradient-to-r from-[#1780d4] via-[#2799fe] to-[#3ba9ff] text-white h-12"
                       disabled={isLoading}
                     >
                       {isLoading ? "Enviando..." : "Enviar link de recuperação"}
@@ -177,7 +174,7 @@ export default function ForgotPassword() {
                 <div className="mt-6 text-center">
                   <Link
                     href="/login"
-                    className="text-[#2799fe] font-medium flex items-center justify-center gap-2 hover:underline transition-all duration-200 cursor-pointer"
+                    className="text-[#2799fe] font-medium flex items-center justify-center gap-2 hover:underline"
                   >
                     <ArrowLeft className="w-4 h-4" />
                     Voltar ao login

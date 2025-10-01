@@ -5,12 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ShoppingCart, Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardDescription,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardDescription } from "@/components/ui/card";
 import {
   Form,
   FormControl,
@@ -26,8 +21,6 @@ import { toast } from "sonner";
 import { updatePassword } from "@/services/authService";
 import { supabase } from "@/integrations/supabase/client";
 import Link from "next/link";
-
-// 🔹 Importa o LoadingBar
 import { LoadingBar, LoadingBarRef } from "@/components/ui/loading-bar";
 
 const schema = z
@@ -42,7 +35,7 @@ const schema = z
 
 type FormValues = z.infer<typeof schema>;
 
-export default function ResetPassword() {
+export default function ResetPasswordForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -56,10 +49,8 @@ export default function ResetPassword() {
     defaultValues: { password: "", confirmPassword: "" },
   });
 
-  // 🔹 Referência para a barra
   const loadingBarRef = useRef<LoadingBarRef>(null);
 
-  // 🔹 Controla barra pelo estado
   useEffect(() => {
     if (isLoading) {
       loadingBarRef.current?.start();
@@ -68,7 +59,6 @@ export default function ResetPassword() {
     }
   }, [isLoading]);
 
-  // 🔹 Pega token (query ou hash)
   useEffect(() => {
     let token = searchParams.get("access_token");
     let refreshToken = searchParams.get("refresh_token");
@@ -134,9 +124,7 @@ export default function ResetPassword() {
 
   return (
     <div className="relative min-h-screen flex items-center justify-center p-4">
-      {/* 🔹 Barra de carregamento no topo */}
       <LoadingBar ref={loadingBarRef} />
-
       <div className="w-[500px] animate-enter relative z-10">
         <Card
           className="border border-neutral-700 rounded-2xl shadow-xl scale-90"
@@ -147,15 +135,12 @@ export default function ResetPassword() {
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-r from-[#2799fe] to-[#1780d4] text-white shadow-lg">
                 <ShoppingCart className="w-8 h-8" />
               </div>
-              <h1 className="text-2xl font-bold tracking-tight text-white">
-                Nova senha
-              </h1>
+              <h1 className="text-2xl font-bold tracking-tight text-white">Nova senha</h1>
               <CardDescription className="text-neutral-400">
                 Digite sua nova senha abaixo
               </CardDescription>
             </div>
           </CardHeader>
-
           <CardContent className="space-y-6 px-8 py-6">
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -213,9 +198,7 @@ export default function ResetPassword() {
                           />
                           <button
                             type="button"
-                            onClick={() =>
-                              setShowConfirmPassword(!showConfirmPassword)
-                            }
+                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                             className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
                           >
                             {showConfirmPassword ? (
