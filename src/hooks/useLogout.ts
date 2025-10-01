@@ -1,12 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import { toast } from "sonner";
+import { createBrowserClient } from "@supabase/ssr";
 
 export function useLogout() {
   const router = useRouter();
-  const supabase = createClientComponentClient();
+
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
 
   const handleLogout = async () => {
     try {
