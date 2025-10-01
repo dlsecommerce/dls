@@ -96,7 +96,7 @@ export default function ForgotPassword() {
         >
           <CardHeader className="space-y-2 text-center pb-0">
             <div className="flex flex-col items-center gap-3">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-r from-[#2799fe] to-[#1780d4] text-white shadow-lg">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-r from-[#2799fe] to-[#1780d4] text-white shadow-lg cursor-pointer">
                 <ShoppingCart className="w-8 h-8" />
               </div>
               <h1 className="text-3xl font-bold tracking-tight text-white">
@@ -122,7 +122,8 @@ export default function ForgotPassword() {
                   className="w-full flex items-center justify-center gap-2 rounded-lg px-3 h-12 py-2 text-white 
                             bg-gradient-to-r from-[#1780d4] via-[#2799fe] to-[#3ba9ff] 
                             hover:from-[#0f6bb7] hover:via-[#1780d4] hover:to-[#2799fe] 
-                            transition-all duration-300"
+                            transition-all duration-300 cursor-pointer
+                            focus:outline-none focus:ring-0 focus:shadow-none"
                   aria-label="Enviar novamente o e-mail"
                 >
                   Enviar novamente
@@ -130,10 +131,10 @@ export default function ForgotPassword() {
                 <Button
                   onClick={() => router.push("/login")}
                   variant="ghost"
-                  className="text-white font-medium hover:underline"
+                  className="text-white font-medium hover:underline cursor-pointer"
                   aria-label="Voltar ao login"
                 >
-                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  <ArrowLeft className="w-4 h-4 mr-2 cursor-pointer" />
                   Voltar ao login
                 </Button>
               </div>
@@ -154,7 +155,8 @@ export default function ForgotPassword() {
                               disabled={isLoading}
                               {...field}
                               style={{ backgroundColor: cardColor }}
-                              className="border border-neutral-700 text-white placeholder:text-neutral-500 rounded-md px-3 h-12 focus:border-[#2799fe]"
+                              className="border border-neutral-700 text-white placeholder:text-neutral-500 rounded-md px-3 h-12 
+                                         focus:border-[#2799fe] focus:outline-none focus:ring-0 focus:shadow-none"
                             />
                           </FormControl>
                           <FormMessage />
@@ -163,7 +165,10 @@ export default function ForgotPassword() {
                     />
                     <Button
                       type="submit"
-                      className="w-full bg-gradient-to-r from-[#1780d4] via-[#2799fe] to-[#3ba9ff] text-white h-12"
+                      className="w-full bg-gradient-to-r from-[#1780d4] via-[#2799fe] to-[#3ba9ff] text-white h-12 
+                                 hover:from-[#0f6bb7] hover:via-[#1780d4] hover:to-[#2799fe] 
+                                 transition-all duration-300 cursor-pointer
+                                 focus:outline-none focus:ring-0 focus:shadow-none"
                       disabled={isLoading}
                     >
                       {isLoading ? "Enviando..." : "Enviar link de recuperação"}
@@ -174,9 +179,9 @@ export default function ForgotPassword() {
                 <div className="mt-6 text-center">
                   <Link
                     href="/login"
-                    className="text-[#2799fe] font-medium flex items-center justify-center gap-2 hover:underline"
+                    className="text-[#2799fe] font-medium flex items-center justify-center gap-2 hover:underline cursor-pointer"
                   >
-                    <ArrowLeft className="w-4 h-4" />
+                    <ArrowLeft className="w-4 h-4 cursor-pointer" />
                     Voltar ao login
                   </Link>
                 </div>

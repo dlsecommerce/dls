@@ -24,3 +24,13 @@ body {
   display: flex;
   animation: marquee 30s linear infinite;
 }
+
+/* 🚫 Remove borda/contorno branco padrão no foco */
+input:focus,
+textarea:focus,
+select:focus,
+button:focus,
+a:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}

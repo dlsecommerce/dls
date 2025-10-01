@@ -103,7 +103,7 @@ export default function Signup() {
         >
           <CardHeader className="space-y-2 text-center pb-0">
             <div className="flex flex-col items-center gap-3">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-r from-[#2799fe] to-[#1780d4] text-white shadow-lg">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-r from-[#2799fe] to-[#1780d4] text-white shadow-lg cursor-pointer">
                 <ShoppingCart className="w-8 h-8" />
               </div>
               <h1 className="text-3xl font-bold tracking-tight text-white">
@@ -131,7 +131,8 @@ export default function Signup() {
                   disabled={isSubmitting}
                   {...register("username")}
                   style={{ backgroundColor: "#121212" }}
-                  className="border border-neutral-700 text-white placeholder:text-neutral-500 rounded-md px-3 h-12 focus:border-[#2799fe]"
+                  className="border border-neutral-700 text-white placeholder:text-neutral-500 rounded-md px-3 h-12 
+                             focus:border-[#2799fe] focus:ring-0 focus:outline-none focus:shadow-none"
                 />
                 {errors.username && (
                   <p className="text-xs text-red-500">
@@ -152,7 +153,8 @@ export default function Signup() {
                   disabled={isSubmitting}
                   {...register("email")}
                   style={{ backgroundColor: "#121212" }}
-                  className="border border-neutral-700 text-white placeholder:text-neutral-500 rounded-md px-3 h-12 focus:border-[#2799fe]"
+                  className="border border-neutral-700 text-white placeholder:text-neutral-500 rounded-md px-3 h-12 
+                             focus:border-[#2799fe] focus:ring-0 focus:outline-none focus:shadow-none"
                 />
                 {errors.email && (
                   <p className="text-xs text-red-500">{errors.email.message}</p>
@@ -172,12 +174,13 @@ export default function Signup() {
                     disabled={isSubmitting}
                     {...register("password")}
                     style={{ backgroundColor: "#121212" }}
-                    className="border border-neutral-700 text-white placeholder:text-neutral-500 rounded-md px-3 h-12 focus:border-[#2799fe]"
+                    className="border border-neutral-700 text-white placeholder:text-neutral-500 rounded-md px-3 h-12 
+                               focus:border-[#2799fe] focus:ring-0 focus:outline-none focus:shadow-none"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((s) => !s)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
                   >
                     {showPassword ? (
                       <EyeOff className="h-4 w-4 text-white" />
@@ -206,12 +209,13 @@ export default function Signup() {
                     disabled={isSubmitting}
                     {...register("confirmPassword")}
                     style={{ backgroundColor: "#121212" }}
-                    className="border border-neutral-700 text-white placeholder:text-neutral-500 rounded-md px-3 h-12 focus:border-[#2799fe]"
+                    className="border border-neutral-700 text-white placeholder:text-neutral-500 rounded-md px-3 h-12 
+                               focus:border-[#2799fe] focus:ring-0 focus:outline-none focus:shadow-none"
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword((s) => !s)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
                   >
                     {showConfirmPassword ? (
                       <EyeOff className="h-4 w-4 text-white" />
@@ -229,7 +233,11 @@ export default function Signup() {
 
               <Button
                 type="submit"
-                className="w-full flex items-center justify-center gap-2 rounded-lg px-3 h-12 py-2 text-white bg-gradient-to-r from-[#1780d4] via-[#2799fe] to-[#3ba9ff] hover:from-[#0f6bb7] hover:via-[#1780d4] hover:to-[#2799fe] transition-all duration-300"
+                className="w-full flex items-center justify-center gap-2 rounded-lg px-3 h-12 py-2 text-white 
+                           bg-gradient-to-r from-[#1780d4] via-[#2799fe] to-[#3ba9ff] 
+                           hover:from-[#0f6bb7] hover:via-[#1780d4] hover:to-[#2799fe] 
+                           transition-all duration-300 cursor-pointer
+                           focus:outline-none focus:ring-0 focus:shadow-none"
                 disabled={isSubmitting}
               >
                 <LogIn className="w-4 h-4" />
@@ -242,7 +250,7 @@ export default function Signup() {
                 Já tem uma conta?{" "}
                 <Link
                   href="/login"
-                  className="text-[#2799fe] font-medium hover:opacity-80 transition-opacity"
+                  className="text-[#2799fe] font-medium hover:underline cursor-pointer"
                 >
                   Faça login
                 </Link>

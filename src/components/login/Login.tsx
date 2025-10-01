@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Eye, EyeOff, ShoppingCart, LogIn } from "lucide-react";
 import Link from "next/link";
 import { useLogin } from "@/hooks/useLogin";
@@ -48,7 +47,7 @@ const Login = () => {
         >
           <CardHeader className="space-y-2 text-center pb-0">
             <div className="flex flex-col items-center gap-3">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-r from-[#2799fe] to-[#1780d4] text-white shadow-lg">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-r from-[#2799fe] to-[#1780d4] text-white shadow-lg cursor-pointer">
                 <ShoppingCart className="w-8 h-8" />
               </div>
               <h1 className="text-3xl font-bold tracking-tight text-white">
@@ -78,7 +77,9 @@ const Login = () => {
                     required: "O e-mail é obrigatório",
                   })}
                   style={{ backgroundColor: cardColor }}
-                  className="border border-neutral-700 text-white placeholder:text-neutral-400 rounded-md px-3 h-12 focus:border-[#2799fe]"
+                  className="text-white placeholder:text-neutral-400 rounded-md px-3 h-12 
+                             border border-neutral-700 
+                             focus:border-[#2799fe] focus:ring-0 focus:outline-none focus:shadow-none"
                 />
                 {errors.identifier && (
                   <p className="text-xs text-red-500">
@@ -106,7 +107,9 @@ const Login = () => {
                       },
                     })}
                     style={{ backgroundColor: cardColor }}
-                    className="border border-neutral-700 text-white placeholder:text-neutral-400 rounded-md px-3 h-12 focus:border-[#2799fe]"
+                    className="text-white placeholder:text-neutral-400 rounded-md px-3 h-12 
+                               border border-neutral-700 
+                               focus:border-[#2799fe] focus:ring-0 focus:outline-none focus:shadow-none"
                     onKeyUp={(e) =>
                       setCapsLock(
                         (e as React.KeyboardEvent<HTMLInputElement>)
@@ -117,7 +120,7 @@ const Login = () => {
                   <button
                     type="button"
                     onClick={() => setShowPassword((s) => !s)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
                     aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
                   >
                     {showPassword ? (
@@ -149,7 +152,7 @@ const Login = () => {
 
                 <Link
                   href="/recuperar-senha"
-                  className="text-sm text-[#2799fe] hover:underline"
+                  className="text-sm text-[#2799fe] hover:underline cursor-pointer"
                 >
                   Esqueci minha senha
                 </Link>
@@ -157,7 +160,11 @@ const Login = () => {
 
               <Button
                 type="submit"
-                className="w-full flex items-center justify-center gap-2 rounded-lg px-3 h-12 py-2 text-white bg-gradient-to-r from-[#1780d4] via-[#2799fe] to-[#3ba9ff] hover:from-[#0f6bb7] hover:via-[#1780d4] hover:to-[#2799fe] transition-all duration-300"
+                className="w-full flex items-center justify-center gap-2 rounded-lg px-3 h-12 py-2 text-white 
+                           bg-gradient-to-r from-[#1780d4] via-[#2799fe] to-[#3ba9ff] 
+                           hover:from-[#0f6bb7] hover:via-[#1780d4] hover:to-[#2799fe] 
+                           transition-all duration-300 cursor-pointer
+                           focus:outline-none focus:ring-0 focus:shadow-none"
                 disabled={isSubmitting}
               >
                 <LogIn className="w-4 h-4" />
@@ -166,18 +173,12 @@ const Login = () => {
             </form>
 
             {/* Separador */}
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <Separator className="w-full bg-border/50" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span
-                  className="px-3 text-white"
-                  style={{ backgroundColor: cardColor }}
-                >
-                  Ou acesse via
-                </span>
-              </div>
+            <div className="flex items-center gap-4">
+              <div className="flex-1 h-px bg-neutral-700" />
+              <span className="text-xs uppercase text-white">
+                Ou acesse via
+              </span>
+              <div className="flex-1 h-px bg-neutral-700" />
             </div>
 
             {/* Google login */}
@@ -185,8 +186,14 @@ const Login = () => {
               <Button
                 onClick={handleGoogleLogin}
                 type="button"
-                className="flex-1 flex items-center justify-center gap-2 bg-[#1a1a1a] text-white border border-neutral-700 rounded-md px-3 h-12 hover:bg-transparent transition-all duration-300"
+                className="flex-1 flex items-center justify-center gap-2 border border-neutral-300 rounded-md px-3 h-12 
+                           transition-all duration-300 cursor-pointer 
+                           text-gray-900 
+                           bg-gradient-to-r from-[#f5f5f5] via-[#ffffff] to-[#f5f5f5]
+                           hover:from-[#e5e5e5] hover:via-[#f0f0f0] hover:to-[#e5e5e5]
+                           focus:outline-none focus:ring-0 focus:shadow-none"
               >
+                {/* Ícone Google oficial e limpo */}
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   viewBox="0 0 48 48"
@@ -194,20 +201,20 @@ const Login = () => {
                   height="18"
                 >
                   <path
-                    fill="#FFC107"
-                    d="M43.611 20.083h-1.683V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C33.64 6.14 29.084 4 24 4 12.954 4 4 12.954 4 24c0-.302.008-.601.023-.898l2.283-8.411z"
+                    fill="#4285F4"
+                    d="M24 9.5c3.5 0 6.7 1.2 9.2 3.7l6.1-6.1C35.6 3.4 30.2 1 24 1 14.6 1 6.5 6.8 3 15l7.1 5.5C11.6 14.2 17.3 9.5 24 9.5z"
                   />
                   <path
-                    fill="#FF3D00"
-                    d="M6.306 14.691l6.571 4.819C14.655 16.148 18.961 14 24 14c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C33.64 6.14 29.084 4 24 4 12.954 4 4 12.954 4 24c0-.302.008-.601.023-.898l2.283-8.411z"
+                    fill="#34A853"
+                    d="M46.1 24.5c0-1.6-.2-3.2-.6-4.5H24v9h12.6c-.6 3-2.2 5.6-4.6 7.3l7.1 5.5c4.1-3.7 7-9.4 7-17.3z"
                   />
                   <path
-                    fill="#4CAF50"
-                    d="M24 44c5.084 0 9.64-2.14 12.961-5.583l-5.962-5.033C29.937 35.846 27.059 37 24 37c-5.202 0-9.607-3.322-11.268-7.958l-6.5 5.008C9.437 39.563 16.158 44 24 44z"
+                    fill="#FBBC05"
+                    d="M10.1 28.6c-.5-1.5-.8-3.1-.8-4.6s.3-3.2.8-4.6l-7.1-5.5C1.7 17 1 20.4 1 24s.7 7 2 10.1l7.1-5.5z"
                   />
                   <path
-                    fill="#1976D2"
-                    d="M43.611 20.083h-1.683V20H24v8h11.303c-.792 2.237-2.228 4.166-4.107 5.543l5.962 5.033C39.182 35.763 42 30.351 42 24c0-1.341-.138-2.651-.389-3.917z"
+                    fill="#EA4335"
+                    d="M24 47c6.2 0 11.5-2 15.3-5.5l-7.1-5.5c-2.1 1.4-4.8 2.2-8.2 2.2-6.7 0-12.4-4.7-14.5-11l-7.1 5.5C6.5 41.2 14.6 47 24 47z"
                   />
                 </svg>
                 <span>Google</span>
@@ -219,7 +226,7 @@ const Login = () => {
                 Ainda não tem cadastro?{" "}
                 <Link
                   href="/cadastro"
-                  className="text-[#2799fe] font-medium hover:underline"
+                  className="text-[#2799fe] font-medium hover:underline cursor-pointer"
                 >
                   Crie uma conta
                 </Link>

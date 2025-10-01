@@ -132,7 +132,7 @@ export default function ResetPasswordForm() {
         >
           <CardHeader>
             <div className="flex flex-col items-center gap-3">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-r from-[#2799fe] to-[#1780d4] text-white shadow-lg">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-r from-[#2799fe] to-[#1780d4] text-white shadow-lg cursor-pointer">
                 <ShoppingCart className="w-8 h-8" />
               </div>
               <h1 className="text-2xl font-bold tracking-tight text-white">Nova senha</h1>
@@ -157,7 +157,8 @@ export default function ResetPasswordForm() {
                             type={showPassword ? "text" : "password"}
                             placeholder="Digite sua nova senha"
                             style={{ backgroundColor: "#121212" }}
-                            className="pr-10 border border-neutral-700 text-white placeholder:text-neutral-500 h-12 cursor-text"
+                            className="pr-10 border border-neutral-700 text-white placeholder:text-neutral-500 h-12 
+                                       focus:border-[#2799fe] focus:outline-none focus:ring-0 focus:shadow-none"
                             disabled={isLoading}
                             {...field}
                           />
@@ -167,9 +168,9 @@ export default function ResetPasswordForm() {
                             className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
                           >
                             {showPassword ? (
-                              <EyeOff className="w-4 h-4" />
+                              <EyeOff className="w-4 h-4 cursor-pointer" />
                             ) : (
-                              <Eye className="w-4 h-4" />
+                              <Eye className="w-4 h-4 cursor-pointer" />
                             )}
                           </button>
                         </div>
@@ -192,7 +193,8 @@ export default function ResetPasswordForm() {
                             type={showConfirmPassword ? "text" : "password"}
                             placeholder="Confirme sua nova senha"
                             style={{ backgroundColor: "#121212" }}
-                            className="pr-10 border border-neutral-700 text-white placeholder:text-neutral-500 h-12 cursor-text"
+                            className="pr-10 border border-neutral-700 text-white placeholder:text-neutral-500 h-12 
+                                       focus:border-[#2799fe] focus:outline-none focus:ring-0 focus:shadow-none"
                             disabled={isLoading}
                             {...field}
                           />
@@ -202,9 +204,9 @@ export default function ResetPasswordForm() {
                             className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer"
                           >
                             {showConfirmPassword ? (
-                              <EyeOff className="w-4 h-4" />
+                              <EyeOff className="w-4 h-4 cursor-pointer" />
                             ) : (
-                              <Eye className="w-4 h-4" />
+                              <Eye className="w-4 h-4 cursor-pointer" />
                             )}
                           </button>
                         </div>
@@ -216,7 +218,10 @@ export default function ResetPasswordForm() {
 
                 <Button
                   type="submit"
-                  className="w-full bg-gradient-to-r from-[#1780d4] via-[#2799fe] to-[#3ba9ff] text-white h-12 cursor-pointer"
+                  className="w-full bg-gradient-to-r from-[#1780d4] via-[#2799fe] to-[#3ba9ff] text-white h-12 
+                             hover:from-[#0f6bb7] hover:via-[#1780d4] hover:to-[#2799fe] 
+                             transition-all duration-300 cursor-pointer
+                             focus:outline-none focus:ring-0 focus:shadow-none"
                   disabled={isLoading}
                 >
                   {isLoading ? "Redefinindo..." : "Redefinir senha"}
@@ -229,7 +234,7 @@ export default function ResetPasswordForm() {
                 href="/login"
                 className="text-[#2799fe] font-medium flex items-center justify-center gap-2 hover:underline transition-all duration-200 cursor-pointer"
               >
-                <ArrowLeft className="w-4 h-4" />
+                <ArrowLeft className="w-4 h-4 cursor-pointer" />
                 Voltar ao login
               </Link>
             </div>
