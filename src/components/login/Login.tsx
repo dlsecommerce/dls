@@ -181,7 +181,7 @@ const Login = () => {
             <div className="text-center pt-0">
               <p className="text-sm text-neutral-400">
                 Ainda não tem cadastro?{" "}
-                <Link href="/inscricao" className="text-[#2799fe] font-medium hover:underline cursor-pointer">
+                <Link href="/cadastro" className="text-[#2799fe] font-medium hover:underline cursor-pointer">
                   Crie uma conta
                 </Link>
               </p>
