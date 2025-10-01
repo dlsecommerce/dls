@@ -78,7 +78,7 @@ const HeroSection = () => {
         {/* Dashboard Preview */}
         <div className="flex justify-center animate-slide-up mb-12 sm:mb-16 px-2">
           <Image
-            src="/images/dashboard.png" // 👈 coloque em /public/images/dashboard.png
+            src="/images/dashboard.PNG" // 👈 coloque em /public/images/dashboard.png
             alt="Preview do Dashboard"
             width={1920}
             height={1080}
