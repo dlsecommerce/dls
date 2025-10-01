@@ -53,13 +53,13 @@ function Calendar({
         ...classNames,
       }}
       components={{
-        IconLeft: () => <ChevronLeft className="h-4 w-4" />,
-        IconRight: () => <ChevronRight className="h-4 w-4" />,
+        Chevron: ({ orientation }) =>
+          orientation === "left" ? (
+            <ChevronLeft className="h-4 w-4" />
+          ) : (
+            <ChevronRight className="h-4 w-4" />
+          ),
       }}
       {...props}
     />
   );
-}
-Calendar.displayName = "Calendar";
-
-export { Calendar };
