@@ -1,7 +1,6 @@
 import { dirname } from "path";
 import { fileURLToPath } from "url";
 import { FlatCompat } from "@eslint/eslintrc";
-import tseslint from "@typescript-eslint/eslint-plugin";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -22,11 +21,11 @@ const eslintConfig = [
   // Regras adicionais
   {
     plugins: {
-      "@typescript-eslint": tseslint,
+      "@typescript-eslint": require("@typescript-eslint/eslint-plugin"),
     },
     rules: {
-      "@typescript-eslint/no-explicit-any": "error",
-      "@typescript-eslint/explicit-function-return-type": "warn",
+      "@typescript-eslint/no-explicit-any": "error", 
+      "@typescript-eslint/explicit-function-return-type": "warn", 
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_" }

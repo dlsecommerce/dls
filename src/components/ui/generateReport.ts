@@ -1,19 +1,8 @@
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 
-// 🔹 Tipagem para os dados recebidos
-export interface ReportItem {
-  id?: string;
-  idBling?: string;
-  referencia?: string;
-  idTray?: string;
-  nome?: string;
-  marca?: string;
-  // se futuramente quiser, pode adicionar peso, altura, largura etc.
-}
-
 // 🔹 Função para gerar relatório filtrado
-export const generateReport = (filteredData: ReportItem[]) => {
+export const generateReport = (filteredData: any[]) => {
   const headers = [
     "Banco de Dados",
     "ID Geral",
