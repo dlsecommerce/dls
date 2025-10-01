@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client"; // ✅ importa a instância pronta
+import { supabase } from "@/integrations/supabase/client";
 
 type AuthContextType = {
   user: User | null;

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Providers } from "./providers";
 import "./globals.css";
@@ -18,10 +18,6 @@ export const metadata: Metadata = {
     apple: [{ url: "/favicon.png" }],
   },
   manifest: "/site.webmanifest",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#090909" },
-  ],
   openGraph: {
     title: "DLS Ecommerce",
     description: "Aplicativo de E-commerce",
@@ -29,6 +25,14 @@ export const metadata: Metadata = {
     url: "https://pikotshop.com.br",
     images: ["/og-image.jpg"],
   },
+};
+
+// ⬇️ mover themeColor para viewport
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#090909" },
+  ],
 };
 
 export default function RootLayout({
@@ -40,7 +44,6 @@ export default function RootLayout({
     <html lang="pt-BR" suppressHydrationWarning>
       <body className={inter.className}>
         <Providers>
-          {/* Conteúdo principal */}
           <main className="relative z-10 text-foreground">{children}</main>
         </Providers>
       </body>
