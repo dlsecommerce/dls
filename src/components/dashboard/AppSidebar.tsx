@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 
 import {
-  Sidebar,
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
@@ -79,7 +78,7 @@ type AppSidebarProps = {
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
   setPageTitle: Dispatch<SetStateAction<string>>;
-  loadingRef: RefObject<LoadingBarRef>;
+  loadingRef: RefObject<LoadingBarRef | null>; // ✅ corrigido aqui
 };
 
 export default function AppSidebar({
@@ -171,7 +170,7 @@ export default function AppSidebar({
                     <SidebarMenuItem>
                       {item.children ? (
                         collapsed ? (
-                          // 🔹 Popover no modo colapsado
+                          // Popover quando colapsado
                           <Popover>
                             <PopoverTrigger asChild>
                               <SidebarMenuButton
@@ -188,7 +187,6 @@ export default function AppSidebar({
                             </PopoverTrigger>
                             <PopoverContent
                               side="right"
-                              asChild
                               className="bg-[#111111]/70 backdrop-blur-md text-white border border-white/10 rounded-xl p-2 w-56 shadow-lg"
                             >
                               <motion.div
@@ -220,7 +218,7 @@ export default function AppSidebar({
                             </PopoverContent>
                           </Popover>
                         ) : (
-                          // 🔹 Collapsible no modo expandido
+                          // Collapsible quando expandido
                           <Collapsible
                             open={openMenus.includes(item.title)}
                             onOpenChange={() => toggleMenu(item.title)}
@@ -236,7 +234,6 @@ export default function AppSidebar({
                                 {item.icon && (
                                   <item.icon className="w-5 h-5 group-hover:text-[#1a8ceb]" />
                                 )}
-
                                 {!collapsed && (
                                   <motion.span
                                     className="font-medium"
@@ -248,7 +245,6 @@ export default function AppSidebar({
                                     {item.title}
                                   </motion.span>
                                 )}
-
                                 {openMenus.includes(item.title) ? (
                                   <ChevronDown className="w-4 h-4 ml-auto" />
                                 ) : (
@@ -257,7 +253,6 @@ export default function AppSidebar({
                               </SidebarMenuButton>
                             </CollapsibleTrigger>
 
-                            {/* Submenu */}
                             <CollapsibleContent asChild>
                               <motion.div
                                 initial={{ opacity: 0, y: -8, height: 0 }}
@@ -294,7 +289,7 @@ export default function AppSidebar({
                           </Collapsible>
                         )
                       ) : (
-                        // 🔹 Link direto
+                        // Link direto
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>

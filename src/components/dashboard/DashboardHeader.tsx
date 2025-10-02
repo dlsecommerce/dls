@@ -26,9 +26,12 @@ export default function DashboardHeader({
 }: DashboardHeaderProps) {
   const pathname = usePathname();
 
+  // 🔹 Garante que pegamos sempre o valor do título, não a chave
   const title =
     routeTitles[pathname] ||
-    Object.keys(routeTitles).find((key) => pathname.startsWith(key)) ||
+    routeTitles[
+      Object.keys(routeTitles).find((key) => pathname.startsWith(key)) ?? ""
+    ] ||
     "Dashboard";
 
   return (
@@ -39,10 +42,7 @@ export default function DashboardHeader({
                  border-b border-white/10"
     >
       {/* Esquerda → título */}
-      <HeaderLeft
-        title={routeTitles[title] ?? title}
-        onSidebarToggle={onSidebarToggle}
-      />
+      <HeaderLeft title={title} onSidebarToggle={onSidebarToggle} />
 
       {/* Direita → ícones + perfil */}
       <div className="flex items-center gap-3">
