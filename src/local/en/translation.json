@@ -1,0 +1,23 @@
+{
+  "dashboard": "Dashboard",
+  "profile": "Profile",
+  "settings": "Settings",
+  "logout": "Sign Out",
+  "login": "Log In",
+  "signup": "Sign Up",
+  "notifications": {
+    "title": "Notifications",
+    "mark_all": "Mark all as read",
+    "empty": "No notifications",
+    "remove": "Remove",
+    "payment_received": "Payment received",
+    "payment_message": "$ 2,500 have been credited to your account",
+    "spending_alert": "Spending alert",
+    "spending_message": "You spent 80% of your monthly budget",
+    "security_alert": "Security alert",
+    "security_message": "New login detected on Chrome",
+    "time_recent": "2 minutes ago",
+    "time_hour": "1 hour ago",
+    "time_day": "1 day ago"
+  }
+}

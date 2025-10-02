@@ -1,0 +1,23 @@
+{
+  "dashboard": "Painel",
+  "profile": "Perfil",
+  "settings": "Configurações",
+  "logout": "Sair",
+  "login": "Entrar",
+  "signup": "Criar conta",
+  "notifications": {
+    "title": "Notificações",
+    "mark_all": "Marcar tudo como lido",
+    "empty": "Nenhuma notificação",
+    "remove": "Remover",
+    "payment_received": "Pagamento recebido",
+    "payment_message": "$ 2.500 foram creditados em sua conta",
+    "spending_alert": "Alerta de gastos com cartão",
+    "spending_message": "Você gastou 80% do seu orçamento mensal",
+    "security_alert": "Alerta de segurança",
+    "security_message": "Novo login detectado no Chrome",
+    "time_recent": "2 minutos atrás",
+    "time_hour": "1 hora atrás",
+    "time_day": "1 dia atrás"
+  }
+}
