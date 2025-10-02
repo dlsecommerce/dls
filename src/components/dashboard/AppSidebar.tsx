@@ -78,7 +78,7 @@ type AppSidebarProps = {
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
   setPageTitle: Dispatch<SetStateAction<string>>;
-  loadingRef: RefObject<LoadingBarRef | null>; // ✅ corrigido aqui
+  loadingRef: RefObject<LoadingBarRef | null>;
 };
 
 export default function AppSidebar({
@@ -106,10 +106,10 @@ export default function AppSidebar({
     <motion.aside
       animate={{ width: collapsed ? 80 : 260 }}
       transition={{ duration: 0.35, ease: "easeInOut" }}
-      className="relative border-r border-white/10 bg-gradient-to-b from-[#111111] to-[#0a0a0a] flex flex-col"
+      className="h-screen flex flex-col border-r border-white/10 bg-gradient-to-b from-[#111111] to-[#0a0a0a]"
     >
       {/* Header da sidebar */}
-      <SidebarHeader className="border-b border-white/10 px-4 py-6 relative">
+      <SidebarHeader className="border-b border-white/10 px-4 py-6 relative shrink-0">
         <motion.div
           className="flex items-center gap-3"
           initial={{ opacity: 0, x: -20 }}
@@ -153,7 +153,7 @@ export default function AppSidebar({
       </SidebarHeader>
 
       {/* Menu da sidebar */}
-      <SidebarContent className="p-3">
+      <SidebarContent className="flex-1 p-3 overflow-hidden">
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -347,7 +347,7 @@ export default function AppSidebar({
       </SidebarContent>
 
       {/* Rodapé */}
-      <div className="border-t border-white/10 p-3">
+      <div className="border-t border-white/10 p-3 shrink-0">
         <SidebarMenuButton
           asChild
           className={`hover:bg-white/5 text-neutral-300 hover:text-white rounded-xl ${
