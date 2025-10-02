@@ -111,15 +111,17 @@ export default function PricingCalculatorModern() {
               </h3>
             </div>
 
+            {/* Lista com rolagem interna */}
             <AnimatePresence>
-              <div className="space-y-3 mb-4">
+              <div className="space-y-3 mb-4 max-h-64 overflow-y-auto pr-2 
+                              scrollbar-thin scrollbar-thumb-[#1a8ceb]/40 scrollbar-track-transparent rounded-xl">
                 {composicao.map((item, idx) => (
                   <motion.div
                     key={idx}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 20 }}
-                    transition={{ delay: idx * 0.1 }}
+                    transition={{ delay: idx * 0.05 }}
                     className="relative group"
                   >
                     <div className="grid grid-cols-3 gap-3 p-4 rounded-xl bg-black/30 border border-white/10 hover:border-[#1a8ceb]/50 transition-all duration-300">
