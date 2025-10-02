@@ -48,6 +48,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+import { Dispatch, SetStateAction, RefObject } from "react";
+import { LoadingBarRef } from "@/components/ui/loading-bar";
+
+// 🔹 Itens do menu
 const navigationItems = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   {
@@ -70,13 +74,20 @@ const navigationItems = [
   { title: "Anúncios", href: "/dashboard/anuncios", icon: Package },
 ];
 
+// 🔹 Tipagem correta das props
+type AppSidebarProps = {
+  collapsed: boolean;
+  setCollapsed: (v: boolean) => void;
+  setPageTitle: Dispatch<SetStateAction<string>>;
+  loadingRef: RefObject<LoadingBarRef>;
+};
+
 export default function AppSidebar({
   collapsed,
   setCollapsed,
-}: {
-  collapsed: boolean;
-  setCollapsed: (v: boolean) => void;
-}) {
+  setPageTitle,
+  loadingRef,
+}: AppSidebarProps) {
   const pathname = usePathname();
   const [openMenus, setOpenMenus] = React.useState<string[]>(["Automações", "Precificação"]);
 
@@ -84,6 +95,12 @@ export default function AppSidebar({
     setOpenMenus((prev) =>
       prev.includes(title) ? prev.filter((t) => t !== title) : [...prev, title]
     );
+  };
+
+  // 🔹 dispara o loading ao trocar página
+  const triggerLoading = () => {
+    loadingRef.current?.start();
+    setTimeout(() => loadingRef.current?.finish(), 800);
   };
 
   return (
@@ -154,9 +171,16 @@ export default function AppSidebar({
                     <SidebarMenuItem>
                       {item.children ? (
                         collapsed ? (
+                          // 🔹 Popover no modo colapsado
                           <Popover>
                             <PopoverTrigger asChild>
-                              <SidebarMenuButton className="flex items-center justify-center w-full h-10 hover:bg-white/5 rounded-xl">
+                              <SidebarMenuButton
+                                className="flex items-center justify-center w-full h-10 hover:bg-white/5 rounded-xl"
+                                onClick={() => {
+                                  setPageTitle(item.title);
+                                  triggerLoading();
+                                }}
+                              >
                                 {item.icon && (
                                   <item.icon className="w-5 h-5 text-neutral-300 group-hover:text-[#1a8ceb]" />
                                 )}
@@ -178,6 +202,10 @@ export default function AppSidebar({
                                     <Link
                                       key={child.title}
                                       href={child.href}
+                                      onClick={() => {
+                                        setPageTitle(child.title);
+                                        triggerLoading();
+                                      }}
                                       className={`px-3 py-2 text-sm rounded-lg hover:bg-white/5 hover:text-[#1a8ceb] transition-all ${
                                         pathname === child.href
                                           ? "bg-[#1a8ceb]/10 text-[#1a8ceb]"
@@ -192,29 +220,34 @@ export default function AppSidebar({
                             </PopoverContent>
                           </Popover>
                         ) : (
+                          // 🔹 Collapsible no modo expandido
                           <Collapsible
                             open={openMenus.includes(item.title)}
                             onOpenChange={() => toggleMenu(item.title)}
                           >
                             <CollapsibleTrigger asChild>
-                              <SidebarMenuButton className="w-full hover:bg-white/5 text-neutral-300 hover:text-white rounded-xl group relative">
+                              <SidebarMenuButton
+                                className="w-full hover:bg-white/5 text-neutral-300 hover:text-white rounded-xl group relative"
+                                onClick={() => {
+                                  setPageTitle(item.title);
+                                  triggerLoading();
+                                }}
+                              >
                                 {item.icon && (
                                   <item.icon className="w-5 h-5 group-hover:text-[#1a8ceb]" />
                                 )}
 
-                                <AnimatePresence initial={false}>
-                                  {!collapsed && (
-                                    <motion.span
-                                      className="font-medium"
-                                      initial={{ opacity: 0, x: -10 }}
-                                      animate={{ opacity: 1, x: 0 }}
-                                      exit={{ opacity: 0, x: -10 }}
-                                      transition={{ duration: 0.25 }}
-                                    >
-                                      {item.title}
-                                    </motion.span>
-                                  )}
-                                </AnimatePresence>
+                                {!collapsed && (
+                                  <motion.span
+                                    className="font-medium"
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{ opacity: 0, x: -10 }}
+                                    transition={{ duration: 0.25 }}
+                                  >
+                                    {item.title}
+                                  </motion.span>
+                                )}
 
                                 {openMenus.includes(item.title) ? (
                                   <ChevronDown className="w-4 h-4 ml-auto" />
@@ -242,6 +275,10 @@ export default function AppSidebar({
                                       className={`hover:bg-white/5 text-neutral-400 hover:text-white rounded-xl ${
                                         childActive ? "bg-[#1a8ceb]/10 text-[#1a8ceb]" : ""
                                       }`}
+                                      onClick={() => {
+                                        setPageTitle(child.title);
+                                        triggerLoading();
+                                      }}
                                     >
                                       <Link
                                         href={child.href}
@@ -257,6 +294,7 @@ export default function AppSidebar({
                           </Collapsible>
                         )
                       ) : (
+                        // 🔹 Link direto
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -265,27 +303,31 @@ export default function AppSidebar({
                                 className={`hover:bg-white/5 text-neutral-300 hover:text-white rounded-xl group ${
                                   isActive ? "bg-[#1a8ceb]/10 text-[#1a8ceb]" : ""
                                 } ${collapsed ? "flex justify-center" : ""}`}
+                                onClick={() => {
+                                  setPageTitle(item.title);
+                                  triggerLoading();
+                                }}
                               >
                                 <Link
                                   href={item.href ?? "#"}
-                                  className={`flex items-center ${collapsed ? "justify-center" : "gap-3"} px-3 py-2.5`}
+                                  className={`flex items-center ${
+                                    collapsed ? "justify-center" : "gap-3"
+                                  } px-3 py-2.5`}
                                 >
                                   {item.icon && (
                                     <item.icon className="w-5 h-5 group-hover:text-[#1a8ceb]" />
                                   )}
-                                  <AnimatePresence initial={false}>
-                                    {!collapsed && (
-                                      <motion.span
-                                        className="font-medium"
-                                        initial={{ opacity: 0, x: -10 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        exit={{ opacity: 0, x: -10 }}
-                                        transition={{ duration: 0.25 }}
-                                      >
-                                        {item.title}
-                                      </motion.span>
-                                    )}
-                                  </AnimatePresence>
+                                  {!collapsed && (
+                                    <motion.span
+                                      className="font-medium"
+                                      initial={{ opacity: 0, x: -10 }}
+                                      animate={{ opacity: 1, x: 0 }}
+                                      exit={{ opacity: 0, x: -10 }}
+                                      transition={{ duration: 0.25 }}
+                                    >
+                                      {item.title}
+                                    </motion.span>
+                                  )}
                                 </Link>
                               </SidebarMenuButton>
                             </TooltipTrigger>
@@ -314,45 +356,27 @@ export default function AppSidebar({
         <SidebarMenuButton
           asChild
           className={`hover:bg-white/5 text-neutral-300 hover:text-white rounded-xl ${
-            pathname === "/dashboard/configuracao"
-              ? "bg-[#1a8ceb]/10 text-[#1a8ceb]"
-              : ""
+            pathname === "/dashboard/configuracao" ? "bg-[#1a8ceb]/10 text-[#1a8ceb]" : ""
           }`}
+          onClick={() => {
+            setPageTitle("Configurações");
+            triggerLoading();
+          }}
         >
           <Link href="/dashboard/configuracao" className="flex items-center gap-3 px-3 py-2.5">
             <Settings className="w-5 h-5 group-hover:text-[#1a8ceb]" />
-            <AnimatePresence initial={false}>
-              {!collapsed && (
-                <motion.span
-                  className="font-medium"
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -10 }}
-                  transition={{ duration: 0.25 }}
-                >
-                  Configurações
-                </motion.span>
-              )}
-            </AnimatePresence>
+            {!collapsed && <span className="font-medium">Configurações</span>}
           </Link>
         </SidebarMenuButton>
 
-        <SidebarMenuButton asChild className="hover:bg-red-500/10 text-red-500 hover:text-red-400 rounded-xl mt-2">
+        <SidebarMenuButton
+          asChild
+          className="hover:bg-red-500/10 text-red-500 hover:text-red-400 rounded-xl mt-2"
+          onClick={() => setPageTitle("Sair")}
+        >
           <Link href="/" className="flex items-center gap-3 px-3 py-2.5">
             <LogOut className="w-5 h-5 group-hover:text-red-400" />
-            <AnimatePresence initial={false}>
-              {!collapsed && (
-                <motion.span
-                  className="font-medium"
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -10 }}
-                  transition={{ duration: 0.25 }}
-                >
-                  Sair
-                </motion.span>
-              )}
-            </AnimatePresence>
+            {!collapsed && <span className="font-medium">Sair</span>}
           </Link>
         </SidebarMenuButton>
       </div>

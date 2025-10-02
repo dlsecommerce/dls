@@ -362,7 +362,7 @@ export default function PricingCalculatorModern() {
                     : "text-neutral-400"
                 }`}
               >
-                {acrescimos.acrescimo.toFixed(1)}% ({statusAcrescimo})
+                {acrescimos.acrescimo.toFixed(2)}% ({statusAcrescimo})
               </span>
             </div>
           </div>

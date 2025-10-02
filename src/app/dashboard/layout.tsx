@@ -13,16 +13,20 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
-  const [collapsed, setCollapsed] = useState(false);
-  const [pageTitle, setPageTitle] = useState(t("dashboard")); // 🔹 traduzido
 
-  // 🔹 ref do LoadingBar
+  // 🔹 controla colapso da sidebar
+  const [collapsed, setCollapsed] = useState(false);
+
+  // 🔹 controla título da página
+  const [pageTitle, setPageTitle] = useState(t("dashboard"));
+
+  // 🔹 referência para barra de carregamento global
   const loadingRef = useRef<LoadingBarRef>(null);
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-[#0a0a0a]">
-        {/* Sidebar lateral */}
+      <div className="min-h-screen flex w-full bg-[#0a0a0a] text-white">
+        {/* 🔹 Sidebar lateral */}
         <AppSidebar
           collapsed={collapsed}
           setCollapsed={setCollapsed}
@@ -30,12 +34,12 @@ export default function DashboardLayout({
           loadingRef={loadingRef}
         />
 
-        {/* Área principal */}
+        {/* 🔹 Área principal */}
         <main className="flex-1 flex flex-col overflow-hidden">
           {/* Header mobile */}
           <header className="bg-[#111111]/80 backdrop-blur-xl border-b border-white/10 px-4 py-3 md:hidden sticky top-0 z-50 flex items-center justify-between">
             <SidebarTrigger className="hover:bg-white/5 p-2 rounded-xl transition-all duration-300" />
-            <h1 className="text-lg font-semibold text-white">{pageTitle}</h1>
+            <h1 className="text-lg font-semibold">{pageTitle}</h1>
           </header>
 
           {/* Header desktop */}
@@ -48,9 +52,7 @@ export default function DashboardLayout({
           </div>
 
           {/* Conteúdo da página */}
-          <div className="flex-1 overflow-auto">
-            {children}
-          </div>
+          <div className="flex-1 overflow-auto p-4">{children}</div>
         </main>
 
         {/* 🔹 Barra de carregamento global */}
@@ -59,4 +61,3 @@ export default function DashboardLayout({
     </SidebarProvider>
   );
 }
- 
