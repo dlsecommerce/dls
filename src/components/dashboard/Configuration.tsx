@@ -5,23 +5,22 @@ import { LogOut, User, Shield, Bell, Sliders } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "@/context/AuthContext";
 
 import ProfileTab from "./tabs/ProfileTab";
 import SecurityTab from "./tabs/SecurityTab";
 import NotificationsTab from "./tabs/NotificationsTab";
 import PreferencesTab from "./tabs/PreferencesTab";
 
-import { ProfileUpdate, ProfileRow } from "@/types/supabase.types";
-
 export default function Configuration() {
+  const { profile, updateProfile } = useAuth();
   const [tab, setTab] = useState<
     "perfil" | "seguranca" | "notificacoes" | "preferencias"
   >("perfil");
 
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [email, setEmail] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [name, setName] = useState(profile?.name ?? "");
+  const [email, setEmail] = useState(profile?.email ?? "");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(profile?.avatar_url ?? null);
   const [tempAvatarFile, setTempAvatarFile] = useState<File | null>(null);
 
   const [newPassword, setNewPassword] = useState("");
@@ -33,44 +32,13 @@ export default function Configuration() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
-  // ✅ Carregar perfil do usuário
-  const loadProfile = async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return;
-
-    setEmail(user.email ?? "");
-
-    const { data: profile, error } = await supabase
-      .from("profiles")
-      .select("id, first_name, last_name, avatar_url")
-      .eq("id", user.id)
-      .single<ProfileRow>(); // 🔹 agora profile é tipado
-
-    if (error || !profile) return;
-
-    setFirstName(profile.first_name ?? "");
-    setLastName(profile.last_name ?? "");
-    setAvatarUrl(profile.avatar_url ?? null);
-  };
-
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const tabParam = params.get("tab");
-    if (
-      tabParam === "perfil" ||
-      tabParam === "seguranca" ||
-      tabParam === "notificacoes" ||
-      tabParam === "preferencias"
-    ) {
-      setTab(tabParam as any);
+    if (profile) {
+      setName(profile.name ?? "");
+      setEmail(profile.email ?? "");
+      setAvatarUrl(profile.avatar_url ?? null);
     }
-  }, []);
-
-  useEffect(() => {
-    loadProfile();
-  }, []);
+  }, [profile]);
 
   const onClickUpload = () => fileInputRef.current?.click();
 
@@ -84,7 +52,6 @@ export default function Configuration() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // ✅ Salvar alterações no perfil
   const onSave = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     const {
@@ -113,28 +80,13 @@ export default function Configuration() {
       finalAvatarUrl = publicData.publicUrl;
     }
 
-    const updateData: ProfileUpdate = {
-      first_name: firstName || null,
-      last_name: lastName || null,
-      avatar_url: finalAvatarUrl || null,
-      updated_at: new Date().toISOString(),
-    };
+    await updateProfile({
+      name: name.trim() || null,
+      avatar_url: finalAvatarUrl ?? null,
+    });
 
-    const { error } = await supabase
-      .from("profiles")
-      .update(updateData)
-      .eq("id", user.id);
-      
-
-    if (error) {
-      alert("Erro ao salvar perfil.");
-    } else {
-      alert("Perfil atualizado com sucesso!");
-      setAvatarUrl(finalAvatarUrl);
-      setTempAvatarFile(null);
-      await loadProfile();
-      window.dispatchEvent(new CustomEvent("profileUpdated"));
-    }
+    alert("Perfil atualizado com sucesso!");
+    setTempAvatarFile(null);
   };
 
   const onChangePassword = async (e: React.SyntheticEvent) => {
@@ -221,12 +173,10 @@ export default function Configuration() {
                   transition={{ duration: 0.3 }}
                 >
                   <ProfileTab
-                    firstName={firstName}
-                    lastName={lastName}
+                    name={name}
                     email={email}
                     avatarUrl={avatarUrl}
-                    setFirstName={setFirstName}
-                    setLastName={setLastName}
+                    setName={setName}
                     setAvatarUrl={setAvatarUrl}
                     onSave={onSave}
                     onClickUpload={onClickUpload}

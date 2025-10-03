@@ -5,40 +5,40 @@ import { Camera } from "lucide-react";
 import Image from "next/image";
 
 interface ProfileTabProps {
-  firstName: string;
-  lastName: string;
+  name: string;
   email: string;
   avatarUrl: string | null;
-  setFirstName: (val: string) => void;
-  setLastName: (val: string) => void;
+  setName: (val: string) => void;
   setAvatarUrl: (val: string | null) => void;
   onSave: (e: React.SyntheticEvent) => void;
   onClickUpload: () => void;
-  fileInputRef: React.RefObject<HTMLInputElement | null>; // ✅ agora aceita null
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
 export default function ProfileTab({
-  firstName,
-  lastName,
+  name,
   email,
   avatarUrl,
-  setFirstName,
-  setLastName,
+  setName,
   setAvatarUrl,
   onSave,
   onClickUpload,
   fileInputRef,
   onFileChange,
 }: ProfileTabProps) {
-  const initials = (firstName[0] ?? "") + (lastName[0] ?? "");
+  const initials = name
+    ? name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+    : "";
 
   return (
     <form onSubmit={onSave} className="space-y-8">
-      {/* Card: Avatar + Nome + Email */}
       <div className="bg-[#111111] border border-white/10 rounded-[20px] p-6 space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
-          {/* Avatar */}
           <div className="relative group">
             <div className="w-24 h-24 rounded-full bg-gradient-to-br from-primary to-pink-600 flex items-center justify-center overflow-hidden">
               {avatarUrl ? (
@@ -73,40 +73,23 @@ export default function ProfileTab({
             />
           </div>
 
-          {/* Nome + Email */}
           <div className="flex-1">
-            <h3 className="text-foreground text-[20px] font-normal">
-              {firstName} {lastName}
-            </h3>
+            <h3 className="text-foreground text-[20px] font-normal">{name}</h3>
             <p className="text-muted-foreground text-[14px]">{email}</p>
           </div>
         </div>
       </div>
 
-      {/* Formulário de edição */}
       <div className="bg-[#111111] border border-white/10 rounded-[20px] p-6 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Nome */}
-          <div className="space-y-2">
-            <label className="text-[14px] font-medium text-foreground">Nome</label>
-            <input
-              className="flex w-full rounded-lg border border-white/10 bg-[#1a1a1a] px-4 py-2 text-[14px] text-foreground"
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-            />
-          </div>
-          {/* Sobrenome */}
-          <div className="space-y-2">
-            <label className="text-[14px] font-medium text-foreground">Sobrenome</label>
-            <input
-              className="flex w-full rounded-lg border border-white/10 bg-[#1a1a1a] px-4 py-2 text-[14px] text-foreground"
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-            />
-          </div>
+        <div className="space-y-2">
+          <label className="text-[14px] font-medium text-foreground">Nome</label>
+          <input
+            className="flex w-full rounded-lg border border-white/10 bg-[#1a1a1a] px-4 py-2 text-[14px] text-foreground"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
         </div>
 
-        {/* Email (somente leitura) */}
         <div className="space-y-2">
           <label className="text-[14px] font-medium text-foreground">E-mail</label>
           <input
@@ -118,7 +101,6 @@ export default function ProfileTab({
         </div>
       </div>
 
-      {/* Botão salvar */}
       <div className="flex justify-end pt-2">
         <button
           type="submit"

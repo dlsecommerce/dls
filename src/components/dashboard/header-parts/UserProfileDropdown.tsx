@@ -27,18 +27,13 @@ export function UserProfileDropdown() {
 
   if (!profile) return null;
 
-  const displayName = profile.first_name || profile.last_name
-    ? `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim()
-    : profile.name || profile.email;
-
+  // 🔹 Usa "name" ou email como fallback
+  const displayName = profile.name || profile.email || "Usuário";
   const avatarUrl = profile.avatar_url;
   const initials = getInitials(displayName);
 
   const handleLogout = async () => {
-    // Você pode limpar contexto ou usar o supabase.auth.signOut()
-    // caso queira reforçar a saída
-    // Aqui só redireciona para login/página inicial
-    router.push("/");
+    router.push("/login");
   };
 
   return (
@@ -58,6 +53,10 @@ export function UserProfileDropdown() {
                 height={32}
                 className="object-cover w-full h-full"
                 unoptimized
+                onError={(e) => {
+                  // Se a imagem quebrar, remove e mostra iniciais
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
               />
             ) : (
               <span className="text-xs font-medium text-foreground">
@@ -94,7 +93,7 @@ export function UserProfileDropdown() {
         <DropdownMenuSeparator />
 
         <DropdownMenuItem
-          onClick={() => router.push("/login")}
+          onClick={handleLogout}
           className="cursor-pointer text-red-500 hover:bg-red-500/10 hover:text-red-400 transition"
         >
           <LogOut className="w-4 h-4 mr-2" /> Sair

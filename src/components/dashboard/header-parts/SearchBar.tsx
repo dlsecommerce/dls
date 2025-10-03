@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Search, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
