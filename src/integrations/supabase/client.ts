@@ -1,7 +1,8 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
-import type { Database } from "@/types/supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/supabase.types";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -12,4 +13,6 @@ if (!url || !anon) {
   );
 }
 
-export const supabase = createBrowserClient<Database>(url, anon);
+// Client tipado com o MESMO Database do projeto
+export const supabase: SupabaseClient<Database> =
+  createBrowserClient<Database>(url, anon);

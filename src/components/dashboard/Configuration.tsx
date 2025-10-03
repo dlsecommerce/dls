@@ -11,8 +11,7 @@ import SecurityTab from "./tabs/SecurityTab";
 import NotificationsTab from "./tabs/NotificationsTab";
 import PreferencesTab from "./tabs/PreferencesTab";
 
-// ✅ Importando os aliases prontos
-import { ProfileRow, ProfileUpdate } from "@/types/supabase.types";
+import { ProfileUpdate, ProfileRow } from "@/types/supabase.types";
 
 export default function Configuration() {
   const [tab, setTab] = useState<
@@ -31,11 +30,10 @@ export default function Configuration() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // ✅ Compatível com ProfileTab
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
-  // ✅ Carregar perfil
+  // ✅ Carregar perfil do usuário
   const loadProfile = async () => {
     const {
       data: { user },
@@ -44,18 +42,17 @@ export default function Configuration() {
 
     setEmail(user.email ?? "");
 
-    const { data, error } = await supabase
+    const { data: profile, error } = await supabase
       .from("profiles")
       .select("id, first_name, last_name, avatar_url")
       .eq("id", user.id)
-      .single();
+      .single<ProfileRow>(); // 🔹 agora profile é tipado
 
-    if (error || !data) return;
+    if (error || !profile) return;
 
-    const profile = data as ProfileRow;
-    setFirstName(profile.first_name || "");
-    setLastName(profile.last_name || "");
-    setAvatarUrl(profile.avatar_url);
+    setFirstName(profile.first_name ?? "");
+    setLastName(profile.last_name ?? "");
+    setAvatarUrl(profile.avatar_url ?? null);
   };
 
   useEffect(() => {
@@ -116,11 +113,10 @@ export default function Configuration() {
       finalAvatarUrl = publicData.publicUrl;
     }
 
-    // ✅ Cria o objeto tipado ANTES
     const updateData: ProfileUpdate = {
-      first_name: firstName,
-      last_name: lastName,
-      avatar_url: finalAvatarUrl,
+      first_name: firstName || null,
+      last_name: lastName || null,
+      avatar_url: finalAvatarUrl || null,
       updated_at: new Date().toISOString(),
     };
 
@@ -128,6 +124,7 @@ export default function Configuration() {
       .from("profiles")
       .update(updateData)
       .eq("id", user.id);
+      
 
     if (error) {
       alert("Erro ao salvar perfil.");
