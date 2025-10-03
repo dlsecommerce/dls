@@ -1,17 +1,11 @@
 "use client";
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/types/supabase";
 
-interface Profile {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-  avatar_url: string | null;
-  status: "online" | "away" | "offline";
+type Profile = Database["public"]["Tables"]["profiles"]["Row"] & {
   email: string | null;
-  updated_at?: string | null;
-  fullName?: string;
-}
+};
 
 interface AuthContextType {
   profile: Profile | null;
@@ -26,28 +20,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  function buildFullName(first: string | null, last: string | null, email: string | null) {
-    if (first && last) return `${first} ${last}`;
-    if (first) return first;
-    if (last) return last;
-    return email ?? "Usuário";
-  }
-
   async function loadProfile(userId: string) {
     const { data: authUser } = await supabase.auth.getUser();
 
     const { data: p, error } = await supabase
       .from("profiles")
-      .select("id, first_name, last_name, avatar_url, status, updated_at")
+      .select("*")
       .eq("id", userId)
-      .single<Profile>();
+      .single();
 
     if (!error && p) {
-      const email = authUser?.user?.email ?? null;
       setProfile({
         ...p,
-        email,
-        fullName: buildFullName(p.first_name, p.last_name, email),
+        email: authUser?.user?.email ?? null,
       });
     }
   }
@@ -60,15 +45,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (session?.user) {
-          loadProfile(session.user.id);
-        } else {
-          setProfile(null);
-        }
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        loadProfile(session.user.id);
+      } else {
+        setProfile(null);
       }
-    );
+    });
 
     return () => {
       subscription?.unsubscribe();
@@ -85,8 +70,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (!error) {
       setProfile({ ...profile, status });
-    } else {
-      console.error("Erro ao atualizar status:", error);
     }
   };
 
@@ -104,18 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .eq("id", profile.id);
 
     if (!error) {
-      const updatedProfile = {
-        ...profile,
-        ...data,
-        fullName: buildFullName(
-          data.first_name ?? profile.first_name,
-          data.last_name ?? profile.last_name,
-          profile.email
-        ),
-      };
-      setProfile(updatedProfile);
-    } else {
-      console.error("Erro ao atualizar perfil:", error);
+      setProfile({ ...profile, ...data });
     }
   };
 
@@ -128,8 +100,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error("useAuth deve ser usado dentro de AuthProvider");
-  }
+  if (!ctx) throw new Error("useAuth deve ser usado dentro de AuthProvider");
   return ctx;
 }

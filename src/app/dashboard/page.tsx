@@ -9,15 +9,39 @@ export default function DashboardPage() {
   const { profile, loading, setStatus } = useAuth();
   const [open, setOpen] = useState(false);
 
-  const fullName = profile?.fullName || (loading ? "Carregando..." : "Usuário");
+  // Nome completo atualizado
+  const fullName =
+    (profile?.first_name && profile?.last_name
+      ? `${profile.first_name} ${profile.last_name}`
+      : profile?.first_name || profile?.last_name) ||
+    (loading ? "Carregando..." : "Usuário");
 
   const statusOptions = [
-    { value: "online", label: "Online", dot: "bg-green-500", text: "text-green-600", bg: "bg-green-500/10 border-green-500/20" },
-    { value: "away", label: "Ausente", dot: "bg-yellow-500", text: "text-yellow-600", bg: "bg-yellow-500/10 border-yellow-500/20" },
-    { value: "offline", label: "Offline", dot: "bg-gray-400", text: "text-gray-500", bg: "bg-gray-500/10 border-gray-500/20" },
+    {
+      value: "online",
+      label: "Online",
+      dot: "bg-green-500",
+      text: "text-green-600",
+      bg: "bg-green-500/10 border-green-500/20",
+    },
+    {
+      value: "away",
+      label: "Ausente",
+      dot: "bg-yellow-500",
+      text: "text-yellow-600",
+      bg: "bg-yellow-500/10 border-yellow-500/20",
+    },
+    {
+      value: "offline",
+      label: "Offline",
+      dot: "bg-gray-400",
+      text: "text-gray-500",
+      bg: "bg-gray-500/10 border-gray-500/20",
+    },
   ];
 
-  const currentStatus = statusOptions.find((s) => s.value === profile?.status) || statusOptions[0];
+  const currentStatus =
+    statusOptions.find((s) => s.value === profile?.status) || statusOptions[0];
 
   const handleSelectStatus = async (value: "online" | "away" | "offline") => {
     await setStatus(value);
@@ -29,6 +53,7 @@ export default function DashboardPage() {
       <h1 className="text-2xl font-bold flex items-center gap-2">
         <span className="text-[#2699fe]">{fullName}</span>
 
+        {/* Status */}
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <button

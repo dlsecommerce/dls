@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { LogOut, User, Shield, Bell, Sliders } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRouter } from "next/navigation";
@@ -11,31 +11,21 @@ import SecurityTab from "./tabs/SecurityTab";
 import NotificationsTab from "./tabs/NotificationsTab";
 import PreferencesTab from "./tabs/PreferencesTab";
 
-type Profile = {
-  id: string;
-  first_name: string | null;
-  last_name: string | null;
-  avatar_url: string | null;
-  status?: string | null;
-  updated_at?: string | null;
-};
+import { Database } from "@/types/supabase";
 
-function getInitials(name: string) {
-  if (!name) return "?";
-  const parts = name.trim().split(/\s+/);
-  const first = parts[0]?.[0] ?? "";
-  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
-  return (first + last).toUpperCase();
-}
+// ✅ Tipos vindos direto do schema do Supabase
+type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+type ProfileUpdate = Database["public"]["Tables"]["profiles"]["Update"];
 
 export default function Configuration() {
-  const [tab, setTab] = useState<"perfil" | "seguranca" | "notificacoes" | "preferencias">("perfil");
+  const [tab, setTab] = useState<
+    "perfil" | "seguranca" | "notificacoes" | "preferencias"
+  >("perfil");
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [fullName, setFullName] = useState("");
   const [tempAvatarFile, setTempAvatarFile] = useState<File | null>(null);
 
   const [newPassword, setNewPassword] = useState("");
@@ -44,41 +34,42 @@ export default function Configuration() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const initials = useMemo(
-    () => getInitials(fullName || `${firstName} ${lastName}`),
-    [fullName, firstName, lastName]
-  );
-
+  // ✅ ref aceita null (compatível com ProfileTab)
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
 
-  // Carregar perfil do Supabase
+  // ✅ Carregar perfil
   const loadProfile = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) return;
 
     setEmail(user.email ?? "");
 
-    const { data: profile, error } = await supabase
+    const { data, error } = await supabase
       .from("profiles")
       .select("id, first_name, last_name, avatar_url")
       .eq("id", user.id)
-      .single<Profile>();
+      .single();
 
-    if (error || !profile) return;
+    if (error || !data) return;
 
-    const first = profile.first_name || "";
-    const last = profile.last_name || "";
-    setFirstName(first);
-    setLastName(last);
+    const profile = data as Profile;
+    setFirstName(profile.first_name || "");
+    setLastName(profile.last_name || "");
     setAvatarUrl(profile.avatar_url);
-    setFullName(`${first} ${last}`.trim());
   };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get("tab");
-    if (tabParam === "perfil" || tabParam === "seguranca" || tabParam === "notificacoes" || tabParam === "preferencias") {
+    if (
+      tabParam === "perfil" ||
+      tabParam === "seguranca" ||
+      tabParam === "notificacoes" ||
+      tabParam === "preferencias"
+    ) {
       setTab(tabParam as any);
     }
   }, []);
@@ -99,9 +90,12 @@ export default function Configuration() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  // ✅ Salvar alterações no perfil
   const onSave = async (e: React.SyntheticEvent) => {
     e.preventDefault();
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) return;
 
     let finalAvatarUrl = avatarUrl;
@@ -122,7 +116,6 @@ export default function Configuration() {
       const { data: publicData } = supabase.storage
         .from("avatars")
         .getPublicUrl(fileName);
-
       finalAvatarUrl = publicData.publicUrl;
     }
 
@@ -133,7 +126,7 @@ export default function Configuration() {
         last_name: lastName,
         avatar_url: finalAvatarUrl,
         updated_at: new Date().toISOString(),
-      })
+      } satisfies ProfileUpdate) // ✅ valida os campos corretos
       .eq("id", user.id);
 
     if (error) {
@@ -197,7 +190,9 @@ export default function Configuration() {
                   }`}
                   onClick={() => {
                     setTab(id as any);
-                    router.push(`/dashboard/configuracao?tab=${id}`, { scroll: false });
+                    router.push(`/dashboard/configuracao?tab=${id}`, {
+                      scroll: false,
+                    });
                   }}
                 >
                   <Icon className="w-4 h-4" />
@@ -233,15 +228,13 @@ export default function Configuration() {
                     lastName={lastName}
                     email={email}
                     avatarUrl={avatarUrl}
-                    fullName={fullName}
                     setFirstName={setFirstName}
                     setLastName={setLastName}
                     setAvatarUrl={setAvatarUrl}
                     onSave={onSave}
                     onClickUpload={onClickUpload}
-                    fileInputRef={fileInputRef}
+                    fileInputRef={fileInputRef} // ✅ compatível agora
                     onFileChange={onFileChange}
-                    initials={initials}
                   />
                 </motion.div>
               )}
