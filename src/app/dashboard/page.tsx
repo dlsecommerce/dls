@@ -10,11 +10,11 @@ export default function DashboardPage() {
   const [open, setOpen] = useState(false); // controla se o popover está aberto
 
   // Nome completo reflete alterações feitas no ProfileTab
-  const fullName =
-    (profile?.first_name && profile?.last_name
-      ? `${profile.first_name} ${profile.last_name}`
-      : profile?.first_name || profile?.last_name || profile?.name) ||
-    (loading ? "Carregando..." : "Usuário");
+ const fullName =
+  (profile?.first_name && profile?.last_name
+    ? `${profile.first_name} ${profile.last_name}`
+    : profile?.first_name || profile?.last_name) ||
+  (loading ? "Carregando..." : "Usuário");
 
   const statusOptions = [
     {
