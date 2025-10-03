@@ -6,10 +6,10 @@ interface Profile {
   id: string;
   first_name: string | null;
   last_name: string | null;
-  name: string | null;
   avatar_url: string | null;
   status: "online" | "away" | "offline";
-  email: string | null; // ✅ novo campo
+  email: string | null;
+  updated_at?: string | null;
 }
 
 interface AuthContextType {
@@ -26,20 +26,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   async function loadProfile(userId: string) {
-    // pega user do auth para capturar email
     const { data: authUser } = await supabase.auth.getUser();
 
     const { data: p, error } = await supabase
       .from("profiles")
-      .select("id, first_name, last_name, name, avatar_url, status")
+      .select("id, first_name, last_name, avatar_url, status, updated_at")
       .eq("id", userId)
-      .single();
+      .single<Profile>();
 
     if (!error && p) {
       setProfile({
         ...p,
-        email: authUser?.user?.email ?? null, // ✅ adiciona email
-      } as Profile);
+        email: authUser?.user?.email ?? null,
+      });
     }
   }
 
@@ -90,11 +89,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         first_name: data.first_name,
         last_name: data.last_name,
         avatar_url: data.avatar_url,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", profile.id);
 
     if (!error) {
-      setProfile({ ...profile, ...data }); // 🔄 Atualiza local
+      setProfile({ ...profile, ...data });
     } else {
       console.error("Erro ao atualizar perfil:", error);
     }

@@ -6,11 +6,19 @@ import { supabase } from "@/integrations/supabase/client";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 
-// Tabs importadas
 import ProfileTab from "./tabs/ProfileTab";
 import SecurityTab from "./tabs/SecurityTab";
 import NotificationsTab from "./tabs/NotificationsTab";
 import PreferencesTab from "./tabs/PreferencesTab";
+
+type Profile = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
+  status?: string | null;
+  updated_at?: string | null;
+};
 
 function getInitials(name: string) {
   if (!name) return "?";
@@ -40,10 +48,10 @@ export default function Configuration() {
     () => getInitials(fullName || `${firstName} ${lastName}`),
     [fullName, firstName, lastName]
   );
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
 
-  // 🔹 Carregar perfil do supabase
+  // Carregar perfil
   const loadProfile = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -52,24 +60,20 @@ export default function Configuration() {
 
     const { data: profile, error } = await supabase
       .from("profiles")
-      .select("name, avatar_url")
+      .select("id, first_name, last_name, avatar_url")
       .eq("id", user.id)
-      .single();
+      .single<Profile>();
 
     if (error || !profile) return;
 
-    const full = profile.name || "";
-    const parts = full.trim().split(" ");
-    const first = parts[0] || "";
-    const last = parts.length > 1 ? parts.slice(1).join(" ") : "";
-
+    const first = profile.first_name || "";
+    const last = profile.last_name || "";
     setFirstName(first);
     setLastName(last);
     setAvatarUrl(profile.avatar_url);
-    setFullName(full);
+    setFullName(`${first} ${last}`.trim());
   };
 
-  // 🔹 Sincronizar a aba com a query string (?tab=)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get("tab");
@@ -122,8 +126,9 @@ export default function Configuration() {
 
     const { error } = await supabase
       .from("profiles")
-      .update({
-        name: `${firstName} ${lastName}`.trim(),
+      .update<Partial<Profile>>({
+        first_name: firstName,
+        last_name: lastName,
         avatar_url: finalAvatarUrl,
         updated_at: new Date().toISOString(),
       })
@@ -177,7 +182,7 @@ export default function Configuration() {
     <div className="min-h-[100dvh] w-full text-white">
       <div className="w-full p-6 lg:p-8 mt-6">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Sidebar Tabs */}
+          {/* Sidebar */}
           <aside className="lg:col-span-1 bg-[#111111] rounded-[20px] border border-white/10 p-6">
             <nav className="space-y-2">
               {tabs.map(({ id, label, icon: Icon }) => (
@@ -210,7 +215,7 @@ export default function Configuration() {
             </div>
           </aside>
 
-          {/* Conteúdo Tabs */}
+          {/* Conteúdo */}
           <section className="lg:col-span-3 bg-[#111111] rounded-[20px] border border-white/10 p-6">
             <AnimatePresence mode="wait">
               {tab === "perfil" && (
