@@ -11,11 +11,8 @@ import SecurityTab from "./tabs/SecurityTab";
 import NotificationsTab from "./tabs/NotificationsTab";
 import PreferencesTab from "./tabs/PreferencesTab";
 
-import { Database } from "@/types/supabase";
-
-// ✅ Tipos vindos direto do schema do Supabase
-type Profile = Database["public"]["Tables"]["profiles"]["Row"];
-type ProfileUpdate = Database["public"]["Tables"]["profiles"]["Update"];
+// ✅ Importando os aliases prontos
+import { ProfileRow, ProfileUpdate } from "@/types/supabase.types";
 
 export default function Configuration() {
   const [tab, setTab] = useState<
@@ -34,7 +31,7 @@ export default function Configuration() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // ✅ ref aceita null (compatível com ProfileTab)
+  // ✅ Compatível com ProfileTab
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
 
@@ -55,7 +52,7 @@ export default function Configuration() {
 
     if (error || !data) return;
 
-    const profile = data as Profile;
+    const profile = data as ProfileRow;
     setFirstName(profile.first_name || "");
     setLastName(profile.last_name || "");
     setAvatarUrl(profile.avatar_url);
@@ -119,14 +116,17 @@ export default function Configuration() {
       finalAvatarUrl = publicData.publicUrl;
     }
 
+    // ✅ Cria o objeto tipado ANTES
+    const updateData: ProfileUpdate = {
+      first_name: firstName,
+      last_name: lastName,
+      avatar_url: finalAvatarUrl,
+      updated_at: new Date().toISOString(),
+    };
+
     const { error } = await supabase
       .from("profiles")
-      .update({
-        first_name: firstName,
-        last_name: lastName,
-        avatar_url: finalAvatarUrl,
-        updated_at: new Date().toISOString(),
-      } satisfies ProfileUpdate) // ✅ valida os campos corretos
+      .update(updateData)
       .eq("id", user.id);
 
     if (error) {
@@ -233,7 +233,7 @@ export default function Configuration() {
                     setAvatarUrl={setAvatarUrl}
                     onSave={onSave}
                     onClickUpload={onClickUpload}
-                    fileInputRef={fileInputRef} // ✅ compatível agora
+                    fileInputRef={fileInputRef}
                     onFileChange={onFileChange}
                   />
                 </motion.div>
