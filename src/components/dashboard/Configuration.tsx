@@ -52,18 +52,21 @@ export default function Configuration() {
 
     const { data: profile, error } = await supabase
       .from("profiles")
-      .select("first_name, last_name, avatar_url")
+      .select("name, avatar_url")
       .eq("id", user.id)
       .single();
 
     if (error || !profile) return;
 
-    const first = profile.first_name || "";
-    const last = profile.last_name || "";
+    const full = profile.name || "";
+    const parts = full.trim().split(" ");
+    const first = parts[0] || "";
+    const last = parts.length > 1 ? parts.slice(1).join(" ") : "";
+
     setFirstName(first);
     setLastName(last);
     setAvatarUrl(profile.avatar_url);
-    setFullName(`${first} ${last}`.trim());
+    setFullName(full);
   };
 
   // 🔹 Sincronizar a aba com a query string (?tab=)
@@ -120,8 +123,7 @@ export default function Configuration() {
     const { error } = await supabase
       .from("profiles")
       .update({
-        first_name: firstName,
-        last_name: lastName,
+        name: `${firstName} ${lastName}`.trim(),
         avatar_url: finalAvatarUrl,
         updated_at: new Date().toISOString(),
       })
