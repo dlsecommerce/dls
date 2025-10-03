@@ -48,10 +48,11 @@ export default function Configuration() {
     () => getInitials(fullName || `${firstName} ${lastName}`),
     [fullName, firstName, lastName]
   );
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const router = useRouter();
 
-  // Carregar perfil
+  // Carregar perfil do Supabase
   const loadProfile = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -121,12 +122,13 @@ export default function Configuration() {
       const { data: publicData } = supabase.storage
         .from("avatars")
         .getPublicUrl(fileName);
+
       finalAvatarUrl = publicData.publicUrl;
     }
 
     const { error } = await supabase
       .from("profiles")
-      .update<Partial<Profile>>({
+      .update({
         first_name: firstName,
         last_name: lastName,
         avatar_url: finalAvatarUrl,
