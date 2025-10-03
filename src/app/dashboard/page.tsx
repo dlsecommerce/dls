@@ -40,7 +40,6 @@ export default function DashboardPage() {
     },
   ];
 
-  // Se não houver profile ainda, assume "online"
   const currentStatus =
     statusOptions.find((s) => s.value === profile?.status) || statusOptions[0];
 
@@ -52,10 +51,8 @@ export default function DashboardPage() {
   return (
     <div className="space-y-1 p-6">
       <h1 className="text-2xl font-bold flex items-center gap-2">
-        {/* Nome atualizado em tempo real */}
         <span className="text-[#2699fe]">{fullName}</span>
 
-        {/* Popover de Status */}
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <button
