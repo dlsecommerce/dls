@@ -10,6 +10,7 @@ interface Profile {
   status: "online" | "away" | "offline";
   email: string | null;
   updated_at?: string | null;
+  fullName?: string; // 🔹 nome completo calculado
 }
 
 interface AuthContextType {
@@ -25,6 +26,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  function buildFullName(first: string | null, last: string | null, email: string | null) {
+    if (first && last) return `${first} ${last}`;
+    if (first) return first;
+    if (last) return last;
+    return email ?? "Usuário";
+  }
+
   async function loadProfile(userId: string) {
     const { data: authUser } = await supabase.auth.getUser();
 
@@ -35,9 +43,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .single<Profile>();
 
     if (!error && p) {
+      const email = authUser?.user?.email ?? null;
       setProfile({
         ...p,
-        email: authUser?.user?.email ?? null,
+        email,
+        fullName: buildFullName(p.first_name, p.last_name, email),
       });
     }
   }
@@ -94,7 +104,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .eq("id", profile.id);
 
     if (!error) {
-      setProfile({ ...profile, ...data });
+      const updatedProfile = {
+        ...profile,
+        ...data,
+        fullName: buildFullName(
+          data.first_name ?? profile.first_name,
+          data.last_name ?? profile.last_name,
+          profile.email
+        ),
+      };
+      setProfile(updatedProfile);
     } else {
       console.error("Erro ao atualizar perfil:", error);
     }

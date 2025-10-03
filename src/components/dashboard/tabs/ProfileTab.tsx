@@ -1,42 +1,71 @@
 "use client";
 
-import React from "react";
+import React, { useState, useRef } from "react";
 import { Camera, User } from "lucide-react";
 import Image from "next/image";
+import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
-type ProfileTabProps = {
-  firstName: string;
-  lastName: string;
-  email: string;
-  avatarUrl: string | null;
-  fullName: string;
-  setFirstName: React.Dispatch<React.SetStateAction<string>>;
-  setLastName: React.Dispatch<React.SetStateAction<string>>;
-  setAvatarUrl: React.Dispatch<React.SetStateAction<string | null>>;
-  onSave: (e: React.SyntheticEvent) => Promise<void>;
-  onClickUpload: () => void;
-  fileInputRef: React.RefObject<HTMLInputElement | null>;
-  onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  initials: string;
-};
+export default function ProfileTab() {
+  const { profile, updateProfile } = useAuth();
 
-export default function ProfileTab({
-  firstName,
-  lastName,
-  email,
-  avatarUrl,
-  setFirstName,
-  setLastName,
-  setAvatarUrl,
-  onSave,
-  onClickUpload,
-  fileInputRef,
-  onFileChange,
-  initials,
-}: ProfileTabProps) {
+  const [firstName, setFirstName] = useState(profile?.first_name ?? "");
+  const [lastName, setLastName] = useState(profile?.last_name ?? "");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(profile?.avatar_url ?? null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const initials = (firstName[0] ?? "") + (lastName[0] ?? "");
+
+  // Upload avatar no Supabase Storage
+  const uploadAvatar = async (): Promise<string | null> => {
+    if (!avatarFile || !profile) return avatarUrl;
+
+    const fileExt = avatarFile.name.split(".").pop();
+    const fileName = `${profile.id}-${Date.now()}.${fileExt}`;
+    const filePath = `avatars/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("avatars")
+      .upload(filePath, avatarFile, { upsert: true });
+
+    if (uploadError) {
+      console.error("Erro ao subir avatar:", uploadError);
+      return avatarUrl;
+    }
+
+    const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
+    return data.publicUrl;
+  };
+
+  const handleSave = async (e: React.SyntheticEvent) => {
+    e.preventDefault();
+
+    let finalAvatarUrl = avatarUrl;
+    if (avatarFile) {
+      finalAvatarUrl = await uploadAvatar();
+    }
+
+    await updateProfile({
+      first_name: firstName,
+      last_name: lastName,
+      avatar_url: finalAvatarUrl,
+    });
+
+    setAvatarFile(null);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAvatarFile(file);
+      setAvatarUrl(URL.createObjectURL(file));
+    }
+  };
+
   return (
-    <form onSubmit={onSave} className="space-y-8">
-      {/* Card: Avatar */}
+    <form onSubmit={handleSave} className="space-y-8">
+      {/* Avatar + Nome */}
       <div className="bg-[#111111] border border-white/10 rounded-[20px] p-6 space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
           <div className="relative group">
@@ -52,14 +81,12 @@ export default function ProfileTab({
                   onError={() => setAvatarUrl(null)}
                 />
               ) : (
-                <span className="text-white text-[28px] font-normal">
-                  {initials}
-                </span>
+                <span className="text-white text-[28px] font-normal">{initials}</span>
               )}
             </div>
             <button
               type="button"
-              onClick={onClickUpload}
+              onClick={() => fileInputRef.current?.click()}
               className="absolute inset-0 w-24 h-24 rounded-full bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
             >
               <Camera className="w-6 h-6 text-white" />
@@ -68,7 +95,7 @@ export default function ProfileTab({
               type="file"
               accept="image/*"
               ref={fileInputRef}
-              onChange={onFileChange}
+              onChange={handleFileChange}
               className="hidden"
             />
           </div>
@@ -77,12 +104,14 @@ export default function ProfileTab({
             <h3 className="text-foreground text-[20px] font-normal">
               {firstName} {lastName}
             </h3>
-            <p className="text-muted-foreground text-[14px]">{email}</p>
+            <p className="text-muted-foreground text-[14px]">
+              {profile?.email ?? ""}
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Card: Informações pessoais */}
+      {/* Informações pessoais */}
       <div className="bg-[#111111] border border-white/10 rounded-[20px] p-6 space-y-6">
         <div className="flex items-center gap-3">
           <User className="w-5 h-5 text-muted-foreground" />
@@ -119,14 +148,13 @@ export default function ProfileTab({
             <input
               type="email"
               className="flex w-full rounded-lg border border-white/10 bg-[#1a1a1a] px-4 py-2 text-[14px] text-foreground"
-              value={email}
+              value={profile?.email ?? ""}
               disabled
             />
           </div>
         </div>
       </div>
 
-      {/* Botão salvar */}
       <div className="flex justify-end pt-2">
         <button
           type="submit"
