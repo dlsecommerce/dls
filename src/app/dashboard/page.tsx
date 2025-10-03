@@ -7,14 +7,14 @@ import { cn } from "@/lib/utils";
 
 export default function DashboardPage() {
   const { profile, loading, setStatus } = useAuth();
-  const [open, setOpen] = useState(false); // controla se o popover está aberto
+  const [open, setOpen] = useState(false);
 
-  // Nome completo reflete alterações feitas no ProfileTab
- const fullName =
-  (profile?.first_name && profile?.last_name
-    ? `${profile.first_name} ${profile.last_name}`
-    : profile?.first_name || profile?.last_name) ||
-  (loading ? "Carregando..." : "Usuário");
+  // Nome completo com fallback
+  const fullName =
+    (profile?.first_name && profile?.last_name
+      ? `${profile.first_name} ${profile.last_name}`
+      : profile?.first_name || profile?.last_name) ||
+    (loading ? "Carregando..." : "Usuário");
 
   const statusOptions = [
     {
@@ -40,13 +40,13 @@ export default function DashboardPage() {
     },
   ];
 
-  // Se não houver profile ainda, assume "online" por padrão
+  // Se não houver profile ainda, assume "online"
   const currentStatus =
     statusOptions.find((s) => s.value === profile?.status) || statusOptions[0];
 
   const handleSelectStatus = async (value: "online" | "away" | "offline") => {
     await setStatus(value);
-    setOpen(false); // fecha o popover depois de clicar
+    setOpen(false);
   };
 
   return (
