@@ -17,7 +17,6 @@ export default function ProfileTab() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const initials = (firstName[0] ?? "") + (lastName[0] ?? "");
 
-  // Upload avatar no Supabase Storage
   const uploadAvatar = async (): Promise<string | null> => {
     if (!avatarFile || !profile) return avatarUrl;
 

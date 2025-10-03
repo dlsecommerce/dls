@@ -10,7 +10,7 @@ interface Profile {
   status: "online" | "away" | "offline";
   email: string | null;
   updated_at?: string | null;
-  fullName?: string; // 🔹 nome completo calculado
+  fullName?: string;
 }
 
 interface AuthContextType {
