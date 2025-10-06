@@ -1,11 +1,17 @@
 "use client";
-import React from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import React, { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { HelpCircle } from "lucide-react";
+import { HelpCircle, DollarSign, X, Loader } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 export type Custo = {
   ["Código"]: string;
@@ -25,59 +31,131 @@ type Props = {
 };
 
 export default function ModalNovoCusto({
-  open, onOpenChange, mode, form, setForm, onSave
+  open,
+  onOpenChange,
+  mode,
+  form,
+  setForm,
+  onSave,
 }: Props) {
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | null }>({
+    message: "",
+    type: null,
+  });
+
+  const handleSave = async () => {
+    if (!form["Código"] || !form["Marca"]) {
+      setToast({ message: "Preencha Código e Marca antes de incluir.", type: "error" });
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const payload = {
+        ["Código"]: form["Código"],
+        ["Marca"]: form["Marca"],
+        ["Custo Atual"]: form["Custo Atual"] || null,
+        ["Custo Antigo"]: form["Custo Antigo"] || null,
+        ["NCM"]: form["NCM"] || null,
+      };
+
+      const { error } =
+        mode === "create"
+          ? await supabase.from("custos").insert([payload])
+          : await supabase.from("custos").update(payload).eq("Código", form["Código"]);
+
+      if (error) throw error;
+
+      setToast({
+        message: mode === "create" ? "Custo incluído com sucesso." : "Custo atualizado.",
+        type: "success",
+      });
+
+      onOpenChange(false);
+      onSave();
+    } catch (err: any) {
+      console.error("Erro ao incluir custo:", err.message || err);
+      setToast({ message: "Erro ao incluir custo.", type: "error" });
+    } finally {
+      setSaving(false);
+      setTimeout(() => setToast({ message: "", type: null }), 3000);
+    }
+  };
+
   return (
-    <TooltipProvider delayDuration={200}>
+    <>
+      {/* Toast flutuante */}
+      {toast.type && (
+        <div
+          className={`fixed bottom-6 right-6 px-4 py-3 rounded-xl shadow-lg text-white text-sm transition-all duration-300 ${
+            toast.type === "success" ? "bg-[#22c55e]" : "bg-[#ef4444]"
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
+
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="bg-[#0f0f0f] border border-neutral-700 rounded-2xl shadow-xl">
+        <DialogContent
+          className="fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2 
+                     bg-[#0f0f0f] border border-neutral-700 rounded-2xl shadow-2xl p-6 
+                     max-w-lg w-[90%] transition-all duration-300 ease-in-out"
+        >
+          {/* Botão X funcional */}
+          <button
+            className="absolute right-4 top-4 text-white cursor-pointer hover:scale-110 transition-all"
+            title="Fechar"
+            onClick={() => onOpenChange(false)}
+          >
+          </button>
+
           <DialogHeader>
             <div className="flex items-center gap-2">
-              <DialogTitle className="text-white">
+              <DollarSign className="w-5 h-5 text-white" />
+              <DialogTitle className="text-white text-lg">
                 {mode === "create" ? "Novo Custo" : "Editar Custo"}
               </DialogTitle>
-              {/* Help DENTRO do modal */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    aria-label="Ajuda"
-                    className="h-7 w-7 flex items-center justify-center rounded-full bg-white/10 border border-neutral-700 text-gray-200"
-                  >
-                    <HelpCircle className="h-4 w-4" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="bg-[#0f0f0f] border border-neutral-700 text-gray-200">
-                  Preencha o <strong>Código</strong>, <strong>Marca</strong>, <strong>Custos</strong> e <strong>NCM</strong>.<br />
-                  Exemplo: <em>Código 12345</em>, <em>Marca JBL</em>, <em>Custo Atual 89.90</em>, <em>Custo Antigo 79.90</em>, <em>NCM 85182100</em>.
-                </TooltipContent>
-              </Tooltip>
+
+              {/* Tooltip simples */}
+              <div className="relative group cursor-default">
+                <HelpCircle className="w-4 h-4 text-neutral-400 ml-1" />
+                <div
+                  className="absolute left-6 top-0 w-56 bg-transparent text-neutral-400 
+                             text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                >
+                  Preencha os campos e clique em Incluir.
+                </div>
+              </div>
             </div>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Campos */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
             <div>
-              <Label className="text-gray-300">Código</Label>
+              <Label className="text-neutral-300">Código</Label>
               <Input
                 value={form["Código"]}
                 onChange={(e) => setForm({ ...form, ["Código"]: e.target.value })}
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
-                placeholder="Ex: 12345"
+                placeholder="Ex: 5535"
                 disabled={mode === "edit"}
               />
             </div>
             <div>
-              <Label className="text-gray-300">Marca</Label>
+              <Label className="text-neutral-300">Marca</Label>
               <Input
                 value={form["Marca"]}
                 onChange={(e) => setForm({ ...form, ["Marca"]: e.target.value })}
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
-                placeholder="Ex: JBL"
+                placeholder="Ex: Liverpool"
               />
             </div>
             <div>
-              <Label className="text-gray-300">Custo Atual</Label>
+              <Label className="text-neutral-300">Custo Atual</Label>
               <Input
-                type="number"
+                type="text"
                 value={String(form["Custo Atual"])}
                 onChange={(e) => setForm({ ...form, ["Custo Atual"]: e.target.value })}
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
@@ -85,9 +163,9 @@ export default function ModalNovoCusto({
               />
             </div>
             <div>
-              <Label className="text-gray-300">Custo Antigo</Label>
+              <Label className="text-neutral-300">Custo Antigo</Label>
               <Input
-                type="number"
+                type="text"
                 value={String(form["Custo Antigo"])}
                 onChange={(e) => setForm({ ...form, ["Custo Antigo"]: e.target.value })}
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
@@ -95,7 +173,7 @@ export default function ModalNovoCusto({
               />
             </div>
             <div className="md:col-span-2">
-              <Label className="text-gray-300">NCM</Label>
+              <Label className="text-neutral-300">NCM</Label>
               <Input
                 value={form["NCM"]}
                 onChange={(e) => setForm({ ...form, ["NCM"]: e.target.value })}
@@ -105,23 +183,27 @@ export default function ModalNovoCusto({
             </div>
           </div>
 
-          <DialogFooter className="mt-4">
+          {/* Botões */}
+          <DialogFooter className="mt-5">
             <Button
               variant="outline"
-              className="border-neutral-700 text-white hover:scale-105"
+              className="border-neutral-700 text-white hover:scale-105 cursor-pointer"
               onClick={() => onOpenChange(false)}
+              disabled={saving}
             >
               Cancelar
             </Button>
+
             <Button
-              className="bg-gradient-to-r from-[#7c3aed] to-[#6d28d9] text-white hover:scale-105"
-              onClick={onSave}
+              className="bg-gradient-to-r from-[#7c3aed] to-[#6d28d9] text-white hover:scale-105 cursor-pointer flex items-center justify-center gap-2"
+              onClick={handleSave}
+              disabled={saving}
             >
-              Salvar
+              {saving ? <Loader className="h-5 w-5 animate-spin" /> : "Incluir"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </TooltipProvider>
+    </>
   );
 }

@@ -19,6 +19,7 @@ import {
   ArrowUpDown,
   Download,
   Edit as EditIcon,
+  Loader,
   Search,
   Trash2 as TrashIcon,
   Upload,
@@ -116,7 +117,7 @@ export default function CostTable() {
 
     const { data, error } = await buildQuery(false).range(from, to);
     if (!error && data) setRows(data as Custo[]);
-    setLoading(false);
+    setTimeout(() => setLoading(false), 400); // adiciona um pequeno delay pra transição suave
   };
 
   useEffect(() => {
@@ -232,34 +233,10 @@ export default function CostTable() {
     setOpenNew(true);
   };
 
+  // ✅ Agora o save apenas atualiza os dados
   const saveForm = async () => {
-    if (!form["Código"]) {
-      alert("Código é obrigatório.");
-      return;
-    }
-    const payload: Custo = {
-      ["Código"]: form["Código"],
-      ["Marca"]: form["Marca"],
-      ["Custo Atual"]: Number(form["Custo Atual"]) || 0,
-      ["Custo Antigo"]: Number(form["Custo Antigo"]) || 0,
-      ["NCM"]: form["NCM"],
-    };
-    let error;
-    if (mode === "create")
-      ({ error } = await supabase.from("custos").insert([payload]));
-    else
-      ({ error } = await supabase
-        .from("custos")
-        .update(payload)
-        .eq("Código", form["Código"]));
-    if (error) {
-      console.error(error);
-      alert("Erro ao salvar.");
-    } else {
-      setOpenNew(false);
-      loadData(currentPage, itemsPerPage);
-      loadAllBrands();
-    }
+    await loadData(currentPage, itemsPerPage);
+    await loadAllBrands();
   };
 
   const deleteRow = async (row: Custo) => {
@@ -283,7 +260,7 @@ export default function CostTable() {
         <GlassmorphicCard>
           <div className="flex flex-wrap justify-between items-center border-b border-neutral-700 p-4 gap-3">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 w-5 h-5" />
               <Input
                 placeholder="Buscar por código, marca ou NCM..."
                 value={search}
@@ -345,6 +322,7 @@ export default function CostTable() {
             </div>
           </div>
 
+          {/* Tabela */}
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -353,7 +331,7 @@ export default function CostTable() {
                     (col) => (
                       <TableHead
                         key={col}
-                        className="text-gray-400 font-semibold cursor-pointer"
+                        className="text-neutral-400 font-semibold cursor-pointer"
                         onClick={() => handleSort(col)}
                       >
                         <div className="flex items-center gap-1">
@@ -362,7 +340,7 @@ export default function CostTable() {
                       </TableHead>
                     )
                   )}
-                  <TableHead className="w-[120px] text-gray-400 font-semibold">
+                  <TableHead className="w-[120px] text-neutral-400 font-semibold">
                     Ações
                   </TableHead>
                 </TableRow>
@@ -371,18 +349,17 @@ export default function CostTable() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell
-                      colSpan={6}
-                      className="text-center text-gray-400 py-8"
-                    >
-                      Carregando...
+                    <TableCell colSpan={6}>
+                      <div className="flex justify-center items-center py-16 animate-fadeIn">
+                        <Loader className="animate-spin h-8 w-8 text-neutral-400" />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : rows.length === 0 ? (
                   <TableRow>
                     <TableCell
                       colSpan={6}
-                      className="text-center text-gray-400 py-8"
+                      className="text-center text-neutral-400 py-8"
                     >
                       Nenhum registro encontrado
                     </TableCell>
@@ -399,13 +376,13 @@ export default function CostTable() {
                           {c["Marca"]}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-gray-300">
+                      <TableCell className="text-neutral-300">
                         R$ {Number(c["Custo Atual"] || 0).toFixed(2)}
                       </TableCell>
-                      <TableCell className="text-gray-300">
+                      <TableCell className="text-neutral-300">
                         R$ {Number(c["Custo Antigo"] || 0).toFixed(2)}
                       </TableCell>
-                      <TableCell className="text-gray-300">
+                      <TableCell className="text-neutral-300">
                         {c["NCM"]}
                       </TableCell>
                       <TableCell className="flex gap-2 justify-center">
