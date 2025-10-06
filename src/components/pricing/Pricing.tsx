@@ -1,5 +1,4 @@
 "use client";
-
 import React, { useEffect, useState } from "react";
 import { motion, useMotionValue, useTransform, animate } from "framer-motion";
 import {
@@ -17,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { usePrecificacao } from "@/hooks/usePrecificacao";
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx";
+import { supabase } from "@/integrations/supabase/client";
 
 type Calculo = {
   desconto: string;
@@ -72,6 +72,48 @@ export default function PricingCalculatorModern() {
     comissao: "",
     marketing: "",
   });
+
+  const [sugestoes, setSugestoes] = useState<{ codigo: string; custo: number }[]>(
+    []
+  );
+  const [campoAtivo, setCampoAtivo] = useState<number | null>(null);
+
+  // busca por código no Supabase enquanto o usuário digita
+  const buscarSugestoes = async (termo: string, idx: number) => {
+    if (!termo.trim()) {
+      setSugestoes([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("custos")
+      .select('"Código", "Custo Atual"')
+      .ilike('"Código"', `%${termo}%`)
+      .limit(5);
+
+    if (error) {
+      console.error("Erro ao buscar sugestões:", error);
+      return;
+    }
+
+    setCampoAtivo(idx);
+    setSugestoes(
+      data?.map((d) => ({
+        codigo: d["Código"],
+        custo: Number(d["Custo Atual"]) || 0,
+      })) || []
+    );
+  };
+
+  // quando o usuário seleciona uma sugestão
+  const selecionarSugestao = (codigo: string, custo: number, idx: number) => {
+    const novo = [...composicao];
+    novo[idx].codigo = codigo;
+    novo[idx].custo = custo.toFixed(2);
+    setComposicao(novo);
+    setSugestoes([]);
+    setCampoAtivo(null);
+  };
 
   const calcularPreco = (dados: Calculo) => {
     const custo = composicao.reduce(
@@ -192,7 +234,7 @@ export default function PricingCalculatorModern() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* COMPOSIÇÃO */}
         <motion.div
-          className="lg:col-span-7 p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg h-full"
+          className="lg:col-span-7 p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg h-full relative"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
@@ -204,7 +246,6 @@ export default function PricingCalculatorModern() {
             </h3>
           </div>
 
-          {/* CUSTOS */}
           <div
             className={`space-y-1.5 ${
               composicao.length > 10
@@ -217,7 +258,8 @@ export default function PricingCalculatorModern() {
                 key={idx}
                 className="relative grid grid-cols-3 gap-2 mb-1 p-1.5 rounded-lg bg-black/30 border border-white/10"
               >
-                <div>
+                {/* Código com busca */}
+                <div className="relative">
                   <Label className="text-neutral-400 text-[10px] block mb-1">
                     Código
                   </Label>
@@ -229,11 +271,28 @@ export default function PricingCalculatorModern() {
                       const novo = [...composicao];
                       novo[idx].codigo = e.target.value;
                       setComposicao(novo);
+                      buscarSugestoes(e.target.value, idx);
                     }}
                     className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
                   />
+                  {/* Sugestões */}
+                  {campoAtivo === idx && sugestoes.length > 0 && (
+                    <div className="absolute z-50 mt-1 bg-[#0f0f0f] border border-white/10 rounded-md shadow-lg w-full max-h-40 overflow-y-auto">
+                      {sugestoes.map((s, i) => (
+                        <div
+                          key={i}
+                          className="px-2 py-1 text-xs text-white hover:bg-[#1a8ceb]/20 cursor-pointer flex justify-between"
+                          onClick={() => selecionarSugestao(s.codigo, s.custo, idx)}
+                        >
+                          <span>{s.codigo}</span>
+                          <span className="text-[#1a8ceb]">R$ {s.custo.toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
+                {/* Quantidade */}
                 <div>
                   <Label className="text-neutral-400 text-[10px] block mb-1">
                     Quantidade
@@ -247,10 +306,11 @@ export default function PricingCalculatorModern() {
                       novo[idx].quantidade = e.target.value;
                       setComposicao(novo);
                     }}
-                    className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                    className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb]"
                   />
                 </div>
 
+                {/* Custo */}
                 <div>
                   <Label className="text-neutral-400 text-[10px] block mb-1">
                     Custo (R$)
@@ -264,7 +324,7 @@ export default function PricingCalculatorModern() {
                       novo[idx].custo = e.target.value;
                       setComposicao(novo);
                     }}
-                    className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                    className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb]"
                   />
                 </div>
 

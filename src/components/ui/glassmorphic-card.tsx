@@ -27,12 +27,14 @@ export function GlassmorphicCard({
         hover:shadow-[0_8px_30px_rgb(38,153,254,0.12)]
         transition-all duration-300
         group
+        pointer-events-auto
         ${className}
       `}
       {...props}
     >
-      {/* Overlay animado */}
-      <div className="absolute inset-0 bg-gradient-to-br from-[#2699fe]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+      {/* Overlay animado — agora sem bloquear cliques */}
+      <div className="absolute inset-0 pointer-events-none bg-gradient-to-br from-[#2699fe]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+
       {children}
     </motion.div>
   );
