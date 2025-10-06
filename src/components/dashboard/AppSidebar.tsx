@@ -64,9 +64,9 @@ const navigationItems = [
     title: "Precificação",
     icon: DollarSign,
     children: [
-      { title: "Precificação Individual", href: "/dashboard/precificacao-individual" },
+      { title: "Precificação Individual", href: "/dashboard/precificacao/precificacao-individual" },
       { title: "Decomposição", href: "/dashboard/precificacao/decomposicao" },
-      { title: "Tabela de Custos", href: "/dashboard/precificacao/tabela-custos" },
+      { title: "Custos", href: "/dashboard/precificacao/custos" },
     ],
   },
   { title: "Marketplaces", href: "/dashboard/marketplaces", icon: Store },

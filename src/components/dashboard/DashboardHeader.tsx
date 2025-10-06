@@ -12,10 +12,10 @@ interface DashboardHeaderProps {
 
 const routeTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
-  "/dashboard/automacao-modelo": "Automação de Planilhas",
-  "/dashboard/precificacao-individual": "Precificação Individual",
+  "/dashboard/automacoes/automacao-planilhas": "Automação de Planilhas",
+  "/dashboard/precificacao/precificacao-individual": "Precificação Individual",
   "/dashboard/precificacao/decomposicao": "Decomposição",
-  "/dashboard/precificacao/tabela-custos": "Tabela de Custos",
+  "/dashboard/precificacao/custos": "Custos",
   "/dashboard/marketplaces": "Marketplaces",
   "/dashboard/anuncios": "Anúncios",
   "/dashboard/configuracao": "Configurações",

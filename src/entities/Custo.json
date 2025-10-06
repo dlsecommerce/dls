@@ -1,0 +1,39 @@
+{
+  "name": "Custo",
+  "type": "object",
+  "properties": {
+    "produto_id": {
+      "type": "string",
+      "description": "ID do produto relacionado"
+    },
+    "codigo": {
+      "type": "string",
+      "description": "Código do item de custo"
+    },
+    "descricao": {
+      "type": "string",
+      "description": "Descrição do custo"
+    },
+    "quantidade": {
+      "type": "number",
+      "description": "Quantidade"
+    },
+    "custo_unitario": {
+      "type": "number",
+      "description": "Custo por unidade"
+    },
+    "custo_total": {
+      "type": "number",
+      "description": "Custo total (quantidade x unitário)"
+    },
+    "variacao_percentual": {
+      "type": "number",
+      "description": "Variação percentual em relação ao período anterior"
+    }
+  },
+  "required": [
+    "codigo",
+    "custo_unitario",
+    "quantidade"
+  ]
+}
