@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, useMotionValue, useTransform, animate } from "framer-motion";
 import {
   Plus,
   Sparkles,
@@ -25,6 +25,22 @@ type Calculo = {
   frete: string;
   comissao: string;
   marketing: string;
+};
+
+// componente de contagem animada suave
+const AnimatedNumber = ({ value }: { value: number }) => {
+  const motionValue = useMotionValue(0);
+  const rounded = useTransform(motionValue, (latest) => latest.toFixed(2));
+
+  useEffect(() => {
+    const controls = animate(motionValue, value, {
+      duration: 1.0,
+      ease: "easeInOut",
+    });
+    return controls.stop;
+  }, [value]);
+
+  return <motion.span>{rounded}</motion.span>;
 };
 
 export default function PricingCalculatorModern() {
@@ -179,7 +195,6 @@ export default function PricingCalculatorModern() {
             </h3>
           </div>
 
-          {/* container com scroll automático */}
           <div
             className={`space-y-1.5 ${
               composicao.length > 10
@@ -265,11 +280,12 @@ export default function PricingCalculatorModern() {
             <Plus className="w-3 h-3 mr-2" /> Incluir Custos
           </Button>
 
-          <div className="mt-3 p-2 bg-gradient-to-br from-[#1a8ceb]/20 to-[#1a8ceb]/5 rounded-xl border border-[#1a8ceb]/30">
-            <div className="flex justify-between items-center">
-              <span className="text-neutral-300 text-xs">Custo Total</span>
-              <span className="text-sm font-bold text-white">
-                R$ {Number(custoTotal).toFixed(2)}
+          {/* CUSTO TOTAL */}
+          <div className="mt-3 p-3 bg-gradient-to-br from-[#1a8ceb]/20 to-[#1a8ceb]/5 rounded-xl border border-[#1a8ceb]/30">
+            <div className="flex flex-col items-center justify-center">
+              <span className="text-neutral-300 text-xs mb-1">Custo Total</span>
+              <span className="text-xl font-bold text-white">
+                R$ <AnimatedNumber value={Number(custoTotal)} />
               </span>
             </div>
           </div>
@@ -310,11 +326,11 @@ export default function PricingCalculatorModern() {
                   preco: precoMarketplace,
                 },
               ].map((bloco, i) => (
-                <div key={i} className="p-2 rounded-lg bg-black/30 border border-white/10">
+                <div key={i} className="p-2 rounded-lg bg-black/30 border border-white/10 flex flex-col justify-center items-center">
                   <h4 className="text-white font-semibold text-xs mb-1">{bloco.nome}</h4>
                   {(["desconto", "imposto", "margem", "frete", "comissao", "marketing"] as const).map(
                     (key) => (
-                      <div key={key} className="mb-1">
+                      <div key={key} className="mb-1 w-full">
                         <Label className="text-neutral-400 text-[10px] block">
                           {key.charAt(0).toUpperCase() + key.slice(1)}{" "}
                           {key === "frete" ? "(R$)" : "(%)"}
@@ -330,10 +346,10 @@ export default function PricingCalculatorModern() {
                       </div>
                     )
                   )}
-                  <div className="mt-1 text-right">
+                  <div className="mt-1 text-center flex flex-col items-center justify-center py-1">
                     <span className="text-neutral-300 text-[10px]">Preço de Venda</span>
-                    <div className="text-sm font-bold text-[#1a8ceb]">
-                      R$ {bloco.preco.toFixed(2)}
+                    <div className="text-lg font-bold text-[#1a8ceb] leading-tight">
+                      R$ <AnimatedNumber value={bloco.preco} />
                     </div>
                   </div>
                 </div>
@@ -390,22 +406,33 @@ export default function PricingCalculatorModern() {
                     className="bg-black/50 border border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
                   />
                 </div>
-                <div className="flex justify-between items-center text-[11px] mt-1 bg-white/5 rounded-md p-2">
-                  <span className="text-neutral-400">Acréscimo:</span>
+
+                {/* ACRÉSCIMO COM ANIMAÇÃO */}
+                <div
+                  className={`flex flex-col justify-center items-center text-[11px] mt-2 rounded-md p-3 transition-all duration-300 ${
+                    acrescimos.acrescimo > 0
+                      ? "bg-green-500/10 border border-green-500/30"
+                      : acrescimos.acrescimo < 0
+                      ? "bg-red-500/10 border border-red-500/30"
+                      : "bg-white/5 border border-white/10"
+                  }`}
+                >
+                  <span className="text-neutral-300 mb-1">Acréscimo</span>
                   <span
-                    className={`font-normal ${
+                    className={`font-semibold text-base transition-colors duration-300 ${
                       acrescimos.acrescimo > 0
-                        ? "text-green-500"
+                        ? "text-green-400"
                         : acrescimos.acrescimo < 0
-                        ? "text-red-500"
+                        ? "text-red-400"
                         : "text-neutral-400"
                     }`}
                   >
-                    {Number(acrescimos.acrescimo).toFixed(2)}% ({statusAcrescimo})
+                    <AnimatedNumber value={Number(acrescimos.acrescimo)} />%
                   </span>
+                  <span className="text-[10px] text-neutral-400">{statusAcrescimo}</span>
                 </div>
               </div>
-            </div>p
+            </div>
           </div>
         </motion.div>
       </div>
