@@ -178,6 +178,15 @@ export default function PricingCalculatorModern() {
     </div>
   );
 
+  const ordemCampos: (keyof Calculo)[] = [
+    "desconto",
+    "frete",
+    "imposto",
+    "comissao",
+    "margem",
+    "marketing",
+  ];
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-4 md:p-8 pt-24">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
@@ -191,10 +200,11 @@ export default function PricingCalculatorModern() {
             <Sparkles className="w-5 h-5 text-[#1a8ceb]" />
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               Composição
-              <HelpTooltip text="Adicione os itens que compõem o custo do produto." />
+              <HelpTooltip text="Composição de Custos." />
             </h3>
           </div>
 
+          {/* CUSTOS */}
           <div
             className={`space-y-1.5 ${
               composicao.length > 10
@@ -247,7 +257,7 @@ export default function PricingCalculatorModern() {
                   </Label>
                   <Input
                     type="number"
-                    placeholder="12R$"
+                    placeholder="100"
                     value={item.custo}
                     onChange={(e) => {
                       const novo = [...composicao];
@@ -303,7 +313,7 @@ export default function PricingCalculatorModern() {
                 <TrendingUp className="w-5 h-5 text-[#1a8ceb]" />
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
                   Cálculo de Preço
-                  <HelpTooltip text="Defina descontos, impostos e margens para calcular o preço final de venda." />
+                  <HelpTooltip text="Preços de Venda." />
                 </h3>
               </div>
               <div className="flex items-center gap-2">
@@ -316,6 +326,7 @@ export default function PricingCalculatorModern() {
               </div>
             </div>
 
+            {/* CAMPOS REORDENADOS */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
               {[
                 { nome: "Preço Loja", state: calculoLoja, set: setCalculoLoja, preco: precoLoja },
@@ -326,28 +337,39 @@ export default function PricingCalculatorModern() {
                   preco: precoMarketplace,
                 },
               ].map((bloco, i) => (
-                <div key={i} className="p-2 rounded-lg bg-black/30 border border-white/10 flex flex-col justify-center items-center">
-                  <h4 className="text-white font-semibold text-xs mb-1">{bloco.nome}</h4>
-                  {(["desconto", "imposto", "margem", "frete", "comissao", "marketing"] as const).map(
-                    (key) => (
-                      <div key={key} className="mb-1 w-full">
-                        <Label className="text-neutral-400 text-[10px] block">
-                          {key.charAt(0).toUpperCase() + key.slice(1)}{" "}
-                          {key === "frete" ? "(R$)" : "(%)"}
-                        </Label>
-                        <Input
-                          type="number"
-                          value={bloco.state[key]}
-                          onChange={(e) =>
-                            bloco.set({ ...bloco.state, [key]: e.target.value })
-                          }
-                          className="bg-black/50 border border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
-                        />
-                      </div>
-                    )
-                  )}
+                <div
+                  key={i}
+                  className="p-2 rounded-lg bg-black/30 border border-white/10 flex flex-col justify-center items-center"
+                >
+                  <h4 className="text-white font-semibold text-xs mb-1">
+                    {bloco.nome}
+                  </h4>
+                  {ordemCampos.map((key) => (
+                    <div key={key} className="mb-1 w-full">
+                      <Label className="text-neutral-400 text-[10px] block">
+                        {key === "margem"
+                          ? "Margem de Lucro (%)"
+                          : key === "frete"
+                          ? "Frete (R$)"
+                          : key.charAt(0).toUpperCase() + key.slice(1) + " (%)"}
+                      </Label>
+                      <Input
+                        type="number"
+                        value={bloco.state[key]}
+                        onChange={(e) =>
+                          bloco.set({
+                            ...bloco.state,
+                            [key]: e.target.value,
+                          })
+                        }
+                        className="bg-black/50 border border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                      />
+                    </div>
+                  ))}
                   <div className="mt-1 text-center flex flex-col items-center justify-center py-1">
-                    <span className="text-neutral-300 text-[10px]">Preço de Venda</span>
+                    <span className="text-neutral-300 text-[10px]">
+                      Preço de Venda
+                    </span>
                     <div className="text-lg font-bold text-[#1a8ceb] leading-tight">
                       R$ <AnimatedNumber value={bloco.preco} />
                     </div>
@@ -361,17 +383,22 @@ export default function PricingCalculatorModern() {
               <h4 className="font-bold text-white text-xs mb-2 flex items-center gap-2">
                 <Calculator className="w-4 h-4 text-[#1a8ceb]" />
                 Cálculo de Acréscimos
-                <HelpTooltip text="Compare preços e calcule a diferença percentual entre Loja e Marketplace." />
+                <HelpTooltip text="Calculo de Acréscimo." />
               </h4>
 
               <div className="flex flex-col gap-2">
                 <div>
-                  <Label className="text-neutral-400 text-[10px] mb-1 block">Preço Loja (R$)</Label>
+                  <Label className="text-neutral-400 text-[10px] mb-1 block">
+                    Preço Loja (R$)
+                  </Label>
                   <Input
                     type="number"
                     value={acrescimos.precoTray}
                     onChange={(e) =>
-                      setAcrescimos({ ...acrescimos, precoTray: e.target.value })
+                      setAcrescimos({
+                        ...acrescimos,
+                        precoTray: e.target.value,
+                      })
                     }
                     className="bg-black/50 border border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
                   />
@@ -393,7 +420,9 @@ export default function PricingCalculatorModern() {
                   />
                 </div>
                 <div>
-                  <Label className="text-neutral-400 text-[10px] mb-1 block">Frete (R$)</Label>
+                  <Label className="text-neutral-400 text-[10px] mb-1 block">
+                    Frete (R$)
+                  </Label>
                   <Input
                     type="number"
                     value={acrescimos.freteMercadoLivre}
@@ -429,7 +458,9 @@ export default function PricingCalculatorModern() {
                   >
                     <AnimatedNumber value={Number(acrescimos.acrescimo)} />%
                   </span>
-                  <span className="text-[10px] text-neutral-400">{statusAcrescimo}</span>
+                  <span className="text-[10px] text-neutral-400">
+                    {statusAcrescimo}
+                  </span>
                 </div>
               </div>
             </div>
