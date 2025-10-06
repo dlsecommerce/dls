@@ -15,26 +15,19 @@ export function GlassmorphicCard({
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -4 }}
       transition={{ duration: 0.3 }}
       className={`
         relative overflow-hidden
-        bg-gradient-to-br from-white/5 to-white/[0.02]
+        bg-gradient-to-br from-white/5 to-white/[0.03]
         backdrop-blur-xl
-        border border-white/10
+        border border-neutral-700
         rounded-2xl
-        shadow-2xl
-        hover:shadow-[0_8px_30px_rgb(38,153,254,0.12)]
+        shadow-md
         transition-all duration-300
-        group
-        pointer-events-auto
         ${className}
       `}
       {...props}
     >
-      {/* Overlay animado — agora sem bloquear cliques */}
-      <div className="absolute inset-0 pointer-events-none bg-gradient-to-br from-[#2699fe]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-
       {children}
     </motion.div>
   );
