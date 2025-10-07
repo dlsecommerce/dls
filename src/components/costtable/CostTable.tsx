@@ -72,7 +72,7 @@ export default function CostTable() {
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [warnings, setWarnings] = useState<string[]>([]); // ⚠️ novo estado
+  const [warnings, setWarnings] = useState<string[]>([]);
 
   const [selectedRows, setSelectedRows] = useState<Custo[]>([]);
   const [openDelete, setOpenDelete] = useState(false);
@@ -183,17 +183,33 @@ export default function CostTable() {
       return;
     }
 
+    // 🔹 Data e hora formatadas
     const now = new Date();
-    const dateStr = now.toLocaleDateString("pt-BR").replaceAll("/", "-");
-    const timeStr = `${now.getHours()}h${now
-      .getMinutes()
-      .toString()
-      .padStart(2, "0")}m`;
+    const dia = String(now.getDate()).padStart(2, "0");
+    const mes = String(now.getMonth() + 1).padStart(2, "0");
+    const ano = now.getFullYear();
+    const hora = String(now.getHours()).padStart(2, "0");
+    const min = String(now.getMinutes()).padStart(2, "0");
+    const timeStr = `${hora}h${min}m`;
 
-    let filename =
-      selectedRows.length > 0
-        ? `RELATÓRIO-SELECIONADOS-${dateStr}-${timeStr}.xlsx`
-        : `RELATÓRIO-${dateStr}-${timeStr}.xlsx`;
+    // 🔹 Gera abreviações das marcas (ex: LIV, FIS)
+    let marcaTag = "";
+    if (selectedBrands.length > 0) {
+      marcaTag = selectedBrands
+        .map((m) => {
+          const clean = m
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "") // remove acentos
+            .replace(/[^a-zA-Z]/g, ""); // remove símbolos
+          return clean.substring(0, 3).toUpperCase();
+        })
+        .join("-");
+    }
+
+    // 🔹 Nome final do arquivo
+    const baseName = selectedRows.length > 0 ? "RELATÓRIO-SELECIONADOS" : "RELATÓRIO";
+    const marcaPart = marcaTag ? `-${marcaTag}` : "";
+    const filename = `${baseName}${marcaPart}-${dia}-${mes}-${ano}-${timeStr}.xlsx`;
 
     exportFilteredToXlsx(exportData, filename);
   };
@@ -262,7 +278,6 @@ export default function CostTable() {
     const f = e.target.files?.[0];
     if (!f) return;
     try {
-      // Novo retorno com avisos
       const { data: previewData, warnings } = await importFromXlsxOrCsv(f, true);
       setImportFile(f);
       setImportCount(previewData.length);
@@ -313,7 +328,6 @@ export default function CostTable() {
 
       <div className="max-w-7xl mx-auto space-y-6">
         <GlassmorphicCard>
-          {/* === Barra superior === */}
           <div className="flex flex-wrap justify-between items-center border-b border-neutral-700 p-4 gap-3">
             {/* Busca */}
             <div className="relative flex-1">
@@ -336,7 +350,6 @@ export default function CostTable() {
                 onOpenChange={setFilterOpen}
               />
 
-              {/* INPUT INVISÍVEL */}
               <input
                 type="file"
                 ref={fileInputRef}
@@ -345,14 +358,13 @@ export default function CostTable() {
                 onChange={handleFileSelect}
               />
 
-              {/* BOTÃO IMPORTAR */}
               <Button
                 variant="outline"
                 className="border-neutral-700 hover:scale-105 transition-all text-white rounded-xl cursor-pointer"
                 onClick={() => {
                   if (fileInputRef.current) {
-                    fileInputRef.current.value = ""; // 🔹 limpa o input antes
-                    fileInputRef.current.click();    // 🔹 permite reimportar o mesmo arquivo
+                    fileInputRef.current.value = "";
+                    fileInputRef.current.click();
                   }
                 }}
               >
@@ -523,7 +535,7 @@ export default function CostTable() {
         <div className="mt-2">
           <TableControls
             currentPage={currentPage}
-            totalPages={totalPages}
+            totalPages={Math.ceil(totalItems / itemsPerPage)}
             itemsPerPage={itemsPerPage}
             totalItems={totalItems}
             onPageChange={(p) => setCurrentPage(p)}
@@ -559,7 +571,6 @@ export default function CostTable() {
         onExportModeloAlteracao={handleExport}
       />
 
-      {/* Modal de Importação */}
       <ConfirmImportModal
         open={openImport}
         onOpenChange={setOpenImport}
