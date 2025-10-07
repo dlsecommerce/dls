@@ -1,30 +1,34 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-
   "productName": "DLS Ecommerce",
   "version": "0.1.0",
   "identifier": "com.dlsecommerce",
 
   "build": {
     "frontendDist": "../out",
-    "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "next dev -p 3000",
     "beforeBuildCommand": "npm run build"
   },
 
   "app": {
     "withGlobalTauri": true,
+
     "windows": [
       {
+        "label": "main",
         "title": "DLS Ecommerce",
-        "width": 1200,
-        "height": 800,
+        "url": "splash.html",
+        "width": 600,
+        "height": 400,
+        "center": true,
         "resizable": true,
         "fullscreen": false,
         "decorations": true,
-        "visible": true
+        "visible": true,
+        "backgroundColor": "#090909"
       }
     ],
+
     "security": {
       "csp": null
     }
@@ -36,7 +40,8 @@
     "category": "Productivity",
     "copyright": "© 2025 DLS Multimarcas. Todos os direitos reservados.",
     "shortDescription": "Aplicativo Desktop Oficial do DLS Ecommerce",
-    "longDescription": "DLS Ecommerce",
+    "longDescription": "Aplicativo oficial do DLS Ecommerce para desktop.",
+
     "windows": {
       "wix": {
         "language": "pt-BR"
@@ -47,13 +52,14 @@
         "installMode": "perMachine"
       }
     },
-    "linux": {
-    },
+
+    "linux": {},
     "macOS": {
       "entitlements": null,
       "exceptionDomain": null,
       "signingIdentity": null
     },
+
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
