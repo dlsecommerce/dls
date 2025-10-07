@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
-import { LogOut, User, Shield, Bell, Sliders } from "lucide-react";
+import { LogOut, User, Shield, Bell, Sliders, MessageSquare } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -11,11 +11,12 @@ import ProfileTab from "./tabs/ProfileTab";
 import SecurityTab from "./tabs/SecurityTab";
 import NotificationsTab from "./tabs/NotificationsTab";
 import PreferencesTab from "./tabs/PreferencesTab";
+import FeedbacksTab from "./tabs/FeedbacksTab"; // 🆕 Nova aba importada
 
 export default function Configuration() {
   const { profile, updateProfile } = useAuth();
   const [tab, setTab] = useState<
-    "perfil" | "seguranca" | "notificacoes" | "preferencias"
+    "perfil" | "seguranca" | "notificacoes" | "preferencias" | "feedbacks"
   >("perfil");
 
   const [name, setName] = useState(profile?.name ?? "");
@@ -120,6 +121,7 @@ export default function Configuration() {
     { id: "seguranca", label: "Segurança", icon: Shield },
     { id: "notificacoes", label: "Notificações", icon: Bell },
     { id: "preferencias", label: "Preferências", icon: Sliders },
+    { id: "feedbacks", label: "Feedbacks", icon: MessageSquare }, // 🆕 Nova aba
   ];
 
   return (
@@ -231,6 +233,18 @@ export default function Configuration() {
                   transition={{ duration: 0.3 }}
                 >
                   <PreferencesTab />
+                </motion.div>
+              )}
+
+              {tab === "feedbacks" && (
+                <motion.div
+                  key="feedbacks"
+                  initial={{ opacity: 0, x: 30 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -30 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <FeedbacksTab />
                 </motion.div>
               )}
             </AnimatePresence>
