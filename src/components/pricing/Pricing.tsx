@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { motion, useMotionValue, useTransform, animate } from "framer-motion";
 import {
   Plus,
@@ -27,14 +27,14 @@ type Calculo = {
   marketing: string;
 };
 
-// componente de contagem animada suave
+// contador animado
 const AnimatedNumber = ({ value }: { value: number }) => {
   const motionValue = useMotionValue(0);
   const rounded = useTransform(motionValue, (latest) => latest.toFixed(2));
 
   useEffect(() => {
     const controls = animate(motionValue, value, {
-      duration: 1.0,
+      duration: 1,
       ease: "easeInOut",
     });
     return controls.stop;
@@ -50,7 +50,6 @@ export default function PricingCalculatorModern() {
     acrescimos,
     setAcrescimos,
     custoTotal,
-    statusAcrescimo,
     adicionarItem,
     removerItem,
   } = usePrecificacao();
@@ -73,12 +72,12 @@ export default function PricingCalculatorModern() {
     marketing: "",
   });
 
-  const [sugestoes, setSugestoes] = useState<{ codigo: string; custo: number }[]>(
-    []
-  );
+  const [sugestoes, setSugestoes] = useState<{ codigo: string; custo: number }[]>([]);
   const [campoAtivo, setCampoAtivo] = useState<number | null>(null);
+  const [indiceSelecionado, setIndiceSelecionado] = useState<number>(-1);
+  const listaRef = useRef<HTMLDivElement>(null);
+  const inputRefs = useRef<HTMLInputElement[]>([]);
 
-  // busca por código no Supabase enquanto o usuário digita
   const buscarSugestoes = async (termo: string, idx: number) => {
     if (!termo.trim()) {
       setSugestoes([]);
@@ -103,9 +102,9 @@ export default function PricingCalculatorModern() {
         custo: Number(d["Custo Atual"]) || 0,
       })) || []
     );
+    setIndiceSelecionado(-1);
   };
 
-  // quando o usuário seleciona uma sugestão
   const selecionarSugestao = (codigo: string, custo: number, idx: number) => {
     const novo = [...composicao];
     novo[idx].codigo = codigo;
@@ -113,27 +112,56 @@ export default function PricingCalculatorModern() {
     setComposicao(novo);
     setSugestoes([]);
     setCampoAtivo(null);
+    setIndiceSelecionado(-1);
+
+    // foca no campo de código novamente
+    setTimeout(() => {
+      inputRefs.current[idx]?.focus();
+    }, 50);
   };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
+    if (!sugestoes.length) return;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setIndiceSelecionado((prev) => (prev < sugestoes.length - 1 ? prev + 1 : 0));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setIndiceSelecionado((prev) => (prev > 0 ? prev - 1 : sugestoes.length - 1));
+    } else if (e.key === "Enter" && indiceSelecionado >= 0) {
+      e.preventDefault();
+      const s = sugestoes[indiceSelecionado];
+      selecionarSugestao(s.codigo, s.custo, idx);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setSugestoes([]);
+      setCampoAtivo(null);
+      setIndiceSelecionado(-1);
+    }
+  };
+
+  useEffect(() => {
+    if (listaRef.current && indiceSelecionado >= 0) {
+      const el = listaRef.current.children[indiceSelecionado] as HTMLElement;
+      if (el) el.scrollIntoView({ block: "nearest" });
+    }
+  }, [indiceSelecionado]);
 
   const calcularPreco = (dados: Calculo) => {
     const custo = composicao.reduce(
-      (sum, item) =>
-        sum +
-        (parseFloat(item.custo) || 0) * (parseFloat(item.quantidade) || 0),
+      (s, i) => s + (parseFloat(i.custo) || 0) * (parseFloat(i.quantidade) || 0),
       0
     );
-
     const desconto = (parseFloat(dados.desconto) || 0) / 100;
     const imposto = (parseFloat(dados.imposto) || 0) / 100;
     const margem = (parseFloat(dados.margem) || 0) / 100;
     const comissao = (parseFloat(dados.comissao) || 0) / 100;
     const marketing = (parseFloat(dados.marketing) || 0) / 100;
     const frete = parseFloat(dados.frete) || 0;
-
     const custoLiquido = custo * (1 - desconto);
     const divisor = 1 - (imposto + margem + comissao + marketing);
     const preco = divisor > 0 ? (custoLiquido + frete) / divisor : 0;
-
     return isFinite(preco) ? preco : 0;
   };
 
@@ -258,12 +286,12 @@ export default function PricingCalculatorModern() {
                 key={idx}
                 className="relative grid grid-cols-3 gap-2 mb-1 p-1.5 rounded-lg bg-black/30 border border-white/10"
               >
-                {/* Código com busca */}
                 <div className="relative">
                   <Label className="text-neutral-400 text-[10px] block mb-1">
                     Código
                   </Label>
                   <Input
+                    ref={(el) => (inputRefs.current[idx] = el!)}
                     type="text"
                     placeholder="SKU"
                     value={item.codigo}
@@ -273,26 +301,34 @@ export default function PricingCalculatorModern() {
                       setComposicao(novo);
                       buscarSugestoes(e.target.value, idx);
                     }}
+                    onKeyDown={(e) => handleKeyDown(e, idx)}
                     className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
                   />
-                  {/* Sugestões */}
                   {campoAtivo === idx && sugestoes.length > 0 && (
-                    <div className="absolute z-50 mt-1 bg-[#0f0f0f] border border-white/10 rounded-md shadow-lg w-full max-h-40 overflow-y-auto">
+                    <div
+                      ref={listaRef}
+                      className="absolute z-50 mt-1 bg-[#0f0f0f] border border-white/10 rounded-md shadow-lg w-full max-h-40 overflow-y-auto"
+                    >
                       {sugestoes.map((s, i) => (
                         <div
                           key={i}
-                          className="px-2 py-1 text-xs text-white hover:bg-[#1a8ceb]/20 cursor-pointer flex justify-between"
+                          className={`px-2 py-1 text-xs flex justify-between cursor-pointer ${
+                            i === indiceSelecionado
+                              ? "bg-[#1a8ceb]/30 text-white"
+                              : "text-white hover:bg-[#1a8ceb]/20"
+                          }`}
                           onClick={() => selecionarSugestao(s.codigo, s.custo, idx)}
                         >
                           <span>{s.codigo}</span>
-                          <span className="text-[#1a8ceb]">R$ {s.custo.toFixed(2)}</span>
+                          <span className="text-[#1a8ceb]">
+                            R$ {s.custo.toFixed(2)}
+                          </span>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
 
-                {/* Quantidade */}
                 <div>
                   <Label className="text-neutral-400 text-[10px] block mb-1">
                     Quantidade
@@ -310,7 +346,6 @@ export default function PricingCalculatorModern() {
                   />
                 </div>
 
-                {/* Custo */}
                 <div>
                   <Label className="text-neutral-400 text-[10px] block mb-1">
                     Custo (R$)
@@ -386,7 +421,7 @@ export default function PricingCalculatorModern() {
               </div>
             </div>
 
-            {/* CAMPOS REORDENADOS */}
+            {/* CAMPOS */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
               {[
                 { nome: "Preço Loja", state: calculoLoja, set: setCalculoLoja, preco: precoLoja },
@@ -404,7 +439,7 @@ export default function PricingCalculatorModern() {
                   <h4 className="text-white font-semibold text-xs mb-1">
                     {bloco.nome}
                   </h4>
-                  {ordemCampos.map((key) => (
+                  {["desconto","frete","imposto","comissao","margem","marketing"].map((key) => (
                     <div key={key} className="mb-1 w-full">
                       <Label className="text-neutral-400 text-[10px] block">
                         {key === "margem"
@@ -438,12 +473,11 @@ export default function PricingCalculatorModern() {
               ))}
             </div>
 
-            {/* CÁLCULO DE ACRÉSCIMOS */}
+            {/* ACRÉSCIMO */}
             <div className="p-3 rounded-lg bg-black/30 border border-white/10">
               <h4 className="font-bold text-white text-xs mb-2 flex items-center gap-2">
                 <Calculator className="w-4 h-4 text-[#1a8ceb]" />
                 Cálculo de Acréscimos
-                <HelpTooltip text="Calculo de Acréscimo." />
               </h4>
 
               <div className="flex flex-col gap-2">
@@ -455,10 +489,7 @@ export default function PricingCalculatorModern() {
                     type="number"
                     value={acrescimos.precoTray}
                     onChange={(e) =>
-                      setAcrescimos({
-                        ...acrescimos,
-                        precoTray: e.target.value,
-                      })
+                      setAcrescimos({ ...acrescimos, precoTray: e.target.value })
                     }
                     className="bg-black/50 border border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
                   />
@@ -496,7 +527,6 @@ export default function PricingCalculatorModern() {
                   />
                 </div>
 
-                {/* ACRÉSCIMO COM ANIMAÇÃO */}
                 <div
                   className={`flex flex-col justify-center items-center text-[11px] mt-2 rounded-md p-3 transition-all duration-300 ${
                     acrescimos.acrescimo > 0
@@ -517,9 +547,6 @@ export default function PricingCalculatorModern() {
                     }`}
                   >
                     <AnimatedNumber value={Number(acrescimos.acrescimo)} />%
-                  </span>
-                  <span className="text-[10px] text-neutral-400">
-                    {statusAcrescimo}
                   </span>
                 </div>
               </div>
