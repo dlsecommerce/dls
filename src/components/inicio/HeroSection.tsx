@@ -3,7 +3,7 @@
 import React, { useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { LogIn, HandMetal } from "lucide-react";
+import { HandMetal } from "lucide-react";
 import { LoadingBar, LoadingBarRef } from "@/components/ui/loading-bar";
 import { motion } from "framer-motion";
 
@@ -11,6 +11,7 @@ const HeroSection = () => {
   const router = useRouter();
   const loadingBarRef = useRef<LoadingBarRef>(null);
 
+  // Navegação (caso precise futuramente)
   const handleNavigate = (href: string) => {
     loadingBarRef.current?.start();
     router.push(href);
@@ -19,12 +20,18 @@ const HeroSection = () => {
     }, 1500);
   };
 
+  // Função de download usando o link fornecido
+  const handleDownload = () => {
+    const link = "https://github.com/dlsecommerce/dls/releases/download/v0.1.0/DLS.Ecommerce_0.1.0_x64-setup.exe";
+    window.open(link, "_blank");
+  };
+
   return (
     <section className="min-h-screen bg-gradient-background relative overflow-hidden flex flex-col items-center justify-start">
       {/* Barra de carregamento */}
       <LoadingBar ref={loadingBarRef} />
 
-      {/* Background Effects */}
+      {/* Efeitos de background */}
       <div className="absolute inset-0 bg-grid-pattern opacity-20 pointer-events-none"></div>
 
       {/* Container principal */}
@@ -40,34 +47,18 @@ const HeroSection = () => {
           o processo dos seus anúncios.
         </p>
 
-        {/* Botões */}
-        <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12 sm:mb-20 animate-slide-up">
+        {/* Botão de Download */}
+        <div className="flex justify-center mb-12 sm:mb-20 animate-slide-up">
           <motion.button
             whileHover={{
               y: -4,
               scale: 1.03,
               transition: { duration: 0.25, ease: "easeOut" },
             }}
-            onClick={() => handleNavigate("/login")}
-            className="flex items-center justify-center px-5 py-2 border border-neutral-700 rounded-lg text-[#d4d4d4] hover:text-white transition text-sm sm:text-base font-medium cursor-pointer"
-          >
-            Entrar
-            <LogIn
-              size={16}
-              className="ml-2 motion-safe:hover:animate-fade-out-in-x"
-            />
-          </motion.button>
-
-          <motion.button
-            whileHover={{
-              y: -4,
-              scale: 1.03,
-              transition: { duration: 0.25, ease: "easeOut" },
-            }}
-            onClick={() => handleNavigate("/cadastro")}
+            onClick={handleDownload}
             className="px-6 py-2 bg-sky-600 text-white rounded-lg text-sm sm:text-base font-medium flex items-center justify-center hover:bg-sky-700 transition cursor-pointer"
           >
-            Criar conta
+            Download
             <HandMetal
               size={16}
               className="ml-2 motion-safe:hover:animate-fade-out-in-y"
@@ -75,7 +66,7 @@ const HeroSection = () => {
           </motion.button>
         </div>
 
-        {/* Dashboard Preview */}
+        {/* Preview do Dashboard */}
         <div className="flex justify-center animate-slide-up mb-12 sm:mb-16 px-2">
           <Image
             src="/images/dashboard.PNG"
@@ -88,7 +79,7 @@ const HeroSection = () => {
         </div>
       </div>
 
-      {/* Bottom Gradient Fade */}
+      {/* Fade na parte de baixo */}
       <div className="absolute bottom-0 left-0 right-0 h-20 sm:h-32 bg-gradient-to-t from-background to-transparent pointer-events-none"></div>
     </section>
   );
