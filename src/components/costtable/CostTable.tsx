@@ -34,7 +34,7 @@ import MassEditionModal from "@/components/costtable/MassEditionModal";
 import ConfirmDeleteModal from "@/components/costtable/ConfirmDeleteModal";
 import ConfirmImportModal from "@/components/costtable/ConfirmImportModal";
 
-import { exportFilteredToXlsx } from "@/components/costtable/helpers/exportToXlsx";
+import { exportFilteredToXlsx } from "@/components/costtable/helpers/exportFilteredToXlsx";
 import { importFromXlsxOrCsv } from "@/components/costtable/helpers/importFromXlsx";
 
 type Custo = CustoType;
