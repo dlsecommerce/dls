@@ -27,10 +27,44 @@ export default function MassEditionModal({
   const baixarModeloInclusao = () => {
     const headers = ["Código", "Marca", "Custo Atual", "Custo Antigo", "NCM"];
     const ws = XLSX.utils.aoa_to_sheet([headers]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Inclusao");
 
-    // 🕒 Gera data e hora formatadas
+    // 💙 Cabeçalho azul sem bordas
+    const headerStyle = {
+      font: { bold: true, color: { rgb: "FFFFFF" } },
+      fill: { fgColor: { rgb: "1A8CEB" } }, // azul DLS
+      alignment: { horizontal: "center", vertical: "center" },
+    };
+
+    // Aplica o estilo do cabeçalho
+    headers.forEach((_, idx) => {
+      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: idx });
+      if (!ws[cellAddress]) ws[cellAddress] = {};
+      ws[cellAddress].s = headerStyle;
+    });
+
+    // Ajuste das larguras das colunas
+    ws["!cols"] = [
+      { wch: 15 },
+      { wch: 20 },
+      { wch: 15 },
+      { wch: 15 },
+      { wch: 12 },
+    ];
+
+    // Dados de exemplo
+    const sampleRows = [
+      ["12345", "Liverpool", "250.00", "240.00", "851821"],
+      ["67890", "SKP", "310.00", "299.00", "852729"],
+      ["11223", "IZZO", "199.00", "189.00", "853690"],
+      ["44556", "Fischer", "430.00", "415.00", "854370"],
+      ["77889", "Trapp", "285.00", "270.00", "851890"],
+    ];
+    XLSX.utils.sheet_add_aoa(ws, sampleRows, { origin: -1 });
+
+    // Cria e salva o arquivo
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inclusão");
+
     const now = new Date();
     const dia = String(now.getDate()).padStart(2, "0");
     const mes = String(now.getMonth() + 1).padStart(2, "0");
@@ -40,7 +74,6 @@ export default function MassEditionModal({
     const seg = String(now.getSeconds()).padStart(2, "0");
 
     const nomeArquivo = `INCLUSÃO - ${dia}-${mes}-${ano} ${hora}-${min}-${seg}.xlsx`;
-
     XLSX.writeFile(wb, nomeArquivo);
   };
 
@@ -84,7 +117,7 @@ export default function MassEditionModal({
 
           {/* Botões */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Roxo - Inclusão */}
+            {/* 🟣 Inclusão - botão roxo */}
             <Button
               className="w-full bg-gradient-to-r from-[#7c3aed] to-[#6d28d9] text-white 
                          rounded-xl shadow-md hover:scale-[1.03] hover:shadow-lg 
@@ -95,7 +128,7 @@ export default function MassEditionModal({
               Baixar Modelo de Inclusão
             </Button>
 
-            {/* Laranja - Alteração */}
+            {/* 🟠 Alteração */}
             <Button
               className="w-full bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white 
                          rounded-xl shadow-md hover:scale-[1.03] hover:shadow-lg 
@@ -142,7 +175,7 @@ export default function MassEditionModal({
           </div>
 
           <p className="text-sm text-neutral-400 italic">
-          Mantenha os cabeçalhos exatamente como no modelo para evitar erros na importação.
+            Mantenha os cabeçalhos exatamente como no modelo para evitar erros na importação.
           </p>
         </motion.div>
 
