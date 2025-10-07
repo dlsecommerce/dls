@@ -31,6 +31,8 @@ import ModalNewCost, {
   Custo as CustoType,
 } from "@/components/costtable/ModalNewCost";
 import MassEditionModal from "@/components/costtable/MassEditionModal";
+import ConfirmDeleteModal from "@/components/costtable/ConfirmDeleteModal";
+import ConfirmImportModal from "@/components/costtable/ConfirmImportModal";
 
 import { exportFilteredToXlsx } from "@/components/costtable/helpers/exportToXlsx";
 import { importFromXlsxOrCsv } from "@/components/costtable/helpers/importFromXlsx";
@@ -38,6 +40,7 @@ import { importFromXlsxOrCsv } from "@/components/costtable/helpers/importFromXl
 type Custo = CustoType;
 
 export default function CostTable() {
+  /* === Estados === */
   const [rows, setRows] = useState<Custo[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -61,8 +64,23 @@ export default function CostTable() {
     ["Custo Antigo"]: "",
     ["NCM"]: "",
   });
+
   const [openMass, setOpenMass] = useState(false);
+  const [openImport, setOpenImport] = useState(false);
+  const [importCount, setImportCount] = useState(0);
+  const [previewRows, setPreviewRows] = useState<any[]>([]);
+  const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]); // ⚠️ novo estado
+
+  const [selectedRows, setSelectedRows] = useState<Custo[]>([]);
+  const [openDelete, setOpenDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | null }>({
+    message: "",
+    type: null,
+  });
 
   /* === carregar todas as marcas === */
   const loadAllBrands = async () => {
@@ -117,7 +135,7 @@ export default function CostTable() {
 
     const { data, error } = await buildQuery(false).range(from, to);
     if (!error && data) setRows(data as Custo[]);
-    setTimeout(() => setLoading(false), 400); // adiciona um pequeno delay pra transição suave
+    setTimeout(() => setLoading(false), 400);
   };
 
   useEffect(() => {
@@ -140,7 +158,7 @@ export default function CostTable() {
     }
   };
 
-  /* === exportar RELATÓRIO === */
+  /* === EXPORTAÇÃO === */
   const fetchAllFiltered = async (): Promise<Custo[]> => {
     const { count } = await buildQuery(true);
     const total = count || 0;
@@ -158,8 +176,9 @@ export default function CostTable() {
   };
 
   const handleExport = async () => {
-    const rows = await fetchAllFiltered();
-    if (!rows || rows.length === 0) {
+    let exportData = selectedRows.length > 0 ? selectedRows : await fetchAllFiltered();
+
+    if (!exportData || exportData.length === 0) {
       alert("Nenhum dado encontrado para exportar.");
       return;
     }
@@ -171,44 +190,15 @@ export default function CostTable() {
       .toString()
       .padStart(2, "0")}m`;
 
-    let filename = "RELATÓRIO";
-    if (selectedBrands.length === 1) {
-      filename += ` ${selectedBrands[0].toUpperCase()}`;
-    } else if (selectedBrands.length > 1) {
-      const abbreviations = selectedBrands
-        .map((m) => m.trim().substring(0, 3).toUpperCase())
-        .slice(0, 3)
-        .join(" ");
-      filename += ` ${abbreviations}`;
-      if (selectedBrands.length > 3) filename += " ETC";
-    }
+    let filename =
+      selectedRows.length > 0
+        ? `RELATÓRIO-SELECIONADOS-${dateStr}-${timeStr}.xlsx`
+        : `RELATÓRIO-${dateStr}-${timeStr}.xlsx`;
 
-    filename += ` - ${dateStr} ${timeStr}.xlsx`;
-
-    exportFilteredToXlsx(rows, filename);
+    exportFilteredToXlsx(exportData, filename);
   };
 
-  /* === importar === */
-  const handleImport = async (file: File) => {
-    const imported = await importFromXlsxOrCsv(file);
-    if (imported.length === 0) {
-      alert("Nenhum registro válido encontrado no arquivo.");
-      return;
-    }
-    const { error } = await supabase
-      .from("custos")
-      .upsert(imported, { onConflict: "Código" });
-    if (error) {
-      console.error(error);
-      alert("Erro ao importar.");
-      return;
-    }
-    alert(`Importação concluída: ${imported.length} registros processados.`);
-    loadData(currentPage, itemsPerPage);
-    loadAllBrands();
-  };
-
-  /* === crud === */
+  /* === CRUD === */
   const openCreate = () => {
     setMode("create");
     setForm({
@@ -233,32 +223,99 @@ export default function CostTable() {
     setOpenNew(true);
   };
 
-  // ✅ Agora o save apenas atualiza os dados
   const saveForm = async () => {
     await loadData(currentPage, itemsPerPage);
     await loadAllBrands();
   };
 
-  const deleteRow = async (row: Custo) => {
-    if (!confirm(`Excluir o item ${row["Código"]}?`)) return;
-    const { error } = await supabase
-      .from("custos")
-      .delete()
-      .eq("Código", row["Código"]);
-    if (error) alert("Erro ao excluir.");
-    else {
-      loadData(currentPage, itemsPerPage);
-      loadAllBrands();
+  const deleteSelected = async () => {
+    if (selectedRows.length === 0) return;
+    try {
+      setDeleting(true);
+      const codigos = selectedRows.map((r) => r["Código"]);
+      const { error } = await supabase.from("custos").delete().in("Código", codigos);
+      if (error) throw error;
+
+      setOpenDelete(false);
+      setSelectedRows([]);
+      await loadData(currentPage, itemsPerPage);
+      await loadAllBrands();
+
+      setToast({
+        message:
+          selectedRows.length === 1
+            ? "1 produto excluído com sucesso."
+            : `${selectedRows.length} produtos excluídos com sucesso.`,
+        type: "success",
+      });
+    } catch (err) {
+      console.error("Erro ao excluir:", err);
+      setToast({ message: "Erro ao excluir produtos.", type: "error" });
+    } finally {
+      setDeleting(false);
+      setTimeout(() => setToast({ message: "", type: null }), 3000);
+    }
+  };
+
+  /* === IMPORTAÇÃO === */
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    try {
+      // Novo retorno com avisos
+      const { data: previewData, warnings } = await importFromXlsxOrCsv(f, true);
+      setImportFile(f);
+      setImportCount(previewData.length);
+      setPreviewRows(previewData.slice(0, 5));
+      setWarnings(warnings || []);
+      setOpenImport(true);
+    } catch (err) {
+      console.error("Erro ao ler arquivo:", err);
+      setToast({ message: "Erro ao ler o arquivo.", type: "error" });
+    } finally {
+      e.currentTarget.value = "";
+    }
+  };
+
+  const confirmImport = async () => {
+    if (!importFile) return;
+    setImporting(true);
+    try {
+      await importFromXlsxOrCsv(importFile);
+      await loadData();
+      setToast({ message: "Importação concluída com sucesso!", type: "success" });
+    } catch (err) {
+      console.error(err);
+      setToast({ message: "Erro ao importar arquivo.", type: "error" });
+    } finally {
+      setImporting(false);
+      setOpenImport(false);
+      setImportFile(null);
+      setTimeout(() => setToast({ message: "", type: null }), 3000);
     }
   };
 
   const totalPages = Math.ceil(totalItems / itemsPerPage);
 
+  /* === UI === */
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-8">
+      {/* Toast */}
+      {toast.type && (
+        <div
+          className={`fixed bottom-6 right-6 px-4 py-3 rounded-xl shadow-lg text-white text-sm transition-all duration-300 ${
+            toast.type === "success" ? "bg-[#22c55e]" : "bg-[#ef4444]"
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto space-y-6">
         <GlassmorphicCard>
+          {/* === Barra superior === */}
           <div className="flex flex-wrap justify-between items-center border-b border-neutral-700 p-4 gap-3">
+            {/* Busca */}
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 w-5 h-5" />
               <Input
@@ -269,6 +326,7 @@ export default function CostTable() {
               />
             </div>
 
+            {/* Ações */}
             <div className="flex flex-wrap items-center gap-3">
               <FilterBrandsPopover
                 allBrands={allBrands}
@@ -278,22 +336,25 @@ export default function CostTable() {
                 onOpenChange={setFilterOpen}
               />
 
+              {/* INPUT INVISÍVEL */}
               <input
                 type="file"
                 ref={fileInputRef}
                 accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
                 className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) handleImport(f);
-                  e.currentTarget.value = "";
-                }}
+                onChange={handleFileSelect}
               />
 
+              {/* BOTÃO IMPORTAR */}
               <Button
                 variant="outline"
                 className="border-neutral-700 hover:scale-105 transition-all text-white rounded-xl cursor-pointer"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => {
+                  if (fileInputRef.current) {
+                    fileInputRef.current.value = ""; // 🔹 limpa o input antes
+                    fileInputRef.current.click();    // 🔹 permite reimportar o mesmo arquivo
+                  }
+                }}
               >
                 <Upload className="w-4 h-4 mr-2" /> Importar
               </Button>
@@ -304,6 +365,15 @@ export default function CostTable() {
                 onClick={handleExport}
               >
                 <Download className="w-4 h-4 mr-2" /> Exportar
+              </Button>
+
+              <Button
+                variant="outline"
+                className="border-neutral-700 hover:scale-105 transition-all text-white rounded-xl cursor-pointer"
+                disabled={selectedRows.length === 0}
+                onClick={() => setOpenDelete(true)}
+              >
+                <TrashIcon className="w-4 h-4 mr-2" /> Excluir Selecionado(s)
               </Button>
 
               <Button
@@ -322,24 +392,43 @@ export default function CostTable() {
             </div>
           </div>
 
-          {/* Tabela */}
+          {/* === TABELA === */}
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="border-neutral-700">
-                  {["Código", "Marca", "Custo Atual", "Custo Antigo", "NCM"].map(
-                    (col) => (
-                      <TableHead
-                        key={col}
-                        className="text-neutral-400 font-semibold cursor-pointer"
-                        onClick={() => handleSort(col)}
-                      >
-                        <div className="flex items-center gap-1">
-                          {col} <ArrowUpDown className="h-3 w-3 opacity-50" />
-                        </div>
-                      </TableHead>
-                    )
-                  )}
+                  <TableHead className="w-[40px]">
+                    <input
+                      type="checkbox"
+                      className="accent-[#7c3aed] w-4 h-4 cursor-pointer"
+                      checked={selectedRows.length === rows.length && rows.length > 0}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedRows(rows);
+                        else setSelectedRows([]);
+                      }}
+                    />
+                  </TableHead>
+
+                  {["Código", "Marca", "Custo Atual", "Custo Antigo", "NCM"].map((col) => (
+                    <TableHead
+                      key={col}
+                      onClick={() => handleSort(col)}
+                      className={`font-semibold cursor-pointer transition-colors select-none 
+                      hover:text-white ${
+                        sortColumn === col ? "text-white" : "text-neutral-400"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1">
+                        {col}
+                        <ArrowUpDown
+                          className={`h-3 w-3 transition-colors ${
+                            sortColumn === col ? "text-white" : "text-neutral-500"
+                          }`}
+                        />
+                      </div>
+                    </TableHead>
+                  ))}
+
                   <TableHead className="w-[120px] text-neutral-400 font-semibold">
                     Ações
                   </TableHead>
@@ -349,27 +438,41 @@ export default function CostTable() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6}>
-                      <div className="flex justify-center items-center py-16 animate-fadeIn">
+                    <TableCell colSpan={7}>
+                      <div className="flex justify-center items-center py-16">
                         <Loader className="animate-spin h-8 w-8 text-neutral-400" />
                       </div>
                     </TableCell>
                   </TableRow>
                 ) : rows.length === 0 ? (
                   <TableRow>
-                    <TableCell
-                      colSpan={6}
-                      className="text-center text-neutral-400 py-8"
-                    >
+                    <TableCell colSpan={7} className="text-center text-neutral-400 py-8">
                       Nenhum registro encontrado
                     </TableCell>
                   </TableRow>
                 ) : (
                   rows.map((c, i) => (
-                    <tr
+                    <TableRow
                       key={`${c["Código"]}-${i}`}
                       className="border-b border-neutral-700 hover:bg-white/5 transition-colors"
                     >
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          className="accent-[#7c3aed] w-4 h-4 cursor-pointer"
+                          checked={selectedRows.some((r) => r["Código"] === c["Código"])}
+                          onChange={(e) => {
+                            if (e.target.checked)
+                              setSelectedRows([...selectedRows, c]);
+                            else
+                              setSelectedRows(
+                                selectedRows.filter(
+                                  (r) => r["Código"] !== c["Código"]
+                                )
+                              );
+                          }}
+                        />
+                      </TableCell>
                       <TableCell className="text-white">{c["Código"]}</TableCell>
                       <TableCell>
                         <Badge className="bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white">
@@ -382,9 +485,8 @@ export default function CostTable() {
                       <TableCell className="text-neutral-300">
                         R$ {Number(c["Custo Antigo"] || 0).toFixed(2)}
                       </TableCell>
-                      <TableCell className="text-neutral-300">
-                        {c["NCM"]}
-                      </TableCell>
+                      <TableCell className="text-neutral-300">{c["NCM"]}</TableCell>
+
                       <TableCell className="flex gap-2 justify-center">
                         <Button
                           size="sm"
@@ -395,17 +497,21 @@ export default function CostTable() {
                         >
                           <EditIcon className="h-4 w-4" />
                         </Button>
+
                         <Button
                           size="sm"
                           variant="ghost"
                           className="text-white hover:text-[#ef4444] hover:scale-105 transition-all cursor-pointer"
-                          onClick={() => deleteRow(c)}
+                          onClick={() => {
+                            setSelectedRows([c]);
+                            setOpenDelete(true);
+                          }}
                           title="Excluir"
                         >
                           <TrashIcon className="h-4 w-4" />
                         </Button>
                       </TableCell>
-                    </tr>
+                    </TableRow>
                   ))
                 )}
               </TableBody>
@@ -413,6 +519,7 @@ export default function CostTable() {
           </div>
         </GlassmorphicCard>
 
+        {/* Paginação */}
         <div className="mt-2">
           <TableControls
             currentPage={currentPage}
@@ -428,6 +535,7 @@ export default function CostTable() {
         </div>
       </div>
 
+      {/* Modais */}
       <ModalNewCost
         open={openNew}
         onOpenChange={setOpenNew}
@@ -437,10 +545,29 @@ export default function CostTable() {
         onSave={saveForm}
       />
 
+      <ConfirmDeleteModal
+        open={openDelete}
+        onOpenChange={setOpenDelete}
+        count={selectedRows.length}
+        onConfirm={deleteSelected}
+        loading={deleting}
+      />
+
       <MassEditionModal
         open={openMass}
         onOpenChange={setOpenMass}
         onExportModeloAlteracao={handleExport}
+      />
+
+      {/* Modal de Importação */}
+      <ConfirmImportModal
+        open={openImport}
+        onOpenChange={setOpenImport}
+        count={importCount}
+        onConfirm={confirmImport}
+        loading={importing}
+        preview={previewRows}
+        warnings={warnings}
       />
     </div>
   );

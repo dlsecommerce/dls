@@ -10,7 +10,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { HelpCircle, DollarSign, X, Loader } from "lucide-react";
+import { HelpCircle, DollarSign, Loader } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 export type Custo = {
@@ -30,7 +30,7 @@ type Props = {
   onSave: () => void;
 };
 
-export default function ModalNovoCusto({
+export default function ModalNewCost({
   open,
   onOpenChange,
   mode,
@@ -46,7 +46,7 @@ export default function ModalNovoCusto({
 
   const handleSave = async () => {
     if (!form["Código"] || !form["Marca"]) {
-      setToast({ message: "Preencha Código e Marca antes de incluir.", type: "error" });
+      setToast({ message: "Preencha Código e Marca antes de salvar.", type: "error" });
       return;
     }
 
@@ -61,23 +61,31 @@ export default function ModalNovoCusto({
         ["NCM"]: form["NCM"] || null,
       };
 
-      const { error } =
-        mode === "create"
-          ? await supabase.from("custos").insert([payload])
-          : await supabase.from("custos").update(payload).eq("Código", form["Código"]);
+      let error = null;
+
+      if (mode === "create") {
+        const { error: insertError } = await supabase.from("custos").insert([payload]);
+        error = insertError;
+      } else {
+        const { error: updateError } = await supabase
+          .from("custos")
+          .update(payload)
+          .eq("Código", form["Código"]);
+        error = updateError;
+      }
 
       if (error) throw error;
 
       setToast({
-        message: mode === "create" ? "Custo incluído com sucesso." : "Custo atualizado.",
+        message: mode === "create" ? "Custo incluído com sucesso." : "Custo atualizado com sucesso.",
         type: "success",
       });
 
       onOpenChange(false);
       onSave();
     } catch (err: any) {
-      console.error("Erro ao incluir custo:", err.message || err);
-      setToast({ message: "Erro ao incluir custo.", type: "error" });
+      console.error("Erro ao salvar custo:", err.message || err);
+      setToast({ message: "Erro ao salvar custo.", type: "error" });
     } finally {
       setSaving(false);
       setTimeout(() => setToast({ message: "", type: null }), 3000);
@@ -103,14 +111,6 @@ export default function ModalNovoCusto({
                      bg-[#0f0f0f] border border-neutral-700 rounded-2xl shadow-2xl p-6 
                      max-w-lg w-[90%] transition-all duration-300 ease-in-out"
         >
-          {/* Botão X funcional */}
-          <button
-            className="absolute right-4 top-4 text-white cursor-pointer hover:scale-110 transition-all"
-            title="Fechar"
-            onClick={() => onOpenChange(false)}
-          >
-          </button>
-
           <DialogHeader>
             <div className="flex items-center gap-2">
               <DollarSign className="w-5 h-5 text-white" />
@@ -125,7 +125,9 @@ export default function ModalNovoCusto({
                   className="absolute left-6 top-0 w-56 bg-transparent text-neutral-400 
                              text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                 >
-                  Preencha os campos e clique em Incluir.
+                  {mode === "create"
+                    ? "Preencha os campos e clique em Incluir."
+                    : "Edite os campos e clique em Salvar."}
                 </div>
               </div>
             </div>
@@ -156,7 +158,7 @@ export default function ModalNovoCusto({
               <Label className="text-neutral-300">Custo Atual</Label>
               <Input
                 type="text"
-                value={String(form["Custo Atual"])}
+                value={String(form["Custo Atual"] || "")}
                 onChange={(e) => setForm({ ...form, ["Custo Atual"]: e.target.value })}
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
                 placeholder="Ex: 89.90"
@@ -166,7 +168,7 @@ export default function ModalNovoCusto({
               <Label className="text-neutral-300">Custo Antigo</Label>
               <Input
                 type="text"
-                value={String(form["Custo Antigo"])}
+                value={String(form["Custo Antigo"] || "")}
                 onChange={(e) => setForm({ ...form, ["Custo Antigo"]: e.target.value })}
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
                 placeholder="Ex: 79.90"
@@ -199,7 +201,13 @@ export default function ModalNovoCusto({
               onClick={handleSave}
               disabled={saving}
             >
-              {saving ? <Loader className="h-5 w-5 animate-spin" /> : "Incluir"}
+              {saving ? (
+                <Loader className="h-5 w-5 animate-spin" />
+              ) : mode === "create" ? (
+                "Incluir"
+              ) : (
+                "Salvar"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

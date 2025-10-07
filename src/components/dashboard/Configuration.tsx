@@ -135,7 +135,7 @@ export default function Configuration() {
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
                     tab === id
                       ? "bg-[#2699fe]/10 text-[#2699fe] border-l-2 border-[#2699fe]"
-                      : "text-gray-400 hover:bg-white/5"
+                      : "text-neutral-400 hover:bg-white/5"
                   }`}
                   onClick={() => {
                     setTab(id as any);
