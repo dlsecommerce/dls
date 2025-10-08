@@ -20,6 +20,7 @@ import {
   Download,
   Edit as EditIcon,
   Loader,
+  Layers,
   Search,
   Trash2 as TrashIcon,
   Upload,
@@ -392,7 +393,7 @@ export default function CostTable() {
                 className="bg-gradient-to-r from-[#7c3aed] to-[#6d28d9] hover:scale-105 transition-all rounded-xl text-white cursor-pointer"
                 onClick={() => setOpenMass(true)}
               >
-                Edição em Massa
+                <Layers className="w-4 h-4 mr-2" /> Edição em Massa
               </Button>
 
               <Button

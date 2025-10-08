@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { motion, useMotionValue, useTransform, animate } from "framer-motion";
 import {
   Plus,
-  Sparkles,
+  Layers,
   TrendingUp,
   Calculator,
   HelpCircle,
@@ -27,10 +27,15 @@ type Calculo = {
   marketing: string;
 };
 
-// componente de contagem animada suave
+// ✅ componente de contagem animada suave (com vírgula e separador de milhar)
 const AnimatedNumber = ({ value }: { value: number }) => {
   const motionValue = useMotionValue(0);
-  const rounded = useTransform(motionValue, (latest) => latest.toFixed(2));
+  const formatted = useTransform(motionValue, (latest) =>
+    latest.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  );
 
   useEffect(() => {
     const controls = animate(motionValue, value, {
@@ -40,7 +45,7 @@ const AnimatedNumber = ({ value }: { value: number }) => {
     return controls.stop;
   }, [value]);
 
-  return <motion.span>{rounded}</motion.span>;
+  return <motion.span>{formatted}</motion.span>;
 };
 
 export default function PricingCalculatorModern() {
@@ -307,7 +312,7 @@ export default function PricingCalculatorModern() {
           animate={{ opacity: 1, y: 0 }}
         >
           <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-5 h-5 text-[#1a8ceb]" />
+            <Layers className="w-5 h-5 text-[#1a8ceb]" />
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               Composição
               <HelpTooltip text="Composição de Custos." />
