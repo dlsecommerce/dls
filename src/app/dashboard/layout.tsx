@@ -6,6 +6,7 @@ import AppSidebar from "@/components/dashboard/AppSidebar";
 import { LoadingBar, LoadingBarRef } from "@/components/ui/loading-bar";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import { useTranslation } from "react-i18next";
+import ChatBubble from "@/components/chat/ChatBubble"; // ✅ import do chat
 
 export default function DashboardLayout({
   children,
@@ -14,14 +15,12 @@ export default function DashboardLayout({
 }) {
   const { t } = useTranslation();
   const [collapsed, setCollapsed] = useState(false);
-  const [pageTitle, setPageTitle] = useState(t("dashboard")); // traduzido
-
-  // 🔹 ref do LoadingBar (consistente com AppSidebar)
+  const [pageTitle, setPageTitle] = useState(t("dashboard"));
   const loadingRef = useRef<LoadingBarRef | null>(null);
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-[#0a0a0a]">
+      <div className="min-h-screen flex w-full bg-[#0a0a0a] relative">
         {/* Sidebar lateral */}
         <AppSidebar
           collapsed={collapsed}
@@ -47,10 +46,13 @@ export default function DashboardLayout({
           </div>
 
           {/* Conteúdo da página */}
-          <div className="flex-1 overflow-auto">{children}</div>
+          <div className="flex-1 overflow-auto relative">{children}</div>
+
+          {/* 🔹 Chat flutuante no canto inferior direito */}
+          <ChatBubble />
         </main>
 
-        {/* 🔹 Barra de carregamento global */}
+        {/* Barra de carregamento global */}
         <LoadingBar ref={loadingRef} />
       </div>
     </SidebarProvider>
