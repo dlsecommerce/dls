@@ -10,56 +10,41 @@ import Image from "next/image";
 export default function Callback() {
   const router = useRouter();
   const loadingBarRef = useRef<LoadingBarRef>(null);
+  const [message, setMessage] = useState("Conectando com o Google...");
   const [fade, setFade] = useState<"in" | "out">("in");
-  const [message, setMessage] = useState("Entrando com o Google...");
 
   useEffect(() => {
     const handleAuth = async () => {
       try {
         loadingBarRef.current?.start();
+        setMessage("Validando sua conta...");
 
-        const { data, error } = await supabase.auth.exchangeCodeForSession(
-          window.location.href
-        );
+        // 🔹 Troca o código do Google por sessão diretamente
+        const { data, error } = await supabase.auth.exchangeCodeForSession(window.location.href);
 
-        if (error) {
-          console.error("❌ Erro Supabase:", error.message);
-          setMessage("Erro ao autenticar, retornando...");
-          await new Promise((r) => setTimeout(r, 600));
-          router.replace("/inicio");
+        if (error || !data.session) {
+          console.error("❌ Erro Supabase:", error?.message);
+          setMessage("Erro na autenticação, retornando...");
+          setTimeout(() => router.replace("/inicio"), 600);
           return;
         }
 
-        const session = data?.session;
-        if (!session) {
-          setMessage("Sessão não encontrada, retornando...");
-          await new Promise((r) => setTimeout(r, 600));
-          router.replace("/inicio");
-          return;
-        }
-
-        const user = session.user;
-        const createdAt = new Date(user.created_at).getTime();
-        const updatedAt = new Date(user.updated_at).getTime();
-        const isNewUser = Math.abs(updatedAt - createdAt) < 5000;
-
-        // Finaliza o loading e inicia fade-out
+        // ✅ Sessão obtida instantaneamente
         loadingBarRef.current?.finish();
         setFade("out");
 
-        // Aguarda a animação terminar
+        // Detecta se é novo usuário (diferença de até 5 segundos)
+        const createdAt = new Date(data.session.user.created_at).getTime();
+        const updatedAt = new Date(data.session.user.updated_at).getTime();
+        const isNewUser = Math.abs(updatedAt - createdAt) < 5000;
+
+        // Pequeno delay apenas para a animação
         setTimeout(() => {
-          if (isNewUser) {
-            console.log("🆕 Novo usuário → /inicio");
-            router.replace("/inicio");
-          } else {
-            console.log("🔁 Usuário existente → /dashboard");
-            router.replace("/dashboard");
-          }
-        }, 400);
+          router.replace(isNewUser ? "/inicio" : "/dashboard");
+        }, 300);
       } catch (err) {
         console.error("⚠️ Erro inesperado:", err);
-        setMessage("Erro inesperado, retornando...");
+        setMessage("Erro inesperado...");
         setTimeout(() => router.replace("/inicio"), 600);
       }
     };
@@ -78,7 +63,6 @@ export default function Callback() {
           transition={{ duration: 0.4, ease: "easeInOut" }}
           className="flex flex-col items-center justify-center h-screen bg-background text-foreground"
         >
-          {/* 🔹 Logo central */}
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -86,16 +70,14 @@ export default function Callback() {
             className="flex flex-col items-center gap-6"
           >
             <Image
-              src="/logo.svg" // coloque seu logo aqui
+              src="/logo.svg"
               alt="Logo"
               width={120}
               height={120}
-              className="animate-pulse"
               priority
+              className="animate-pulse"
             />
-
             <LoadingBar ref={loadingBarRef} />
-
             <motion.p
               className="text-sm text-gray-500 mt-4"
               animate={{ opacity: [0.3, 1, 0.3] }}

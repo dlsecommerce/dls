@@ -2,36 +2,48 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { supabase } from "@/integrations/supabase/client";
+import { createBrowserClient } from "@supabase/ssr";
 
-/**
- * Hook de verificação global de sessão do Supabase
- * Garante redirecionamento profissional:
- * - Se logado → vai direto ao dashboard
- * - Se não logado → vai ao início
- */
 export function useInitialRedirect() {
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    const verifySession = async () => {
-      const { data } = await supabase.auth.getSession();
-      const session = data?.session;
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
 
-      // ✅ Usuário logado: se estiver em / ou /inicio → vai direto pro dashboard
-      if (session && (pathname === "/" || pathname === "/inicio" || pathname === "/login")) {
-        router.replace("/dashboard");
-        return;
-      }
+    const checkSession = async () => {
+      try {
+        // Evita conflito durante callback ou logout
+        if (
+          pathname.startsWith("/auth/callback") ||
+          pathname === "/logout"
+        ) {
+          return;
+        }
 
-      // 🚫 Usuário não logado: se tentar acessar dashboard → volta pro início
-      if (!session && pathname.startsWith("/dashboard")) {
-        router.replace("/inicio");
-        return;
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        // Usuário logado → manda pro dashboard
+        if (session && pathname === "/inicio") {
+          router.replace("/dashboard");
+        }
+
+        // Usuário não logado → bloqueia acesso ao dashboard
+        if (!session && pathname.startsWith("/dashboard")) {
+          router.replace("/inicio");
+        }
+      } catch (error) {
+        console.error("Erro ao verificar sessão:", error);
       }
     };
 
-    verifySession();
+    // Rodar com pequeno delay evita 404 em transições rápidas
+    const timeout = setTimeout(checkSession, 150);
+    return () => clearTimeout(timeout);
   }, [pathname, router]);
 }

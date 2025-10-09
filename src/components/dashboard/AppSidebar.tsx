@@ -369,7 +369,7 @@ export default function AppSidebar({
           className="hover:bg-red-500/10 text-red-500 hover:text-red-400 rounded-xl mt-2"
           onClick={() => setPageTitle("Sair")}
         >
-          <Link href="/login" className="flex items-center gap-3 px-3 py-2.5">
+          <Link href="/inicio" className="flex items-center gap-3 px-3 py-2.5">
             <LogOut className="w-5 h-5 group-hover:text-red-400" />
             {!collapsed && <span className="font-medium">Sair</span>}
           </Link>

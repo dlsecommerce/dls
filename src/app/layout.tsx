@@ -6,8 +6,7 @@ import { ClientWrapper } from "@/components/client/ClientWrapper";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
 
-const siteUrl =
-  process.env.NEXT_PUBLIC_SITE_URL ?? "https://pikotshop.com.br";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://pikotshop.com.br";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -49,7 +48,7 @@ export default function RootLayout({
       <body className={inter.className}>
         <Providers>
           <main className="relative z-10 text-foreground">
-            {/* ✅ o ClientWrapper agora é client-safe */}
+            {/* ✅ O ClientWrapper agora é apenas um container sem lógica */}
             <ClientWrapper>{children}</ClientWrapper>
           </main>
         </Providers>

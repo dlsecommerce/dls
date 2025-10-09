@@ -1,31 +1,29 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { createBrowserClient } from "@supabase/ssr";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 
 export function useLogout() {
-  const router = useRouter();
-
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  const supabase = createClientComponentClient();
 
   const handleLogout = async () => {
     try {
       const { error } = await supabase.auth.signOut();
 
       if (error) {
+        console.error("Erro ao sair:", error.message);
         toast.error("Erro ao sair, tente novamente.");
         return;
       }
 
-      toast.success("Você saiu da sua conta.");
-      router.replace("/login");
+      toast.success("Saindo da sua conta...");
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      window.location.replace("/inicio");
     } catch (err) {
-      console.error("Erro no logout:", err);
+      console.error("Erro inesperado no logout:", err);
       toast.error("Não foi possível sair.");
+      window.location.replace("/inicio");
     }
   };
 
