@@ -1,4 +1,4 @@
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -15,12 +15,11 @@ export async function middleware(req: NextRequest) {
   const referer = req.headers.get("referer") || "";
 
   console.log(
-    "🧩 [EDGE] Path:", pathname,
+    "🧩 [NODE] Path:", pathname,
     "| Referer:", referer,
     "| Session:", session ? "✅ Sim" : "❌ Não"
   );
 
-  // 🔹 Ignora rotas públicas
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
@@ -30,16 +29,13 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
-  // 🔹 Usuário autenticado → redireciona rotas públicas para dashboard
   if (session && (pathname === "/" || pathname === "/login")) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
-  // 🔹 Usuário não autenticado → bloqueia dashboard
   if (!session && pathname.startsWith("/dashboard")) {
-    // Permite pós-login e pós-callback (delay do cookie)
     if (referer.includes("/login") || referer.includes("/auth/callback")) {
-      console.log("⚠️ Permissão temporária (Edge cookie delay)");
+      console.log("⚠️ Permissão temporária (pós-login)");
       return res;
     }
 
