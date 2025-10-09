@@ -19,6 +19,7 @@ export default function Callback() {
         loadingBarRef.current?.start();
         setMessage("Validando sua conta...");
 
+        // Troca o código OAuth pela sessão
         const { data, error } = await supabase.auth.exchangeCodeForSession(window.location.href);
 
         if (error || !data.session) {
@@ -34,7 +35,7 @@ export default function Callback() {
         loadingBarRef.current?.finish();
         setFade("out");
 
-        // ✅ Delay para o cookie sincronizar no Edge (Vercel)
+        // ✅ Aguarda o cookie propagar para o Edge Middleware
         setTimeout(() => {
           router.replace("/dashboard");
         }, 1000);
@@ -65,7 +66,14 @@ export default function Callback() {
             transition={{ duration: 0.6, ease: "easeOut" }}
             className="flex flex-col items-center gap-6"
           >
-            <Image src="/logo.svg" alt="Logo" width={120} height={120} priority className="animate-pulse" />
+            <Image
+              src="/logo.svg"
+              alt="Logo"
+              width={120}
+              height={120}
+              priority
+              className="animate-pulse"
+            />
             <LoadingBar ref={loadingBarRef} />
             <motion.p
               className="text-sm text-gray-500 mt-4"

@@ -43,10 +43,13 @@ export function useLogin() {
         return;
       }
 
-      // 🔹 Força a gravação do cookie da sessão no navegador
+      // 🔹 Força gravação imediata do cookie no navegador
       if (data.session) {
         await supabase.auth.setSession(data.session);
       }
+
+      // 🔹 Espera o cookie chegar ao Edge (Vercel)
+      await new Promise((r) => setTimeout(r, 800));
 
       toast.success("Login realizado com sucesso!");
       router.replace("/dashboard");
@@ -69,9 +72,7 @@ export function useLogin() {
         },
       });
 
-      if (error) {
-        toast.error(error.message);
-      }
+      if (error) toast.error(error.message);
     } catch (err) {
       console.error("Erro no login Google:", err);
       toast.error("Erro ao conectar com o Google.");

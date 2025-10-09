@@ -24,14 +24,14 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
-  // 🔹 Usuário autenticado → redireciona para dashboard
+  // 🔹 Usuário autenticado → redireciona rotas públicas para /dashboard
   if (session && (pathname === "/" || pathname === "/login")) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
-  // 🔹 Usuário não autenticado → bloqueia acesso ao dashboard
+  // 🔹 Usuário não autenticado → bloqueia dashboard
   if (!session && pathname.startsWith("/dashboard")) {
-    // ✅ Permite passagem temporária se veio do login ou callback
+    // ⚙️ Permite passagem temporária se veio do login ou callback
     if (referer.includes("/login") || referer.includes("/auth/callback")) {
       return res;
     }
