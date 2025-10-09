@@ -30,6 +30,7 @@ export function useLogin() {
     defaultValues: { identifier: "", password: "", remember: false },
   });
 
+  // 🔹 Login com email/senha
   const onSubmit = async (values: LoginFormValues) => {
     const { error } = await supabase.auth.signInWithPassword({
       email: values.identifier,
@@ -42,14 +43,15 @@ export function useLogin() {
     }
 
     toast.success("Login realizado com sucesso!");
-    router.push("/dashboard"); // 👈 redireciona pro dashboard
+    router.push("/dashboard");
   };
 
+  // 🔹 Login com Google
   const handleGoogleLogin = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/dashboard`, // 👈 já volta pro dashboard
+        redirectTo: `${window.location.origin}/auth/callback`,
       },
     });
 
