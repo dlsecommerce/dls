@@ -1,12 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // 🚀 Gera build totalmente estático (necessário para Tauri)
-  output: "export",
+  // ❌ Remove o "export" — o Vercel precisa de servidor ativo para middleware e SSR
+  // output: "export",
 
-  // ✅ Desativa a otimização automática de imagens (incompatível com export)
+  // ✅ Permite imagens externas sem precisar de otimização
   images: {
     unoptimized: true,
+    domains: ["lh3.googleusercontent.com", "avatars.githubusercontent.com"],
   },
 
   // 🔒 Evita falhas de build por erros de TypeScript
@@ -23,7 +24,14 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
 
   // 🧠 Caso use libs externas que precisem ser transpiladas
-  transpilePackages: ["@tauri-apps/api"],
+  transpilePackages: ["@tauri-apps/api", "@supabase/auth-helpers-nextjs"],
+
+  // 🚀 Garante compatibilidade total com Middleware e Edge Runtime
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "2mb",
+    },
+  },
 };
 
 export default nextConfig;
