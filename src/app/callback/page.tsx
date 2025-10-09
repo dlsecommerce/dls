@@ -19,52 +19,29 @@ export default function Callback() {
         loadingBarRef.current?.start();
         setMessage("Validando sua conta...");
 
-        const url = new URL(window.location.href);
-        const code = url.searchParams.get("code");
-
-        // Se não houver código de autenticação na URL
-        if (!code) {
-          setMessage("Código de autenticação ausente. Retornando...");
-          setTimeout(() => router.replace("/inicio"), 800);
-          return;
-        }
-
-        // 🔹 Troca o código pelo token da sessão
         const { data, error } = await supabase.auth.exchangeCodeForSession(window.location.href);
 
         if (error || !data.session) {
           console.error("❌ Erro Supabase:", error?.message);
           setMessage("Erro na autenticação, retornando...");
-          setTimeout(() => router.replace("/inicio"), 800);
+          setTimeout(() => router.replace("/"), 800);
           return;
         }
 
-        // ✅ Garante que a sessão esteja salva no cliente
         await supabase.auth.setSession(data.session);
 
-        // Verifica se o usuário foi autenticado corretamente
-        const { data: userData } = await supabase.auth.getUser();
-
-        if (!userData?.user) {
-          console.error("⚠️ Usuário não encontrado após o login");
-          setMessage("Falha ao confirmar login, retornando...");
-          setTimeout(() => router.replace("/inicio"), 800);
-          return;
-        }
-
-        // ✅ Sessão válida — finaliza animação e segue para o dashboard
         setMessage("Acesso autorizado, redirecionando...");
         loadingBarRef.current?.finish();
         setFade("out");
 
-        // Pequeno delay apenas para a transição visual terminar
+        // ✅ Delay para o cookie sincronizar no Edge (Vercel)
         setTimeout(() => {
           router.replace("/dashboard");
-        }, 400);
+        }, 1000);
       } catch (err) {
         console.error("⚠️ Erro inesperado:", err);
         setMessage("Erro inesperado...");
-        setTimeout(() => router.replace("/inicio"), 800);
+        setTimeout(() => router.replace("/"), 800);
       }
     };
 
@@ -88,14 +65,7 @@ export default function Callback() {
             transition={{ duration: 0.6, ease: "easeOut" }}
             className="flex flex-col items-center gap-6"
           >
-            <Image
-              src="/logo.svg"
-              alt="Logo"
-              width={120}
-              height={120}
-              priority
-              className="animate-pulse"
-            />
+            <Image src="/logo.svg" alt="Logo" width={120} height={120} priority className="animate-pulse" />
             <LoadingBar ref={loadingBarRef} />
             <motion.p
               className="text-sm text-gray-500 mt-4"

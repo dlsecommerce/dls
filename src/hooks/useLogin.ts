@@ -43,7 +43,11 @@ export function useLogin() {
         return;
       }
 
-      // ✅ Sessão válida — redireciona imediatamente
+      // 🔹 Força a gravação do cookie da sessão no navegador
+      if (data.session) {
+        await supabase.auth.setSession(data.session);
+      }
+
       toast.success("Login realizado com sucesso!");
       router.replace("/dashboard");
     } catch (err) {
@@ -52,15 +56,15 @@ export function useLogin() {
     }
   };
 
-  // 🔹 Login com Google (callback otimizado)
+  // 🔹 Login com Google (callback correto)
   const handleGoogleLogin = async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`, // caminho do seu Callback.tsx
+          redirectTo: `${window.location.origin}/auth/callback`, // ✅ Callback obrigatório
           queryParams: {
-            prompt: "select_account", // força seleção de conta
+            prompt: "select_account",
           },
         },
       });

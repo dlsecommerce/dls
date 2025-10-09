@@ -2,18 +2,6 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs";
 
-/**
- * 🔒 Middleware de autenticação Supabase — versão otimizada para produção
- *
- * Funcionalidades:
- * - Redireciona usuários autenticados que acessam rotas públicas (/, /login)
- *   → para /dashboard
- * - Redireciona usuários não autenticados que tentam acessar /dashboard
- *   → para /
- * - Evita loops e falhas de sessão logo após login pelo callback do Google
- * - Mantém cookies sincronizados com SSR (Edge Middleware)
- */
-
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
   const supabase = createMiddlewareClient({ req, res });
@@ -24,7 +12,7 @@ export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
   const referer = req.headers.get("referer") || "";
 
-  // 🔹 Ignora rotas públicas, arquivos e rotas internas
+  // Ignora rotas públicas e arquivos
   if (
     pathname.startsWith("/auth") ||
     pathname.startsWith("/_next") ||
@@ -36,27 +24,23 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
-  // 🔹 Usuário autenticado → redireciona rotas públicas para /dashboard
+  // Usuário logado → redireciona rotas públicas para /dashboard
   if (session && (pathname === "/" || pathname === "/login")) {
-    const redirectUrl = new URL("/dashboard", req.url);
-    redirectUrl.searchParams.set("from", pathname);
-    return NextResponse.redirect(redirectUrl);
+    return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
-  // 🔹 Usuário não autenticado → bloqueia acesso a rotas protegidas
+  // Usuário não logado → bloqueia acesso ao dashboard
   if (!session && pathname.startsWith("/dashboard")) {
-    // Permite acesso temporário se veio do callback
-    if (referer.includes("/auth/callback")) {
+    // Permite passagem pós-login ou pós-callback
+    if (referer.includes("/login") || referer.includes("/auth/callback")) {
       return res;
     }
 
-    // Redireciona visitantes não logados para a home pública (/)
     const redirectUrl = new URL("/", req.url);
     redirectUrl.searchParams.set("from", pathname);
     return NextResponse.redirect(redirectUrl);
   }
 
-  // ✅ Caso contrário, segue normalmente
   return res;
 }
 
