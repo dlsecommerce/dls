@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs";
@@ -12,32 +14,38 @@ export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
   const referer = req.headers.get("referer") || "";
 
-  // 🔹 Ignora rotas públicas e arquivos estáticos
+  console.log(
+    "🧩 [EDGE] Path:", pathname,
+    "| Referer:", referer,
+    "| Session:", session ? "✅ Sim" : "❌ Não"
+  );
+
+  // 🔹 Ignora rotas públicas
   if (
-    pathname.startsWith("/auth") ||
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/api") ||
     pathname.startsWith("/favicon") ||
-    pathname.startsWith("/site.webmanifest") ||
+    pathname.startsWith("/auth") ||
     pathname.includes(".")
   ) {
     return res;
   }
 
-  // 🔹 Usuário autenticado → redireciona rotas públicas para /dashboard
+  // 🔹 Usuário autenticado → redireciona rotas públicas para dashboard
   if (session && (pathname === "/" || pathname === "/login")) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
   // 🔹 Usuário não autenticado → bloqueia dashboard
   if (!session && pathname.startsWith("/dashboard")) {
-    // ⚙️ Permite passagem temporária se veio do login ou callback
+    // Permite pós-login e pós-callback (delay do cookie)
     if (referer.includes("/login") || referer.includes("/auth/callback")) {
+      console.log("⚠️ Permissão temporária (Edge cookie delay)");
       return res;
     }
 
     const redirectUrl = new URL("/", req.url);
     redirectUrl.searchParams.set("from", pathname);
+    console.log("🚫 Sem sessão → redirecionando para", redirectUrl.toString());
     return NextResponse.redirect(redirectUrl);
   }
 
@@ -45,11 +53,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/",
-    "/login",
-    "/dashboard/:path*",
-    "/auth/:path*",
-    "/api/:path*",
-  ],
+  matcher: ["/", "/login", "/dashboard/:path*"],
 };
