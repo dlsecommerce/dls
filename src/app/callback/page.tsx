@@ -19,6 +19,16 @@ export default function Callback() {
         loadingBarRef.current?.start();
         setMessage("Validando sua conta...");
 
+        const url = new URL(window.location.href);
+        const code = url.searchParams.get("code");
+
+        // Se não houver código de autenticação na URL
+        if (!code) {
+          setMessage("Código de autenticação ausente. Retornando...");
+          setTimeout(() => router.replace("/inicio"), 800);
+          return;
+        }
+
         // 🔹 Troca o código pelo token da sessão
         const { data, error } = await supabase.auth.exchangeCodeForSession(window.location.href);
 
@@ -29,11 +39,25 @@ export default function Callback() {
           return;
         }
 
+        // ✅ Garante que a sessão esteja salva no cliente
+        await supabase.auth.setSession(data.session);
+
+        // Verifica se o usuário foi autenticado corretamente
+        const { data: userData } = await supabase.auth.getUser();
+
+        if (!userData?.user) {
+          console.error("⚠️ Usuário não encontrado após o login");
+          setMessage("Falha ao confirmar login, retornando...");
+          setTimeout(() => router.replace("/inicio"), 800);
+          return;
+        }
+
         // ✅ Sessão válida — finaliza animação e segue para o dashboard
+        setMessage("Acesso autorizado, redirecionando...");
         loadingBarRef.current?.finish();
         setFade("out");
-        setMessage("Acesso autorizado, redirecionando...");
 
+        // Pequeno delay apenas para a transição visual terminar
         setTimeout(() => {
           router.replace("/dashboard");
         }, 400);

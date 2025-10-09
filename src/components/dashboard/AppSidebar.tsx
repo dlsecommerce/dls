@@ -49,7 +49,7 @@ import {
 
 import { Dispatch, SetStateAction, RefObject } from "react";
 import { LoadingBarRef } from "@/components/ui/loading-bar";
-import { logoutAction } from "@/app/actions/logout"; // ✅ logout seguro do servidor
+import { logoutAction } from "@/app/actions/logout";
 
 // 🔹 Itens do menu
 const navigationItems = [

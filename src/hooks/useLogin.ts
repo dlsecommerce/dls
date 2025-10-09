@@ -33,7 +33,7 @@ export function useLogin() {
   // 🔹 Login com email/senha
   const onSubmit = async (values: LoginFormValues) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: values.identifier,
         password: values.password,
       });
@@ -43,8 +43,8 @@ export function useLogin() {
         return;
       }
 
+      // ✅ Sessão válida — redireciona imediatamente
       toast.success("Login realizado com sucesso!");
-      // ✅ Redirecionamento suave, sem flash
       router.replace("/dashboard");
     } catch (err) {
       console.error("Erro ao logar:", err);
@@ -52,20 +52,22 @@ export function useLogin() {
     }
   };
 
-  // 🔹 Login com Google (callback sem delay)
+  // 🔹 Login com Google (callback otimizado)
   const handleGoogleLogin = async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${location.origin}/auth/callback`,
+          redirectTo: `${window.location.origin}/auth/callback`, // caminho do seu Callback.tsx
           queryParams: {
-            prompt: "select_account", // ✅ força seleção de conta sempre
+            prompt: "select_account", // força seleção de conta
           },
         },
       });
 
-      if (error) toast.error(error.message);
+      if (error) {
+        toast.error(error.message);
+      }
     } catch (err) {
       console.error("Erro no login Google:", err);
       toast.error("Erro ao conectar com o Google.");
