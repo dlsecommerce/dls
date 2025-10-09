@@ -24,22 +24,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // 🔹 Carrega o perfil do usuário logado
   async function loadProfile(userId: string) {
-    const { data: authUser } = await supabase.auth.getUser();
-    const { data: p } = await supabase
+    const { data: p, error } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", userId)
       .single<ProfileRow>();
+
+    if (error) {
+      console.error("Erro ao carregar perfil:", error);
+      return;
+    }
+
+    const { data: authUser } = await supabase.auth.getUser();
     if (p) setProfile({ ...p, email: authUser?.user?.email ?? null });
   }
 
+  // 🔹 Atualiza o perfil com dados mais recentes do Supabase
   async function refreshProfile() {
     const { data: authUser } = await supabase.auth.getUser();
     if (authUser?.user) await loadProfile(authUser.user.id);
     else setProfile(null);
   }
 
+  // 🔹 Carregamento inicial + monitoramento da sessão
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data }) => {
       if (data.user) await loadProfile(data.user.id);
@@ -52,26 +61,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       else setProfile(null);
     });
 
-    return () => sub.subscription?.unsubscribe();
-  }, []);
+    // 🔹 Realtime: atualiza automaticamente se o perfil mudar no banco
+    const channel = supabase
+      .channel("profiles-changes")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "profiles" },
+        (payload) => {
+          if (profile && payload.new.id === profile.id) {
+            setProfile((prev) => ({
+              ...prev!,
+              ...payload.new,
+            }));
+          }
+        }
+      )
+      .subscribe();
 
+    return () => {
+      sub.subscription?.unsubscribe();
+      supabase.removeChannel(channel);
+    };
+  }, [profile]);
+
+  // 🔹 Atualiza apenas o status
   const setStatus = async (status: string) => {
     if (!profile) return;
-    await supabase.from("profiles").update({ status }).eq("id", profile.id);
-    await refreshProfile();
+    const { data: updated, error } = await supabase
+      .from("profiles")
+      .update({ status })
+      .eq("id", profile.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Erro ao atualizar status:", error);
+      return;
+    }
+
+    const { data: authUser } = await supabase.auth.getUser();
+    setProfile({ ...updated, email: authUser?.user?.email ?? null });
   };
 
+  // 🔹 Atualiza a mensagem de status
   const setStatusMessage = async (message: string) => {
     if (!profile) return;
-    await supabase
+    const { data: updated, error } = await supabase
       .from("profiles")
       .update(normalizeUpdate<ProfileUpdate>({ status_message: message }))
-      .eq("id", profile.id);
-    await refreshProfile();
+      .eq("id", profile.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Erro ao atualizar mensagem de status:", error);
+      return;
+    }
+
+    const { data: authUser } = await supabase.auth.getUser();
+    setProfile({ ...updated, email: authUser?.user?.email ?? null });
   };
 
+  // 🔹 Atualiza nome, avatar e outros campos do perfil
   const updateProfile = async (data: Partial<ProfileUpdate>) => {
     if (!profile) return;
+
     const updateData: ProfileUpdate = {
       name: data.name ?? profile.name,
       avatar_url: data.avatar_url ?? profile.avatar_url,
@@ -79,12 +133,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       status_message: data.status_message ?? profile.status_message,
       updated_at: new Date().toISOString(),
     };
-    await supabase
+
+    const { data: updated, error } = await supabase
       .from("profiles")
       .update(normalizeUpdate(updateData))
-      .eq("id", profile.id);
-    setProfile({ ...profile, ...updateData });
-    await refreshProfile();
+      .eq("id", profile.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Erro ao atualizar perfil:", error);
+      return;
+    }
+
+    const { data: authUser } = await supabase.auth.getUser();
+    setProfile({ ...updated, email: authUser?.user?.email ?? null });
   };
 
   return (

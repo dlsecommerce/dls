@@ -20,7 +20,7 @@ import {
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 const statusOptions = [
@@ -31,14 +31,37 @@ const statusOptions = [
 ];
 
 export function UserProfileDropdown() {
-  const { profile, setStatus, setStatusMessage } = useAuth();
+  const { profile, loading, refreshProfile, setStatus, setStatusMessage } =
+    useAuth();
   const router = useRouter();
   const [editMessage, setEditMessage] = useState(false);
-  const [message, setMessage] = useState(profile?.status_message || "");
+  const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  if (!profile) return null;
+  // Atualiza o campo de mensagem quando o perfil muda
+  useEffect(() => {
+    if (profile?.status_message) setMessage(profile.status_message);
+  }, [profile]);
+
+  // Força atualização do perfil se ainda não carregou
+  useEffect(() => {
+    if (!loading && !profile) refreshProfile();
+  }, [loading, profile]);
+
+  if (loading) {
+    return (
+      <div className="w-10 h-10 rounded-full bg-neutral-800 animate-pulse" />
+    );
+  }
+
+  if (!profile) {
+    return (
+      <div className="w-10 h-10 rounded-full bg-neutral-700 flex items-center justify-center text-neutral-400 text-sm">
+        ?
+      </div>
+    );
+  }
 
   const avatar = profile.avatar_url;
   const initials =
@@ -165,7 +188,7 @@ export function UserProfileDropdown() {
         {/* Definir mensagem de status (mantém o menu aberto) */}
         {!editMessage ? (
           <DropdownMenuItem
-            onSelect={(e) => e.preventDefault()} // impede o fechamento
+            onSelect={(e) => e.preventDefault()}
             onClick={() => setEditMessage(true)}
             className="flex items-center gap-2 hover:bg-white/5 rounded-md cursor-pointer mt-1"
           >

@@ -1,10 +1,15 @@
 "use client";
 
 import React from "react";
-import { useAuthRedirect } from "@/hooks/useAuthRedirect";
+import { useInitialRedirect } from "@/hooks/useInitialRedirect";
 
+/**
+ * Componente cliente global:
+ * - Redireciona automaticamente usuários logados para /dashboard
+ * - Impede usuários não logados de acessarem /dashboard
+ * - Mantém o comportamento profissional tipo YouTube/Spotify
+ */
 export function ClientWrapper({ children }: { children: React.ReactNode }) {
-  // 🔹 O hook roda aqui, em ambiente client
-  useAuthRedirect();
+  useInitialRedirect();
   return <>{children}</>;
 }

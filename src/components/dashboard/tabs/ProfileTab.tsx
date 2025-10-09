@@ -16,12 +16,18 @@ export default function ProfileTab() {
   const [saving, setSaving] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Atualiza o estado quando o perfil muda
+  // 🔹 Atualiza o estado local quando o perfil muda (sem sobrescrever enquanto digita)
   useEffect(() => {
-    if (profile) {
+    if (!profile) {
+      refreshProfile();
+      return;
+    }
+
+    if (!isEditingName) {
       setName(profile.name ?? "");
       setAvatarUrl(profile.avatar_url ?? null);
     }
@@ -38,7 +44,7 @@ export default function ProfileTab() {
 
   const handleUploadClick = () => fileInputRef.current?.click();
 
-  // Mostra preview antes do upload
+  // 🔹 Mostra preview antes do upload
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -48,7 +54,7 @@ export default function ProfileTab() {
     setShowModal(true);
   }, []);
 
-  // Envia imagem ao confirmar no modal
+  // 🔹 Envia imagem ao confirmar no modal
   const handleConfirmUpload = useCallback(async () => {
     if (!previewUrl || !profile || !fileInputRef.current?.files?.[0]) return;
     const file = fileInputRef.current.files[0];
@@ -70,7 +76,6 @@ export default function ProfileTab() {
       if (!publicUrl) throw new Error("Falha ao obter URL pública do avatar.");
 
       await updateProfile({ avatar_url: publicUrl });
-      await refreshProfile();
       setAvatarUrl(publicUrl);
 
       setShowSuccess(true);
@@ -83,7 +88,7 @@ export default function ProfileTab() {
       setPreviewUrl(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
-  }, [previewUrl, profile, updateProfile, refreshProfile]);
+  }, [previewUrl, profile, updateProfile]);
 
   const handleCancelUpload = () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -92,21 +97,28 @@ export default function ProfileTab() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  // 🔹 Salvar nome do perfil
   const handleSave = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     if (!profile) return;
 
     setSaving(true);
     try {
-      await updateProfile({ name, avatar_url: avatarUrl ?? "" });
-      await refreshProfile();
+      await updateProfile({ name });
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
+      setIsEditingName(false);
     } catch (err: any) {
       console.error("Erro ao salvar perfil:", err.message);
     } finally {
       setSaving(false);
     }
+  };
+
+  // 🔹 Quando digita no campo de nome, ativa o modo de edição
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setIsEditingName(true);
+    setName(e.target.value);
   };
 
   return (
@@ -172,7 +184,7 @@ export default function ProfileTab() {
             <input
               className="flex w-full rounded-lg border border-white/10 bg-[#1a1a1a] px-4 py-2 text-[14px] text-foreground focus:outline-none focus:ring-2 focus:ring-[#2699fe]"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={handleNameChange}
             />
           </div>
 
