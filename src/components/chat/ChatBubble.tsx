@@ -20,7 +20,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import EmojiPicker from "@/components/chat/EmojiPicker";
 import MessageItem from "@/components/chat/MessageItem";
@@ -37,7 +37,8 @@ type Mode = "global" | "direct";
 interface MiniUser {
   usuario_id: string;
   usuario_nome: string;
-  status: "disponivel" | "ausente" | "ocupado" | "invisivel" | "offline";
+  avatar_url?: string | null;
+  status: "online" | "ausente" | "ocupado" | "invisivel" | "offline";
 }
 
 export default function ChatBubble() {
@@ -85,7 +86,7 @@ export default function ChatBubble() {
   // ==== Helpers UI
   const getStatusColor = (status: MiniUser["status"]) => {
     switch (status) {
-      case "disponivel": return "#10b981";
+      case "online": return "#10b981";
       case "ausente": return "#f59e0b";
       case "ocupado": return "#ef4444";
       case "invisivel": return "#6b7280";
@@ -95,7 +96,7 @@ export default function ChatBubble() {
 
   const getStatusText = (status: MiniUser["status"]) => {
     switch (status) {
-      case "disponivel": return "Disponível";
+      case "online": return "Disponível";
       case "ausente": return "Ausente";
       case "ocupado": return "Ocupado";
       case "invisivel": return "Invisível";
@@ -115,43 +116,70 @@ export default function ChatBubble() {
 
   const playSound = useCallback(() => {
     if (!soundEnabled) return;
-    const audio = new Audio("data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSmH0fPTgjMGHm7A7+OZRQ0PVqvl8LJeGAg+ltryxnIsBS59zvLaizsIGGS57OihUBELTKXh8LhlHAU2kdXzzn0pBSh+zPLZjT0HHnK/7eObRw4OWKzl8LNeGAg+ltryxnIsBS59zvLaizsIGGS57OihUBELTKXh8LhlHAU2kdXzzn0pBSh+zPLZjT0HHnK/7eObRw4OWKzl8A==");
+    const audio = new Audio("data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSmH0fPTgjMGHm7A7+OZRQ0PVqvl8LJeGAg+ltryxnIsBS59zvLaizsIGGS57OihUBELTKXh8LhlHAU2kdXzzn0pBSh+zPLZjT0HHnK/7eObRw4OWKzl8A==");
     audio.play().catch(() => {});
   }, [soundEnabled]);
 
-  // ==== Load Users (status realtime)
+  // ==== Carregar usuários do Supabase Profiles ====
   useEffect(() => {
-    const cleanup = supabaseChatService.subscribeStatuses((row) => {
-      setUsers((prev) => {
-        const others = prev.filter((u) => u.usuario_id !== row.usuario_id);
-        return [...others, {
-          usuario_id: row.usuario_id,
-          usuario_nome: row.usuario_nome || "Usuário",
-          status: row.status || "offline",
-        }];
-      });
-    });
-    return () => { cleanup?.(); };
-  }, []);
+    const fetchProfiles = async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, name, avatar_url, status");
+
+      if (!error && data) {
+        setUsers(
+          data
+            .filter((u) => u.id !== myId)
+            .map((u) => ({
+              usuario_id: u.id,
+              usuario_nome: (u as any).name || "Usuário",
+              avatar_url: (u as any).avatar_url,
+              status: ((u as any).status as MiniUser["status"]) || "offline",
+            }))
+        );
+      }
+    };
+    fetchProfiles();
+
+    const channel = supabase
+      .channel("profiles-realtime")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "profiles" },
+        (payload) => {
+          setUsers((prev) =>
+            prev.map((u) =>
+              u.usuario_id === (payload.new as any).id
+                ? {
+                    ...u,
+                    status: ((payload.new as any).status as MiniUser["status"]) || u.status,
+                    avatar_url: (payload.new as any).avatar_url ?? u.avatar_url,
+                    usuario_nome: (payload.new as any).name ?? u.usuario_nome,
+                  }
+                : u
+            )
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [myId]);
 
   // ==== Load Messages + Realtime for current conversaKey
   const initMessagesRealtime = useCallback(async () => {
     if (!conversaKey) return;
-
-    // cancelar inscrição anterior
     messagesChannelCleanup.current?.();
 
-    // carregar histórico
     const list = await supabaseChatService.listMessages(conversaKey, 200);
-    // ordenar asc para exibir na ordem natural
     setMessages(list.sort((a, b) => a.created_at.localeCompare(b.created_at)));
 
-    // subscrever realtime
     const unsub = supabaseChatService.subscribeMessages(conversaKey, (m) => {
       setMessages((prev) => {
-        // evitar duplicatas
         if (prev.some((x) => x.id === m.id)) return prev;
-        // notificação
         if (m.remetente_id !== myId) {
           showNotification(m.remetente_nome, m.mensagem);
           playSound();
@@ -162,7 +190,6 @@ export default function ChatBubble() {
     });
     messagesChannelCleanup.current = unsub;
 
-    // typing channel (presence efêmero)
     typingChannelRef.current?.unsubscribe();
     typingChannelRef.current = supabaseChatService.createTypingChannel(
       conversaKey,
@@ -171,7 +198,6 @@ export default function ChatBubble() {
     );
     supabaseChatService.onTyping(typingChannelRef.current, setTypingUsers);
 
-    // marcar lidas quando abrir a janela/conversa
     if (isOpen) {
       await supabaseChatService.markAllRead(conversaKey, myId);
       setUnreadCount(0);
@@ -188,7 +214,7 @@ export default function ChatBubble() {
     };
   }, [initMessagesRealtime, myId]);
 
-  // ==== Unread
+  // ==== Unread counter (sem alterar layout)
   useEffect(() => {
     if (!isOpen) {
       const count = messages.filter((m) => !m.lida && m.remetente_id !== myId).length;
@@ -251,20 +277,18 @@ export default function ChatBubble() {
     }
   }, []);
 
-  // ==== Filters / View
+  // ==== Filtros / Busca (mantendo layout)
   const filteredMessages = useMemo(() => {
     const base = messages;
-    // search
     const bySearch = searchTerm
       ? base.filter((m) => (m.mensagem || "").toLowerCase().includes(searchTerm.toLowerCase()))
       : base;
-
-    // no 1:1, já filtramos por conversaKey; no global, conversaKey = "global"
     return bySearch;
   }, [messages, searchTerm]);
 
+  // Quantos usuários online (status === "online")
   const onlineCount = useMemo(
-    () => users.filter((u) => u.status === "disponivel").length,
+    () => users.filter((u) => u.status === "online").length,
     [users]
   );
 
@@ -452,9 +476,13 @@ export default function ChatBubble() {
                             } rounded-lg overflow-hidden`}
                           >
                             <Avatar className="w-12 h-12">
-                              <AvatarFallback className="bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] text-white font-bold text-xs">
-                                {getInitials(u.usuario_nome)}
-                              </AvatarFallback>
+                              {u.avatar_url ? (
+                                <AvatarImage src={u.avatar_url} alt={u.usuario_nome} />
+                              ) : (
+                                <AvatarFallback className="bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] text-white font-bold text-xs">
+                                  {getInitials(u.usuario_nome)}
+                                </AvatarFallback>
+                              )}
                             </Avatar>
                             <div
                               className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#0a0a0a]"
@@ -476,9 +504,13 @@ export default function ChatBubble() {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <Avatar className="w-8 h-8">
-                                <AvatarFallback className="bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] text-white text-xs">
-                                  {getInitials(selectedUser.usuario_nome)}
-                                </AvatarFallback>
+                                {selectedUser.avatar_url ? (
+                                  <AvatarImage src={selectedUser.avatar_url} alt={selectedUser.usuario_nome} />
+                                ) : (
+                                  <AvatarFallback className="bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] text-white text-xs">
+                                    {getInitials(selectedUser.usuario_nome)}
+                                  </AvatarFallback>
+                                )}
                               </Avatar>
                               <div>
                                 <p className="text-sm font-medium text-white">{selectedUser.usuario_nome}</p>
