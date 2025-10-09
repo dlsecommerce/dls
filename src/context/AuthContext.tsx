@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { normalizeUpdate } from "@/utils/supabase-helpers";
+import { logoutAction } from "@/app/actions/logout"; // ✅ Importa logout do servidor
 
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 type ProfileUpdate = Database["public"]["Tables"]["profiles"]["Update"];
@@ -16,7 +17,7 @@ interface AuthContextType {
   setStatusMessage: (message: string) => Promise<void>;
   updateProfile: (data: Partial<ProfileUpdate>) => Promise<void>;
   refreshProfile: () => Promise<void>;
-  signOut: () => Promise<void>; // ✅ novo método
+  signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -25,6 +26,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // 🔹 Carrega dados do perfil a partir do user.id
   async function loadProfile(userId: string) {
     const { data: p, error } = await supabase
       .from("profiles")
@@ -41,12 +43,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (p) setProfile({ ...p, email: authUser?.user?.email ?? null });
   }
 
+  // 🔹 Atualiza o perfil manualmente
   async function refreshProfile() {
     const { data: authUser } = await supabase.auth.getUser();
     if (authUser?.user) await loadProfile(authUser.user.id);
     else setProfile(null);
   }
 
+  // 🔹 Carregamento inicial e monitoramento da sessão
   useEffect(() => {
     let isMounted = true;
 
@@ -62,6 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       else setProfile(null);
     });
 
+    // 🔹 Escuta mudanças no banco em tempo real (profiles)
     const channel = supabase
       .channel("profiles-changes")
       .on(
@@ -82,6 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [profile]);
 
+  // 🔹 Atualiza status
   const setStatus = async (status: string) => {
     if (!profile) return;
     const { data: updated, error } = await supabase
@@ -100,6 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile({ ...updated, email: authUser?.user?.email ?? null });
   };
 
+  // 🔹 Atualiza mensagem de status
   const setStatusMessage = async (message: string) => {
     if (!profile) return;
     const { data: updated, error } = await supabase
@@ -118,6 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile({ ...updated, email: authUser?.user?.email ?? null });
   };
 
+  // 🔹 Atualiza dados do perfil
   const updateProfile = async (data: Partial<ProfileUpdate>) => {
     if (!profile) return;
 
@@ -145,10 +153,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile({ ...updated, email: authUser?.user?.email ?? null });
   };
 
-  // ✅ Novo método de logout
+  // 🔹 Logout via server action (mantém sincronizado com middleware)
   const signOut = async () => {
     try {
-      await supabase.auth.signOut();
+      await logoutAction(); // ✅ limpa cookies e redireciona para /login
       setProfile(null);
     } catch (error) {
       console.error("Erro ao sair:", error);

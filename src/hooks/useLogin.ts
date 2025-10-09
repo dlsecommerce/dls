@@ -30,7 +30,7 @@ export function useLogin() {
     defaultValues: { identifier: "", password: "", remember: false },
   });
 
-  // 🔹 Login com email/senha
+  // 🔹 Login tradicional com email/senha
   const onSubmit = async (values: LoginFormValues) => {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -43,12 +43,12 @@ export function useLogin() {
         return;
       }
 
-      // 🔹 Força gravação imediata do cookie no navegador
+      // 🔸 Grava sessão localmente
       if (data.session) {
         await supabase.auth.setSession(data.session);
       }
 
-      // 🔹 Espera o cookie chegar ao Edge (Vercel)
+      // 🔸 Espera o cookie ser persistido antes do redirect (importante no Edge)
       await new Promise((r) => setTimeout(r, 800));
 
       toast.success("Login realizado com sucesso!");
@@ -59,20 +59,25 @@ export function useLogin() {
     }
   };
 
-  // 🔹 Login com Google (callback correto)
+  // 🔹 Login com Google (OAuth)
   const handleGoogleLogin = async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      // ⚠️ IMPORTANTE: redireciona para o callback correto (Edge + cookies)
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`, // ✅ Callback obrigatório
-          queryParams: {
-            prompt: "select_account",
-          },
+          redirectTo: `${window.location.origin}/auth/callback`, // ✅ obrigatório
+          queryParams: { prompt: "select_account" },
         },
       });
 
-      if (error) toast.error(error.message);
+      if (error) {
+        console.error("Erro no login com Google:", error.message);
+        toast.error(error.message);
+      } else if (data?.url) {
+        // 🔸 Redireciona manualmente (necessário em ambientes SSR/Edge)
+        window.location.href = data.url;
+      }
     } catch (err) {
       console.error("Erro no login Google:", err);
       toast.error("Erro ao conectar com o Google.");

@@ -6,38 +6,36 @@ import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs";
 import type { Database } from "@/integrations/supabase/types";
 
 export async function middleware(req: NextRequest) {
-  // Cria a resposta padrão
+  // Cria resposta padrão
   const res = NextResponse.next();
 
-  // Cria um client Supabase conectado aos cookies da requisição
+  // Cria client Supabase com persistência de cookies (ESSENCIAL)
   const supabase = createMiddlewareClient<Database>({ req, res });
 
-  // Busca a sessão atual (caso o cookie esteja válido)
+  // Obtém sessão atual do usuário
   const {
     data: { session },
   } = await supabase.auth.getSession();
 
   const pathname = req.nextUrl.pathname;
 
-  // 🔹 Caso o usuário esteja logado e tente acessar páginas públicas (/ ou /login)
-  // Redireciona automaticamente para o dashboard
+  // ✅ Se o usuário estiver logado e acessar "/" ou "/login", manda pra dashboard
   if (session && (pathname === "/" || pathname === "/login")) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
-  // 🔹 Caso o usuário NÃO esteja logado e tente acessar rotas protegidas (/dashboard/*)
-  // Redireciona de volta para a página inicial
+  // ❌ Se o usuário NÃO estiver logado e tentar acessar "/dashboard", bloqueia
   if (!session && pathname.startsWith("/dashboard")) {
     const redirectUrl = new URL("/login", req.url);
     redirectUrl.searchParams.set("from", pathname);
     return NextResponse.redirect(redirectUrl);
   }
 
-  // 🔹 Se nenhuma regra foi violada, segue o fluxo normalmente
+  // ✅ Mantém cookies sincronizados na resposta (IMPORTANTE!)
   return res;
 }
 
-// 🔧 Define em quais rotas o middleware deve ser executado
+// Roda apenas nas rotas necessárias
 export const config = {
-  matcher: ["/", "/login", "/dashboard/:path*"], // nunca inclua /auth/*
+  matcher: ["/", "/login", "/dashboard/:path*"],
 };
