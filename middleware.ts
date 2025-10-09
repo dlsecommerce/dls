@@ -12,7 +12,7 @@ export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
   const referer = req.headers.get("referer") || "";
 
-  // Ignora rotas públicas e arquivos
+  // 🔹 Ignora rotas públicas e arquivos estáticos
   if (
     pathname.startsWith("/auth") ||
     pathname.startsWith("/_next") ||
@@ -24,14 +24,14 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
-  // Usuário logado → redireciona rotas públicas para /dashboard
+  // 🔹 Usuário autenticado → redireciona para dashboard
   if (session && (pathname === "/" || pathname === "/login")) {
     return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
-  // Usuário não logado → bloqueia acesso ao dashboard
+  // 🔹 Usuário não autenticado → bloqueia acesso ao dashboard
   if (!session && pathname.startsWith("/dashboard")) {
-    // Permite passagem pós-login ou pós-callback
+    // ✅ Permite passagem temporária se veio do login ou callback
     if (referer.includes("/login") || referer.includes("/auth/callback")) {
       return res;
     }
