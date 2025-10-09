@@ -10,19 +10,22 @@ export async function GET(req: Request) {
   const code = url.searchParams.get("code");
 
   if (!code) {
+    console.error("⚠️ Nenhum código recebido do OAuth provider");
     return NextResponse.redirect(new URL("/login?error=missing_code", req.url));
   }
 
+  // ✅ CORREÇÃO: executa cookies() para retornar o store correto
   const cookieStore = cookies();
+
   const supabase = createRouteHandlerClient<Database>({ cookies: () => cookieStore });
 
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
-    console.error("❌ Supabase OAuth error:", error.message);
+    console.error("❌ Erro Supabase OAuth:", error.message);
     return NextResponse.redirect(new URL(`/login?error=${error.message}`, req.url));
   }
 
-  // ✅ O próprio Supabase já cuida dos cookies — não precisa reescrever manualmente
+  console.log("✅ Sessão criada com sucesso, redirecionando para /dashboard");
   return NextResponse.redirect(new URL("/dashboard", req.url));
 }
