@@ -49,7 +49,7 @@ import {
 
 import { Dispatch, SetStateAction, RefObject } from "react";
 import { LoadingBarRef } from "@/components/ui/loading-bar";
-import { logoutAction } from "@/app/actions/logout";
+import { supabase } from "@/integrations/supabase/client"; // ✅ adicionado
 
 // 🔹 Itens do menu
 const navigationItems = [
@@ -108,9 +108,11 @@ export default function AppSidebar({
     setTimeout(() => loadingRef.current?.finish(), 800);
   };
 
+  // ✅ Logout funcional com Supabase
   const handleLogout = async () => {
     try {
-      await logoutAction(); // ✅ Encerra a sessão SSR e redireciona para /
+      await supabase.auth.signOut();
+      router.replace("/");
     } catch (err) {
       console.error("Erro ao sair:", err);
       router.replace("/");
@@ -221,7 +223,7 @@ export default function AppSidebar({
                                         setPageTitle(child.title);
                                         triggerLoading();
                                       }}
-                                      className={`px-3 py-2 text-sm rounded-lg hover:bg-white/5 hover:text-[#1a8ceb] transition-all ${
+                                      className={`px-3 py-2 text-sm flex items-center gap-2 rounded-lg hover:bg-white/5 hover:text-[#1a8ceb] transition-all ${
                                         pathname === child.href
                                           ? "bg-[#1a8ceb]/10 text-[#1a8ceb]"
                                           : ""
@@ -241,7 +243,7 @@ export default function AppSidebar({
                           >
                             <CollapsibleTrigger asChild>
                               <SidebarMenuButton
-                                className="w-full hover:bg-white/5 text-neutral-300 hover:text-white rounded-xl group relative"
+                                className="w-full flex items-center gap-3 py-2.5 px-3 hover:bg-white/5 text-neutral-300 hover:text-white rounded-xl group relative"
                                 onClick={() => {
                                   setPageTitle(item.title);
                                   triggerLoading();
@@ -252,7 +254,7 @@ export default function AppSidebar({
                                 )}
                                 {!collapsed && (
                                   <motion.span
-                                    className="font-medium"
+                                    className="font-medium flex items-center"
                                     initial={{ opacity: 0, x: -10 }}
                                     animate={{ opacity: 1, x: 0 }}
                                     exit={{ opacity: 0, x: -10 }}
@@ -291,7 +293,7 @@ export default function AppSidebar({
                                     <SidebarMenuButton
                                       key={child.title}
                                       asChild
-                                      className={`hover:bg-white/5 text-neutral-400 hover:text-white rounded-xl ${
+                                      className={`flex items-center gap-3 py-2 px-3 text-sm hover:bg-white/5 text-neutral-400 hover:text-white rounded-xl ${
                                         childActive
                                           ? "bg-[#1a8ceb]/10 text-[#1a8ceb]"
                                           : ""
@@ -301,10 +303,7 @@ export default function AppSidebar({
                                         triggerLoading();
                                       }}
                                     >
-                                      <Link
-                                        href={child.href}
-                                        className="flex items-center gap-3 py-2 px-3 text-sm"
-                                      >
+                                      <Link href={child.href}>
                                         {child.title}
                                       </Link>
                                     </SidebarMenuButton>
@@ -332,16 +331,14 @@ export default function AppSidebar({
                               >
                                 <Link
                                   href={item.href ?? "#"}
-                                  className={`flex items-center ${
-                                    collapsed ? "justify-center" : "gap-3"
-                                  } px-3 py-2.5`}
+                                  className={`flex items-center gap-3 px-3 py-2.5`}
                                 >
                                   {item.icon && (
                                     <item.icon className="w-5 h-5 group-hover:text-[#1a8ceb]" />
                                   )}
                                   {!collapsed && (
                                     <motion.span
-                                      className="font-medium"
+                                      className="font-medium flex items-center"
                                       initial={{ opacity: 0, x: -10 }}
                                       animate={{ opacity: 1, x: 0 }}
                                       exit={{ opacity: 0, x: -10 }}

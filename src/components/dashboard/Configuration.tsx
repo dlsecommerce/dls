@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
+import { logoutAction } from "@/app/actions/logout"; // ✅ mesmo padrão SSR
 
 import ProfileTab from "./tabs/ProfileTab";
 import SecurityTab from "./tabs/SecurityTab";
@@ -111,9 +112,17 @@ export default function Configuration() {
     }
   };
 
+  // ✅ Logout com segurança (SSR + client)
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/");
+    try {
+      await logoutAction(); // limpa cookies no servidor e termina sessão
+      router.replace("/"); // redireciona sem reload
+    } catch (err) {
+      console.error("Erro ao sair (SSR):", err);
+      // fallback se houver erro no action SSR
+      await supabase.auth.signOut();
+      router.replace("/");
+    }
   };
 
   const tabs = [
@@ -121,7 +130,7 @@ export default function Configuration() {
     { id: "seguranca", label: "Segurança", icon: Shield },
     { id: "notificacoes", label: "Notificações", icon: Bell },
     { id: "preferencias", label: "Preferências", icon: Sliders },
-    { id: "feedbacks", label: "Feedbacks", icon: MessageSquare }, // 🆕 Nova aba
+    { id: "feedbacks", label: "Feedbacks", icon: MessageSquare },
   ];
 
   return (
@@ -152,6 +161,7 @@ export default function Configuration() {
               ))}
             </nav>
 
+            {/* 🔹 Botão de sair seguro */}
             <div className="mt-8 pt-8 border-t border-white/10 space-y-2">
               <button
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-400 hover:bg-red-500/10 transition-all"

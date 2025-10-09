@@ -20,7 +20,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useState } from "react";
-import { logoutAction } from "@/app/actions/logout"; 
+import { supabase } from "@/integrations/supabase/client"; // ✅ adicionado para logout direto
 
 const statusOptions = [
   { key: "disponivel", label: "Disponível", color: "bg-green-500" },
@@ -81,12 +81,14 @@ export function UserProfileDropdown() {
     }
   };
 
+  // ✅ Logout funcional via Supabase
   const handleSignOut = async () => {
     try {
-      await logoutAction(); 
+      await supabase.auth.signOut(); // encerra sessão local e limpa cookies
+      router.replace("/"); // redireciona para tela de login
     } catch (err) {
       console.error("Erro ao sair:", err);
-      router.replace("/inicio");
+      router.replace("/");
     }
   };
 

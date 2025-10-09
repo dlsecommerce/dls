@@ -35,10 +35,10 @@ export default function DashboardLayout({
   }, [router]);
 
   if (loading) {
-    // Exibe apenas a barra de carregamento enquanto verifica a sessão
+    // ✅ Loader pequeno centralizado enquanto verifica sessão
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-start">
-        <LoadingBar ref={loadingRef} />
+      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a]">
+        <div className="w-5 h-5 border-3 border-[#2699fe] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
