@@ -196,7 +196,7 @@ export default function ProfileTab() {
           >
             {saving ? (
               <span className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" /> Salvando...
+                <Loader2 className="w-4 h-4 animate-spin" />
               </span>
             ) : (
               "Salvar alterações"
