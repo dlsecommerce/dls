@@ -7,7 +7,6 @@ import {
   MessageSquare,
   Check,
   X,
-  PlusCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -237,10 +236,6 @@ export function UserProfileDropdown() {
           className="cursor-pointer hover:bg-white/5"
         >
           <Settings className="w-4 h-4 mr-2" /> Configurações
-        </DropdownMenuItem>
-
-        <DropdownMenuItem className="cursor-pointer hover:bg-white/5">
-          <PlusCircle className="w-4 h-4 mr-2" /> Adicionar conta
         </DropdownMenuItem>
 
         <DropdownMenuSeparator className="my-2 bg-white/10" />

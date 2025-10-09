@@ -50,7 +50,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // 🔹 Carregamento inicial + monitoramento da sessão
   useEffect(() => {
+    let isMounted = true;
+
     supabase.auth.getUser().then(async ({ data }) => {
+      if (!isMounted) return;
       if (data.user) await loadProfile(data.user.id);
       else setProfile(null);
       setLoading(false);
@@ -79,6 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .subscribe();
 
     return () => {
+      isMounted = false;
       sub.subscription?.unsubscribe();
       supabase.removeChannel(channel);
     };
