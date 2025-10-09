@@ -1,8 +1,6 @@
 "use client";
 
-import { useInitialRedirect } from "@/hooks/useInitialRedirect";
-
 export function ClientWrapper({ children }: { children: React.ReactNode }) {
-  useInitialRedirect(); // ✅ ativa a lógica automática de redirecionamento
+  // ✅ Wrapper puro — sem lógica de sessão ou redirecionamento
   return <>{children}</>;
 }

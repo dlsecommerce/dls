@@ -2,34 +2,55 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs";
 
+/**
+ * Middleware de autenticação profissional:
+ * - Redireciona usuários não autenticados para /
+ * - Evita "flash" de tela no login/logout
+ * - Mantém o cookie sincronizado com Supabase SSR
+ */
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
   const supabase = createMiddlewareClient({ req, res });
-
   const { data } = await supabase.auth.getSession();
   const session = data?.session;
   const pathname = req.nextUrl.pathname;
 
-  // ⚠️ Ignora rotas de autenticação (callback, api, etc.)
-  if (pathname.startsWith("/auth")) return res;
+  // 🔹 Ignora rotas públicas e técnicas
+  if (
+    pathname.startsWith("/auth") ||
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/api") ||
+    pathname.startsWith("/favicon") ||
+    pathname.startsWith("/site.webmanifest")
+  ) {
+    return res;
+  }
 
-  // 🚀 Usuário logado → envia direto para /dashboard
+  // 🔹 Usuário autenticado → envia direto para /dashboard
   if (session && (pathname === "/" || pathname === "/inicio" || pathname === "/login")) {
-    return NextResponse.redirect(new URL("/dashboard", req.url));
+    const redirectUrl = new URL("/dashboard", req.url);
+    redirectUrl.searchParams.set("from", pathname);
+    return NextResponse.redirect(redirectUrl);
   }
 
-  // 🚫 Não logado → impede acesso ao dashboard
+  // 🔹 Usuário não autenticado → bloqueia acesso a rotas protegidas
   if (!session && pathname.startsWith("/dashboard")) {
-    // ✅ Evita conflito logo após login (grace period)
-    const referer = req.headers.get("referer") || "";
-    if (referer.includes("/auth/callback")) return res;
-
-    return NextResponse.redirect(new URL("/inicio", req.url));
+    const redirectUrl = new URL("/", req.url);
+    redirectUrl.searchParams.set("from", pathname);
+    return NextResponse.redirect(redirectUrl);
   }
 
+  // 🔹 Garante atualização do cookie SSR (sincronização)
   return res;
 }
 
 export const config = {
-  matcher: ["/", "/inicio", "/login", "/dashboard/:path*", "/auth/:path*"],
+  matcher: [
+    "/",
+    "/inicio",
+    "/login",
+    "/dashboard/:path*",
+    "/auth/:path*",
+    "/api/:path*",
+  ],
 };

@@ -32,30 +32,44 @@ export function useLogin() {
 
   // 🔹 Login com email/senha
   const onSubmit = async (values: LoginFormValues) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email: values.identifier,
-      password: values.password,
-    });
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: values.identifier,
+        password: values.password,
+      });
 
-    if (error) {
-      toast.error(error.message);
-      return;
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      toast.success("Login realizado com sucesso!");
+      // ✅ Redirecionamento suave, sem flash
+      router.replace("/dashboard");
+    } catch (err) {
+      console.error("Erro ao logar:", err);
+      toast.error("Falha ao tentar entrar.");
     }
-
-    toast.success("Login realizado com sucesso!");
-    router.push("/dashboard");
   };
 
-  // 🔹 Login com Google
+  // 🔹 Login com Google (callback sem delay)
   const handleGoogleLogin = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${location.origin}/auth/callback`,
+          queryParams: {
+            prompt: "select_account", // ✅ força seleção de conta sempre
+          },
+        },
+      });
 
-    if (error) toast.error(error.message);
+      if (error) toast.error(error.message);
+    } catch (err) {
+      console.error("Erro no login Google:", err);
+      toast.error("Erro ao conectar com o Google.");
+    }
   };
 
   return {

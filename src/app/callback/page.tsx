@@ -19,33 +19,28 @@ export default function Callback() {
         loadingBarRef.current?.start();
         setMessage("Validando sua conta...");
 
-        // 🔹 Troca o código do Google por sessão diretamente
+        // 🔹 Troca o código pelo token da sessão
         const { data, error } = await supabase.auth.exchangeCodeForSession(window.location.href);
 
         if (error || !data.session) {
           console.error("❌ Erro Supabase:", error?.message);
           setMessage("Erro na autenticação, retornando...");
-          setTimeout(() => router.replace("/inicio"), 600);
+          setTimeout(() => router.replace("/inicio"), 800);
           return;
         }
 
-        // ✅ Sessão obtida instantaneamente
+        // ✅ Sessão válida — finaliza animação e segue para o dashboard
         loadingBarRef.current?.finish();
         setFade("out");
+        setMessage("Acesso autorizado, redirecionando...");
 
-        // Detecta se é novo usuário (diferença de até 5 segundos)
-        const createdAt = new Date(data.session.user.created_at).getTime();
-        const updatedAt = new Date(data.session.user.updated_at).getTime();
-        const isNewUser = Math.abs(updatedAt - createdAt) < 5000;
-
-        // Pequeno delay apenas para a animação
         setTimeout(() => {
-          router.replace(isNewUser ? "/inicio" : "/dashboard");
-        }, 300);
+          router.replace("/dashboard");
+        }, 400);
       } catch (err) {
         console.error("⚠️ Erro inesperado:", err);
         setMessage("Erro inesperado...");
-        setTimeout(() => router.replace("/inicio"), 600);
+        setTimeout(() => router.replace("/inicio"), 800);
       }
     };
 

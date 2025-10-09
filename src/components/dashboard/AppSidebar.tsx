@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -49,6 +49,7 @@ import {
 
 import { Dispatch, SetStateAction, RefObject } from "react";
 import { LoadingBarRef } from "@/components/ui/loading-bar";
+import { logoutAction } from "@/app/actions/logout"; // ✅ logout seguro do servidor
 
 // 🔹 Itens do menu
 const navigationItems = [
@@ -64,7 +65,10 @@ const navigationItems = [
     title: "Precificação",
     icon: DollarSign,
     children: [
-      { title: "Precificação Individual", href: "/dashboard/precificacao/precificacao-individual" },
+      {
+        title: "Precificação Individual",
+        href: "/dashboard/precificacao/precificacao-individual",
+      },
       { title: "Decomposição", href: "/dashboard/precificacao/decomposicao" },
       { title: "Custos", href: "/dashboard/precificacao/custos" },
     ],
@@ -73,7 +77,6 @@ const navigationItems = [
   { title: "Anúncios", href: "/dashboard/anuncios", icon: Package },
 ];
 
-// 🔹 Tipagem correta das props
 type AppSidebarProps = {
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
@@ -88,7 +91,11 @@ export default function AppSidebar({
   loadingRef,
 }: AppSidebarProps) {
   const pathname = usePathname();
-  const [openMenus, setOpenMenus] = React.useState<string[]>(["Automações", "Precificação"]);
+  const router = useRouter();
+  const [openMenus, setOpenMenus] = React.useState<string[]>([
+    "Automações",
+    "Precificação",
+  ]);
 
   const toggleMenu = (title: string) => {
     setOpenMenus((prev) =>
@@ -96,10 +103,18 @@ export default function AppSidebar({
     );
   };
 
-  // 🔹 dispara o loading ao trocar página
   const triggerLoading = () => {
     loadingRef.current?.start();
     setTimeout(() => loadingRef.current?.finish(), 800);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logoutAction(); // ✅ Encerra a sessão SSR e redireciona para /
+    } catch (err) {
+      console.error("Erro ao sair:", err);
+      router.replace("/");
+    }
   };
 
   return (
@@ -146,7 +161,10 @@ export default function AppSidebar({
           onClick={() => setCollapsed(!collapsed)}
           className="group absolute -right-2 top-1/2 -translate-y-1/2 w-5 h-5 bg-[#111111] border border-white/10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 hover:scale-110 hover:shadow-glow"
         >
-          <motion.div animate={{ rotate: collapsed ? 180 : 0 }} transition={{ duration: 0.3 }}>
+          <motion.div
+            animate={{ rotate: collapsed ? 180 : 0 }}
+            transition={{ duration: 0.3 }}
+          >
             <ChevronLeft className="w-3 h-3 text-white group-hover:text-[#1a8ceb]" />
           </motion.div>
         </button>
@@ -170,7 +188,6 @@ export default function AppSidebar({
                     <SidebarMenuItem>
                       {item.children ? (
                         collapsed ? (
-                          // Popover quando colapsado
                           <Popover>
                             <PopoverTrigger asChild>
                               <SidebarMenuButton
@@ -218,7 +235,6 @@ export default function AppSidebar({
                             </PopoverContent>
                           </Popover>
                         ) : (
-                          // Collapsible quando expandido
                           <Collapsible
                             open={openMenus.includes(item.title)}
                             onOpenChange={() => toggleMenu(item.title)}
@@ -256,19 +272,29 @@ export default function AppSidebar({
                             <CollapsibleContent asChild>
                               <motion.div
                                 initial={{ opacity: 0, y: -8, height: 0 }}
-                                animate={{ opacity: 1, y: 0, height: "auto" }}
+                                animate={{
+                                  opacity: 1,
+                                  y: 0,
+                                  height: "auto",
+                                }}
                                 exit={{ opacity: 0, y: -8, height: 0 }}
-                                transition={{ duration: 0.25, ease: "easeInOut" }}
+                                transition={{
+                                  duration: 0.25,
+                                  ease: "easeInOut",
+                                }}
                                 className="ml-6 mt-1 overflow-hidden"
                               >
                                 {item.children.map((child) => {
-                                  const childActive = pathname === child.href;
+                                  const childActive =
+                                    pathname === child.href;
                                   return (
                                     <SidebarMenuButton
                                       key={child.title}
                                       asChild
                                       className={`hover:bg-white/5 text-neutral-400 hover:text-white rounded-xl ${
-                                        childActive ? "bg-[#1a8ceb]/10 text-[#1a8ceb]" : ""
+                                        childActive
+                                          ? "bg-[#1a8ceb]/10 text-[#1a8ceb]"
+                                          : ""
                                       }`}
                                       onClick={() => {
                                         setPageTitle(child.title);
@@ -289,14 +315,15 @@ export default function AppSidebar({
                           </Collapsible>
                         )
                       ) : (
-                        // Link direto
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <SidebarMenuButton
                                 asChild
                                 className={`hover:bg-white/5 text-neutral-300 hover:text-white rounded-xl group ${
-                                  isActive ? "bg-[#1a8ceb]/10 text-[#1a8ceb]" : ""
+                                  isActive
+                                    ? "bg-[#1a8ceb]/10 text-[#1a8ceb]"
+                                    : ""
                                 } ${collapsed ? "flex justify-center" : ""}`}
                                 onClick={() => {
                                   setPageTitle(item.title);
@@ -351,28 +378,31 @@ export default function AppSidebar({
         <SidebarMenuButton
           asChild
           className={`hover:bg-white/5 text-neutral-300 hover:text-white rounded-xl ${
-            pathname === "/dashboard/configuracao" ? "bg-[#1a8ceb]/10 text-[#1a8ceb]" : ""
+            pathname === "/dashboard/configuracao"
+              ? "bg-[#1a8ceb]/10 text-[#1a8ceb]"
+              : ""
           }`}
           onClick={() => {
             setPageTitle("Configurações");
             triggerLoading();
           }}
         >
-          <Link href="/dashboard/configuracao" className="flex items-center gap-3 px-3 py-2.5">
+          <Link
+            href="/dashboard/configuracao"
+            className="flex items-center gap-3 px-3 py-2.5"
+          >
             <Settings className="w-5 h-5 group-hover:text-[#1a8ceb]" />
             {!collapsed && <span className="font-medium">Configurações</span>}
           </Link>
         </SidebarMenuButton>
 
+        {/* ✅ Logout real, sem reload nem erro */}
         <SidebarMenuButton
-          asChild
-          className="hover:bg-red-500/10 text-red-500 hover:text-red-400 rounded-xl mt-2"
-          onClick={() => setPageTitle("Sair")}
+          onClick={handleLogout}
+          className="hover:bg-red-500/10 text-red-500 hover:text-red-400 rounded-xl mt-2 flex items-center gap-3 px-3 py-2.5 cursor-pointer"
         >
-          <Link href="/inicio" className="flex items-center gap-3 px-3 py-2.5">
-            <LogOut className="w-5 h-5 group-hover:text-red-400" />
-            {!collapsed && <span className="font-medium">Sair</span>}
-          </Link>
+          <LogOut className="w-5 h-5 group-hover:text-red-400" />
+          {!collapsed && <span className="font-medium">Sair</span>}
         </SidebarMenuButton>
       </div>
     </motion.aside>

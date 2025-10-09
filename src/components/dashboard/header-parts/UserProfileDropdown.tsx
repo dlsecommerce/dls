@@ -20,7 +20,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { logoutAction } from "@/app/actions/logout"; 
 
 const statusOptions = [
   { key: "disponivel", label: "Disponível", color: "bg-green-500" },
@@ -82,8 +82,12 @@ export function UserProfileDropdown() {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.push("/inicio");
+    try {
+      await logoutAction(); 
+    } catch (err) {
+      console.error("Erro ao sair:", err);
+      router.replace("/inicio");
+    }
   };
 
   return (
@@ -215,7 +219,8 @@ export function UserProfileDropdown() {
                 disabled={saving}
                 className="text-xs text-[#2699fe] flex items-center gap-1 hover:text-[#58b1ff]"
               >
-                <Check className="w-3 h-3" /> {saving ? "Salvando..." : "Salvar"}
+                <Check className="w-3 h-3" />{" "}
+                {saving ? "Salvando..." : "Salvar"}
               </button>
             </div>
           </div>
@@ -240,6 +245,7 @@ export function UserProfileDropdown() {
 
         <DropdownMenuSeparator className="my-2 bg-white/10" />
 
+        {/* ✅ Logout sem erro 404, sem reload, instantâneo */}
         <DropdownMenuItem
           onClick={handleSignOut}
           className="text-red-500 hover:bg-red-500/10 cursor-pointer"
