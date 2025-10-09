@@ -21,21 +21,9 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { supabaseChatService } from "@/services/supabaseChatService";
 
-interface StatusOption {
-  key: string;
-  label: string;
-  color: string;
-}
-
-interface UserStatus {
-  usuario_id: string;
-  usuario_nome: string;
-  status: string;
-  ultima_atividade: string;
-}
-
-const statusOptions: StatusOption[] = [
+const statusOptions = [
   { key: "disponivel", label: "Disponível", color: "bg-green-500" },
   { key: "ausente", label: "Ausente", color: "bg-yellow-500" },
   { key: "ocupado", label: "Ocupado", color: "bg-red-500" },
@@ -43,55 +31,53 @@ const statusOptions: StatusOption[] = [
 ];
 
 export function UserProfileDropdown() {
-  const { profile, loading, refreshProfile, setStatus, setStatusMessage } = useAuth();
+  const { profile, loading, refreshProfile, setStatus, setStatusMessage } =
+    useAuth();
   const router = useRouter();
   const [editMessage, setEditMessage] = useState(false);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [onlineUsers, setOnlineUsers] = useState<UserStatus[]>([]);
 
+  // Atualiza o campo de mensagem quando o perfil muda
   useEffect(() => {
     if (profile?.status_message) setMessage(profile.status_message);
   }, [profile]);
 
+  // Atualiza presença no Supabase (chat realtime)
+  useEffect(() => {
+    if (profile?.id && profile?.status && profile?.name) {
+      supabaseChatService.upsertStatus(profile.id, profile.name, profile.status);
+    }
+  }, [profile?.id, profile?.status, profile?.name]);
+
+  // Força atualização do perfil se ainda não carregou
   useEffect(() => {
     if (!loading && !profile) refreshProfile();
   }, [loading, profile]);
 
-  // Escuta status dos usuários em tempo real
-  useEffect(() => {
-    const channel = supabase
-      .channel("status_usuario_realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "status_usuario" },
-        (payload) => {
-          if (payload.new) {
-            setOnlineUsers((prev) => {
-              const others = prev.filter((u) => u.usuario_id !== payload.new.usuario_id);
-              return [...others, payload.new];
-            });
-          }
-        }
-      )
-      .subscribe();
+  if (loading) {
+    return (
+      <div className="w-10 h-10 rounded-full bg-neutral-800 animate-pulse" />
+    );
+  }
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  if (!profile) {
+    return (
+      <div className="w-10 h-10 rounded-full bg-neutral-700 flex items-center justify-center text-neutral-400 text-sm">
+        ?
+      </div>
+    );
+  }
 
-  const updateStatus = async (status: string) => {
-    if (!profile) return;
-    await supabase.from("status_usuario").upsert({
-      usuario_id: profile.id,
-      usuario_nome: profile.name,
-      status,
-      ultima_atividade: new Date().toISOString(),
-    });
-    setStatus(status);
-  };
+  const avatar = profile.avatar_url;
+  const initials =
+    profile.name
+      ?.split(" ")
+      .filter(Boolean)
+      .map((n) => n[0]?.toUpperCase())
+      .join("")
+      .slice(0, 2) || "?";
 
   const handleSaveMessage = async () => {
     setSaving(true);
@@ -103,6 +89,7 @@ export function UserProfileDropdown() {
     }
   };
 
+  // ✅ Logout funcional via Supabase
   const handleSignOut = async () => {
     try {
       await supabase.auth.signOut();
@@ -113,30 +100,14 @@ export function UserProfileDropdown() {
     }
   };
 
-  if (loading)
-    return <div className="w-10 h-10 rounded-full bg-neutral-800 animate-pulse" />;
-
-  if (!profile)
-    return (
-      <div className="w-10 h-10 rounded-full bg-neutral-700 flex items-center justify-center text-neutral-400 text-sm">
-        ?
-      </div>
-    );
-
-  const avatar = profile.avatar_url;
-  const initials =
-    profile.name
-      ?.split(" ")
-      .map((n: string) => n[0]?.toUpperCase())
-      .join("")
-      .slice(0, 2) || "?";
-
   return (
     <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
-          className="relative w-10 h-10 rounded-full bg-neutral-800 p-0 cursor-pointer overflow-hidden"
+          className="relative w-10 h-10 rounded-full p-0 bg-neutral-800 overflow-visible cursor-pointer
+                     before:absolute before:inset-0 before:rounded-full before:transition-all before:duration-300 
+                     before:ring-0 hover:before:ring-4 hover:before:ring-white/10"
         >
           {avatar ? (
             <Image
@@ -146,6 +117,7 @@ export function UserProfileDropdown() {
               height={40}
               className="rounded-full object-cover"
               unoptimized
+              onError={(e) => ((e.currentTarget.src = "/default-avatar.png"))}
             />
           ) : (
             <span className="text-sm text-white">{initials}</span>
@@ -168,15 +140,29 @@ export function UserProfileDropdown() {
         align="end"
         className="w-72 bg-[#111]/90 border border-white/10 rounded-xl shadow-xl backdrop-blur-md p-2"
       >
-        <div className="flex items-center gap-3 px-3 py-2 border-b border-white/10">
-          <Image
-            src={avatar || "/default-avatar.png"}
-            alt="avatar"
-            width={40}
-            height={40}
-            className="rounded-full object-cover"
-            unoptimized
-          />
+        {/* Header com avatar e status colorido */}
+        <div className="flex items-center gap-3 px-3 py-2 border-b border-white/10 relative">
+          <div className="relative">
+            <Image
+              src={avatar || "/default-avatar.png"}
+              alt="avatar"
+              width={40}
+              height={40}
+              className="rounded-full object-cover"
+              unoptimized
+            />
+            <span
+              className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-[#111] ${
+                profile.status === "disponivel"
+                  ? "bg-green-500"
+                  : profile.status === "ausente"
+                  ? "bg-yellow-500"
+                  : profile.status === "ocupado"
+                  ? "bg-red-500"
+                  : "bg-neutral-500"
+              }`}
+            />
+          </div>
           <div className="flex flex-col">
             <span className="text-white text-sm">{profile.name}</span>
             <span className="text-xs text-neutral-400">{profile.email}</span>
@@ -188,21 +174,27 @@ export function UserProfileDropdown() {
           </div>
         </div>
 
-        <DropdownMenuItem disabled className="text-[11px] uppercase text-neutral-400 mt-2">
+        {/* Opções de status */}
+        <DropdownMenuItem
+          disabled
+          className="text-[11px] uppercase text-neutral-400 mt-2"
+        >
           Status
         </DropdownMenuItem>
 
         {statusOptions.map((opt) => (
           <DropdownMenuItem
             key={opt.key}
-            onClick={() => updateStatus(opt.key)}
+            onClick={() => setStatus(opt.key)}
             className="flex items-center justify-between cursor-pointer hover:bg-white/5 rounded-md"
           >
             <div className="flex items-center gap-2">
               <span className={`w-3 h-3 rounded-full ${opt.color}`} />
               <span>{opt.label}</span>
             </div>
-            {profile.status === opt.key && <Check className="w-4 h-4 text-neutral-400" />}
+            {profile.status === opt.key && (
+              <Check className="w-4 h-4 text-neutral-400" />
+            )}
           </DropdownMenuItem>
         ))}
 
@@ -236,7 +228,8 @@ export function UserProfileDropdown() {
                 disabled={saving}
                 className="text-xs text-[#2699fe] flex items-center gap-1 hover:text-[#58b1ff]"
               >
-                <Check className="w-3 h-3" /> {saving ? "Salvando..." : "Salvar"}
+                <Check className="w-3 h-3" />{" "}
+                {saving ? "Salvando..." : "Salvar"}
               </button>
             </div>
           </div>
