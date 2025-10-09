@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import HeaderLeft from "./header-parts/HeaderLeft";
 import HeaderActions from "./header-parts/HeaderActions";
 import { UserProfileDropdown } from "./header-parts/UserProfileDropdown";
+import { useAuth } from "@/context/AuthContext";
 
 interface DashboardHeaderProps {
   sidebarCollapsed: boolean;
@@ -25,8 +26,8 @@ export default function DashboardHeader({
   onSidebarToggle,
 }: DashboardHeaderProps) {
   const pathname = usePathname();
+  const { profile, loading } = useAuth();
 
-  // 🔹 Garante que pegamos sempre o valor do título, não a chave
   const title =
     routeTitles[pathname] ||
     routeTitles[
@@ -35,20 +36,16 @@ export default function DashboardHeader({
     "Dashboard";
 
   return (
-    <header
-      className="sticky top-0 z-30 flex items-center justify-between 
-                 px-6 py-3 
-                 bg-[#111111]/80 backdrop-blur-xl 
-                 border-b border-white/10"
-    >
-      {/* Esquerda → título */}
+    <header className="sticky top-0 z-30 flex items-center justify-between px-6 py-3 bg-[#111111]/80 backdrop-blur-xl border-b border-white/10">
       <HeaderLeft title={title} onSidebarToggle={onSidebarToggle} />
-
-      {/* Direita → ícones + perfil */}
       <div className="flex items-center gap-3">
         <HeaderActions />
         <div className="w-px h-6 bg-white/10" />
-        <UserProfileDropdown />
+        {!loading && profile ? (
+          <UserProfileDropdown />
+        ) : (
+          <div className="w-10 h-10 rounded-full bg-neutral-800 animate-pulse" />
+        )}
       </div>
     </header>
   );

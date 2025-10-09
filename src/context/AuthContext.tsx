@@ -7,13 +7,13 @@ import { normalizeUpdate } from "@/utils/supabase-helpers";
 
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 type ProfileUpdate = Database["public"]["Tables"]["profiles"]["Update"];
-
 type Profile = ProfileRow & { email: string | null };
 
 interface AuthContextType {
   profile: Profile | null;
   loading: boolean;
-  setStatus: (status: NonNullable<ProfileRow["status"]>) => Promise<void>;
+  setStatus: (status: string) => Promise<void>;
+  setStatusMessage: (message: string) => Promise<void>;
   updateProfile: (data: Partial<ProfileUpdate>) => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -26,25 +26,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function loadProfile(userId: string) {
     const { data: authUser } = await supabase.auth.getUser();
-
-    const { data: p, error } = await supabase
+    const { data: p } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", userId)
       .single<ProfileRow>();
-
-    if (!error && p) {
-      setProfile({ ...p, email: authUser?.user?.email ?? null });
-    }
+    if (p) setProfile({ ...p, email: authUser?.user?.email ?? null });
   }
 
   async function refreshProfile() {
     const { data: authUser } = await supabase.auth.getUser();
-    if (authUser?.user) {
-      await loadProfile(authUser.user.id);
-    } else {
-      setProfile(null);
-    }
+    if (authUser?.user) await loadProfile(authUser.user.id);
+    else setProfile(null);
   }
 
   useEffect(() => {
@@ -54,52 +47,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       if (session?.user) loadProfile(session.user.id);
       else setProfile(null);
     });
 
-    return () => subscription?.unsubscribe();
+    return () => sub.subscription?.unsubscribe();
   }, []);
 
-  const setStatus = async (status: NonNullable<ProfileRow["status"]>) => {
+  const setStatus = async (status: string) => {
     if (!profile) return;
+    await supabase.from("profiles").update({ status }).eq("id", profile.id);
+    await refreshProfile();
+  };
 
-    const { error } = await supabase
+  const setStatusMessage = async (message: string) => {
+    if (!profile) return;
+    await supabase
       .from("profiles")
-      .update(normalizeUpdate<ProfileUpdate>({ status }))
+      .update(normalizeUpdate<ProfileUpdate>({ status_message: message }))
       .eq("id", profile.id);
-
-    if (!error) {
-      setProfile({ ...profile, status });
-    }
+    await refreshProfile();
   };
 
   const updateProfile = async (data: Partial<ProfileUpdate>) => {
     if (!profile) return;
-
     const updateData: ProfileUpdate = {
       name: data.name ?? profile.name,
       avatar_url: data.avatar_url ?? profile.avatar_url,
       status: data.status ?? profile.status,
+      status_message: data.status_message ?? profile.status_message,
       updated_at: new Date().toISOString(),
     };
-
-    const { error } = await supabase
+    await supabase
       .from("profiles")
       .update(normalizeUpdate(updateData))
       .eq("id", profile.id);
-
-    if (!error) {
-      setProfile({ ...profile, ...updateData });
-    }
+    setProfile({ ...profile, ...updateData });
+    await refreshProfile();
   };
 
   return (
     <AuthContext.Provider
-      value={{ profile, loading, setStatus, updateProfile, refreshProfile }}
+      value={{
+        profile,
+        loading,
+        setStatus,
+        setStatusMessage,
+        updateProfile,
+        refreshProfile,
+      }}
     >
       {children}
     </AuthContext.Provider>
