@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { DollarSign, HelpCircle, Download, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -53,7 +53,6 @@ export default function PrecoVenda({
       .padStart(2, "0")}m`;
     const fileName = `DECOMPOSIÇÃO_${dataFormatada}_${horaFormatada}.xlsx`;
 
-    /* ===== ABA 1: COMPOSIÇÃO ===== */
     const composicaoRows: (string | number)[][] = [
       ["Preço de Venda (R$)", precoVenda || "0,00"],
       [],
@@ -67,7 +66,6 @@ export default function PrecoVenda({
 
     const composicaoSheet = XLSX.utils.aoa_to_sheet(composicaoRows);
 
-    /* ===== ABA 2: RESULTADOS ===== */
     const resultadosRows: (string | number)[][] = [
       ["Resultados Calculados"],
       ["Gerado em", now.toLocaleString("pt-BR")],
@@ -78,16 +76,15 @@ export default function PrecoVenda({
 
     const resultadosSheet = XLSX.utils.aoa_to_sheet(resultadosRows);
 
-    /* ===== ESTILOS (xlsx-js-style) ===== */
     const headerStyle = {
       fill: {
         type: "pattern",
         patternType: "solid",
-        fgColor: { rgb: "1A8CEB" }, // azul principal
+        fgColor: { rgb: "1A8CEB" },
       },
       font: {
         bold: true,
-        color: { rgb: "FFFFFF" }, // texto branco
+        color: { rgb: "FFFFFF" },
         sz: 11,
       },
       border: {
@@ -110,15 +107,12 @@ export default function PrecoVenda({
       });
     };
 
-    // aplica cabeçalho azul nas tabelas
-    applyHeaderStyle(composicaoSheet, 3); // linha 3 = cabeçalho da aba "Composição"
-    applyHeaderStyle(resultadosSheet, 4); // linha 4 = cabeçalho da aba "Resultados"
+    applyHeaderStyle(composicaoSheet, 3);
+    applyHeaderStyle(resultadosSheet, 4);
 
-    /* ===== LARGURA DAS COLUNAS ===== */
     composicaoSheet["!cols"] = [{ wch: 18 }, { wch: 15 }, { wch: 15 }];
     resultadosSheet["!cols"] = [{ wch: 18 }, { wch: 18 }, { wch: 18 }];
 
-    /* ===== CRIAR E SALVAR ===== */
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, composicaoSheet, "Composição");
     XLSX.utils.book_append_sheet(wb, resultadosSheet, "Resultados");
@@ -135,7 +129,6 @@ export default function PrecoVenda({
     saveAs(blob, fileName);
   };
 
-  /* === LIMPAR TUDO (com limite de 5 cliques) === */
   const handleClearAll = () => {
     setClicks((prev) => {
       const newCount = prev + 1;
@@ -163,12 +156,7 @@ export default function PrecoVenda({
 
   /* === JSX === */
   return (
-    <motion.div
-      className="mb-3 relative"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" }}
-    >
+    <div className="mb-3 relative">
       {/* Cabeçalho */}
       <div className="flex justify-between items-center mb-1">
         <div className="flex items-center gap-2">
@@ -179,7 +167,6 @@ export default function PrecoVenda({
           </h3>
         </div>
 
-        {/* Ícones */}
         <div className="flex items-center gap-2">
           <motion.button
             whileTap={{ scale: 0.9 }}
@@ -214,7 +201,6 @@ export default function PrecoVenda({
         </div>
       </div>
 
-      {/* Campo de entrada */}
       <Input
         value={precoVenda}
         placeholder="0,00"
@@ -225,6 +211,6 @@ export default function PrecoVenda({
       <Label className="text-neutral-400 text-[10px] mt-1 block">
         Digite o preço final da venda
       </Label>
-    </motion.div>
+    </div>
   );
 }
