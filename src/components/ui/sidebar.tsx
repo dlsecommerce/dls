@@ -62,7 +62,15 @@ const SidebarProvider = React.forwardRef<
 
   return (
     <SidebarContext.Provider
-      value={{ state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar }}
+      value={{
+        state,
+        open,
+        setOpen,
+        isMobile,
+        openMobile,
+        setOpenMobile,
+        toggleSidebar,
+      }}
     >
       <TooltipProvider delayDuration={0}>
         <div
@@ -112,7 +120,10 @@ const Sidebar = React.forwardRef<
   return (
     <div
       ref={ref}
-      className={cn("hidden md:flex h-screen w-[--sidebar-width] flex-col bg-sidebar text-sidebar-foreground", className)}
+      className={cn(
+        "hidden md:flex h-screen w-[--sidebar-width] flex-col bg-sidebar text-sidebar-foreground",
+        className
+      )}
       {...props}
     >
       {children}
@@ -153,28 +164,47 @@ SidebarTrigger.displayName = "SidebarTrigger";
 // ================================
 const SidebarHeader = React.forwardRef<HTMLDivElement, React.ComponentProps<"div">>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} data-sidebar="header" className={cn("flex flex-col gap-2 p-2 border-b", className)} {...props} />
+    <div
+      ref={ref}
+      data-sidebar="header"
+      className={cn("flex flex-col gap-2 p-2 border-b", className)}
+      {...props}
+    />
   )
 );
 SidebarHeader.displayName = "SidebarHeader";
 
 const SidebarContent = React.forwardRef<HTMLDivElement, React.ComponentProps<"div">>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} data-sidebar="content" className={cn("flex-1 flex flex-col overflow-auto", className)} {...props} />
+    <div
+      ref={ref}
+      data-sidebar="content"
+      className={cn("flex-1 flex flex-col overflow-auto", className)}
+      {...props}
+    />
   )
 );
 SidebarContent.displayName = "SidebarContent";
 
 const SidebarFooter = React.forwardRef<HTMLDivElement, React.ComponentProps<"div">>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} data-sidebar="footer" className={cn("flex flex-col gap-2 p-2 border-t", className)} {...props} />
+    <div
+      ref={ref}
+      data-sidebar="footer"
+      className={cn("flex flex-col gap-2 p-2 border-t", className)}
+      {...props}
+    />
   )
 );
 SidebarFooter.displayName = "SidebarFooter";
 
 const SidebarInset = React.forwardRef<HTMLDivElement, React.ComponentProps<"main">>(
   ({ className, ...props }, ref) => (
-    <main ref={ref} className={cn("flex-1 flex flex-col bg-background", className)} {...props} />
+    <main
+      ref={ref}
+      className={cn("flex-1 flex flex-col bg-background", className)}
+      {...props}
+    />
   )
 );
 SidebarInset.displayName = "SidebarInset";
@@ -183,12 +213,16 @@ SidebarInset.displayName = "SidebarInset";
 // Menu
 // ================================
 const SidebarMenu = React.forwardRef<HTMLUListElement, React.ComponentProps<"ul">>(
-  ({ className, ...props }, ref) => <ul ref={ref} className={cn("flex flex-col gap-1 p-2", className)} {...props} />
+  ({ className, ...props }, ref) => (
+    <ul ref={ref} className={cn("flex flex-col gap-1 p-2", className)} {...props} />
+  )
 );
 SidebarMenu.displayName = "SidebarMenu";
 
 const SidebarMenuItem = React.forwardRef<HTMLLIElement, React.ComponentProps<"li">>(
-  ({ className, ...props }, ref) => <li ref={ref} className={cn("relative", className)} {...props} />
+  ({ className, ...props }, ref) => (
+    <li ref={ref} className={cn("relative", className)} {...props} />
+  )
 );
 SidebarMenuItem.displayName = "SidebarMenuItem";
 
@@ -230,7 +264,7 @@ const SidebarGroupContent = React.forwardRef<HTMLDivElement, React.ComponentProp
 SidebarGroupContent.displayName = "SidebarGroupContent";
 
 // ================================
-// Exports
+// Exports (corrigido)
 // ================================
 export {
   SidebarProvider,
@@ -244,6 +278,5 @@ export {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarGroup,
-  SidebarGroupContent,
-  useSidebar,
+  SidebarGroupContent
 };

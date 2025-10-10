@@ -47,24 +47,28 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // ✅ Agora com await
   const cookieStore = await cookies();
 
-  // ✅ Novo client com suporte oficial a Next.js 15
+  // ✅ Novo client com suporte oficial a Next 15
   const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll: () => cookieStore.getAll(),
-        setAll: (cookiesToSet) =>
-          cookiesToSet.forEach(({ name, value }) => cookieStore.set(name, value)),
+        getAll: async () => cookieStore.getAll(),
+        setAll: async (cookiesToSet) => {
+          for (const { name, value } of cookiesToSet) {
+            cookieStore.set(name, value);
+          }
+        },
       },
     }
   );
 
   const {
     data: { user },
-  } = await supabase.auth.getUser(); // ✅ getUser é validado com o servidor
+  } = await supabase.auth.getUser(); // ✅ agora validado com servidor
 
   return (
     <html lang="pt-BR" suppressHydrationWarning>
