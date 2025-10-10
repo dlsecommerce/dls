@@ -4,13 +4,12 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { normalizeUpdate } from "@/utils/supabase-helpers";
-import { logoutAction } from "@/app/actions/logout"; // ✅ Importa logout do servidor
 
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 type ProfileUpdate = Database["public"]["Tables"]["profiles"]["Update"];
 type Profile = ProfileRow & { email: string | null };
 
-interface AuthContextType {
+interface ProfileContextType {
   profile: Profile | null;
   loading: boolean;
   setStatus: (status: string) => Promise<void>;
@@ -20,9 +19,9 @@ interface AuthContextType {
   signOut: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
+const ProfileContext = createContext<ProfileContextType | null>(null);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -52,15 +51,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // 🔹 Carregamento inicial e monitoramento da sessão
   useEffect(() => {
-    let isMounted = true;
+    let mounted = true;
 
-    supabase.auth.getUser().then(async ({ data }) => {
-      if (!isMounted) return;
-      if (data.user) await loadProfile(data.user.id);
-      else setProfile(null);
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (mounted && user) await loadProfile(user.id);
       setLoading(false);
-    });
+    };
 
+    init();
+
+    // Escuta alterações de sessão (login/logout)
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       if (session?.user) loadProfile(session.user.id);
       else setProfile(null);
@@ -81,7 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .subscribe();
 
     return () => {
-      isMounted = false;
+      mounted = false;
       sub.subscription?.unsubscribe();
       supabase.removeChannel(channel);
     };
@@ -125,7 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile({ ...updated, email: authUser?.user?.email ?? null });
   };
 
-  // 🔹 Atualiza dados do perfil
+  // 🔹 Atualiza dados do perfil (nome, avatar, etc.)
   const updateProfile = async (data: Partial<ProfileUpdate>) => {
     if (!profile) return;
 
@@ -153,18 +154,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile({ ...updated, email: authUser?.user?.email ?? null });
   };
 
-  // 🔹 Logout via server action (mantém sincronizado com middleware)
+  // 🔹 Logout client-side (sem server action)
   const signOut = async () => {
     try {
-      await logoutAction(); // ✅ limpa cookies e redireciona para /login
+      await supabase.auth.signOut();
       setProfile(null);
+      window.location.replace("/login");
     } catch (error) {
       console.error("Erro ao sair:", error);
     }
   };
 
   return (
-    <AuthContext.Provider
+    <ProfileContext.Provider
       value={{
         profile,
         loading,
@@ -176,12 +178,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
-    </AuthContext.Provider>
+    </ProfileContext.Provider>
   );
 }
 
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth deve ser usado dentro de AuthProvider");
+export function useProfile() {
+  const ctx = useContext(ProfileContext);
+  if (!ctx)
+    throw new Error("useProfile deve ser usado dentro de ProfileProvider");
   return ctx;
 }

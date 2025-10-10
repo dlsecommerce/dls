@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "@/integrations/supabase/client";
+import { useRef, useState } from "react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import AppSidebar from "@/components/dashboard/AppSidebar";
 import { LoadingBar, LoadingBarRef } from "@/components/ui/loading-bar";
@@ -16,32 +14,12 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
-  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [pageTitle, setPageTitle] = useState(t("dashboard"));
   const loadingRef = useRef<LoadingBarRef | null>(null);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const checkSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (!data.session) {
-        router.replace("/");
-        return;
-      }
-      setLoading(false);
-    };
-    checkSession();
-  }, [router]);
-
-  if (loading) {
-    // ✅ Loader pequeno centralizado enquanto verifica sessão
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a]">
-        <div className="w-5 h-5 border-3 border-[#2699fe] border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  // ✅ Nenhum check de sessão client-side (já garantido pelo middleware)
+  // ✅ Nenhum loader extra — tudo carrega instantaneamente
 
   return (
     <SidebarProvider>

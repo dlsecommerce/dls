@@ -5,8 +5,8 @@ import { LogOut, User, Shield, Bell, Sliders, MessageSquare } from "lucide-react
 import { supabase } from "@/integrations/supabase/client";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAuth } from "@/context/AuthContext";
-import { logoutAction } from "@/app/actions/logout"; // ✅ mesmo padrão SSR
+import { useProfile } from "@/context/ProfileContext";
+import { logoutAction } from "@/app/actions/logout";
 
 import ProfileTab from "./tabs/ProfileTab";
 import SecurityTab from "./tabs/SecurityTab";
@@ -15,7 +15,7 @@ import PreferencesTab from "./tabs/PreferencesTab";
 import FeedbacksTab from "./tabs/FeedbacksTab"; // 🆕 Nova aba importada
 
 export default function Configuration() {
-  const { profile, updateProfile } = useAuth();
+  const { profile, updateProfile } = useProfile();
   const [tab, setTab] = useState<
     "perfil" | "seguranca" | "notificacoes" | "preferencias" | "feedbacks"
   >("perfil");

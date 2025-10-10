@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import HeaderLeft from "./header-parts/HeaderLeft";
 import HeaderActions from "./header-parts/HeaderActions";
 import { UserProfileDropdown } from "./header-parts/UserProfileDropdown";
-import { useAuth } from "@/context/AuthContext";
+import { useProfile } from "@/context/ProfileContext";
 
 interface DashboardHeaderProps {
   sidebarCollapsed: boolean;
@@ -26,7 +26,7 @@ export default function DashboardHeader({
   onSidebarToggle,
 }: DashboardHeaderProps) {
   const pathname = usePathname();
-  const { profile, loading } = useAuth();
+  const { profile, loading } = useProfile();
 
   const title =
     routeTitles[pathname] ||

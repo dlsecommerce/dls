@@ -1,38 +1,35 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Eye, EyeOff, ShoppingCart, LogIn } from "lucide-react";
 import Link from "next/link";
-import { useLogin } from "@/hooks/useLogin";
+import { useAuth } from "@/hooks/useAuth"; // ✅ Hook unificado e funcional
 import { LoadingBar, LoadingBarRef } from "@/components/ui/loading-bar";
 
-const Login = () => {
-  const {
-    register,
-    handleSubmit,
-    onSubmit,
-    errors,
-    isSubmitting,
-    showPassword,
-    setShowPassword,
-    capsLock,
-    setCapsLock,
-    handleGoogleLogin,
-  } = useLogin();
-
+export default function Login() {
+  const { login, loginWithGoogle, loading } = useAuth(); // ✅ usa o hook unificado
+  const [showPassword, setShowPassword] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
   const loadingBarRef = useRef<LoadingBarRef>(null);
 
+  // Campos de formulário
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
   useEffect(() => {
-    if (isSubmitting) {
-      loadingBarRef.current?.start();
-    } else {
-      loadingBarRef.current?.finish();
-    }
-  }, [isSubmitting]);
+    if (loading) loadingBarRef.current?.start();
+    else loadingBarRef.current?.finish();
+  }, [loading]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email || !password) return;
+    await login(email, password); // ✅ chama o hook corretamente
+  }
 
   const cardColor = "#090909";
 
@@ -58,34 +55,24 @@ const Login = () => {
           </CardHeader>
 
           <CardContent className="space-y-6 px-8 py-6">
-            <form
-              onSubmit={handleSubmit(onSubmit)}
-              className="space-y-4"
-              noValidate
-            >
+            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
               {/* E-mail */}
               <div className="space-y-2">
-                <Label htmlFor="identifier" className="text-white">
+                <Label htmlFor="email" className="text-white">
                   E-mail
                 </Label>
                 <Input
-                  id="identifier"
+                  id="email"
                   type="email"
                   placeholder="seu@email.com"
-                  disabled={isSubmitting}
-                  {...register("identifier", {
-                    required: "O e-mail é obrigatório",
-                  })}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={loading}
                   style={{ backgroundColor: cardColor }}
                   className="text-white placeholder:text-neutral-400 rounded-md px-3 h-12 
                              border border-neutral-700 
                              focus:border-[#2799fe] focus:ring-0 focus:outline-none focus:shadow-none"
                 />
-                {errors.identifier && (
-                  <p className="text-xs text-red-500">
-                    {errors.identifier.message}
-                  </p>
-                )}
               </div>
 
               {/* Senha */}
@@ -98,14 +85,9 @@ const Login = () => {
                     id="password"
                     type={showPassword ? "text" : "password"}
                     placeholder="Sua senha"
-                    disabled={isSubmitting}
-                    {...register("password", {
-                      required: "A senha é obrigatória",
-                      minLength: {
-                        value: 6,
-                        message: "A senha deve ter pelo menos 6 caracteres",
-                      },
-                    })}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={loading}
                     style={{ backgroundColor: cardColor }}
                     className="text-white placeholder:text-neutral-400 rounded-md px-3 h-12 
                                border border-neutral-700 
@@ -133,18 +115,12 @@ const Login = () => {
                 {capsLock && (
                   <p className="text-xs text-yellow-500">Caps Lock ligado</p>
                 )}
-                {errors.password && (
-                  <p className="text-xs text-red-500">
-                    {errors.password.message}
-                  </p>
-                )}
               </div>
 
               <div className="flex items-center justify-between">
                 <label className="flex items-center gap-2 text-sm text-neutral-400 cursor-pointer">
                   <input
                     type="checkbox"
-                    {...register("remember")}
                     className="rounded border-gray-300 cursor-pointer"
                   />
                   Lembrar de mim
@@ -165,26 +141,24 @@ const Login = () => {
                            hover:from-[#0f6bb7] hover:via-[#1780d4] hover:to-[#2799fe] 
                            transition-all duration-300 cursor-pointer
                            focus:outline-none focus:ring-0 focus:shadow-none"
-                disabled={isSubmitting}
+                disabled={loading}
               >
                 <LogIn className="w-4 h-4" />
-                {isSubmitting ? "Entrando..." : "Entrar"}
+                {loading ? "Entrando..." : "Entrar"}
               </Button>
             </form>
 
             {/* Separador */}
             <div className="flex items-center gap-4">
               <div className="flex-1 h-px bg-neutral-700" />
-              <span className="text-xs uppercase text-white">
-                Ou acesse via
-              </span>
+              <span className="text-xs uppercase text-white">Ou acesse via</span>
               <div className="flex-1 h-px bg-neutral-700" />
             </div>
 
-            {/* Google login */}
+            {/* Login com Google */}
             <div className="flex">
               <Button
-                onClick={handleGoogleLogin}
+                onClick={() => loginWithGoogle()}
                 type="button"
                 className="flex-1 flex items-center justify-center gap-2 border border-neutral-300 rounded-md px-3 h-12 
                            transition-all duration-300 cursor-pointer 
@@ -193,7 +167,7 @@ const Login = () => {
                            hover:from-[#e5e5e5] hover:via-[#f0f0f0] hover:to-[#e5e5e5]
                            focus:outline-none focus:ring-0 focus:shadow-none"
               >
-                {/* Ícone Google oficial e limpo */}
+                {/* Ícone Google */}
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   viewBox="0 0 48 48"
@@ -237,6 +211,4 @@ const Login = () => {
       </div>
     </div>
   );
-};
-
-export default Login;
+}

@@ -4,8 +4,12 @@ import { Providers } from "./providers";
 import "./globals.css";
 import { ClientWrapper } from "@/components/client/ClientWrapper";
 
-const inter = Inter({ subsets: ["latin"], display: "swap" });
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import type { Database } from "@/integrations/supabase/types";
+import SupabaseProvider from "@/components/provider/SupabaseProvider";
 
+const inter = Inter({ subsets: ["latin"], display: "swap" });
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://pikotshop.com.br";
 
 export const metadata: Metadata = {
@@ -38,19 +42,39 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const cookieStore = await cookies();
+
+  // ✅ Novo client com suporte oficial a Next.js 15
+  const supabase = createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll(),
+        setAll: (cookiesToSet) =>
+          cookiesToSet.forEach(({ name, value }) => cookieStore.set(name, value)),
+      },
+    }
+  );
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser(); // ✅ getUser é validado com o servidor
+
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body className={inter.className}>
         <Providers>
-          <main className="relative z-10 text-foreground">
-            {/* ✅ O ClientWrapper agora é apenas um container sem lógica */}
-            <ClientWrapper>{children}</ClientWrapper>
-          </main>
+          <SupabaseProvider initialUser={user}>
+            <main className="relative z-10 text-foreground">
+              <ClientWrapper>{children}</ClientWrapper>
+            </main>
+          </SupabaseProvider>
         </Providers>
       </body>
     </html>

@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/context/AuthContext";
+import { useProfile } from "@/context/ProfileContext";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { supabaseChatService } from "@/services/supabaseChatService";
@@ -32,7 +32,7 @@ const statusOptions = [
 
 export function UserProfileDropdown() {
   const { profile, loading, refreshProfile, setStatus, setStatusMessage } =
-    useAuth();
+    useProfile();
   const router = useRouter();
   const [editMessage, setEditMessage] = useState(false);
   const [message, setMessage] = useState("");

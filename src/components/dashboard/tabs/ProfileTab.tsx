@@ -3,11 +3,11 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { Camera, CheckCircle2, Loader2, X, Check } from "lucide-react";
 import Image from "next/image";
-import { useAuth } from "@/context/AuthContext";
+import { useProfile } from "@/context/ProfileContext";
 import { supabase } from "@/integrations/supabase/client";
 
 export default function ProfileTab() {
-  const { profile, updateProfile, refreshProfile } = useAuth();
+  const { profile, updateProfile, refreshProfile } = useProfile();
 
   const [name, setName] = useState(profile?.name ?? "");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(profile?.avatar_url ?? null);

@@ -27,7 +27,7 @@ import MessageItem from "@/components/chat/MessageItem";
 import TypingIndicator from "@/components/chat/TypeIndicator";
 import FileUploadArea from "@/components/chat/FileUploadArea";
 import ChatSettings from "@/components/chat/ChatSettings";
-import { useAuth } from "@/context/AuthContext";
+import { useProfile } from "@/context/ProfileContext";
 import { supabaseChatService, ChatMessage } from "@/services/supabaseChatService";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -42,7 +42,7 @@ interface MiniUser {
 }
 
 export default function ChatBubble() {
-  const { profile } = useAuth();
+  const { profile } = useProfile();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);

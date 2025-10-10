@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/context/AuthContext";
+import { useProfile } from "@/context/ProfileContext";
 import { MessageSquare, ThumbsUp, ThumbsDown, Send } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -17,7 +17,7 @@ interface Feedback {
 }
 
 export default function FeedbacksTab() {
-  const { profile } = useAuth();
+  const { profile } = useProfile();
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
   const [novoFeedback, setNovoFeedback] = useState("");
   const [tipo, setTipo] = useState("sugestão");
