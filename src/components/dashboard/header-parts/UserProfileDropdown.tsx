@@ -93,10 +93,10 @@ export function UserProfileDropdown() {
   const handleSignOut = async () => {
     try {
       await supabase.auth.signOut();
-      router.replace("/");
+      router.replace("/login");
     } catch (err) {
       console.error("Erro ao sair:", err);
-      router.replace("/");
+      router.replace("/dashboard");
     }
   };
 

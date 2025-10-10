@@ -115,7 +115,7 @@ export default function AppSidebar({
       router.replace("/");
     } catch (err) {
       console.error("Erro ao sair:", err);
-      router.replace("/");
+      router.replace("/dashboard");
     }
   };
 
