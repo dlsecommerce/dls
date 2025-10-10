@@ -18,11 +18,11 @@ export function GlassmorphicCard({
       transition={{ duration: 0.3 }}
       className={`
         relative overflow-hidden
-        bg-gradient-to-br from-[#0a0a0a]/90 to-[#1a1a1a]/70
+        bg-gradient-to-br from-white/5 to-white/[0.03]
         backdrop-blur-xl
-        border border-white/10
+        border border-neutral-700
         rounded-2xl
-        shadow-[0_4px_30px_rgba(0,0,0,0.3)]
+        shadow-md
         transition-all duration-300
         ${className}
       `}

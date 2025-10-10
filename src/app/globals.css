@@ -1,9 +1,25 @@
 @import "tailwindcss";
 
-/* 🎨 Tema base */
-:root {
+/* 🌗 Temas globais */
+:root,
+html.dark {
   --background: radial-gradient(circle at 30% 30%, #0c0c0c 0%, #0a0a0a 50%, #080808 100%);
   --foreground: #ededed;
+  --blur: 20px;
+  --card-bg: rgba(10, 10, 10, 0.55);
+  --border-color: rgba(255, 255, 255, 0.08);
+  --shadow-color: rgba(0, 0, 0, 0.4);
+  color-scheme: dark;
+}
+
+html.light {
+  --background: radial-gradient(circle at 30% 30%, #f9f9f9 0%, #f2f2f2 50%, #e9e9e9 100%);
+  --foreground: #0c0c0c;
+  --blur: 20px;
+  --card-bg: rgba(255, 255, 255, 0.6);
+  --border-color: rgba(0, 0, 0, 0.08);
+  --shadow-color: rgba(0, 0, 0, 0.2);
+  color-scheme: light;
 }
 
 /* 🔹 Base global */
@@ -13,59 +29,86 @@ body {
   height: 100%;
   margin: 0;
   padding: 0;
+  display: flex;
+  flex-direction: column;
   background: var(--background);
   color: var(--foreground);
   font-family: "Inter", Arial, Helvetica, sans-serif;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color-scheme: dark;
+  isolation: isolate;
+  transition:
+    background 0.3s ease-in-out,
+    color 0.3s ease-in-out;
 }
 
-/* Garante que o app ocupe toda a tela */
 #__next,
 #root {
   width: 100%;
   height: 100%;
-  background: var(--background);
   display: flex;
   flex-direction: column;
+  background: var(--background);
+  isolation: isolate;
 }
 
-/* 🔹 Sidebar, Header e Main com o MESMO fundo */
-.AppSidebar,
-header,
-main {
-  background: var(--background) !important;
-  color: var(--foreground);
-  border: none !important;
-  box-shadow: none !important;
-  transition: all 0.3s ease-in-out;
+/* 🔹 Layout principal */
+.AppContainer {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  background: var(--background);
+  overflow: hidden;
 }
 
-/* 🔹 Sidebar fixo — sem corte nem borda */
 .AppSidebar {
-  height: 100vh;
+  flex-shrink: 0;
+  width: 260px;
+  height: 100%;
+  background: var(--background);
+  color: var(--foreground);
+  border-right: 1px solid var(--border-color);
   overflow-y: auto;
   overflow-x: hidden;
-  will-change: width;
+  transition: width 0.3s ease-in-out;
+  backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
-/* Estados de colapso / expansão */
 .AppSidebar.collapsed {
   width: 80px !important;
-  overflow: visible !important;
 }
 
-.AppSidebar.expanded {
-  width: 260px !important;
+.AppContent {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+  background: var(--background);
+  overflow: hidden;
 }
 
-/* 🔹 Header fixo — mesmo fundo e sem separação */
+/* 🔹 Header fixo e translúcido */
 header {
   position: sticky;
   top: 0;
   z-index: 40;
+  width: 100%;
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  transition:
+    background 0.3s ease-in-out,
+    border-color 0.3s ease-in-out,
+    backdrop-filter 0.3s ease-in-out;
+}
+
+header.scrolled {
+  backdrop-filter: blur(var(--blur));
+  -webkit-backdrop-filter: blur(var(--blur));
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: 0 4px 20px var(--shadow-color);
 }
 
 /* 🔹 Conteúdo principal */
@@ -73,20 +116,23 @@ main {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  background: var(--background);
   margin: 0;
   padding: 0;
 }
 
-/* 🔹 Transições suaves */
+/* 🔹 Transições suaves e nítidas */
 * {
   box-sizing: border-box;
   transition:
     background 0.3s ease-in-out,
     color 0.3s ease-in-out,
+    border-color 0.3s ease-in-out,
     width 0.3s ease-in-out;
+  backface-visibility: hidden;
 }
 
-/* 🚫 Remove outline padrão */
+/* 🚫 Remove outlines */
 input:focus,
 textarea:focus,
 select:focus,
@@ -104,4 +150,49 @@ input[type=number]::-webkit-outer-spin-button {
 }
 input[type=number] {
   -moz-appearance: textfield;
+}
+
+/* 🔹 Gradiente contínuo fixo (sem retângulo preto ao rolar) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: var(--background);
+  z-index: -1;
+  transition: background 0.4s ease-in-out;
+}
+
+/* === 🌞 Ajuste de modo claro automático (sem alterar componentes) === */
+
+/* Modo claro — ajuste real, sem inverter cores */
+html.light body,
+html.light .AppSidebar,
+html.light header,
+html.light main {
+  background: var(--background) !important;
+  color: var(--foreground) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Header e sidebar translúcidas no modo claro */
+html.light header.scrolled,
+html.light .AppSidebar {
+  background: rgba(255, 255, 255, 0.65) !important;
+  backdrop-filter: blur(var(--blur)) brightness(1.1);
+  -webkit-backdrop-filter: blur(var(--blur)) brightness(1.1);
+  border-color: rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+/* Corrige possíveis gaps (sem espaço preto) */
+html,
+body,
+.AppContainer,
+.AppContent,
+main {
+  background-clip: border-box;
+  background-origin: border-box;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-size: cover;
 }

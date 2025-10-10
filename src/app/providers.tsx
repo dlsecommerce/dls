@@ -7,17 +7,15 @@ import i18n from "@/local/i18n";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <ProfileProvider>
+    <ThemeProvider
+      attribute="class"           // aplica .light / .dark no <html>
+      defaultTheme="dark"         // dark é o padrão
+      enableSystem={true}         // respeita o sistema
+      disableTransitionOnChange   // evita flickers
+    >
       <I18nextProvider i18n={i18n}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem
-          disableTransitionOnChange
-        >
-          {children}
-        </ThemeProvider>
+        <ProfileProvider>{children}</ProfileProvider>
       </I18nextProvider>
-    </ProfileProvider>
+    </ThemeProvider>
   );
 }

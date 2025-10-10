@@ -29,9 +29,10 @@ export function ThemeToggle() {
         <Button
           variant="ghost"
           size="icon"
-          className="cursor-pointer rounded-md p-2 transition-all 
-                     text-dashboard-text-muted hover:text-dashboard-text-primary 
+          className="cursor-pointer rounded-md p-2 transition-all
+                     text-dashboard-text-muted hover:text-dashboard-text-primary
                      hover:bg-white/5"
+          aria-label={t("Toggle theme")}
         >
           {theme === "light" ? (
             <Sun className="w-5 h-5" />
@@ -42,24 +43,25 @@ export function ThemeToggle() {
           )}
         </Button>
       </DropdownMenuTrigger>
+
       <DropdownMenuContent
         align="end"
         className="bg-[#111111]/80 backdrop-blur-xl border border-white/10 rounded-lg shadow-lg"
       >
         <DropdownMenuItem
-          onClick={() => setTheme("Claro")}
+          onClick={() => setTheme("light")}
           className="cursor-pointer hover:bg-white/5"
         >
           <Sun className="w-4 h-4 mr-2" /> {t("Light")}
         </DropdownMenuItem>
         <DropdownMenuItem
-          onClick={() => setTheme("Escuro")}
+          onClick={() => setTheme("dark")}
           className="cursor-pointer hover:bg-white/5"
         >
           <Moon className="w-4 h-4 mr-2" /> {t("Dark")}
         </DropdownMenuItem>
         <DropdownMenuItem
-          onClick={() => setTheme("Sistema")}
+          onClick={() => setTheme("system")}
           className="cursor-pointer hover:bg-white/5"
         >
           <Monitor className="w-4 h-4 mr-2" /> {t("System")}
