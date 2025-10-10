@@ -5,6 +5,7 @@ import HeaderLeft from "./header-parts/HeaderLeft";
 import HeaderActions from "./header-parts/HeaderActions";
 import { UserProfileDropdown } from "./header-parts/UserProfileDropdown";
 import { useProfile } from "@/context/ProfileContext";
+import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 
 interface DashboardHeaderProps {
   sidebarCollapsed: boolean;
@@ -36,7 +37,18 @@ export default function DashboardHeader({
     "Dashboard";
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between px-6 py-3 bg-[#111111]/80 backdrop-blur-xl border-b border-white/10">
+    <GlassmorphicCard
+      className="
+        sticky top-0 z-30 
+        flex items-center justify-between 
+        px-6 py-3
+        bg-gradient-to-br from-[#0a0a0a]/90 to-[#1a1a1a]/70
+        backdrop-blur-xl
+        border-b border-white/10
+        rounded-none shadow-none
+        transition-all duration-300
+      "
+    >
       <HeaderLeft title={title} onSidebarToggle={onSidebarToggle} />
       <div className="flex items-center gap-3">
         <HeaderActions />
@@ -47,6 +59,6 @@ export default function DashboardHeader({
           <div className="w-10 h-10 rounded-full bg-neutral-800 animate-pulse" />
         )}
       </div>
-    </header>
+    </GlassmorphicCard>
   );
 }

@@ -18,44 +18,57 @@ export default function DashboardLayout({
   const [pageTitle, setPageTitle] = useState(t("dashboard"));
   const loadingRef = useRef<LoadingBarRef | null>(null);
 
-  // ✅ Nenhum check de sessão client-side (já garantido pelo middleware)
-  // ✅ Nenhum loader extra — tudo carrega instantaneamente
+  const sidebarWidth = collapsed ? 80 : 260;
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-[#0a0a0a] relative">
-        {/* Sidebar lateral */}
-        <AppSidebar
-          collapsed={collapsed}
-          setCollapsed={setCollapsed}
-          setPageTitle={setPageTitle}
-          loadingRef={loadingRef}
-        />
+      <div className="flex h-screen w-screen overflow-hidden bg-[#0a0a0a] relative">
+        {/* 🔹 Sidebar fixa e integrada ao layout */}
+        <div
+          className="fixed top-0 left-0 bottom-0 z-50 border-r border-white/10 transition-all duration-300 bg-[#0a0a0a]"
+          style={{ width: sidebarWidth }}
+        >
+          <AppSidebar
+            collapsed={collapsed}
+            setCollapsed={setCollapsed}
+            setPageTitle={setPageTitle}
+            loadingRef={loadingRef}
+          />
+        </div>
 
-        {/* Área principal */}
-        <main className="flex-1 flex flex-col overflow-hidden">
-          {/* Header mobile */}
-          <header className="bg-[#111111]/80 backdrop-blur-xl border-b border-white/10 px-4 py-3 md:hidden sticky top-0 z-50 flex items-center justify-between">
-            <SidebarTrigger className="hover:bg-white/5 p-2 rounded-xl transition-all duration-300" />
-            <h1 className="text-lg font-semibold text-white">{pageTitle}</h1>
+        {/* 🔹 Conteúdo principal sem espaço preto */}
+        <div
+          className="flex flex-col flex-1 min-h-screen transition-all duration-300 relative"
+          style={{
+            marginLeft: sidebarWidth,
+            backgroundColor: "#0a0a0a",
+          }}
+        >
+          {/* Header fixo sem gap visual */}
+          <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0a0a0a]">
+            {/* Header mobile */}
+            <div className="md:hidden flex items-center justify-between px-4 py-3 bg-[#111111]/80 backdrop-blur-xl border-b border-white/10">
+              <SidebarTrigger className="hover:bg-white/5 p-2 rounded-xl transition-all duration-300" />
+              <h1 className="text-lg font-semibold text-white">{pageTitle}</h1>
+            </div>
+
+            {/* Header desktop */}
+            <div className="hidden md:block">
+              <DashboardHeader
+                sidebarCollapsed={collapsed}
+                onSidebarToggle={() => setCollapsed((prev) => !prev)}
+              />
+            </div>
           </header>
 
-          {/* Header desktop */}
-          <div className="hidden md:block">
-            <DashboardHeader
-              sidebarCollapsed={collapsed}
-              onSidebarToggle={() => setCollapsed((prev) => !prev)}
-            />
-          </div>
+          {/* 🔹 Conteúdo rolável e contínuo */}
+          <main className="flex-1 overflow-y-auto p-6">
+            {children}
+          </main>
 
-          {/* Conteúdo da página */}
-          <div className="flex-1 overflow-auto relative">{children}</div>
-
-          {/* Chat flutuante */}
           <ChatBubble />
-        </main>
+        </div>
 
-        {/* Barra de carregamento global */}
         <LoadingBar ref={loadingRef} />
       </div>
     </SidebarProvider>
