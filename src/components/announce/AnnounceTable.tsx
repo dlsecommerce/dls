@@ -25,7 +25,7 @@ import {
   Search,
   Trash2 as TrashIcon,
   Upload,
-  Clipboard,
+  CopyIcon,
 } from "lucide-react";
 
 import { TableControls } from "@/components/announce/TableControls";
@@ -698,7 +698,7 @@ export default function AnnounceTable() {
                               title="Copiar"
                               className="text-neutral-500 hover:text-white transition-colors cursor-pointer"
                             >
-                              <Clipboard className="w-3 h-3" />
+                              <CopyIcon className="w-3 h-3" />
                             </button>
                           )}
                         </div>
@@ -714,7 +714,7 @@ export default function AnnounceTable() {
                               title="Copiar"
                               className="text-neutral-500 hover:text-white transition-colors cursor-pointer"
                             >
-                              <Clipboard className="w-3 h-3" />
+                              <CopyIcon className="w-3 h-3" />
                             </button>
                           )}
                         </div>
@@ -730,7 +730,7 @@ export default function AnnounceTable() {
                               title="Copiar"
                               className="text-neutral-500 hover:text-white transition-colors cursor-pointer"
                             >
-                              <Clipboard className="w-3 h-3" />
+                              <CopyIcon className="w-3 h-3" />
                             </button>
                           )}
                         </div>
