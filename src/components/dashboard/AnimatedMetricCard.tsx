@@ -44,7 +44,7 @@ export default function AnimatedMetricCard({ title, value, subtitle, icon: Icon,
           <div className="flex justify-between items-start mb-4">
             <div className="flex-1">
               <motion.p 
-                className="text-sm font-medium text-gray-400 mb-2"
+                className="text-sm font-medium text-neutral-400 mb-2"
                 animate={{ x: isHovered ? 4 : 0 }}
                 transition={{ duration: 0.3 }}
               >
@@ -81,7 +81,7 @@ export default function AnimatedMetricCard({ title, value, subtitle, icon: Icon,
           
           {subtitle && (
             <motion.p 
-              className="text-sm text-gray-500 mb-3"
+              className="text-sm text-neutral-500 mb-3"
               animate={{ opacity: isHovered ? 1 : 0.7 }}
             >
               {subtitle}
@@ -110,7 +110,7 @@ export default function AnimatedMetricCard({ title, value, subtitle, icon: Icon,
                 )}
                 <span className="text-sm font-semibold">{trend.value}</span>
               </motion.div>
-              <span className="text-xs text-gray-500">vs. mês anterior</span>
+              <span className="text-xs text-neutral-500">vs. mês anterior</span>
             </motion.div>
           )}
         </div>

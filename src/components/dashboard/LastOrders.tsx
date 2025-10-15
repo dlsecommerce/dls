@@ -45,9 +45,9 @@ export default function UltimosPedidosWidget({ pedidos }) {
       case 'entregue': return 'bg-green-500/20 text-green-400 border-green-500/30';
       case 'enviado': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
       case 'processando': return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-      case 'pendente': return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+      case 'pendente': return 'bg-neutral-500/20 text-neutral-400 border-neutral-500/30';
       case 'cancelado': return 'bg-red-500/20 text-red-400 border-red-500/30';
-      default: return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+      default: return 'bg-neutral-500/20 text-neutral-400 border-neutral-500/30';
     }
   };
 
@@ -75,16 +75,16 @@ export default function UltimosPedidosWidget({ pedidos }) {
               <ShoppingBag className="w-5 h-5 text-[#2699fe]" />
               Últimos Pedidos
             </h3>
-            <p className="text-sm text-gray-400 mt-1">Pedidos mais recentes</p>
+            <p className="text-sm text-neutral-400 mt-1">Pedidos mais recentes</p>
           </div>
-          <Clock className="w-5 h-5 text-gray-500" />
+          <Clock className="w-5 h-5 text-neutral-500" />
         </div>
 
         <div className="space-y-3">
           {pedidos.length === 0 ? (
             <div className="text-center py-12">
-              <ShoppingBag className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-              <p className="text-gray-400 text-sm">Nenhum pedido ainda</p>
+              <ShoppingBag className="w-12 h-12 text-neutral-600 mx-auto mb-3" />
+              <p className="text-neutral-400 text-sm">Nenhum pedido ainda</p>
             </div>
           ) : (
             pedidos.slice(0, 5).map((pedido, idx) => (
@@ -104,7 +104,7 @@ export default function UltimosPedidosWidget({ pedidos }) {
                     <p className="font-semibold text-white truncate text-sm">
                       #{pedido.numero_pedido}
                     </p>
-                    <p className="text-xs text-gray-500 truncate">
+                    <p className="text-xs text-neutral-500 truncate">
                       {pedido.produto_nome || 'Produto'}
                     </p>
                   </div>

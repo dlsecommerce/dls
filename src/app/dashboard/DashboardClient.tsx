@@ -81,7 +81,7 @@ export default function DashboardClient() {
           transition={{ duration: 0.5 }}
           className="mb-8 flex flex-col md:flex-row md:items-center md:justify-end gap-4"
         >
-          <Calendar className="w-5 h-5 text-gray-400" />
+          <Calendar className="w-5 h-5 text-neutral-400" />
           <Select value={periodo} onValueChange={handlePeriodoChange}>
             <SelectTrigger className="w-48 bg-white/5 border-white/10 text-white rounded-xl hover:bg-white/10 transition-all">
               <SelectValue />
@@ -104,7 +104,7 @@ export default function DashboardClient() {
                 className={`border-white/10 hover:bg-white/5 rounded-xl transition-all ${
                   filtroMarketplace !== "todos"
                     ? "bg-[#2699fe]/20 border-[#2699fe]/50"
-                    : "text-gray-400 hover:text-white"
+                    : "text-neutral-400 hover:text-white"
                 }`}
               >
                 <Filter className="w-4 h-4" />
@@ -121,7 +121,7 @@ export default function DashboardClient() {
                   className={`w-full text-left px-3 py-2 rounded-lg transition-all ${
                     filtroMarketplace === v
                       ? "bg-[#2699fe]/20 text-[#2699fe] border border-[#2699fe]/30"
-                      : "text-gray-400 hover:bg-white/5 hover:text-white"
+                      : "text-neutral-400 hover:bg-white/5 hover:text-white"
                   }`}
                 >
                   {v.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
@@ -184,7 +184,7 @@ export default function DashboardClient() {
               <ArrowUpRight className="w-5 h-5 text-green-400" />
             </div>
             <p className="text-3xl font-bold text-white mb-2">+24.5%</p>
-            <p className="text-sm text-gray-400">Comparado ao mês anterior</p>
+            <p className="text-sm text-neutral-400">Comparado ao mês anterior</p>
           </GlassmorphicCard>
 
           <GlassmorphicCard className="p-6">
@@ -193,7 +193,7 @@ export default function DashboardClient() {
               <DollarSign className="w-5 h-5 text-[#2699fe]" />
             </div>
             <p className="text-3xl font-bold text-white mb-2">R$ 156,80</p>
-            <p className="text-sm text-gray-400">Por pedido realizado</p>
+            <p className="text-sm text-neutral-400">Por pedido realizado</p>
           </GlassmorphicCard>
 
           <GlassmorphicCard className="p-6">
@@ -202,7 +202,7 @@ export default function DashboardClient() {
               <Package className="w-5 h-5 text-[#8b5cf6]" />
             </div>
             <p className="text-3xl font-bold text-white mb-2">872</p>
-            <p className="text-sm text-gray-400">Unidades disponíveis</p>
+            <p className="text-sm text-neutral-400">Unidades disponíveis</p>
           </GlassmorphicCard>
         </div>
       </div>

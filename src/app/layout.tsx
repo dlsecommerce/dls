@@ -47,10 +47,10 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // ✅ Agora com await
+  // ✅ Correto no Next.js 15 — precisa ser await
   const cookieStore = await cookies();
 
-  // ✅ Novo client com suporte oficial a Next 15
+  // ✅ Criação correta do Supabase Server Client
   const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -58,17 +58,23 @@ export default async function RootLayout({
       cookies: {
         getAll: async () => cookieStore.getAll(),
         setAll: async (cookiesToSet) => {
-          for (const { name, value } of cookiesToSet) {
-            cookieStore.set(name, value);
+          try {
+            for (const { name, value, options } of cookiesToSet) {
+              // ✅ Agora chamando cookies() novamente (mutável)
+              (await cookies()).set(name, value, options);
+            }
+          } catch (error) {
+            console.error("Erro ao definir cookies Supabase:", error);
           }
         },
       },
     }
   );
 
+  // ✅ Recupera o usuário autenticado no servidor
   const {
     data: { user },
-  } = await supabase.auth.getUser(); // ✅ agora validado com servidor
+  } = await supabase.auth.getUser();
 
   return (
     <html lang="pt-BR" suppressHydrationWarning>

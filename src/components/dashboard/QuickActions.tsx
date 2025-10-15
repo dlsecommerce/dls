@@ -87,7 +87,7 @@ export default function QuickActions() {
                     {action.title}
                   </h4>
 
-                  <div className="flex items-center gap-2 text-gray-400 group-hover:text-white transition-colors">
+                  <div className="flex items-center gap-2 text-neutral-400 group-hover:text-white transition-colors">
                     <span className="text-sm">Acessar</span>
                     <motion.div
                       animate={{ x: [0, 4, 0] }}

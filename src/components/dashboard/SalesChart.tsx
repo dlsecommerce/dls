@@ -32,13 +32,13 @@ export default function SalesChart() {
               <TrendingUp className="w-5 h-5 text-[#2699fe]" />
               <h3 className="text-xl font-bold text-white">Vendas</h3>
             </div>
-            <p className="text-sm text-gray-400">Últimos 7 meses</p>
+            <p className="text-sm text-neutral-400">Últimos 7 meses</p>
           </div>
           <div className="text-right">
             <p className="text-3xl font-bold text-white">R$ {totalVendas.toLocaleString()}</p>
             <div className="flex items-center gap-2 justify-end mt-1">
               <span className="text-sm text-green-400 font-semibold">↑ {crescimento}%</span>
-              <span className="text-xs text-gray-500">vs período anterior</span>
+              <span className="text-xs text-neutral-500">vs período anterior</span>
             </div>
           </div>
         </div>
@@ -85,15 +85,15 @@ export default function SalesChart() {
 
         <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t border-white/10">
           <div>
-            <p className="text-xs text-gray-400 mb-1">Total</p>
+            <p className="text-xs text-neutral-400 mb-1">Total</p>
             <p className="text-lg font-bold text-white">R$ {totalVendas.toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-400 mb-1">Média Mensal</p>
+            <p className="text-xs text-neutral-400 mb-1">Média Mensal</p>
             <p className="text-lg font-bold text-white">R$ {mediaVendas.toFixed(0)}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-400 mb-1">Crescimento</p>
+            <p className="text-xs text-neutral-400 mb-1">Crescimento</p>
             <p className="text-lg font-bold text-green-400">+{crescimento}%</p>
           </div>
         </div>

@@ -65,7 +65,7 @@ export default function AlertsWidget({ estoqueBaixo, reajuste }) {
                     <h4 className="font-bold text-white mb-1 group-hover:text-[#2699fe] transition-colors">
                       {alert.title}
                     </h4>
-                    <p className="text-sm text-gray-400 mb-2">{alert.description}</p>
+                    <p className="text-sm text-neutral-400 mb-2">{alert.description}</p>
                     <div className="flex items-center gap-2 text-sm font-medium" style={{ color: alert.color }}>
                       <span>{alert.action}</span>
                       <motion.div

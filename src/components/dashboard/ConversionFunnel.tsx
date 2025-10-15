@@ -32,10 +32,10 @@ export default function ConversionFunnel() {
               transition={{ delay: 0.6 + idx * 0.1 }}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-400">{stage.label}</span>
+                <span className="text-sm text-neutral-400">{stage.label}</span>
                 <div className="text-right">
                   <span className="text-lg font-bold text-white">{stage.value.toLocaleString()}</span>
-                  <span className="text-sm text-gray-500 ml-2">({stage.percent}%)</span>
+                  <span className="text-sm text-neutral-500 ml-2">({stage.percent}%)</span>
                 </div>
               </div>
               <div className="relative h-12 rounded-xl overflow-hidden" style={{ backgroundColor: `${stage.color}20` }}>
@@ -67,7 +67,7 @@ export default function ConversionFunnel() {
         >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-400">Taxa de Conversão Global</p>
+              <p className="text-sm text-neutral-400">Taxa de Conversão Global</p>
               <p className="text-2xl font-bold text-[#10b981]">3.2%</p>
             </div>
             <div className="flex items-center gap-2 text-[#10b981]">

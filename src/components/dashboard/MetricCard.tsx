@@ -19,7 +19,7 @@ export default function MetricCard({ title, value, subtitle, icon: Icon, trend, 
         <div className="relative z-10">
           <div className="flex justify-between items-start mb-4">
             <div>
-              <p className="text-sm font-medium text-gray-400 mb-1">{title}</p>
+              <p className="text-sm font-medium text-neutral-400 mb-1">{title}</p>
               <h3 className="text-3xl font-bold text-white">{value}</h3>
             </div>
             <div 
@@ -31,7 +31,7 @@ export default function MetricCard({ title, value, subtitle, icon: Icon, trend, 
           </div>
           
           {subtitle && (
-            <p className="text-sm text-gray-500">{subtitle}</p>
+            <p className="text-sm text-neutral-500">{subtitle}</p>
           )}
           
           {trend && (
@@ -39,7 +39,7 @@ export default function MetricCard({ title, value, subtitle, icon: Icon, trend, 
               <span className={`text-sm font-medium ${trend.positive ? 'text-green-500' : 'text-red-500'}`}>
                 {trend.positive ? '↑' : '↓'} {trend.value}
               </span>
-              <span className="text-xs text-gray-500">vs. mês anterior</span>
+              <span className="text-xs text-neutral-500">vs. mês anterior</span>
             </div>
           )}
         </div>

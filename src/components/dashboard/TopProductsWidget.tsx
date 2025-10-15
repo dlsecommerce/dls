@@ -27,7 +27,7 @@ export default function TopProductsWidget({ produtos }) {
               <Award className="w-5 h-5 text-[#f59e0b]" />
               Mais Vendidos
             </h3>
-            <p className="text-sm text-gray-400 mt-1">Produtos com maior volume</p>
+            <p className="text-sm text-neutral-400 mt-1">Produtos com maior volume</p>
           </div>
           <TrendingUp className="w-5 h-5 text-[#f59e0b]" />
         </div>
@@ -37,7 +37,7 @@ export default function TopProductsWidget({ produtos }) {
             const posicao = idx + 1;
             const corMedalha = 
               posicao === 1 ? "from-yellow-500 to-yellow-600" :
-              posicao === 2 ? "from-gray-400 to-gray-500" :
+              posicao === 2 ? "from-neutral-400 to-neutral-500" :
               posicao === 3 ? "from-orange-600 to-orange-700" : "from-[#2699fe] to-[#1a7dd9]";
 
             return (
@@ -61,8 +61,8 @@ export default function TopProductsWidget({ produtos }) {
                       {produto.nome}
                     </p>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-gray-500">{produto.marca || 'Sem marca'}</span>
-                      <span className="text-xs text-gray-600">•</span>
+                      <span className="text-xs text-neutral-500">{produto.marca || 'Sem marca'}</span>
+                      <span className="text-xs text-neutral-600">•</span>
                       <span className="text-xs text-green-400 font-semibold">{produto.vendas} vendas</span>
                     </div>
                   </div>
@@ -71,7 +71,7 @@ export default function TopProductsWidget({ produtos }) {
                     <p className="font-bold text-[#2699fe] text-sm">
                       R$ {produto.valorTotal.toFixed(2)}
                     </p>
-                    <p className="text-xs text-gray-500">{produto.estoque} un.</p>
+                    <p className="text-xs text-neutral-500">{produto.estoque} un.</p>
                   </div>
                 </div>
               </motion.div>

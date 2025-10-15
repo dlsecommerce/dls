@@ -21,7 +21,7 @@ export default function TaxaConversaoWidget() {
           <TrendingUp className="w-6 h-6 text-[#10b981]" />
           <div>
             <h3 className="text-xl font-bold text-white">Taxa de Conversão</h3>
-            <p className="text-sm text-gray-400">Performance por canal de venda</p>
+            <p className="text-sm text-neutral-400">Performance por canal de venda</p>
           </div>
         </div>
 
@@ -42,13 +42,13 @@ export default function TaxaConversaoWidget() {
               />
               
               <div className="relative z-10">
-                <p className="text-sm text-gray-400 mb-2">{item.marketplace}</p>
+                <p className="text-sm text-neutral-400 mb-2">{item.marketplace}</p>
                 <p className="text-4xl font-bold text-white mb-2">{item.taxa}%</p>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-green-400 font-semibold">
                     ↑ {item.crescimento}
                   </span>
-                  <span className="text-xs text-gray-500">vs. mês anterior</span>
+                  <span className="text-xs text-neutral-500">vs. mês anterior</span>
                 </div>
 
                 <div className="mt-4 h-2 bg-white/10 rounded-full overflow-hidden">

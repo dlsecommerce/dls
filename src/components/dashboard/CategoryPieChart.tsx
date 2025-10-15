@@ -75,11 +75,11 @@ export default function CategoryPieChart({ produtos }) {
                   className="w-4 h-4 rounded-full" 
                   style={{ backgroundColor: COLORS[idx] }}
                 />
-                <span className="text-sm text-gray-300">{cat.name}</span>
+                <span className="text-sm text-neutral-300">{cat.name}</span>
               </div>
               <div className="text-right">
                 <p className="text-sm font-bold text-white">R$ {cat.value.toFixed(2)}</p>
-                <p className="text-xs text-gray-500">{cat.count} produtos</p>
+                <p className="text-xs text-neutral-500">{cat.count} produtos</p>
               </div>
             </motion.div>
           ))}
