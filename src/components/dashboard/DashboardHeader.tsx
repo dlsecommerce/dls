@@ -20,6 +20,7 @@ const routeTitles: Record<string, string> = {
   "/dashboard/precificacao/custos": "Custos",
   "/dashboard/marketplaces": "Marketplaces",
   "/dashboard/anuncios": "Anúncios",
+  "/dashboard/anuncios/edit": "Detalhes",
   "/dashboard/configuracao": "Configurações",
 };
 

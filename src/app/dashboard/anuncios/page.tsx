@@ -1,6 +1,6 @@
 "use client";
 
-import AnnounceTable from "@/components/announce/AnnounceTable";
+import AnnounceTable from "@/components/announce/AnnounceTable/AnnounceTable";
 import { LoadingBar } from "@/components/ui/loading-bar";
 
 export default function AnnouncePage() {
