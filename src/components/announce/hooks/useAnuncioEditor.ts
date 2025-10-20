@@ -10,8 +10,9 @@ export interface Anuncio {
   loja: "Pikot Shop" | "Sóbaquetas";
   id_bling: string | null;
   id_tray: string | null;
-  id_var: string | null;
   referencia: string | null;
+  id_var: string | null;
+  od?: number | null;
   nome: string | null;
   marca: string | null;
   categoria: string | null;
@@ -22,7 +23,7 @@ export interface Anuncio {
   [key: string]: any;
 }
 
-interface Custo {
+interface CustoRow {
   Código?: string;
   Codigo?: string;
   "Custo Atual"?: number | string;
@@ -30,8 +31,71 @@ interface Custo {
   custo?: number | string;
 }
 
+// =========================
+// helpers de número BR
+// =========================
+const parseValorBR = (v: string | number | null | undefined): number => {
+  if (v === null || v === undefined || v === "") return 0;
+  if (typeof v === "number") return v;
+
+  // ✅ Aceita "0,5", "0.5", "R$ 0,50", "1.000,25"
+  const clean = String(v)
+    .trim()
+    .replace(/[^\d.,-]/g, "") // remove letras, espaços e símbolos (R$, etc)
+    .replace(/\.(?=\d{3}(,|$))/g, "") // remove pontos de milhar
+    .replace(",", "."); // troca vírgula por ponto decimal
+
+  const num = parseFloat(clean);
+  return isNaN(num) ? 0 : num;
+};
+
+const formatValorBR = (v: number | string): string => {
+  if (v === null || v === undefined || isNaN(Number(v))) return "0,00";
+  return Number(v).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
+// =========================
+// inferir OD pela referência
+// =========================
+const inferirOD = (referencia?: string | null): number => {
+  const ref = (referencia || "").trim().toUpperCase();
+  if (ref.startsWith("PAI")) return 1; // PAI -
+  if (ref.startsWith("VAR")) return 2; // VAR -
+  return 3; // SIMPLES
+};
+
+// =========================
+// ler custos e mapear por código
+// =========================
+async function fetchCustosMap(codigos: string[]): Promise<Record<string, number>> {
+  if (codigos.length === 0) return {};
+  const { data, error } = await supabase
+    .from("custos")
+    .select("*")
+    .in("Código", codigos);
+
+  let rows: CustoRow[] = data || [];
+  if (error || rows.length === 0) {
+    const alt = await supabase.from("custos").select("*").in("Codigo", codigos);
+    if (!alt.error && alt.data) rows = alt.data as any;
+  }
+
+  const map: Record<string, number> = {};
+  for (const r of rows) {
+    const codigo = (r.Código || r.Codigo || "").toString().trim();
+    const custoRaw = r["Custo Atual"] ?? r["Custo_Atual"] ?? r.custo ?? 0;
+    const custoNum = parseValorBR(custoRaw as any);
+    if (codigo) map[codigo] = isNaN(custoNum) ? 0 : custoNum;
+  }
+  return map;
+}
+
 /**
  * 🔧 Hook responsável por carregar, editar e salvar anúncios conforme a loja.
+ * Fonte: anuncios_all (filtra por ID + Loja)
  */
 export function useAnuncioEditor(id?: string) {
   const [produto, setProduto] = useState<Anuncio | null>(null);
@@ -47,26 +111,7 @@ export function useAnuncioEditor(id?: string) {
     usePrecificacao();
 
   // ===========================================================
-  // 🔢 PARSERS
-  // ===========================================================
-  const parseValorBR = (v: string | number | null | undefined): number => {
-    if (v === null || v === undefined || v === "") return 0;
-    const s = String(v).trim();
-    if (typeof v === "number") return v;
-    if (s.includes(",")) return Number(s.replace(/\./g, "").replace(",", "."));
-    return Number(s);
-  };
-
-  const formatValorBR = (v: number | string): string => {
-    if (v === null || v === undefined || isNaN(Number(v))) return "0,00";
-    return Number(v).toLocaleString("pt-BR", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-  };
-
-  // ===========================================================
-  // 🔹 CARREGAR ANÚNCIO (busca em anuncios_all)
+  // 🔹 CARREGAR ANÚNCIO (anuncios_all)
   // ===========================================================
   const carregarAnuncio = useCallback(async () => {
     if (!id || !loja) {
@@ -77,12 +122,11 @@ export function useAnuncioEditor(id?: string) {
     setLoading(true);
 
     try {
-      // 🔹 Mapeia nome da loja para código salvo no banco
       const lojaCodigo =
         loja === "Pikot Shop"
-          ? "PK"
+          ? "Pikot Shop"
           : loja === "Sóbaquetas" || loja === "Sobaquetas"
-          ? "SB"
+          ? "Sóbaquetas"
           : null;
 
       if (!lojaCodigo) {
@@ -91,61 +135,83 @@ export function useAnuncioEditor(id?: string) {
       }
 
       const idFiltro = String(id).trim();
+      console.log("🔍 Buscando anúncio com:", { idFiltro, lojaCodigo });
 
-      // 🔹 Busca no banco principal
       const { data, error } = await supabase
         .from("anuncios_all")
         .select("*")
         .eq("ID", idFiltro)
         .eq("Loja", lojaCodigo)
-        .maybeSingle();
+        .limit(1);
 
-      if (error) throw error;
-
-      if (!data) {
-        console.warn(
-          `⚠️ Nenhum anúncio encontrado com ID ${idFiltro} e Loja ${lojaCodigo}`
-        );
+      if (error) {
+        console.error("❌ Erro Supabase:", error);
+        setProduto(null);
+        return;
+      }
+      if (!data || data.length === 0) {
+        console.warn(`⚠️ Nenhum anúncio encontrado com ID ${idFiltro} e Loja ${lojaCodigo}`);
         setProduto(null);
         return;
       }
 
-      console.log(`✅ Anúncio carregado da tabela anuncios_all:`, data);
+      const row = data[0];
+      const odInferido = inferirOD(row["Referência"]);
 
       setProduto({
-        id: data["ID"],
+        id: row["ID"],
         loja,
-        id_bling: data["ID Bling"] ?? null,
-        id_tray: data["ID Tray"] ?? null,
-        id_var: data["ID Var"] ?? null,
-        referencia: data["Referência"] ?? null,
-        nome: data["Nome"] ?? null,
-        marca: data["Marca"] ?? null,
-        categoria: data["Categoria"] ?? null,
-        peso: parseValorBR(data["Peso"]),
-        altura: parseValorBR(data["Altura"]),
-        largura: parseValorBR(data["Largura"]),
-        comprimento: parseValorBR(data["Comprimento"]),
+        od: odInferido,
+        id_bling: row["ID Bling"] ?? null,
+        id_tray: row["ID Tray"] ?? null,
+        id_var: row["ID Var"] ?? null,
+        referencia: row["Referência"] ?? null,
+        nome: row["Nome"] ?? null,
+        marca: row["Marca"] ?? null,
+        categoria: row["Categoria"] ?? null,
+        peso: parseValorBR(row["Peso"]),
+        altura: parseValorBR(row["Altura"]),
+        largura: parseValorBR(row["Largura"]),
+        comprimento: parseValorBR(row["Comprimento"]),
       });
 
-      // 🔹 Monta composição
-      const comp: any[] = [];
+      // Monta composição inicial (custo será preenchido via tabela de custos)
+      const compTmp: Array<{ codigo: string; quantidade: string; custo: string }> = [];
       for (let i = 1; i <= 10; i++) {
-        const codigo = data[`Código ${i}`];
-        const quantidade = data[`Quantidade ${i}`];
+        const codigo = row[`Código ${i}`];
+        const quantidade = row[`Quantidade ${i}`];
         if (codigo) {
-          comp.push({
+          compTmp.push({
             codigo: String(codigo).trim(),
-            quantidade: formatValorBR(quantidade || 1),
+            quantidade: formatValorBR(
+              quantidade === null || quantidade === undefined || quantidade === ""
+                ? 1
+                : quantidade
+            ),
             custo: "0,00",
           });
         }
       }
 
-      setComposicao(comp);
-      setAcrescimos((prev) => ({ ...prev, acrescimo: 0 }));
-      setCalculo((prev) => ({ ...prev, frete: "0" }));
+      // 🔹 Busca custos por código e calcula custo total
+      const codigos = compTmp.map((c) => c.codigo);
+      const custosMap = await fetchCustosMap(codigos);
+      const compFinal = compTmp.map((c) => {
+        const custo = custosMap[c.codigo] ?? 0;
+        return { ...c, custo: formatValorBR(custo) };
+      });
 
+      setComposicao(compFinal);
+      setAcrescimos((prev) => ({ ...prev, acrescimo: 0 }));
+
+      const total = compFinal.reduce((sum, item) => {
+        const q = parseValorBR(item.quantidade); // aceita "0,5" e "0.5"
+        const cu = parseValorBR(item.custo);
+        return sum + q * cu;
+      }, 0);
+
+      setCalculo((prev: any) => ({ ...prev, custo: String(total), frete: prev?.frete ?? "0" }));
+      console.log("🧮 Custo total calculado:", formatValorBR(total));
     } catch (err: any) {
       console.error("❌ Erro ao carregar anúncio:", err.message || err);
       setProduto(null);
@@ -166,24 +232,24 @@ export function useAnuncioEditor(id?: string) {
     setSaving(true);
 
     try {
-      // Mapeia novamente a loja para o código salvo no banco
       const lojaCodigo =
         produto.loja === "Pikot Shop"
-          ? "PK"
+          ? "Pikot Shop"
           : produto.loja === "Sóbaquetas"
-          ? "SB"
+          ? "Sóbaquetas"
           : null;
 
       if (!lojaCodigo) throw new Error("Loja inválida.");
 
-      const idNumerico = Number(produto.id);
       const camposComposicaoDb: Record<string, any> = {};
-      composicao.forEach((c, i) => {
+      composicao.forEach((c: any, i: number) => {
         const idx = i + 1;
         const qtdNum = parseValorBR(c.quantidade);
         camposComposicaoDb[`Código ${idx}`] = c.codigo || null;
         camposComposicaoDb[`Quantidade ${idx}`] = isNaN(qtdNum) ? null : qtdNum;
       });
+
+      const odFinal = inferirOD(produto.referencia);
 
       const payloadDb = {
         "ID Bling": produto.id_bling,
@@ -197,13 +263,14 @@ export function useAnuncioEditor(id?: string) {
         "Altura": produto.altura,
         "Largura": produto.largura,
         "Comprimento": produto.comprimento,
+        OD: odFinal,
         ...camposComposicaoDb,
       };
 
       const { error } = await supabase
         .from("anuncios_all")
         .update(payloadDb)
-        .eq("ID", idNumerico)
+        .eq("ID", String(produto.id).trim())
         .eq("Loja", lojaCodigo);
 
       if (error) throw error;
@@ -227,11 +294,13 @@ export function useAnuncioEditor(id?: string) {
       try {
         const lojaCodigo =
           produto.loja === "Pikot Shop"
-            ? "PK"
+            ? "Pikot Shop"
             : produto.loja === "Sóbaquetas"
-            ? "SB"
+            ? "Sóbaquetas"
             : null;
         if (!lojaCodigo) return;
+
+        const odFinal = inferirOD(produto.referencia);
 
         await supabase
           .from("anuncios_all")
@@ -243,6 +312,7 @@ export function useAnuncioEditor(id?: string) {
             Altura: produto.altura,
             Largura: produto.largura,
             Comprimento: produto.comprimento,
+            OD: odFinal,
           })
           .eq("ID", produto.id)
           .eq("Loja", lojaCodigo);
@@ -266,9 +336,9 @@ export function useAnuncioEditor(id?: string) {
     try {
       const lojaCodigo =
         produto.loja === "Pikot Shop"
-          ? "PK"
+          ? "Pikot Shop"
           : produto.loja === "Sóbaquetas"
-          ? "SB"
+          ? "Sóbaquetas"
           : null;
       if (!lojaCodigo) return;
 

@@ -3,9 +3,9 @@ export interface RowShape {
   Loja?: string;
   "ID Bling"?: string;
   "ID Tray"?: string;
+  "Referência"?: string;
   "ID Var"?: string;
   "OD"?: string;
-  "Referência"?: string;
   "Nome"?: string;
   "Marca"?: string;
   "Categoria"?: string;

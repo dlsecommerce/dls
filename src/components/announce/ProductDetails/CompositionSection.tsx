@@ -18,9 +18,13 @@ const formatValorBR = (v: any) => {
   });
 };
 
+// 🔧 Ajustado para aceitar 0,5 e 0.5 corretamente
 const parseValorBR = (v: string) => {
   if (!v) return "";
-  return v.replace(/\./g, "").replace(",", ".");
+  return v
+    .replace(/[^\d.,-]/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
 };
 
 // ================================
@@ -54,7 +58,6 @@ export const CompositionSection = ({
   };
   const isEditing = (key: string) => editingFields.has(key);
 
-  // Confirmar sugestão
   const confirmarSugestaoPrimeira = (idx: number, codigo: string, custo: number) => {
     const novo = [...composicao];
     novo[idx].codigo = codigo;
@@ -117,43 +120,6 @@ export const CompositionSection = ({
     }
   };
 
-  // Fecha sugestões ao clicar fora
-  React.useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (campoAtivo === null) return;
-      const listaEl = listaRef.current;
-      const inputEl = gridInputRefs.current[campoAtivo]?.[0];
-      const target = e.target as Node;
-      const clickDentroLista = !!(listaEl && listaEl.contains(target));
-      const clickNoInputAtivo = !!(inputEl && inputEl.contains(target));
-      if (!clickDentroLista && !clickNoInputAtivo) {
-        if (sugestoes.length > 0) {
-          const s = sugestoes[0];
-          confirmarSugestaoPrimeira(campoAtivo, s.codigo, s.custo);
-        }
-        setSugestoes([]);
-        setCampoAtivo(null);
-        setIndiceSelecionado(-1);
-        inputEl?.blur();
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [campoAtivo, sugestoes]);
-
-  // Scroll da lista de sugestões
-  React.useEffect(() => {
-    if (
-      listaRef?.current &&
-      listaRef.current.children &&
-      indiceSelecionado >= 0 &&
-      indiceSelecionado < listaRef.current.children.length
-    ) {
-      const el = listaRef.current.children[indiceSelecionado] as HTMLElement;
-      if (el) el.scrollIntoView({ block: "nearest" });
-    }
-  }, [indiceSelecionado]);
-
   // ================================
   // 🧮 Render
   // ================================
@@ -203,39 +169,8 @@ export const CompositionSection = ({
                   handleSugestoesKeys(e, idx);
                   handleGridNav(e, idx, 0);
                 }}
-                onBlur={() => {
-                  if (campoAtivo === idx && sugestoes.length > 0) {
-                    const s = sugestoes[0];
-                    confirmarSugestaoPrimeira(idx, s.codigo, s.custo);
-                    setSugestoes([]);
-                    setCampoAtivo(null);
-                    setIndiceSelecionado(-1);
-                  }
-                }}
                 className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
               />
-
-              {campoAtivo === idx && sugestoes.length > 0 && (
-                <div
-                  ref={listaRef}
-                  className="absolute z-50 mt-1 bg-[#0f0f0f] border border-white/10 rounded-md shadow-lg w-full max-h-40 overflow-y-auto"
-                >
-                  {sugestoes.map((s: any, i: number) => (
-                    <div
-                      key={i}
-                      className={`px-2 py-1 text-xs text-white cursor-pointer flex justify-between ${
-                        i === indiceSelecionado
-                          ? "bg-[#1a8ceb]/30"
-                          : "hover:bg-[#1a8ceb]/20"
-                      }`}
-                      onClick={() => selecionarSugestao(s.codigo, s.custo, idx)}
-                    >
-                      <span>{s.codigo}</span>
-                      <span className="text-[#1a8ceb]">R$ {formatValorBR(s.custo)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* QUANTIDADE */}
@@ -247,18 +182,26 @@ export const CompositionSection = ({
                   gridInputRefs.current[idx][1] = el!;
                 }}
                 type="text"
+                inputMode="decimal"
                 placeholder="1,00"
-                value={isEditing(`q-${idx}`) ? item.quantidade : formatValorBR(item.quantidade)}
-                onFocus={() => setEditing(`q-${idx}`, true)}
-                onBlur={(e) => {
-                  setEditing(`q-${idx}`, false);
+                value={item.quantidade}
+                onChange={(e) => {
+                  // 🔧 aceita "0,5" e "0.5" sem formatar em tempo real
+                  const clean = e.target.value
+                    .replace(/[^\d.,-]/g, "")
+                    .replace(/\./g, "")
+                    .replace(",", ".");
                   const novo = [...composicao];
-                  novo[idx].quantidade = formatValorBR(e.target.value);
+                  novo[idx].quantidade = clean;
                   setComposicao(novo);
                 }}
-                onChange={(e) => {
+                onBlur={(e) => {
+                  // ao sair do campo, formata corretamente
+                  const valorNum = parseFloat(parseValorBR(e.target.value));
                   const novo = [...composicao];
-                  novo[idx].quantidade = e.target.value;
+                  novo[idx].quantidade = isNaN(valorNum)
+                    ? ""
+                    : formatValorBR(valorNum);
                   setComposicao(novo);
                 }}
                 onKeyDown={(e) => handleGridNav(e, idx, 1)}
@@ -293,19 +236,6 @@ export const CompositionSection = ({
                 className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
               />
             </div>
-
-            {idx >= 1 && (
-              <Button
-                onClick={() =>
-                  setComposicao((prev: any) => prev.filter((_: any, i: number) => i !== idx))
-                }
-                size="sm"
-                variant="ghost"
-                className="absolute -top-1 -right-1 w-5 h-5 p-0 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-full"
-              >
-                ×
-              </Button>
-            )}
           </div>
         ))}
       </div>

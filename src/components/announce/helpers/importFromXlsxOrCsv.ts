@@ -1,30 +1,66 @@
-// 📄 src/components/anunciotable/helpers/importFromXlsxOrCsv.ts
+"use client"
+
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 
+export interface RowShape {
+  ID: string | number;
+  Loja?: string;
+  "ID Bling"?: string;
+  "ID Tray"?: string;
+  "Referência"?: string;
+  "ID Var"?: string;
+  "OD"?: string;
+  "Nome"?: string;
+  "Marca"?: string;
+  "Categoria"?: string;
+  "Peso"?: string;
+  "Altura"?: string;
+  "Largura"?: string;
+  "Comprimento"?: string;
+  "Código 1"?: string;
+  "Quantidade 1"?: string;
+  "Código 2"?: string;
+  "Quantidade 2"?: string;
+  "Código 3"?: string;
+  "Quantidade 3"?: string;
+  "Código 4"?: string;
+  "Quantidade 4"?: string;
+  "Código 5"?: string;
+  "Quantidade 5"?: string;
+  "Código 6"?: string;
+  "Quantidade 6"?: string;
+  "Código 7"?: string;
+  "Quantidade 7"?: string;
+  "Código 8"?: string;
+  "Quantidade 8"?: string;
+  "Código 9"?: string;
+  "Quantidade 9"?: string;
+  "Código 10"?: string;
+  "Quantidade 10"?: string;
+}
+
 type ImportResult = {
-  data: any[];
+  data: RowShape[];
   warnings: string[];
 };
 
-export async function importFromXlsxOrCsv(file: File, previewOnly = false): Promise<ImportResult> {
+export async function importFromXlsxOrCsv(
+  file: File,
+  previewOnly = false
+): Promise<ImportResult> {
   const requiredColumns = [
-    "ID (Supabase)",
-    "ID Geral",
-    "ID Bling",
-    "Referência",
-    "ID Tray",
-    "ID Var",
-    "OD",
-    "Tipo Anúncio",
+    "ID",
     "Nome",
     "Marca",
-    "Status",
     "Categoria",
-    "Marketplace",
+    "Referência",
+    "ID Bling",
+    "ID Tray",
   ];
 
   const warnings: string[] = [];
+
   const data = await file.arrayBuffer();
   const workbook = XLSX.read(data, { type: "array", codepage: 65001, cellDates: true });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -39,43 +75,54 @@ export async function importFromXlsxOrCsv(file: File, previewOnly = false): Prom
     warnings.push(`As seguintes colunas estão ausentes: ${missing.join(", ")}.`);
   }
 
-  const normalized = json
-    .map((row) => {
-      const findKey = (keys: string[]) => {
-        const key = Object.keys(row).find((k) =>
-          keys.some((p) => k.trim().toLowerCase() === p.trim().toLowerCase())
-        );
-        return key ? row[key] : undefined;
-      };
+  const normalized: RowShape[] = json.map((row) => {
+    const findKey = (keys: string[]): any => {
+      const key = Object.keys(row).find((k) =>
+        keys.some((p) => k.trim().toLowerCase() === p.trim().toLowerCase())
+      );
+      return key ? row[key] : "";
+    };
 
-      const idSupabase = findKey(["ID (Supabase)", "id", "idsupabase"]);
-      if (!idSupabase && previewOnly) return null;
+    const obj: RowShape = {
+      ID: findKey(["ID", "ID Geral", "ID (Supabase)"]),
+      Loja: findKey(["Loja", "loja"]),
+      "ID Bling": findKey(["ID Bling", "bling"]),
+      "ID Tray": findKey(["ID Tray", "tray"]),
+      "Referência": findKey(["Referência", "referencia"]),
+      "ID Var": findKey(["ID Var", "id var"]),
+      "OD": findKey(["OD", "od"]),
+      "Nome": findKey(["Nome", "name"]),
+      "Marca": findKey(["Marca", "brand"]),
+      "Categoria": findKey(["Categoria", "category"]),
+      "Peso": findKey(["Peso", "weight"]),
+      "Altura": findKey(["Altura", "height"]),
+      "Largura": findKey(["Largura", "width"]),
+      "Comprimento": findKey(["Comprimento", "length"]),
+    };
 
-      return {
-        "ID (Supabase)": String(idSupabase || ""),
-        "ID Geral": findKey(["ID Geral", "id geral"]) || "",
-        "ID Bling": findKey(["ID Bling", "id bling"]) || "",
-        "Referência": findKey(["Referência", "referencia"]) || "",
-        "ID Tray": findKey(["ID Tray", "id tray"]) || "",
-        "ID Var": findKey(["ID Var", "id var"]) || "",
-        "OD": findKey(["OD"]) || "",
-        "Tipo Anúncio": findKey(["Tipo Anúncio", "tipo anuncio"]) || "Simples",
-        "Nome": findKey(["Nome"]) || "",
-        "Marca": findKey(["Marca"]) || "",
-        "Status": findKey(["Status"]) || "",
-        "Categoria": findKey(["Categoria"]) || "",
-        "Marketplace": findKey(["Marketplace"]) || "",
-        "Peso": findKey(["Peso"]) || 0,
-        "Altura": findKey(["Altura"]) || 0,
-        "Largura": findKey(["Largura"]) || 0,
-        "Comprimento": findKey(["Comprimento"]) || 0,
-      };
-    })
-    .filter((r) => r !== null);
+    // Adiciona dinamicamente as colunas de Código e Quantidade 1–10
+    for (let i = 1; i <= 10; i++) {
+      obj[`Código ${i}` as keyof RowShape] = findKey([
+        `Código ${i}`,
+        `codigo ${i}`,
+        `cod ${i}`,
+      ]);
+      obj[`Quantidade ${i}` as keyof RowShape] = findKey([
+        `Quantidade ${i}`,
+        `quantidade ${i}`,
+        `quant ${i}`,
+        `qtd ${i}`,
+      ]);
+    }
 
-  if (previewOnly) return { data: normalized, warnings };
+    return obj;
+  });
 
-  const { error } = await supabase.from("anuncios").insert(normalized, { upsert: true });
+  if (previewOnly) {
+    return { data: normalized, warnings };
+  }
+
+  const { error } = await supabase.from("anuncios").upsert(normalized);
   if (error) throw error;
 
   return { data: normalized, warnings };
