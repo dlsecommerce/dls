@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
@@ -62,13 +62,20 @@ export async function importFromXlsxOrCsv(
   const warnings: string[] = [];
 
   const data = await file.arrayBuffer();
-  const workbook = XLSX.read(data, { type: "array", codepage: 65001, cellDates: true });
+  const workbook = XLSX.read(data, {
+    type: "array",
+    codepage: 65001,
+    cellDates: true,
+  });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const json = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: "" });
 
   const headers = Object.keys(json[0] || {});
   const missing = requiredColumns.filter(
-    (col) => !headers.some((h) => h.trim().toLowerCase() === col.trim().toLowerCase())
+    (col) =>
+      !headers.some(
+        (h) => h.trim().toLowerCase() === col.trim().toLowerCase()
+      )
   );
 
   if (missing.length > 0) {
@@ -122,8 +129,54 @@ export async function importFromXlsxOrCsv(
     return { data: normalized, warnings };
   }
 
-  const { error } = await supabase.from("anuncios").upsert(normalized);
-  if (error) throw error;
+  // =====================================================
+  // 🔍 Separar os registros por loja
+  // =====================================================
+  const pikotRows = normalized.filter(
+    (r) =>
+      (r.Loja || "").toLowerCase().includes("pikot") ||
+      (r.Loja || "").toLowerCase().includes("pikot shop")
+  );
+  const sobaquetasRows = normalized.filter(
+    (r) => (r.Loja || "").toLowerCase().includes("sobaquetas")
+  );
+  const outrosRows = normalized.filter(
+    (r) =>
+      !pikotRows.includes(r) &&
+      !sobaquetasRows.includes(r)
+  );
+
+  // =====================================================
+  // 🧭 Inserção automática no Supabase conforme loja
+  // =====================================================
+  const inserts = [];
+
+  if (pikotRows.length > 0) {
+    inserts.push(
+      supabase.from("anuncios_pk").upsert(pikotRows).then(({ error }) => {
+        if (error) throw new Error(`Erro ao importar Pikot Shop: ${error.message}`);
+      })
+    );
+  }
+
+  if (sobaquetasRows.length > 0) {
+    inserts.push(
+      supabase.from("anuncios_sb").upsert(sobaquetasRows).then(({ error }) => {
+        if (error) throw new Error(`Erro ao importar Sobaquetas: ${error.message}`);
+      })
+    );
+  }
+
+  // Caso tenha outras lojas ou planilha geral
+  if (outrosRows.length > 0) {
+    inserts.push(
+      supabase.from("anuncios_all").upsert(outrosRows).then(({ error }) => {
+        if (error) throw new Error(`Erro ao importar anúncios gerais: ${error.message}`);
+      })
+    );
+  }
+
+  await Promise.all(inserts);
 
   return { data: normalized, warnings };
 }

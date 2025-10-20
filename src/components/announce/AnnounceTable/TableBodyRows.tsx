@@ -64,7 +64,11 @@ export default function TableBodyRows({
   return (
     <>
       {rows.map((a) => {
-        const isSelected = selectedRows.some((r) => r.id === a.id);
+        // ✅ Correção: seleção única por loja + ID
+        const isSelected = selectedRows.some(
+          (r) => `${r.loja}-${r.id}` === `${a.loja}-${a.id}`
+        );
+
         return (
           <TableRow
             key={`${a.id}-${a.loja}-${a.id_tray}`}
