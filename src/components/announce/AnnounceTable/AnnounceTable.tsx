@@ -75,7 +75,14 @@ export default function AnnounceTable() {
                 loading={data.loading}
                 selectedRows={data.selectedRows}
                 toggleRow={data.toggleRow}
-                onEdit={(id) => router.push(`/dashboard/anuncios/edit?id=${id}`)}
+                // ✅ Agora enviamos id + loja
+                onEdit={(id, loja) =>
+                  router.push(
+                    `/dashboard/anuncios/edit?id=${id}&loja=${encodeURIComponent(
+                      loja
+                    )}`
+                  )
+                }
                 onDelete={(row) => {
                   data.setSelectedRows([row]);
                   data.setOpenDelete(true);
@@ -92,7 +99,9 @@ export default function AnnounceTable() {
             totalPages={totalPages}
             itemsPerPage={data.itemsPerPage}
             totalItems={data.totalItems}
-            onPageChange={(p) => data.setCurrentPage(Math.max(1, Math.min(totalPages, p)))}
+            onPageChange={(p) =>
+              data.setCurrentPage(Math.max(1, Math.min(totalPages, p)))
+            }
             onItemsPerPageChange={(n) => {
               data.setItemsPerPage(n);
               data.setCurrentPage(1);

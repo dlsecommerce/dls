@@ -6,11 +6,29 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 
+// ================================
+// 🧩 Funções de formatação BR
+// ================================
+const formatValorBR = (v: any) => {
+  const n = parseFloat(String(v).replace(/[^\d,-]/g, "").replace(",", "."));
+  if (isNaN(n)) return "";
+  return n.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
+const parseValorBR = (v: string) => {
+  if (!v) return "";
+  return v.replace(/\./g, "").replace(",", ".");
+};
+
+// ================================
+// 🧾 Componente principal
+// ================================
 export const CompositionSection = ({
   composicao,
   setComposicao,
-  toInternal,
-  toDisplay,
   custoTotal,
   AnimatedNumber,
   HelpTooltip,
@@ -36,10 +54,11 @@ export const CompositionSection = ({
   };
   const isEditing = (key: string) => editingFields.has(key);
 
+  // Confirmar sugestão
   const confirmarSugestaoPrimeira = (idx: number, codigo: string, custo: number) => {
     const novo = [...composicao];
     novo[idx].codigo = codigo;
-    novo[idx].custo = (Number(custo) || 0).toFixed(2);
+    novo[idx].custo = formatValorBR(custo);
     setComposicao(novo);
   };
 
@@ -98,6 +117,7 @@ export const CompositionSection = ({
     }
   };
 
+  // Fecha sugestões ao clicar fora
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (campoAtivo === null) return;
@@ -121,13 +141,22 @@ export const CompositionSection = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [campoAtivo, sugestoes]);
 
+  // Scroll da lista de sugestões
   React.useEffect(() => {
-    if (listaRef.current && indiceSelecionado >= 0) {
+    if (
+      listaRef?.current &&
+      listaRef.current.children &&
+      indiceSelecionado >= 0 &&
+      indiceSelecionado < listaRef.current.children.length
+    ) {
       const el = listaRef.current.children[indiceSelecionado] as HTMLElement;
       if (el) el.scrollIntoView({ block: "nearest" });
     }
   }, [indiceSelecionado]);
 
+  // ================================
+  // 🧮 Render
+  // ================================
   return (
     <motion.div
       className="lg:col-span-7 p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg h-full relative"
@@ -202,14 +231,14 @@ export const CompositionSection = ({
                       onClick={() => selecionarSugestao(s.codigo, s.custo, idx)}
                     >
                       <span>{s.codigo}</span>
-                      <span className="text-[#1a8ceb]">R$ {s.custo.toFixed(2)}</span>
+                      <span className="text-[#1a8ceb]">R$ {formatValorBR(s.custo)}</span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* QUANTIDADE (atualizado) */}
+            {/* QUANTIDADE */}
             <div>
               <Label className="text-neutral-400 text-[10px] block mb-1">Quantidade</Label>
               <Input
@@ -218,14 +247,13 @@ export const CompositionSection = ({
                   gridInputRefs.current[idx][1] = el!;
                 }}
                 type="text"
-                placeholder="1"
-                value={item.quantidade || ""}
+                placeholder="1,00"
+                value={isEditing(`q-${idx}`) ? item.quantidade : formatValorBR(item.quantidade)}
                 onFocus={() => setEditing(`q-${idx}`, true)}
                 onBlur={(e) => {
                   setEditing(`q-${idx}`, false);
                   const novo = [...composicao];
-                  const v = e.target.value.trim();
-                  novo[idx].quantidade = v === "" ? "" : toInternal(v);
+                  novo[idx].quantidade = formatValorBR(e.target.value);
                   setComposicao(novo);
                 }}
                 onChange={(e) => {
@@ -247,18 +275,18 @@ export const CompositionSection = ({
                   gridInputRefs.current[idx][2] = el!;
                 }}
                 type="text"
-                placeholder="100"
-                value={isEditing(`c-${idx}`) ? item.custo : toDisplay(item.custo)}
+                placeholder="100,00"
+                value={isEditing(`c-${idx}`) ? item.custo : formatValorBR(item.custo)}
                 onFocus={() => setEditing(`c-${idx}`, true)}
                 onBlur={(e) => {
                   setEditing(`c-${idx}`, false);
                   const novo = [...composicao];
-                  novo[idx].custo = toInternal(e.target.value);
+                  novo[idx].custo = formatValorBR(e.target.value);
                   setComposicao(novo);
                 }}
                 onChange={(e) => {
                   const novo = [...composicao];
-                  novo[idx].custo = toInternal(e.target.value);
+                  novo[idx].custo = e.target.value;
                   setComposicao(novo);
                 }}
                 onKeyDown={(e) => handleGridNav(e, idx, 2)}

@@ -2,7 +2,7 @@
 
 import React from "react";
 import { TableHead, TableRow } from "@/components/ui/table";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 
 type Props = {
   sortColumn: string | null;
@@ -19,7 +19,16 @@ export default function TableHeaderRow({
   allVisibleSelected,
   toggleSelectAllVisible,
 }: Props) {
-  const columns = ["ID", "Loja", "ID Bling", "ID Tray", "Referência", "Nome", "Marca", "Ações"];
+  const columns = [
+    "ID",
+    "Loja",
+    "ID Bling",
+    "ID Tray",
+    "Referência",
+    "Nome",
+    "Marca",
+    "Ações",
+  ];
 
   return (
     <TableRow className="border-neutral-700">
@@ -33,30 +42,39 @@ export default function TableHeaderRow({
         />
       </TableHead>
 
-      {columns.map((col) => (
-        <TableHead
-          key={col}
-          onClick={() => (col === "Ações" ? null : onSort(col))}
-          className={`font-semibold select-none transition-colors text-center ${
-            col === "Ações"
-              ? "text-neutral-400"
-              : sortColumn === col
-              ? "text-white cursor-pointer"
-              : "text-neutral-400 cursor-pointer hover:text-white"
-          }`}
-        >
-          <div className="flex items-center gap-1 justify-center">
-            {col}
-            {col !== "Ações" && (
-              <ArrowUpDown
-                className={`h-3 w-3 transition-colors ${
-                  sortColumn === col ? "text-white" : "text-neutral-500"
-                }`}
-              />
-            )}
-          </div>
-        </TableHead>
-      ))}
+      {columns.map((col) => {
+        const isSortable = col !== "Ações";
+        const isManuallySorted = sortColumn === col && col !== "ID"; // ID não entra automaticamente como ativa
+        const iconColor = isManuallySorted ? "text-white" : "text-neutral-500";
+
+        return (
+          <TableHead
+            key={col}
+            onClick={() => (isSortable ? onSort(col) : null)}
+            className={`font-semibold select-none transition-colors text-center ${
+              isSortable
+                ? isManuallySorted
+                  ? "text-white cursor-pointer"
+                  : "text-neutral-400 cursor-pointer hover:text-white"
+                : "text-neutral-400"
+            }`}
+          >
+            <div className="flex items-center gap-1 justify-center">
+              {col}
+              {isSortable &&
+                (isManuallySorted ? (
+                  sortDirection === "asc" ? (
+                    <ArrowUp className={`h-3 w-3 ${iconColor}`} />
+                  ) : (
+                    <ArrowDown className={`h-3 w-3 ${iconColor}`} />
+                  )
+                ) : (
+                  <ArrowUpDown className={`h-3 w-3 ${iconColor}`} />
+                ))}
+            </div>
+          </TableHead>
+        );
+      })}
     </TableRow>
   );
 }

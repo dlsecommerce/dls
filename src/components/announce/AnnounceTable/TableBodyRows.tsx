@@ -1,9 +1,14 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { TableRow, TableCell } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Loader, CopyIcon, Edit as EditIcon, Trash2 as TrashIcon } from "lucide-react";
+import {
+  Loader,
+  CopyIcon,
+  Edit as EditIcon,
+  Trash2 as TrashIcon,
+} from "lucide-react";
 import { Anuncio } from "@/components/announce/types/Announce";
 
 type Props = {
@@ -11,14 +16,25 @@ type Props = {
   loading: boolean;
   selectedRows: Anuncio[];
   toggleRow: (row: Anuncio) => void;
-  onEdit: (id: string) => void;
+  onEdit: (id: string, loja: string) => void; // ✅ agora inclui a loja
   onDelete: (row: Anuncio) => void;
 };
 
-export default function TableBodyRows({ rows, loading, selectedRows, toggleRow, onEdit, onDelete }: Props) {
-  const handleCopy = (text: string) => {
+export default function TableBodyRows({
+  rows,
+  loading,
+  selectedRows,
+  toggleRow,
+  onEdit,
+  onDelete,
+}: Props) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopy = (text: string, uniqueKey: string) => {
     if (!text) return;
     navigator.clipboard.writeText(text);
+    setCopiedId(uniqueKey);
+    setTimeout(() => setCopiedId(null), 1500);
   };
 
   if (loading) {
@@ -38,7 +54,7 @@ export default function TableBodyRows({ rows, loading, selectedRows, toggleRow, 
       <TableRow>
         <TableCell colSpan={9}>
           <div className="py-10 text-center text-neutral-400">
-            Nenhum anúncio encontrado com os filtros atuais.
+            Nenhum registro encontrado
           </div>
         </TableCell>
       </TableRow>
@@ -70,15 +86,21 @@ export default function TableBodyRows({ rows, loading, selectedRows, toggleRow, 
 
             {/* ID Bling */}
             <TableCell className="text-neutral-300 text-center">
-              <div className="flex justify-center items-center gap-1">
+              <div className="flex justify-center items-center gap-1 group">
                 {a.id_bling || "-"}
                 {a.id_bling && (
                   <button
-                    onClick={() => handleCopy(a.id_bling || "")}
+                    onClick={() => handleCopy(a.id_bling || "", `bling-${a.id}`)}
                     title="Copiar"
-                    className="text-neutral-500 hover:text-white transition-colors cursor-pointer"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
                   >
-                    <CopyIcon className="w-3 h-3" />
+                    <CopyIcon
+                      className={`w-3 h-3 transition-all duration-300 ${
+                        copiedId === `bling-${a.id}`
+                          ? "text-blue-500 scale-110"
+                          : "text-white group-hover:text-blue-400"
+                      }`}
+                    />
                   </button>
                 )}
               </div>
@@ -86,15 +108,21 @@ export default function TableBodyRows({ rows, loading, selectedRows, toggleRow, 
 
             {/* ID Tray */}
             <TableCell className="text-neutral-300 text-center">
-              <div className="flex justify-center items-center gap-1">
+              <div className="flex justify-center items-center gap-1 group">
                 {a.id_tray || "-"}
                 {a.id_tray && (
                   <button
-                    onClick={() => handleCopy(a.id_tray || "")}
+                    onClick={() => handleCopy(a.id_tray || "", `tray-${a.id}`)}
                     title="Copiar"
-                    className="text-neutral-500 hover:text-white transition-colors cursor-pointer"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
                   >
-                    <CopyIcon className="w-3 h-3" />
+                    <CopyIcon
+                      className={`w-3 h-3 transition-all duration-300 ${
+                        copiedId === `tray-${a.id}`
+                          ? "text-blue-500 scale-110"
+                          : "text-white group-hover:text-blue-400"
+                      }`}
+                    />
                   </button>
                 )}
               </div>
@@ -102,15 +130,21 @@ export default function TableBodyRows({ rows, loading, selectedRows, toggleRow, 
 
             {/* Referência */}
             <TableCell className="text-neutral-300 text-center">
-              <div className="flex justify-center items-center gap-1">
+              <div className="flex justify-center items-center gap-1 group">
                 {a.referencia || "-"}
                 {a.referencia && (
                   <button
-                    onClick={() => handleCopy(a.referencia || "")}
+                    onClick={() => handleCopy(a.referencia || "", `ref-${a.id}`)}
                     title="Copiar"
-                    className="text-neutral-500 hover:text-white transition-colors cursor-pointer"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
                   >
-                    <CopyIcon className="w-3 h-3" />
+                    <CopyIcon
+                      className={`w-3 h-3 transition-all duration-300 ${
+                        copiedId === `ref-${a.id}`
+                          ? "text-blue-500 scale-110"
+                          : "text-white group-hover:text-blue-400"
+                      }`}
+                    />
                   </button>
                 )}
               </div>
@@ -125,7 +159,7 @@ export default function TableBodyRows({ rows, loading, selectedRows, toggleRow, 
                 size="sm"
                 variant="ghost"
                 className="text-white hover:text-[#1a8ceb] hover:scale-105 transition-all cursor-pointer"
-                onClick={() => onEdit(a.id)}
+                onClick={() => onEdit(String(a.id), a.loja)} // ✅ agora envia a loja também
               >
                 <EditIcon className="h-4 w-4" />
               </Button>
