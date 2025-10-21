@@ -4,7 +4,6 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 import { Table, TableBody, TableHeader } from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
 import { TableControls } from "@/components/announce/AnnounceTable/TableControls";
 import ConfirmDeleteModal from "@/components/announce/AnnounceTable/ConfirmDeleteModal";
 import ConfirmImportModal from "@/components/announce/AnnounceTable/ConfirmImportModal";
@@ -19,13 +18,13 @@ import TableBodyRows from "@/components/announce/AnnounceTable/TableBodyRows";
 export default function AnnounceTable() {
   const router = useRouter();
 
-  // 🔹 Hook principal (dados, filtros, seleção, ordenação etc.)
+  // 🔹 Hook principal: dados, filtros, ordenação, etc.
   const data = useAnunciosData();
 
   // 🔹 Hook de import/export
   const impExp = useImportExport(data.loadAnuncios, data.currentPage);
 
-  // 🔹 Páginas
+  // 🔹 Cálculo de páginas
   const totalPages = Math.max(1, Math.ceil(data.totalItems / data.itemsPerPage));
 
   return (
@@ -75,11 +74,15 @@ export default function AnnounceTable() {
                 loading={data.loading}
                 selectedRows={data.selectedRows}
                 toggleRow={data.toggleRow}
-                // ✅ Agora enviamos id + loja
+                // ✅ Passa o id + loja correta (PK/SB → nome completo)
                 onEdit={(id, loja) =>
                   router.push(
                     `/dashboard/anuncios/edit?id=${id}&loja=${encodeURIComponent(
-                      loja
+                      loja === "PK"
+                        ? "Pikot Shop"
+                        : loja === "SB"
+                        ? "Sóbaquetas"
+                        : loja
                     )}`
                   )
                 }
@@ -92,7 +95,7 @@ export default function AnnounceTable() {
           </Table>
         </GlassmorphicCard>
 
-        {/* Controles de página */}
+        {/* === Controles de Paginação === */}
         <div className="mt-2">
           <TableControls
             currentPage={data.currentPage}

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { usePrecificacao } from "@/hooks/usePrecificacao";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
 export interface Anuncio {
   id: number;
@@ -34,22 +34,29 @@ interface CustoRow {
 // =========================
 // helpers de número BR
 // =========================
-const parseValorBR = (v: string | number | null | undefined): number => {
+export const parseValorBR = (v: string | number | null | undefined): number => {
   if (v === null || v === undefined || v === "") return 0;
   if (typeof v === "number") return v;
-
-  // ✅ Aceita "0,5", "0.5", "R$ 0,50", "1.000,25"
-  const clean = String(v)
-    .trim()
-    .replace(/[^\d.,-]/g, "") // remove letras, espaços e símbolos (R$, etc)
-    .replace(/\.(?=\d{3}(,|$))/g, "") // remove pontos de milhar
-    .replace(",", "."); // troca vírgula por ponto decimal
-
-  const num = parseFloat(clean);
+  let str = String(v).trim();
+  str = str.replace(/[^\d.,-]/g, "");
+  const temVirgula = str.includes(",");
+  const temPonto = str.includes(".");
+  if (temVirgula && temPonto) {
+    if (str.lastIndexOf(",") > str.lastIndexOf(".")) {
+      str = str.replace(/\./g, "");
+      str = str.replace(",", ".");
+    } else {
+      str = str.replace(/,/g, "");
+    }
+  } else if (temVirgula) {
+    str = str.replace(/\./g, "");
+    str = str.replace(",", ".");
+  }
+  const num = parseFloat(str);
   return isNaN(num) ? 0 : num;
 };
 
-const formatValorBR = (v: number | string): string => {
+export const formatValorBR = (v: number | string): string => {
   if (v === null || v === undefined || isNaN(Number(v))) return "0,00";
   return Number(v).toLocaleString("pt-BR", {
     minimumFractionDigits: 2,
@@ -60,97 +67,111 @@ const formatValorBR = (v: number | string): string => {
 // =========================
 // inferir OD pela referência
 // =========================
-const inferirOD = (referencia?: string | null): number => {
+export const inferirOD = (referencia?: string | null): number => {
   const ref = (referencia || "").trim().toUpperCase();
-  if (ref.startsWith("PAI")) return 1; // PAI -
-  if (ref.startsWith("VAR")) return 2; // VAR -
-  return 3; // SIMPLES
+  if (ref.startsWith("PAI")) return 1;
+  if (ref.startsWith("VAR")) return 2;
+  return 3;
 };
 
 // =========================
-// ler custos e mapear por código
+// ler e adicionar custos
 // =========================
-async function fetchCustosMap(codigos: string[]): Promise<Record<string, number>> {
+async function fetchOrAddCustos(codigos: string[]): Promise<Record<string, number>> {
   if (codigos.length === 0) return {};
-  const { data, error } = await supabase
-    .from("custos")
-    .select("*")
-    .in("Código", codigos);
 
+  // 🔹 Busca custos existentes
+  const { data, error } = await supabase.from("custos").select("*").in("Código", codigos);
   let rows: CustoRow[] = data || [];
+
+  // 🔁 Se não achar na coluna "Código", tenta "Codigo"
   if (error || rows.length === 0) {
     const alt = await supabase.from("custos").select("*").in("Codigo", codigos);
     if (!alt.error && alt.data) rows = alt.data as any;
   }
 
+  // 🔹 Mapeia os custos encontrados
   const map: Record<string, number> = {};
+  const codigosEncontrados = new Set<string>();
+
   for (const r of rows) {
     const codigo = (r.Código || r.Codigo || "").toString().trim();
     const custoRaw = r["Custo Atual"] ?? r["Custo_Atual"] ?? r.custo ?? 0;
     const custoNum = parseValorBR(custoRaw as any);
-    if (codigo) map[codigo] = isNaN(custoNum) ? 0 : custoNum;
+    if (codigo) {
+      map[codigo] = isNaN(custoNum) ? 0 : custoNum;
+      codigosEncontrados.add(codigo);
+    }
   }
+
+  // 🔹 Identifica códigos que não existem na tabela "custos"
+  const novosCodigos = codigos.filter((c) => !codigosEncontrados.has(c));
+
+  if (novosCodigos.length > 0) {
+    const novos = novosCodigos.map((c) => ({
+      Código: c,
+      "Custo Atual": 0,
+    }));
+
+    // 🔹 Insere novos custos no Supabase
+    const { error: insertError } = await supabase.from("custos").insert(novos);
+    if (insertError) console.warn("⚠️ Erro ao inserir novos custos:", insertError);
+    else console.info(`✅ Custos criados para códigos: ${novosCodigos.join(", ")}`);
+
+    // Adiciona os novos ao map (com custo 0)
+    novosCodigos.forEach((c) => (map[c] = 0));
+  }
+
   return map;
 }
 
 /**
- * 🔧 Hook responsável por carregar, editar e salvar anúncios conforme a loja.
- * Fonte: anuncios_all (filtra por ID + Loja)
+ * 🔧 Hook responsável por carregar e editar anúncios conforme a loja.
+ * Agora com suporte para adicionar custos automaticamente.
  */
 export function useAnuncioEditor(id?: string) {
   const [produto, setProduto] = useState<Anuncio | null>(null);
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  const router = useRouter();
   const params = useSearchParams();
-  const loja = params.get("loja") as "Pikot Shop" | "Sóbaquetas" | null;
+  const lojaParam = params.get("loja");
 
-  const { composicao, setComposicao, custoTotal, setCalculo, setAcrescimos } =
-    usePrecificacao();
+  const { composicao, setComposicao, custoTotal, setCalculo, setAcrescimos } = usePrecificacao();
 
   // ===========================================================
-  // 🔹 CARREGAR ANÚNCIO (anuncios_all)
+  // 🔹 CARREGAR ANÚNCIO
   // ===========================================================
   const carregarAnuncio = useCallback(async () => {
-    if (!id || !loja) {
-      console.warn("⚠️ Nenhum ID ou loja fornecido.");
-      return;
-    }
-
+    if (!id || !lojaParam) return;
     setLoading(true);
 
     try {
-      const lojaCodigo =
-        loja === "Pikot Shop"
+      const loja =
+        lojaParam === "Pikot Shop"
           ? "Pikot Shop"
-          : loja === "Sóbaquetas" || loja === "Sobaquetas"
+          : lojaParam === "Sóbaquetas" || lojaParam === "Sobaquetas"
           ? "Sóbaquetas"
           : null;
 
-      if (!lojaCodigo) {
-        console.warn(`⚠️ Loja inválida: ${loja}`);
-        return;
-      }
+      if (!loja) return;
 
-      const idFiltro = String(id).trim();
-      console.log("🔍 Buscando anúncio com:", { idFiltro, lojaCodigo });
+      const tabela = loja === "Pikot Shop" ? "anuncios_pk" : "anuncios_sb";
+      const lojaCodigo = loja === "Pikot Shop" ? "PK" : "SB";
 
+      // 🔹 Busca o anúncio
       const { data, error } = await supabase
-        .from("anuncios_all")
+        .from(tabela)
         .select("*")
-        .eq("ID", idFiltro)
+        .eq("ID", String(id).trim())
         .eq("Loja", lojaCodigo)
         .limit(1);
 
       if (error) {
-        console.error("❌ Erro Supabase:", error);
-        setProduto(null);
+        console.error("❌ Erro ao buscar anúncio:", error);
         return;
       }
+
       if (!data || data.length === 0) {
-        console.warn(`⚠️ Nenhum anúncio encontrado com ID ${idFiltro} e Loja ${lojaCodigo}`);
+        console.warn("⚠️ Nenhum dado encontrado para ID:", id, "Loja:", lojaCodigo);
         setProduto(null);
         return;
       }
@@ -175,198 +196,55 @@ export function useAnuncioEditor(id?: string) {
         comprimento: parseValorBR(row["Comprimento"]),
       });
 
-      // Monta composição inicial (custo será preenchido via tabela de custos)
-      const compTmp: Array<{ codigo: string; quantidade: string; custo: string }> = [];
+      // 🔹 Monta composição
+      const compTmp = [];
       for (let i = 1; i <= 10; i++) {
         const codigo = row[`Código ${i}`];
         const quantidade = row[`Quantidade ${i}`];
         if (codigo) {
           compTmp.push({
             codigo: String(codigo).trim(),
-            quantidade: formatValorBR(
-              quantidade === null || quantidade === undefined || quantidade === ""
-                ? 1
-                : quantidade
-            ),
+            quantidade:
+              !quantidade || quantidade === "" ? "1" : String(quantidade).replace(".", ","),
             custo: "0,00",
           });
         }
       }
 
-      // 🔹 Busca custos por código e calcula custo total
+      // 🔹 Busca custos e adiciona novos se não existirem
       const codigos = compTmp.map((c) => c.codigo);
-      const custosMap = await fetchCustosMap(codigos);
-      const compFinal = compTmp.map((c) => {
-        const custo = custosMap[c.codigo] ?? 0;
-        return { ...c, custo: formatValorBR(custo) };
-      });
+      const custosMap = await fetchOrAddCustos(codigos);
+
+      const compFinal = compTmp.map((c) => ({
+        ...c,
+        custo: formatValorBR(custosMap[c.codigo] ?? 0),
+      }));
 
       setComposicao(compFinal);
       setAcrescimos((prev) => ({ ...prev, acrescimo: 0 }));
 
-      const total = compFinal.reduce((sum, item) => {
-        const q = parseValorBR(item.quantidade); // aceita "0,5" e "0.5"
-        const cu = parseValorBR(item.custo);
-        return sum + q * cu;
-      }, 0);
+      // 🔹 Calcula custo total
+      const total = compFinal.reduce(
+        (sum, item) => sum + parseValorBR(item.quantidade) * parseValorBR(item.custo),
+        0
+      );
 
-      setCalculo((prev: any) => ({ ...prev, custo: String(total), frete: prev?.frete ?? "0" }));
-      console.log("🧮 Custo total calculado:", formatValorBR(total));
-    } catch (err: any) {
-      console.error("❌ Erro ao carregar anúncio:", err.message || err);
-      setProduto(null);
+      setCalculo((prev: any) => ({
+        ...prev,
+        custo: String(total),
+        frete: prev?.frete ?? "0",
+      }));
     } finally {
       setLoading(false);
     }
-  }, [id, loja, setComposicao, setAcrescimos, setCalculo]);
+  }, [id, lojaParam, setComposicao, setAcrescimos, setCalculo]);
 
-  // ===========================================================
-  // 💾 SALVAR MANUAL
-  // ===========================================================
-  const handleSave = useCallback(async () => {
-    if (!produto || !produto.loja) {
-      alert("❌ Selecione a loja (Pikot Shop ou Sóbaquetas).");
-      return;
-    }
-
-    setSaving(true);
-
-    try {
-      const lojaCodigo =
-        produto.loja === "Pikot Shop"
-          ? "Pikot Shop"
-          : produto.loja === "Sóbaquetas"
-          ? "Sóbaquetas"
-          : null;
-
-      if (!lojaCodigo) throw new Error("Loja inválida.");
-
-      const camposComposicaoDb: Record<string, any> = {};
-      composicao.forEach((c: any, i: number) => {
-        const idx = i + 1;
-        const qtdNum = parseValorBR(c.quantidade);
-        camposComposicaoDb[`Código ${idx}`] = c.codigo || null;
-        camposComposicaoDb[`Quantidade ${idx}`] = isNaN(qtdNum) ? null : qtdNum;
-      });
-
-      const odFinal = inferirOD(produto.referencia);
-
-      const payloadDb = {
-        "ID Bling": produto.id_bling,
-        "ID Tray": produto.id_tray,
-        "ID Var": produto.id_var,
-        "Referência": produto.referencia,
-        "Nome": produto.nome,
-        "Marca": produto.marca,
-        "Categoria": produto.categoria,
-        "Peso": produto.peso,
-        "Altura": produto.altura,
-        "Largura": produto.largura,
-        "Comprimento": produto.comprimento,
-        OD: odFinal,
-        ...camposComposicaoDb,
-      };
-
-      const { error } = await supabase
-        .from("anuncios_all")
-        .update(payloadDb)
-        .eq("ID", String(produto.id).trim())
-        .eq("Loja", lojaCodigo);
-
-      if (error) throw error;
-
-      console.log("✅ Salvamento concluído com sucesso!");
-      router.refresh();
-    } catch (err) {
-      console.error("❌ Erro ao salvar anúncio:", err);
-    } finally {
-      setSaving(false);
-    }
-  }, [produto, composicao, router]);
-
-  // ===========================================================
-  // 💾 AUTOSAVE (debounce)
-  // ===========================================================
   useEffect(() => {
-    if (!produto || !produto.id || loading || saving) return;
-
-    const timeout = setTimeout(async () => {
-      try {
-        const lojaCodigo =
-          produto.loja === "Pikot Shop"
-            ? "Pikot Shop"
-            : produto.loja === "Sóbaquetas"
-            ? "Sóbaquetas"
-            : null;
-        if (!lojaCodigo) return;
-
-        const odFinal = inferirOD(produto.referencia);
-
-        await supabase
-          .from("anuncios_all")
-          .update({
-            Nome: produto.nome,
-            Marca: produto.marca,
-            Categoria: produto.categoria,
-            Peso: produto.peso,
-            Altura: produto.altura,
-            Largura: produto.largura,
-            Comprimento: produto.comprimento,
-            OD: odFinal,
-          })
-          .eq("ID", produto.id)
-          .eq("Loja", lojaCodigo);
-
-        console.log("✅ Autosave sincronizado no Supabase");
-      } catch (err) {
-        console.error("❌ Erro no autosave:", err);
-      }
-    }, 800);
-
-    return () => clearTimeout(timeout);
-  }, [produto, loading, saving]);
+    if (id && lojaParam) carregarAnuncio();
+  }, [id, lojaParam, carregarAnuncio]);
 
   // ===========================================================
-  // 🗑️ EXCLUIR ANÚNCIO
-  // ===========================================================
-  const handleDelete = useCallback(async () => {
-    if (!produto?.id) return;
-    setDeleting(true);
-
-    try {
-      const lojaCodigo =
-        produto.loja === "Pikot Shop"
-          ? "Pikot Shop"
-          : produto.loja === "Sóbaquetas"
-          ? "Sóbaquetas"
-          : null;
-      if (!lojaCodigo) return;
-
-      const { error } = await supabase
-        .from("anuncios_all")
-        .delete()
-        .eq("ID", produto.id)
-        .eq("Loja", lojaCodigo);
-
-      if (error) throw error;
-
-      router.push("/dashboard/anuncios");
-    } catch (err) {
-      console.error("Erro ao excluir:", err);
-    } finally {
-      setDeleting(false);
-    }
-  }, [produto?.id, produto?.loja, router]);
-
-  // ===========================================================
-  // 🚀 EXECUÇÃO INICIAL
-  // ===========================================================
-  useEffect(() => {
-    if (id && loja) carregarAnuncio();
-  }, [id, loja, carregarAnuncio]);
-
-  // ===========================================================
-  // 🔁 RETORNO DO HOOK
+  // 🔁 RETORNO
   // ===========================================================
   return {
     produto,
@@ -375,10 +253,6 @@ export function useAnuncioEditor(id?: string) {
     setComposicao,
     custoTotal,
     loading,
-    saving,
-    deleting,
-    handleSave,
-    handleDelete,
     carregarAnuncio,
   };
 }

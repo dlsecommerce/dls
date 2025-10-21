@@ -30,7 +30,7 @@ export const DimensionsSection = ({ produto, setProduto, HelpTooltip }: any) => 
 
       <div className="grid md:grid-cols-2 gap-2">
         {[
-          { label: "Peso (kg)", key: "peso" },
+          { label: "Peso (g)", key: "peso" },
           { label: "Altura (cm)", key: "altura" },
           { label: "Largura (cm)", key: "largura" },
           { label: "Comprimento (cm)", key: "comprimento" },

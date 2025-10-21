@@ -1,16 +1,10 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Anuncio } from "@/components/announce/types/Announce";
 import { ORDERABLE_COLUMNS } from "../utils/constants";
 import { RowShape, mapRowToAnuncio } from "../utils/mapRowToAnuncio";
 
-/**
- * Hook responsável por:
- * - carregar anúncios da view unificada "anuncios_all"
- * - aplicar filtros, paginação e ordenação
- * - manter compatibilidade com o dashboard atual
- */
 export function useAnunciosData() {
   const [rows, setRows] = useState<Anuncio[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,12 +29,15 @@ export function useAnunciosData() {
   const [sortColumn, setSortColumn] = useState<string>("ID");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
-  // seleção
+  // seleção / exclusão
   const [selectedRows, setSelectedRows] = useState<Anuncio[]>([]);
   const [openDelete, setOpenDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  /** 🔹 Monta o filtro de busca */
+  // ===========================================================
+  // 🔍 Funções auxiliares
+  // ===========================================================
+
   const buildOr = (term: string) => {
     const like = `%${term}%`;
     const isNumeric = /^[0-9]+$/.test(term);
@@ -63,9 +60,8 @@ export function useAnunciosData() {
     ].join(",");
   };
 
-  /** 🔹 Carrega valores distintos de Marca e Categoria */
   const fetchDistinct = async (column: "Marca" | "Categoria") => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("anuncios_all")
       .select(`${column}`, { distinct: true })
       .not(column, "is", null)
@@ -73,15 +69,9 @@ export function useAnunciosData() {
       .order(column, { ascending: true })
       .limit(20000);
 
-    if (error) {
-      console.error("❌ distinct error", column, error);
-      return [];
-    }
-
-    return [...new Set(data.map((r: any) => String(r[column] ?? "")))];
+    return [...new Set((data || []).map((r: any) => String(r[column] ?? "")))];
   };
 
-  /** 🔹 Atualiza filtros */
   const hydrateFacets = async () => {
     const [marcas, categorias] = await Promise.all([
       fetchDistinct("Marca"),
@@ -91,7 +81,9 @@ export function useAnunciosData() {
     setAllCategorias(categorias.sort());
   };
 
-  /** 🔹 Carrega anúncios */
+  // ===========================================================
+  // 📦 Carregar anúncios
+  // ===========================================================
   const loadAnuncios = async (page = 1) => {
     setLoading(true);
     try {
@@ -103,13 +95,17 @@ export function useAnunciosData() {
         .select("*", { count: "exact" })
         .range(from, to);
 
-      // Filtros
       if (debouncedSearch.trim()) query = query.or(buildOr(debouncedSearch.trim()));
       if (selectedBrands.length) query = query.in("Marca", selectedBrands);
       if (selectedCategoria.length) query = query.in("Categoria", selectedCategoria);
-      if (selectedLoja.length) query = query.in("Loja", selectedLoja);
 
-      // 🔹 Ordenação
+      if (selectedLoja.length) {
+        const lojaCodes = selectedLoja.map((loja) =>
+          loja === "Pikot Shop" ? "PK" : loja === "Sóbaquetas" ? "SB" : loja
+        );
+        query = query.in("Loja", lojaCodes);
+      }
+
       const primaryCol =
         sortColumn && ORDERABLE_COLUMNS[sortColumn]
           ? ORDERABLE_COLUMNS[sortColumn]
@@ -120,27 +116,24 @@ export function useAnunciosData() {
         nullsFirst: false,
       });
 
-      // 🔹 Caso queira sempre estabilizar por ID
-      if (primaryCol !== "ID") {
-        query = query.order("ID", { ascending: true });
-      }
+      if (primaryCol !== "ID") query = query.order("ID", { ascending: true });
 
-      const { data, count, error } = await query;
-      if (error) throw error;
+      const { data, count } = await query;
 
-      const mapped = (data || []).map((r: RowShape) =>
-        mapRowToAnuncio(r, "anuncios_all")
-      );
-
-      // Corrige caso "Loja" venha nula
-      mapped.forEach((r) => {
-        if (!r.loja) r.loja = r.id < 10000 ? "Pikot Shop" : "Sóbaquetas";
+      const mapped = (data || []).map((r: RowShape) => {
+        const anuncio = mapRowToAnuncio(r, "anuncios_all");
+        anuncio.loja =
+          r.Loja === "PK"
+            ? "Pikot Shop"
+            : r.Loja === "SB"
+            ? "Sóbaquetas"
+            : r.Loja || "Desconhecida";
+        return anuncio;
       });
 
       setRows(mapped);
       setTotalItems(count || 0);
-    } catch (err) {
-      console.error("❌ Erro ao carregar anúncios:", err);
+    } catch {
       setRows([]);
       setTotalItems(0);
     } finally {
@@ -148,18 +141,58 @@ export function useAnunciosData() {
     }
   };
 
-  // debounce da pesquisa
+  // ===========================================================
+  // 🗑️ Exclusão com recarregamento automático
+  // ===========================================================
+  const deleteSelected = useCallback(async () => {
+    if (selectedRows.length === 0) return;
+    setDeleting(true);
+
+    try {
+      for (const row of selectedRows) {
+        const lojaCodigo =
+          row.loja === "Pikot Shop" ? "PK" : row.loja === "Sóbaquetas" ? "SB" : null;
+
+        const tabela =
+          lojaCodigo === "PK"
+            ? "anuncios_pk"
+            : lojaCodigo === "SB"
+            ? "anuncios_sb"
+            : null;
+
+        if (!tabela || !row.id) continue;
+
+        await supabase
+          .from(tabela)
+          .delete()
+          .eq("ID", String(row.id).trim())
+          .eq("Loja", lojaCodigo);
+      }
+
+      // 🔄 Recarrega os anúncios após exclusão
+      await loadAnuncios(currentPage);
+
+      setSelectedRows([]);
+      setOpenDelete(false);
+    } catch (err: any) {
+      alert("Erro ao excluir: " + (err.message || err));
+    } finally {
+      setDeleting(false);
+    }
+  }, [selectedRows, currentPage]);
+
+  // ===========================================================
+  // ⚙️ Efeitos e comportamento padrão
+  // ===========================================================
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 400);
     return () => clearTimeout(t);
   }, [search]);
 
-  // inicialização
   useEffect(() => {
     hydrateFacets();
   }, []);
 
-  // recarrega ao mudar filtros/paginação/ordenação
   useEffect(() => {
     loadAnuncios(currentPage);
   }, [
@@ -173,7 +206,9 @@ export function useAnunciosData() {
     sortDirection,
   ]);
 
-  /** 🔹 Ordenação manual */
+  // ===========================================================
+  // 🧭 Ordenação e seleção
+  // ===========================================================
   const handleSort = (col: string) => {
     if (!(col in ORDERABLE_COLUMNS)) return;
     if (sortColumn === col) {
@@ -185,35 +220,37 @@ export function useAnunciosData() {
     setCurrentPage(1);
   };
 
-  /** 🔹 Seleção */
   const toggleRow = (row: Anuncio) => {
     setSelectedRows((prev) =>
-      prev.some((r) => r.id === row.id)
-        ? prev.filter((r) => r.id !== row.id)
+      prev.some((r) => r.id === row.id && r.loja === row.loja)
+        ? prev.filter((r) => !(r.id === row.id && r.loja === row.loja))
         : [...prev, row]
     );
   };
 
   const allVisibleSelected =
-    rows.length > 0 && rows.every((r) => selectedRows.some((s) => s.id === r.id));
+    rows.length > 0 &&
+    rows.every((r) =>
+      selectedRows.some((s) => s.id === r.id && s.loja === r.loja)
+    );
 
   const toggleSelectAllVisible = (checked: boolean) => {
     if (checked) {
-      const toAdd = rows.filter((r) => !selectedRows.some((s) => s.id === r.id));
+      const toAdd = rows.filter(
+        (r) => !selectedRows.some((s) => s.id === r.id && s.loja === r.loja)
+      );
       setSelectedRows((prev) => [...prev, ...toAdd]);
     } else {
-      const remaining = selectedRows.filter((s) => !rows.some((r) => r.id === s.id));
+      const remaining = selectedRows.filter(
+        (s) => !rows.some((r) => r.id === s.id && r.loja === s.loja)
+      );
       setSelectedRows(remaining);
     }
   };
 
-  const deleteSelected = () => {
-    if (selectedRows.length === 0) return;
-    const remaining = rows.filter((r) => !selectedRows.some((s) => s.id === r.id));
-    setRows(remaining);
-    setSelectedRows([]);
-  };
-
+  // ===========================================================
+  // 🧩 Retorno
+  // ===========================================================
   return {
     rows,
     loading,

@@ -117,7 +117,6 @@ export default function ConfirmImportModal({
             {loading ? (
               <>
                 <Loader className="animate-spin w-5 h-5" />
-                Importando...
               </>
             ) : (
               "Confirmar"

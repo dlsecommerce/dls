@@ -23,7 +23,14 @@ export function usePrecificacao() {
   });
 
   const [alteracoes, setAlteracoes] = useState<
-    { timestamp: string; tipo: string; campo: string; de: string; para: string; detalhe?: string }[]
+    {
+      timestamp: string;
+      tipo: string;
+      campo: string;
+      de: string;
+      para: string;
+      detalhe?: string;
+    }[]
   >([]);
 
   // ==================================================
@@ -33,31 +40,26 @@ export function usePrecificacao() {
     if (v === null || v === undefined || v === "") return 0;
     const s = String(v).trim();
 
-    // Se já for número, retorna direto
     if (typeof v === "number") return v;
 
-    // Caso tenha vírgula → formato BR (ex: 1.234,56 ou 10,00)
     if (s.includes(",")) {
-      // Remove pontos de milhar apenas se houver ponto antes da vírgula
       if (s.match(/\.\d{3},/)) {
         return Number(s.replace(/\./g, "").replace(",", "."));
       }
-      // Caso simples: "10,00" → "10.00"
       return Number(s.replace(",", "."));
     }
 
-    // Caso decimal com ponto (ex: 1234.56)
     if (s.includes(".") && s.split(".")[1]?.length <= 2) {
       return Number(s);
     }
 
-    // Caso número inteiro simples (ex: "10")
     return Number(s);
   };
 
   // ==================================================
-  // 💰 Cálculo de custo total
+  // 💰 Cálculo de custo total (sem embalagem)
   // ==================================================
+  const EMBALAGEM_FIXA = 2.5; // 🔸 valor fixo da embalagem
   const custoTotal = composicao.reduce(
     (sum, item) => sum + parseBR(item.custo) * parseBR(item.quantidade),
     0
@@ -74,11 +76,12 @@ export function usePrecificacao() {
   const frete = parseBR(calculo.frete);
 
   // ==================================================
-  // 🧮 Cálculo principal
+  // 🧮 Cálculo principal (embalagem somada apenas no preço de venda)
   // ==================================================
   const custoLiquido = custoTotal * (1 - desconto);
   const divisor = 1 - (imposto + lucro + comissao + marketing);
-  const precoVenda = divisor > 0 ? (custoLiquido + frete) / divisor : 0;
+  const precoVenda =
+    divisor > 0 ? (custoLiquido + frete + EMBALAGEM_FIXA) / divisor : 0;
 
   // ==================================================
   // 📈 Cálculo de acréscimos

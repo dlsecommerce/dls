@@ -315,7 +315,7 @@ export default function PricingCalculatorModern() {
   };
 
   // =====================
-  // Cálculos originais (intactos)
+  // Cálculos originais (intactos) — com embalagem somada no preço
   // =====================
   const calcularPreco = (dados: Calculo) => {
     const custo = composicao.reduce(
@@ -334,7 +334,9 @@ export default function PricingCalculatorModern() {
 
     const custoLiquido = custo * (1 - desconto);
     const divisor = 1 - (imposto + margem + comissao + marketing);
-    const preco = divisor > 0 ? (custoLiquido + frete) / divisor : 0;
+
+    // 🔹 SOMA DA EMBALAGEM AQUI (R$ 2,50) — NÃO altera custoTotal
+    const preco = divisor > 0 ? (custoLiquido + frete + 2.5) / divisor : 0;
 
     return isFinite(preco) ? preco : 0;
   };
@@ -622,7 +624,6 @@ export default function PricingCalculatorModern() {
                     className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb]"
                   />
                 </div>
-
                 {/* Custo */}
                 <div>
                   <Label className="text-neutral-400 text-[10px] block mb-1">
@@ -653,12 +654,18 @@ export default function PricingCalculatorModern() {
                   />
                 </div>
 
+                {/* ❌ Botão X com o MESMO estilo do CompositionSection */}
                 {idx >= 1 && (
                   <Button
                     onClick={() => removerItem(idx)}
                     size="sm"
                     variant="ghost"
-                    className="absolute -top-1 -right-1 w-5 h-5 p-0 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-full"
+                    className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2
+                               w-5 h-5 p-0 flex items-center justify-center 
+                               bg-red-500/20 hover:bg-red-500/40 text-red-400 
+                               border border-red-500/30 rounded-full shadow-sm 
+                               transition-all cursor-pointer"
+                    title="Remover linha"
                   >
                     ×
                   </Button>
@@ -759,6 +766,7 @@ export default function PricingCalculatorModern() {
                   <h4 className="text-white font-semibold text-xs mb-1">
                     {bloco.nome}
                   </h4>
+
                   {["desconto","frete","imposto","comissao","margem","marketing"].map((key, i) => (
                     <div key={key} className="mb-1 w-full">
                       <Label className="text-neutral-400 text-[10px] block">
@@ -793,6 +801,21 @@ export default function PricingCalculatorModern() {
                         onKeyDown={(e) => handleLinearNav(e, i, bloco.refs, 6)}
                         className="bg-black/50 border border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
                       />
+
+                      {/* 🔹 Embalagem: campo fixo logo abaixo de Desconto */}
+                      {key === "desconto" && (
+                        <div className="mt-1">
+                          <Label className="text-neutral-400 text-[10px] block">
+                            Embalagem (R$)
+                          </Label>
+                          <Input
+                            type="text"
+                            value="2,50"
+                            readOnly
+                            className="bg-black/50 border border-white/10 text-white text-xs rounded-md opacity-70 cursor-not-allowed"
+                          />
+                        </div>
+                      )}
                     </div>
                   ))}
                   <div className="mt-1 text-center flex flex-col items-center justify-center py-1">

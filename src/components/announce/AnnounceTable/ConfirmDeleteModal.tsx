@@ -73,7 +73,6 @@ export default function ConfirmDeleteModal({
             {loading ? (
               <>
                 <Loader className="animate-spin w-5 h-5" />
-                Excluindo...
               </>
             ) : (
               "Excluir"
