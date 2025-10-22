@@ -56,12 +56,8 @@ export default function ConfirmExitModal({
             página?
           </p>
 
-          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-300 flex items-start gap-2">
-            <LogOut className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-            <div>
-              <strong className="text-red-400">Aviso:</strong> Essa ação não
-              pode ser desfeita.
-            </div>
+          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-300">
+            <strong className="text-red-400">Aviso:</strong> Essa ação não pode ser desfeita.
           </div>
         </motion.div>
 
@@ -78,21 +74,16 @@ export default function ConfirmExitModal({
 
           <Button
             type="button"
-            className={`bg-gradient-to-r from-[#e74c3c] to-[#c0392b] text-white flex items-center gap-2 cursor-pointer transition-all ${
+            className={`bg-gradient-to-r from-[#e74c3c] to-[#c0392b] text-white cursor-pointer transition-all ${
               loading ? "opacity-80 cursor-wait" : "hover:scale-105"
             }`}
             onClick={handleConfirm}
             disabled={loading}
           >
             {loading ? (
-              <>
-                <Loader className="w-5 h-5 animate-spin text-white" />
-              </>
+              <Loader className="w-5 h-5 animate-spin text-white" />
             ) : (
-              <>
-                <LogOut className="w-5 h-5" />
-                Voltar
-              </>
+              "Voltar"
             )}
           </Button>
         </DialogFooter>

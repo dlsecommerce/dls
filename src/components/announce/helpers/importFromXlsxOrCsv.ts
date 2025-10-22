@@ -49,37 +49,27 @@ export async function importFromXlsxOrCsv(
   file: File,
   previewOnly = false
 ): Promise<ImportResult> {
-  const requiredColumns = [
-    "ID",
-    "Nome",
-    "Marca",
-    "Categoria",
-    "Referência",
-    "ID Bling",
-    "ID Tray",
-  ];
-
   const warnings: string[] = [];
 
-  const data = await file.arrayBuffer();
-  const workbook = XLSX.read(data, {
-    type: "array",
-    codepage: 65001,
-    cellDates: true,
-  });
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: "array" });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
+
+  if (!sheet) {
+    warnings.push("Não foi possível ler a planilha. Verifique o formato do arquivo.");
+    return { data: [], warnings };
+  }
+
+  // ⚙️ Pula apenas a primeira linha de grupos
+  const range = XLSX.utils.decode_range(sheet["!ref"] as string);
+  range.s.r = 1; // começa na segunda linha (índice 1)
+  sheet["!ref"] = XLSX.utils.encode_range(range);
+
   const json = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: "" });
 
-  const headers = Object.keys(json[0] || {});
-  const missing = requiredColumns.filter(
-    (col) =>
-      !headers.some(
-        (h) => h.trim().toLowerCase() === col.trim().toLowerCase()
-      )
-  );
-
-  if (missing.length > 0) {
-    warnings.push(`As seguintes colunas estão ausentes: ${missing.join(", ")}.`);
+  if (json.length === 0) {
+    warnings.push("Nenhum dado encontrado após o cabeçalho.");
+    return { data: [], warnings };
   }
 
   const normalized: RowShape[] = json.map((row) => {
@@ -107,7 +97,6 @@ export async function importFromXlsxOrCsv(
       "Comprimento": findKey(["Comprimento", "length"]),
     };
 
-    // Adiciona dinamicamente as colunas de Código e Quantidade 1–10
     for (let i = 1; i <= 10; i++) {
       obj[`Código ${i}` as keyof RowShape] = findKey([
         `Código ${i}`,
@@ -125,54 +114,71 @@ export async function importFromXlsxOrCsv(
     return obj;
   });
 
-  if (previewOnly) {
-    return { data: normalized, warnings };
-  }
+  if (previewOnly) return { data: normalized, warnings };
 
-  // =====================================================
-  // 🔍 Separar os registros por loja
-  // =====================================================
+  // --- Separar registros por loja ---
   const pikotRows = normalized.filter(
     (r) =>
       (r.Loja || "").toLowerCase().includes("pikot") ||
       (r.Loja || "").toLowerCase().includes("pikot shop")
   );
+
   const sobaquetasRows = normalized.filter(
     (r) => (r.Loja || "").toLowerCase().includes("sobaquetas")
   );
+
   const outrosRows = normalized.filter(
-    (r) =>
-      !pikotRows.includes(r) &&
-      !sobaquetasRows.includes(r)
+    (r) => !pikotRows.includes(r) && !sobaquetasRows.includes(r)
   );
 
-  // =====================================================
-  // 🧭 Inserção automática no Supabase conforme loja
-  // =====================================================
-  const inserts = [];
+  // --- Gerar IDs automáticos ---
+  async function preencherIdsAutomaticos(tabela: string, rows: RowShape[]) {
+    if (rows.length === 0) return rows;
+
+    const { data: ultimo } = await supabase
+      .from(tabela)
+      .select("ID")
+      .order("ID", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let proximoId = ultimo?.ID ? parseInt(ultimo.ID) + 1 : 1;
+
+    return rows.map((r) => {
+      if (!r.ID || r.ID === "" || r.ID === null) {
+        r.ID = proximoId;
+        proximoId++;
+      }
+      return r;
+    });
+  }
+
+  // --- Inserção automática no Supabase ---
+  const inserts: Promise<any>[] = [];
 
   if (pikotRows.length > 0) {
+    const withIds = await preencherIdsAutomaticos("anuncios_pk", pikotRows);
     inserts.push(
-      supabase.from("anuncios_pk").upsert(pikotRows).then(({ error }) => {
-        if (error) throw new Error(`Erro ao importar Pikot Shop: ${error.message}`);
+      supabase.from("anuncios_pk").upsert(withIds).then(({ error }) => {
+        if (error)
+          throw new Error(`Erro ao importar Pikot Shop: ${error.message}`);
       })
     );
   }
 
   if (sobaquetasRows.length > 0) {
+    const withIds = await preencherIdsAutomaticos("anuncios_sb", sobaquetasRows);
     inserts.push(
-      supabase.from("anuncios_sb").upsert(sobaquetasRows).then(({ error }) => {
-        if (error) throw new Error(`Erro ao importar Sobaquetas: ${error.message}`);
+      supabase.from("anuncios_sb").upsert(withIds).then(({ error }) => {
+        if (error)
+          throw new Error(`Erro ao importar Sóbaquetas: ${error.message}`);
       })
     );
   }
 
-  // Caso tenha outras lojas ou planilha geral
   if (outrosRows.length > 0) {
-    inserts.push(
-      supabase.from("anuncios_all").upsert(outrosRows).then(({ error }) => {
-        if (error) throw new Error(`Erro ao importar anúncios gerais: ${error.message}`);
-      })
+    warnings.push(
+      `${outrosRows.length} registro(s) ignorado(s): sem loja identificada (Pikot Shop ou Sóbaquetas).`
     );
   }
 

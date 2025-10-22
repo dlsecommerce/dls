@@ -1,4 +1,5 @@
 "use client";
+
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Anuncio } from "@/components/announce/types/Announce";
@@ -9,39 +10,33 @@ export function useAnunciosData() {
   const [rows, setRows] = useState<Anuncio[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // paginação
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(100);
   const [totalItems, setTotalItems] = useState(0);
 
-  // filtros
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState(search);
   const [allBrands, setAllBrands] = useState<string[]>([]);
-  const [allLojas, setAllLojas] = useState<string[]>(["Pikot Shop", "Sóbaquetas"]);
+  const [allLojas] = useState<string[]>(["Pikot Shop", "Sóbaquetas"]);
   const [allCategorias, setAllCategorias] = useState<string[]>([]);
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [selectedLoja, setSelectedLoja] = useState<string[]>([]);
   const [selectedCategoria, setSelectedCategoria] = useState<string[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
 
-  // ordenação
   const [sortColumn, setSortColumn] = useState<string>("ID");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
-  // seleção / exclusão
   const [selectedRows, setSelectedRows] = useState<Anuncio[]>([]);
   const [openDelete, setOpenDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // ===========================================================
-  // 🔍 Funções auxiliares
-  // ===========================================================
-
+  // ============================================================
+  // 🔍 Filtros auxiliares
+  // ============================================================
   const buildOr = (term: string) => {
     const like = `%${term}%`;
     const isNumeric = /^[0-9]+$/.test(term);
-
     if (isNumeric) {
       return [
         `"ID Bling".eq.${term}`,
@@ -49,7 +44,6 @@ export function useAnunciosData() {
         `"Referência".eq.${term}`,
       ].join(",");
     }
-
     return [
       `"Nome".ilike.${like}`,
       `"Marca".ilike.${like}`,
@@ -81,9 +75,9 @@ export function useAnunciosData() {
     setAllCategorias(categorias.sort());
   };
 
-  // ===========================================================
-  // 📦 Carregar anúncios
-  // ===========================================================
+  // ============================================================
+  // 📦 Carregar anúncios (com filtros e paginação)
+  // ============================================================
   const loadAnuncios = async (page = 1) => {
     setLoading(true);
     try {
@@ -98,7 +92,6 @@ export function useAnunciosData() {
       if (debouncedSearch.trim()) query = query.or(buildOr(debouncedSearch.trim()));
       if (selectedBrands.length) query = query.in("Marca", selectedBrands);
       if (selectedCategoria.length) query = query.in("Categoria", selectedCategoria);
-
       if (selectedLoja.length) {
         const lojaCodes = selectedLoja.map((loja) =>
           loja === "Pikot Shop" ? "PK" : loja === "Sóbaquetas" ? "SB" : loja
@@ -118,7 +111,8 @@ export function useAnunciosData() {
 
       if (primaryCol !== "ID") query = query.order("ID", { ascending: true });
 
-      const { data, count } = await query;
+      const { data, count, error } = await query;
+      if (error) throw error;
 
       const mapped = (data || []).map((r: RowShape) => {
         const anuncio = mapRowToAnuncio(r, "anuncios_all");
@@ -128,12 +122,14 @@ export function useAnunciosData() {
             : r.Loja === "SB"
             ? "Sóbaquetas"
             : r.Loja || "Desconhecida";
+        anuncio.id = r.ID; // 🔹 garante compatibilidade
         return anuncio;
       });
 
       setRows(mapped);
       setTotalItems(count || 0);
-    } catch {
+    } catch (err) {
+      console.error("Erro ao carregar anúncios:", err);
       setRows([]);
       setTotalItems(0);
     } finally {
@@ -141,49 +137,63 @@ export function useAnunciosData() {
     }
   };
 
-  // ===========================================================
-  // 🗑️ Exclusão com recarregamento automático
-  // ===========================================================
+  // ============================================================
+  // 🗑️ Exclusão definitiva (usada pelo ConfirmDeleteModal)
+  // ============================================================
   const deleteSelected = useCallback(async () => {
-    if (selectedRows.length === 0) return;
+    if (!selectedRows || selectedRows.length === 0) {
+      alert("Nenhum item selecionado para exclusão.");
+      return;
+    }
+
     setDeleting(true);
 
     try {
-      for (const row of selectedRows) {
-        const lojaCodigo =
-          row.loja === "Pikot Shop" ? "PK" : row.loja === "Sóbaquetas" ? "SB" : null;
+      // Agrupa por tabela
+      const grouped = selectedRows.reduce<Record<string, string[]>>((acc, row) => {
+        const loja = (row.loja || row.Loja || "").toString().toLowerCase();
+        let tabela = "";
+        if (loja.includes("pikot") || loja === "pk") tabela = "anuncios_pk";
+        else if (loja.includes("sobaquetas") || loja.includes("sóbaquetas") || loja === "sb")
+          tabela = "anuncios_sb";
+        if (!tabela) return acc;
 
-        const tabela =
-          lojaCodigo === "PK"
-            ? "anuncios_pk"
-            : lojaCodigo === "SB"
-            ? "anuncios_sb"
-            : null;
+        const id = String(row.id ?? row.ID ?? "").trim();
+        if (!id) return acc;
 
-        if (!tabela || !row.id) continue;
+        acc[tabela] = acc[tabela] || [];
+        acc[tabela].push(id);
+        return acc;
+      }, {});
 
-        await supabase
-          .from(tabela)
-          .delete()
-          .eq("ID", String(row.id).trim())
-          .eq("Loja", lojaCodigo);
+      if (Object.keys(grouped).length === 0) {
+        alert("Nenhum item válido para exclusão (sem ID ou loja).");
+        setDeleting(false);
+        return;
       }
 
-      // 🔄 Recarrega os anúncios após exclusão
-      await loadAnuncios(currentPage);
+      // Exclui todas em paralelo
+      const promises = Object.entries(grouped).map(async ([tabela, ids]) => {
+        const { error } = await supabase.from(tabela).delete().in("ID", ids);
+        if (error) throw error;
+      });
 
+      await Promise.all(promises);
+
+      // Atualiza interface
+      await loadAnuncios(currentPage);
       setSelectedRows([]);
       setOpenDelete(false);
     } catch (err: any) {
-      alert("Erro ao excluir: " + (err.message || err));
+      alert("Erro ao excluir anúncios: " + (err.message || err));
     } finally {
       setDeleting(false);
     }
   }, [selectedRows, currentPage]);
 
-  // ===========================================================
-  // ⚙️ Efeitos e comportamento padrão
-  // ===========================================================
+  // ============================================================
+  // 🔁 Efeitos
+  // ============================================================
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 400);
     return () => clearTimeout(t);
@@ -206,9 +216,9 @@ export function useAnunciosData() {
     sortDirection,
   ]);
 
-  // ===========================================================
-  // 🧭 Ordenação e seleção
-  // ===========================================================
+  // ============================================================
+  // 🔽 Ordenação e seleção
+  // ============================================================
   const handleSort = (col: string) => {
     if (!(col in ORDERABLE_COLUMNS)) return;
     if (sortColumn === col) {
@@ -222,8 +232,18 @@ export function useAnunciosData() {
 
   const toggleRow = (row: Anuncio) => {
     setSelectedRows((prev) =>
-      prev.some((r) => r.id === row.id && r.loja === row.loja)
-        ? prev.filter((r) => !(r.id === row.id && r.loja === row.loja))
+      prev.some(
+        (r) =>
+          (r.id ?? r.ID) === (row.id ?? row.ID) &&
+          (r.loja ?? r.Loja) === (row.loja ?? row.Loja)
+      )
+        ? prev.filter(
+            (r) =>
+              !(
+                (r.id ?? r.ID) === (row.id ?? row.ID) &&
+                (r.loja ?? r.Loja) === (row.loja ?? row.Loja)
+              )
+          )
         : [...prev, row]
     );
   };
@@ -231,26 +251,40 @@ export function useAnunciosData() {
   const allVisibleSelected =
     rows.length > 0 &&
     rows.every((r) =>
-      selectedRows.some((s) => s.id === r.id && s.loja === r.loja)
+      selectedRows.some(
+        (s) =>
+          (s.id ?? s.ID) === (r.id ?? r.ID) &&
+          (s.loja ?? s.Loja) === (r.loja ?? r.Loja)
+      )
     );
 
   const toggleSelectAllVisible = (checked: boolean) => {
     if (checked) {
       const toAdd = rows.filter(
-        (r) => !selectedRows.some((s) => s.id === r.id && s.loja === r.loja)
+        (r) =>
+          !selectedRows.some(
+            (s) =>
+              (s.id ?? s.ID) === (r.id ?? r.ID) &&
+              (s.loja ?? s.Loja) === (r.loja ?? r.Loja)
+          )
       );
       setSelectedRows((prev) => [...prev, ...toAdd]);
     } else {
       const remaining = selectedRows.filter(
-        (s) => !rows.some((r) => r.id === s.id && r.loja === s.loja)
+        (s) =>
+          !rows.some(
+            (r) =>
+              (r.id ?? r.ID) === (s.id ?? s.ID) &&
+              (r.loja ?? r.Loja) === (s.loja ?? s.Loja)
+          )
       );
       setSelectedRows(remaining);
     }
   };
 
-  // ===========================================================
-  // 🧩 Retorno
-  // ===========================================================
+  // ============================================================
+  // 🔚 Retorno
+  // ============================================================
   return {
     rows,
     loading,
@@ -276,6 +310,7 @@ export function useAnunciosData() {
     sortDirection,
     handleSort,
     selectedRows,
+    setSelectedRows,
     toggleRow,
     allVisibleSelected,
     toggleSelectAllVisible,

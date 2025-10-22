@@ -32,10 +32,7 @@ export function useAnuncioActions() {
 
         const lojaCodigo = produto.loja === "Pikot Shop" ? "PK" : "SB";
 
-        if (!tabela) {
-          alert("Loja inválida. Selecione Pikot Shop ou Sóbaquetas.");
-          return;
-        }
+        if (!tabela) throw new Error("Loja inválida. Selecione Pikot Shop ou Sóbaquetas.");
 
         // =====================================================
         // 🔹 Monta composição (Código 1, Quantidade 1, etc.)
@@ -53,7 +50,7 @@ export function useAnuncioActions() {
         let novoId = produto.id ? Number(produto.id) : null;
 
         // =====================================================
-        // 🔹 Se não há ID → é novo cadastro
+        // 🔹 Se não há ID → novo cadastro
         // =====================================================
         if (!novoId) {
           const { data: maxData, error: maxError } = await supabase
@@ -100,9 +97,7 @@ export function useAnuncioActions() {
         if (erroBusca) throw erroBusca;
 
         let erroOperacao;
-
         if (existente) {
-          // Atualização (edição)
           const { error } = await supabase
             .from(tabela)
             .update(payload)
@@ -110,7 +105,6 @@ export function useAnuncioActions() {
             .eq("Loja", lojaCodigo);
           erroOperacao = error;
         } else {
-          // Inserção (novo)
           const { error } = await supabase.from(tabela).insert(payload);
           erroOperacao = error;
         }
@@ -129,10 +123,10 @@ export function useAnuncioActions() {
   );
 
   // ===========================================================
-  // 🗑️ EXCLUIR ANÚNCIO (interface + Supabase)
+  // 🗑️ EXCLUIR UM ANÚNCIO
   // ===========================================================
   const handleDelete = useCallback(
-    async (produto: any) => {
+    async (produto: any, onAfterDelete?: () => void) => {
       if (!produto?.id || !produto?.loja) {
         alert("Produto ou loja inválida para exclusão.");
         return;
@@ -150,10 +144,7 @@ export function useAnuncioActions() {
 
         const lojaCodigo = produto.loja === "Pikot Shop" ? "PK" : "SB";
 
-        if (!tabela) {
-          alert("Loja inválida para exclusão.");
-          return;
-        }
+        if (!tabela) throw new Error("Loja inválida para exclusão.");
 
         const { error } = await supabase
           .from(tabela)
@@ -163,7 +154,8 @@ export function useAnuncioActions() {
 
         if (error) throw error;
 
-        router.push("/dashboard/anuncios");
+        if (onAfterDelete) onAfterDelete();
+        else router.push("/dashboard/anuncios");
       } catch (err: any) {
         alert("Erro ao excluir anúncio: " + (err.message || err));
       } finally {
@@ -173,5 +165,56 @@ export function useAnuncioActions() {
     [router]
   );
 
-  return { handleSave, handleDelete, saving, deleting };
+  // ===========================================================
+  // 🗑️ EXCLUIR SELECIONADOS (usado pelo modal)
+  // ===========================================================
+  const handleDeleteSelected = useCallback(
+    async (selectedRows: any[], onAfterDelete?: () => void) => {
+      if (!selectedRows?.length) {
+        alert("Nenhum anúncio selecionado para exclusão.");
+        return;
+      }
+
+      setDeleting(true);
+
+      try {
+        // 🔹 Agrupa por tabela para deletar em lote
+        const grouped = selectedRows.reduce<Record<string, string[]>>((acc, row) => {
+          const loja = (row.loja || row.Loja || "").toString().toLowerCase();
+          let tabela = "";
+
+          if (loja.includes("pikot") || loja === "pk") tabela = "anuncios_pk";
+          else if (loja.includes("sobaquetas") || loja.includes("sóbaquetas") || loja === "sb")
+            tabela = "anuncios_sb";
+          if (!tabela) return acc;
+
+          acc[tabela] = acc[tabela] || [];
+          acc[tabela].push(String(row.id || row.ID).trim());
+          return acc;
+        }, {});
+
+        const promises = Object.entries(grouped).map(async ([tabela, ids]) => {
+          const { error } = await supabase.from(tabela).delete().in("ID", ids);
+          if (error) throw error;
+        });
+
+        await Promise.all(promises);
+
+        if (onAfterDelete) onAfterDelete(); // atualiza tabela e fecha modal
+      } catch (err: any) {
+        alert("Erro ao excluir anúncios: " + (err.message || err));
+      } finally {
+        setDeleting(false);
+      }
+    },
+    []
+  );
+
+  return {
+    handleSave,
+    handleDelete,
+    handleDeleteSelected,
+    saving,
+    deleting,
+  };
 }

@@ -12,66 +12,89 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { Download, FileDown, Layers, Plus } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
+import { saveAs } from "file-saver";
 
 type Props = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  onExportModeloAlteracao: () => Promise<void> | void;
   onImportInclusao: (file: File) => void;
   onImportAlteracao: (file: File) => void;
 };
 
-// Gera modelo de inclusão (xlsx)
-const baixarModeloInclusao = () => {
-  const headers = [
-    "ID", "Loja", "ID Bling", "ID Tray", "ID Var", "OD",
-    "Referência", "Nome", "Marca", "Categoria",
-    "Peso", "Altura", "Largura", "Comprimento",
-    "Código 1", "Quantidade 1", "Código 2", "Quantidade 2",
-    "Código 3", "Quantidade 3", "Código 4", "Quantidade 4",
-    "Código 5", "Quantidade 5", "Código 6", "Quantidade 6",
-    "Código 7", "Quantidade 7", "Código 8", "Quantidade 8",
-    "Código 9", "Quantidade 9", "Código 10", "Quantidade 10",
+const baixarModeloPlanilha = async (filename?: string) => {
+  const identificacao = ["ID", "Loja", "ID Bling", "ID Tray", "Referência", "ID Var", "OD"];
+  const descricao = ["Nome", "Marca", "Categoria", "Peso", "Altura", "Largura", "Comprimento"];
+  const composicao: string[] = [];
+  for (let i = 1; i <= 10; i++) composicao.push(`Código ${i}`, `Quantidade ${i}`);
+  const header = [...identificacao, ...descricao, ...composicao];
+
+  const groupHeader = Array(header.length).fill("");
+  groupHeader[0] = "IDENTIFICAÇÃO";
+  groupHeader[identificacao.length] = "DESCRIÇÃO";
+  groupHeader[identificacao.length + descricao.length] = "COMPOSIÇÃO DE CUSTOS";
+
+  const data = [groupHeader, header];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+
+  ws["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: identificacao.length - 1 } },
+    { s: { r: 0, c: identificacao.length }, e: { r: 0, c: identificacao.length + descricao.length - 1 } },
+    { s: { r: 0, c: identificacao.length + descricao.length }, e: { r: 0, c: header.length - 1 } },
   ];
 
-  const ws = XLSX.utils.aoa_to_sheet([headers]);
+  const azulPrincipal = "1A8CEB";
+  const groupStyle = {
+    fill: { type: "pattern", patternType: "solid", fgColor: { rgb: azulPrincipal } },
+    font: { bold: true, color: { rgb: "FFFFFF" }, sz: 13 },
+    alignment: { horizontal: "center", vertical: "center" as const },
+  };
   const headerStyle = {
+    fill: { type: "pattern", patternType: "solid", fgColor: { rgb: azulPrincipal } },
     font: { bold: true, color: { rgb: "FFFFFF" } },
-    fill: { fgColor: { rgb: "1A8CEB" } },
-    alignment: { horizontal: "center", vertical: "center" },
-  } as any;
+    alignment: { horizontal: "center", vertical: "center" as const, wrapText: true },
+  };
 
-  headers.forEach((_, idx) => {
-    const cellAddress = XLSX.utils.encode_cell({ r: 0, c: idx });
-    if (!(ws as any)[cellAddress]) (ws as any)[cellAddress] = {};
-    (ws as any)[cellAddress].s = headerStyle;
+  [0, identificacao.length, identificacao.length + descricao.length].forEach((c) => {
+    const ref = XLSX.utils.encode_cell({ r: 0, c });
+    if ((ws as any)[ref]) (ws as any)[ref].s = groupStyle;
+  });
+  header.forEach((_, col) => {
+    const ref = XLSX.utils.encode_cell({ r: 1, c: col });
+    if ((ws as any)[ref]) (ws as any)[ref].s = headerStyle;
   });
 
-  (ws as any)["!cols"] = headers.map((h) => {
+  ws["!cols"] = header.map((h) => {
     const wide = ["Nome", "Categoria", "Marca"].includes(h);
     return { wch: wide ? 22 : 14 };
   });
 
-  const sampleRows = [
-    ["1", "PK", "BL-1001", "TR-5001", "V1", "OD01", "PROD-001", "Caixa Ativa 12'' Pro Bass", "Pro Bass", "Áudio", "12.3", "55", "35", "30", "34493", "1"],
-    ["2", "SB", "BL-1002", "TR-5002", "V2", "OD02", "PROD-002", "Caixa Ativa 15'' SKP Q15 MK2", "SKP", "Áudio", "16.5", "65", "40", "36", "5595", "1"],
-  ];
-  XLSX.utils.sheet_add_aoa(ws, sampleRows, { origin: -1 });
+  const agora = new Date();
+  const dataHora = agora
+    .toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+    .replace(/[/:]/g, "-")
+    .replace(", ", "_");
+
+  const safeFilename =
+    filename && filename.trim().length > 0
+      ? (filename.endsWith(".xlsx") ? filename : `${filename}.xlsx`)
+      : `MODELO - PLANILHA - ${dataHora}.xlsx`;
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Inclusão");
-
-  const now = new Date();
-  const nomeArquivo = `INCLUSAO-ANUNCIOS-${now
-    .toLocaleString("pt-BR")
-    .replace(/[/: ]/g, "-")}.xlsx`;
-  XLSX.writeFile(wb, nomeArquivo);
+  XLSX.utils.book_append_sheet(wb, ws, "Modelo");
+  const buffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  const blob = new Blob([buffer], { type: "application/octet-stream" });
+  saveAs(blob, safeFilename);
 };
 
 export default function MassEditionModal({
   open,
   onOpenChange,
-  onExportModeloAlteracao,
   onImportInclusao,
   onImportAlteracao,
 }: Props) {
@@ -82,11 +105,11 @@ export default function MassEditionModal({
     e: React.ChangeEvent<HTMLInputElement>,
     tipo: "inclusao" | "alteracao"
   ) => {
-    const file = e.target.files?.[0];
+    const file = e.currentTarget.files?.[0];
     if (!file) return;
     if (tipo === "inclusao") onImportInclusao(file);
     else onImportAlteracao(file);
-    e.target.value = "";
+    e.currentTarget.value = "";
   };
 
   const columns = [
@@ -117,9 +140,7 @@ export default function MassEditionModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="bg-[#0f0f0f]/95 backdrop-blur-xl border border-neutral-700 rounded-2xl text-white max-w-6xl shadow-2xl max-h-[90vh] overflow-hidden"
-      >
+      <DialogContent className="bg-[#0f0f0f]/95 backdrop-blur-xl border border-neutral-700 rounded-2xl text-white max-w-6xl shadow-2xl max-h-[90vh] overflow-hidden">
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold flex items-center gap-2 text-white">
             <Layers className="w-5 h-5 text-white" />
@@ -127,7 +148,6 @@ export default function MassEditionModal({
           </DialogTitle>
         </DialogHeader>
 
-        {/* CONTAINER COM SCROLL NATIVO */}
         <div className="overflow-y-auto overflow-x-hidden max-h-[75vh] pr-2 custom-scrollbar">
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -153,91 +173,67 @@ export default function MassEditionModal({
 
             {/* === CARDS === */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {/* Alteração em Massa */}
               <div
                 className="p-6 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-all duration-300 cursor-pointer"
                 onClick={() => alteracaoInputRef.current?.click()}
               >
                 <div className="flex items-center gap-4">
-                  <div
-                    className="w-12 h-12 rounded-xl flex items-center justify-center"
-                    style={{ backgroundColor: "#2699fe20" }}
-                  >
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: "#2699fe20" }}>
                     <Download className="w-6 h-6" style={{ color: "#2699fe" }} />
                   </div>
                   <div className="flex-1">
                     <h4 className="font-bold mb-1">Alteração em Massa</h4>
-                    <p className="text-sm text-neutral-400">
-                      Importe planilha (.xlsx ou .csv) para alterar anúncios
-                    </p>
+                    <p className="text-sm text-neutral-400">Importe planilha para alterar anúncios</p>
                   </div>
                 </div>
               </div>
 
-              {/* Inclusão em Massa */}
               <div
                 className="p-6 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-all duration-300 cursor-pointer"
                 onClick={() => inclusaoInputRef.current?.click()}
               >
                 <div className="flex items-center gap-4">
-                  <div
-                    className="w-12 h-12 rounded-xl flex items-center justify-center"
-                    style={{ backgroundColor: "#10b98120" }}
-                  >
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: "#10b98120" }}>
                     <Plus className="w-6 h-6" style={{ color: "#10b981" }} />
                   </div>
                   <div className="flex-1">
                     <h4 className="font-bold mb-1">Inclusão em Massa</h4>
-                    <p className="text-sm text-neutral-400">
-                      Importe planilha (.xlsx ou .csv) para incluir novos anúncios
-                    </p>
+                    <p className="text-sm text-neutral-400">Importe planilha para incluir novos anúncios</p>
                   </div>
                 </div>
               </div>
 
-              {/* Modelo */}
               <div
                 className="p-6 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-all duration-300 cursor-pointer"
-                onClick={onExportModeloAlteracao}
+                onClick={() => baixarModeloPlanilha()}
               >
                 <div className="flex items-center gap-4">
-                  <div
-                    className="w-12 h-12 rounded-xl flex items-center justify-center"
-                    style={{ backgroundColor: "#f59e0b20" }}
-                  >
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: "#f59e0b20" }}>
                     <FileDown className="w-6 h-6" style={{ color: "#f59e0b" }} />
                   </div>
                   <div className="flex-1">
-                    <h4 className="font-bold mb-1">Modelo de Alteração</h4>
-                    <p className="text-sm text-neutral-400">
-                      Baixe o modelo base para edição
-                    </p>
+                    <h4 className="font-bold mb-1">Modelo de Planilha</h4>
+                    <p className="text-sm text-neutral-400">Baixe o modelo base para edição</p>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* === INSTRUÇÕES === */}
             <div className="rounded-xl p-4 bg-white/5 border border-neutral-700">
               <p className="text-neutral-300 text-sm leading-relaxed">
                 Você pode importar arquivos em formato{" "}
                 <strong className="text-white">.xlsx</strong> ou{" "}
-                <strong className="text-white">.csv</strong> com as colunas do
-                modelo. Após o upload, o sistema mostrará uma pré-visualização
-                antes de confirmar a importação.
+                <strong className="text-white">.csv</strong> com as colunas do modelo.
+                Após o upload, o sistema mostrará uma pré-visualização antes de confirmar a importação.
               </p>
             </div>
 
-            {/* === PREVIEW COM SCROLL NATIVO === */}
             <div className="border border-neutral-700 rounded-xl overflow-auto max-h-[350px] scrollbar-thin scrollbar-thumb-neutral-700 scrollbar-track-transparent">
               <table className="w-full text-sm text-neutral-300 border-collapse min-w-[1000px]">
                 <thead className="bg-neutral-800/80 text-white sticky top-0">
                   <tr>
                     {columns.map((col) => (
-                      <th
-                        key={col}
-                        className="p-2 border-b border-neutral-700 text-left font-semibold whitespace-nowrap"
-                      >
+                      <th key={col} className="p-2 border-b border-neutral-700 text-left font-semibold whitespace-nowrap">
                         {col}
                       </th>
                     ))}
@@ -247,17 +243,10 @@ export default function MassEditionModal({
                   {previewData.map((row, i) => (
                     <tr
                       key={i}
-                      className={`${
-                        i % 2 === 0
-                          ? "bg-neutral-900/40"
-                          : "bg-neutral-800/40"
-                      } hover:bg-white/10 transition-colors`}
+                      className={`${i % 2 === 0 ? "bg-neutral-900/40" : "bg-neutral-800/40"} hover:bg-white/10 transition-colors`}
                     >
                       {columns.map((col) => (
-                        <td
-                          key={col}
-                          className="p-2 border-b border-neutral-800 whitespace-nowrap"
-                        >
+                        <td key={col} className="p-2 border-b border-neutral-800 whitespace-nowrap">
                           {row[col as keyof typeof row] ?? ""}
                         </td>
                       ))}
@@ -268,8 +257,7 @@ export default function MassEditionModal({
             </div>
 
             <p className="text-sm text-neutral-400 italic">
-              Mantenha os cabeçalhos exatamente como no modelo (.xlsx ou .csv)
-              para evitar erros.
+              Mantenha os cabeçalhos exatamente como no modelo (.xlsx ou .csv) para evitar erros.
             </p>
           </motion.div>
         </div>

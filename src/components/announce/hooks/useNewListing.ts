@@ -1,16 +1,24 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { parseValorBR, inferirOD } from "@/components/announce/hooks/useAnuncioEditor";
 
 export function useNewListing() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const id = searchParams.get("id");
+  const lojaParam = searchParams.get("loja");
+
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  // ✅ estados que faltavam para o novo cadastro
+  // ===========================================================
+  // 🧠 Estados principais
+  // ===========================================================
   const [produto, setProduto] = useState<any>({
     ID: "",
     Loja: "Pikot Shop",
@@ -28,11 +36,23 @@ export function useNewListing() {
     OD: "",
   });
 
-  const [composicao, setComposicao] = useState<any[]>([]); // ✅ inicializado
-  const [custoTotal, setCustoTotal] = useState<number>(0); // ✅ inicializado
+  const [composicao, setComposicao] = useState<any[]>([]);
+  const [custoTotal, setCustoTotal] = useState<number>(0);
 
   // ===========================================================
-  // 🆕 GERAR NOVO PRODUTO (sem salvar ainda)
+  // 💰 Atualiza custo total automaticamente
+  // ===========================================================
+  useEffect(() => {
+    const total = composicao.reduce((acc, item) => {
+      const qtd = parseFloat(item.quantidade) || 0;
+      const custo = parseFloat(String(item.custo).replace(",", ".")) || 0;
+      return acc + qtd * custo;
+    }, 0);
+    setCustoTotal(total);
+  }, [composicao]);
+
+  // ===========================================================
+  // 🆕 Criar novo produto
   // ===========================================================
   const handleCreate = useCallback(async (loja: "Pikot Shop" | "Sóbaquetas") => {
     try {
@@ -50,7 +70,6 @@ export function useNewListing() {
       const ultimoId = ultimo?.ID ? parseInt(ultimo.ID) : 0;
       const novoId = ultimoId + 1;
 
-      // Retorna apenas os dados base do produto
       const novoProduto = {
         ID: novoId,
         Loja: loja,
@@ -68,9 +87,9 @@ export function useNewListing() {
         OD: "",
       };
 
-      setProduto(novoProduto); // ✅ define o produto novo
-      setComposicao([]); // ✅ limpa composição
-      setCustoTotal(0); // ✅ zera custo total
+      setProduto(novoProduto);
+      setComposicao([]);
+      setCustoTotal(0);
 
       return novoProduto;
     } catch (err: any) {
@@ -80,7 +99,7 @@ export function useNewListing() {
   }, []);
 
   // ===========================================================
-  // 💾 SALVAR
+  // 💾 Salvar produto
   // ===========================================================
   const handleSave = useCallback(
     async (produto: any, composicao: any[], onAfterSave?: () => void) => {
@@ -159,7 +178,7 @@ export function useNewListing() {
   );
 
   // ===========================================================
-  // 🗑️ EXCLUIR
+  // 🗑️ Excluir produto
   // ===========================================================
   const handleDelete = useCallback(
     async (produto: any) => {
@@ -195,7 +214,45 @@ export function useNewListing() {
   );
 
   // ===========================================================
-  // ✅ Retorna todos os dados necessários para ProductDetails
+  // 🧭 Carrega produto existente (edição)
+  // ===========================================================
+  useEffect(() => {
+    const fetchProduto = async () => {
+      if (!id || !lojaParam) return;
+      setLoading(true);
+
+      try {
+        const loja = lojaParam.toLowerCase();
+        const tabela =
+          loja.includes("pikot") ? "anuncios_pk" :
+          loja.includes("sobaquetas") ? "anuncios_sb" :
+          null;
+
+        if (!tabela) {
+          alert("Loja inválida.");
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from(tabela)
+          .select("*")
+          .eq("ID", id)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (data) setProduto(data);
+      } catch (err: any) {
+        alert("Erro ao carregar anúncio: " + (err.message || err));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProduto();
+  }, [id, lojaParam]);
+
+  // ===========================================================
+  // ✅ Retorno completo
   // ===========================================================
   return {
     produto,
@@ -209,7 +266,7 @@ export function useNewListing() {
     handleDelete,
     saving,
     deleting,
-    loading: false, // no novo cadastro não há carregamento inicial
+    loading,
     toInternal: (v: any) => v,
     toDisplay: (v: any) => v,
   };

@@ -52,7 +52,7 @@ export function TableControls({
           {selectedCount > 0 && (
             <Badge
               variant="default"
-              className="ml-2 bg-[#1e1e1e] border border-[#22c55e] text-white"
+              className="ml-2 bg-[#1e1e1e] border border-[#1A8CEB] text-white"
             >
               {selectedCount} selecionado{selectedCount > 1 ? "s" : ""}
             </Badge>

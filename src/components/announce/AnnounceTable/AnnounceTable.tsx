@@ -17,21 +17,15 @@ import TableBodyRows from "@/components/announce/AnnounceTable/TableBodyRows";
 
 export default function AnnounceTable() {
   const router = useRouter();
-
-  // 🔹 Hook principal: dados, filtros, ordenação, etc.
   const data = useAnunciosData();
-
-  // 🔹 Hook de import/export
   const impExp = useImportExport(data.loadAnuncios, data.currentPage);
-
-  // 🔹 Cálculo de páginas
   const totalPages = Math.max(1, Math.ceil(data.totalItems / data.itemsPerPage));
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-8">
       <div className="max-w-7xl mx-auto space-y-6">
         <GlassmorphicCard>
-          {/* === Barra Superior === */}
+          {/* 🔝 Barra Superior */}
           <TopBar
             search={data.search}
             setSearch={data.setSearch}
@@ -52,11 +46,11 @@ export default function AnnounceTable() {
             selectedCount={data.selectedRows.length}
             onDeleteSelected={() => data.setOpenDelete(true)}
             onClearSelection={() => data.setSelectedRows([])}
-            onMassEditOpen={() => impExp.setOpenImport(true)}
+            onMassEditOpen={() => impExp.setOpenMassEdition(true)}
             onNew={() => router.push("/dashboard/anuncios/edit")}
           />
 
-          {/* === Tabela === */}
+          {/* 📋 Tabela */}
           <Table>
             <TableHeader>
               <TableHeaderRow
@@ -74,7 +68,6 @@ export default function AnnounceTable() {
                 loading={data.loading}
                 selectedRows={data.selectedRows}
                 toggleRow={data.toggleRow}
-                // ✅ Passa o id + loja correta (PK/SB → nome completo)
                 onEdit={(id, loja) =>
                   router.push(
                     `/dashboard/anuncios/edit?id=${id}&loja=${encodeURIComponent(
@@ -95,7 +88,7 @@ export default function AnnounceTable() {
           </Table>
         </GlassmorphicCard>
 
-        {/* === Controles de Paginação === */}
+        {/* 🔄 Controles de Página */}
         <div className="mt-2">
           <TableControls
             currentPage={data.currentPage}
@@ -114,24 +107,32 @@ export default function AnnounceTable() {
         </div>
       </div>
 
-      {/* === Modais === */}
       <ConfirmDeleteModal
-        open={data.openDelete}
-        onOpenChange={data.setOpenDelete}
-        count={data.selectedRows.length}
-        onConfirm={data.deleteSelected}
-        loading={data.deleting}
-      />
+      open={data.openDelete}
+      onOpenChange={data.setOpenDelete}
+      count={data.selectedRows.length}
+      selectedRows={data.selectedRows.map((r) => ({
+      ID: String(r.id ?? r.ID ?? ""),
+      Loja: String(r.loja ?? r.Loja ?? ""),
+      }))} // ✅ força ID e Loja válidos
+      onAfterDelete={async () => {
+      await data.loadAnuncios(data.currentPage);
+      data.setSelectedRows([]);
+      }}
+    />
+
 
       <MassEditionModal
-        open={impExp.openImport}
-        onOpenChange={impExp.setOpenImport}
+        open={impExp.openMassEdition}
+        onOpenChange={impExp.setOpenMassEdition}
         onExportModeloAlteracao={() => impExp.handleExport(data.rows)}
+        onImportInclusao={impExp.handleFileSelect}
+        onImportAlteracao={impExp.handleFileSelect}
       />
 
       <ConfirmImportModal
-        open={impExp.openImport}
-        onOpenChange={impExp.setOpenImport}
+        open={impExp.openConfirmImport}
+        onOpenChange={impExp.setOpenConfirmImport}
         count={impExp.importCount}
         onConfirm={impExp.confirmImport}
         loading={impExp.importing}
