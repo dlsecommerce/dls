@@ -16,7 +16,7 @@ type Props = {
   loading: boolean;
   selectedRows: Anuncio[];
   toggleRow: (row: Anuncio) => void;
-  onEdit: (id: string, loja: string) => void; // ✅ agora inclui a loja
+  onEdit: (id: string, loja: string) => void;
   onDelete: (row: Anuncio) => void;
 };
 
@@ -64,7 +64,6 @@ export default function TableBodyRows({
   return (
     <>
       {rows.map((a) => {
-        // ✅ Correção: seleção única por loja + ID
         const isSelected = selectedRows.some(
           (r) => `${r.loja}-${r.id}` === `${a.loja}-${a.id}`
         );
@@ -76,17 +75,21 @@ export default function TableBodyRows({
               isSelected ? "bg-white/10 hover:bg-white/20" : "hover:bg-white/5"
             }`}
           >
+            {/* Checkbox com cor personalizada #1A8CEB */}
             <TableCell className="text-center">
               <input
                 type="checkbox"
                 checked={isSelected}
                 onChange={() => toggleRow(a)}
-                className="accent-[#22c55e] w-4 h-4 cursor-pointer"
+                className="w-4 h-4 cursor-pointer accent-[#1A8CEB] [accent-color:#1A8CEB]"
+                style={{ accentColor: "#1A8CEB" }}
               />
             </TableCell>
 
             <TableCell className="text-white text-center">{a.id}</TableCell>
-            <TableCell className="text-neutral-300 text-center">{a.loja}</TableCell>
+            <TableCell className="text-neutral-300 text-center">
+              {a.loja}
+            </TableCell>
 
             {/* ID Bling */}
             <TableCell className="text-neutral-300 text-center">
@@ -138,7 +141,9 @@ export default function TableBodyRows({
                 {a.referencia || "-"}
                 {a.referencia && (
                   <button
-                    onClick={() => handleCopy(a.referencia || "", `ref-${a.id}`)}
+                    onClick={() =>
+                      handleCopy(a.referencia || "", `ref-${a.id}`)
+                    }
                     title="Copiar"
                     className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
                   >
@@ -154,8 +159,12 @@ export default function TableBodyRows({
               </div>
             </TableCell>
 
-            <TableCell className="text-neutral-300 text-center">{a.nome}</TableCell>
-            <TableCell className="text-neutral-300 text-center">{a.marca}</TableCell>
+            <TableCell className="text-neutral-300 text-center">
+              {a.nome}
+            </TableCell>
+            <TableCell className="text-neutral-300 text-center">
+              {a.marca}
+            </TableCell>
 
             {/* Ações */}
             <TableCell className="flex justify-center gap-2">
@@ -163,7 +172,7 @@ export default function TableBodyRows({
                 size="sm"
                 variant="ghost"
                 className="text-white hover:text-[#1a8ceb] hover:scale-105 transition-all cursor-pointer"
-                onClick={() => onEdit(String(a.id), a.loja)} // ✅ agora envia a loja também
+                onClick={() => onEdit(String(a.id), a.loja)}
               >
                 <EditIcon className="h-4 w-4" />
               </Button>

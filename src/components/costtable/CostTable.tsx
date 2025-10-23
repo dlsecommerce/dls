@@ -24,6 +24,7 @@ import {
   Search,
   Trash2 as TrashIcon,
   Upload,
+  CopyIcon,
 } from "lucide-react";
 
 import { TableControls } from "@/components/costtable/TableControls";
@@ -82,6 +83,16 @@ export default function CostTable() {
     message: "",
     type: null,
   });
+
+  // Novo estado para cópia
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopy = (text: string, uniqueKey: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedId(uniqueKey);
+    setTimeout(() => setCopiedId(null), 1500);
+  };
 
   /* === carregar todas as marcas === */
   const loadAllBrands = async () => {
@@ -184,7 +195,6 @@ export default function CostTable() {
       return;
     }
 
-    // 🔹 Data e hora formatadas
     const now = new Date();
     const dia = String(now.getDate()).padStart(2, "0");
     const mes = String(now.getMonth() + 1).padStart(2, "0");
@@ -193,22 +203,20 @@ export default function CostTable() {
     const min = String(now.getMinutes()).padStart(2, "0");
     const timeStr = `${hora}h${min}m`;
 
-    // 🔹 Gera abreviações das marcas (ex: LIV, FIS)
     let marcaTag = "";
     if (selectedBrands.length > 0) {
       marcaTag = selectedBrands
         .map((m) => {
           const clean = m
             .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "") // remove acentos
-            .replace(/[^a-zA-Z]/g, ""); // remove símbolos
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-zA-Z]/g, "");
           return clean.substring(0, 3).toUpperCase();
         })
         .join("-");
     }
 
-    // 🔹 Nome final do arquivo
-    const baseName = selectedRows.length > 0 ? "RELATÓRIO-SELECIONADOS" : "RELATÓRIO";
+    const baseName = selectedRows.length > 0 ? "CUSTOS-SELECIONADOS" : "CUSTOS";
     const marcaPart = marcaTag ? `-${marcaTag}` : "";
     const filename = `${baseName}${marcaPart}-${dia}-${mes}-${ano}-${timeStr}.xlsx`;
 
@@ -380,24 +388,34 @@ export default function CostTable() {
                 <Download className="w-4 h-4 mr-2" /> Exportar
               </Button>
 
-              <Button
-                variant="outline"
-                className="border-neutral-700 hover:scale-105 transition-all text-white rounded-xl cursor-pointer"
-                disabled={selectedRows.length === 0}
-                onClick={() => setOpenDelete(true)}
-              >
-                <TrashIcon className="w-4 h-4 mr-2" /> Excluir Selecionado(s)
-              </Button>
+              {selectedRows.length > 0 && (
+                <>
+                  <Button
+                    variant="outline"
+                    className="border-neutral-700 hover:scale-105 transition-all text-white rounded-xl cursor-pointer"
+                    onClick={() => setOpenDelete(true)}
+                  >
+                    <TrashIcon className="w-4 h-4 mr-2" /> Excluir Selecionados
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="border-neutral-700 hover:scale-105 transition-all text-white rounded-xl cursor-pointer"
+                    onClick={() => setSelectedRows([])}
+                  >
+                    Desmarcar Todos
+                  </Button>
+                </>
+              )}
 
               <Button
-                className="bg-gradient-to-r from-[#7c3aed] to-[#6d28d9] hover:scale-105 transition-all rounded-xl text-white cursor-pointer"
+                className="bg-gradient-to-r from-[#1A8CEB] to-[#0d64ab] hover:scale-105 transition-all rounded-xl text-white cursor-pointer"
                 onClick={() => setOpenMass(true)}
               >
                 <Layers className="w-4 h-4 mr-2" /> Edição em Massa
               </Button>
 
               <Button
-                className="bg-gradient-to-r from-[#f59e0b] to-[#d97706] hover:scale-105 transition-all rounded-xl text-white cursor-pointer"
+                className="bg-gradient-to-r from-green-500 to-green-600 hover:scale-105 transition-all rounded-xl text-white cursor-pointer"
                 onClick={openCreate}
               >
                 + Novo Custo
@@ -410,10 +428,11 @@ export default function CostTable() {
             <Table>
               <TableHeader>
                 <TableRow className="border-neutral-700">
-                  <TableHead className="w-[40px]">
+                  <TableHead className="w-[40px] text-center">
                     <input
                       type="checkbox"
-                      className="accent-[#7c3aed] w-4 h-4 cursor-pointer"
+                      className="w-4 h-4 cursor-pointer accent-[#1A8CEB]"
+                      style={{ accentColor: "#1A8CEB" }}
                       checked={selectedRows.length === rows.length && rows.length > 0}
                       onChange={(e) => {
                         if (e.target.checked) setSelectedRows(rows);
@@ -442,7 +461,7 @@ export default function CostTable() {
                     </TableHead>
                   ))}
 
-                  <TableHead className="w-[120px] text-neutral-400 font-semibold">
+                  <TableHead className="w-[120px] text-neutral-400 font-semibold text-center">
                     Ações
                   </TableHead>
                 </TableRow>
@@ -464,68 +483,130 @@ export default function CostTable() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  rows.map((c, i) => (
-                    <TableRow
-                      key={`${c["Código"]}-${i}`}
-                      className="border-b border-neutral-700 hover:bg-white/5 transition-colors"
-                    >
-                      <TableCell>
-                        <input
-                          type="checkbox"
-                          className="accent-[#7c3aed] w-4 h-4 cursor-pointer"
-                          checked={selectedRows.some((r) => r["Código"] === c["Código"])}
-                          onChange={(e) => {
-                            if (e.target.checked)
-                              setSelectedRows([...selectedRows, c]);
-                            else
-                              setSelectedRows(
-                                selectedRows.filter(
-                                  (r) => r["Código"] !== c["Código"]
+                  rows.map((c, i) => {
+                    const isSelected = selectedRows.some((r) => r["Código"] === c["Código"]);
+                    return (
+                      <TableRow
+                        key={`${c["Código"]}-${i}`}
+                        className={`border-b border-neutral-700 transition-colors ${
+                          isSelected ? "bg-white/10 hover:bg-white/20" : "hover:bg-white/5"
+                        }`}
+                      >
+                        <TableCell className="text-center">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              if (e.target.checked)
+                                setSelectedRows([...selectedRows, c]);
+                              else
+                                setSelectedRows(
+                                  selectedRows.filter((r) => r["Código"] !== c["Código"])
+                                );
+                            }}
+                            className="w-4 h-4 cursor-pointer accent-[#1A8CEB]"
+                            style={{ accentColor: "#1A8CEB" }}
+                          />
+                        </TableCell>
+
+                        {/* === Código com Copy === */}
+                        <TableCell className="text-white text-center">
+                          <div className="flex justify-center items-center gap-1 group">
+                            {c["Código"]}
+                            <button
+                              onClick={() => handleCopy(c["Código"] || "", `codigo-${i}`)}
+                              title="Copiar"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+                            >
+                              <CopyIcon
+                                className={`w-3 h-3 transition-all duration-300 ${
+                                  copiedId === `codigo-${i}`
+                                    ? "text-blue-500 scale-110"
+                                    : "text-white group-hover:text-blue-400"
+                                }`}
+                              />
+                            </button>
+                          </div>
+                        </TableCell>
+
+                        <TableCell className="text-neutral-300">{c["Marca"]}</TableCell>
+
+                        {/* === Custo Atual com Copy === */}
+                        <TableCell className="text-neutral-300 text-center">
+                          <div className="flex justify-center items-center gap-1 group">
+                            R$ {Number(c["Custo Atual"] || 0).toFixed(2)}
+                            <button
+                              onClick={() =>
+                                handleCopy(
+                                  String(Number(c["Custo Atual"] || 0).toFixed(2)),
+                                  `custo-${i}`
                                 )
-                              );
-                          }}
-                        />
-                      </TableCell>
-                      <TableCell className="text-white">{c["Código"]}</TableCell>
-                      <TableCell>
-                        <Badge className="bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white">
-                          {c["Marca"]}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-neutral-300">
-                        R$ {Number(c["Custo Atual"] || 0).toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-neutral-300">
-                        R$ {Number(c["Custo Antigo"] || 0).toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-neutral-300">{c["NCM"]}</TableCell>
+                              }
+                              title="Copiar"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+                            >
+                              <CopyIcon
+                                className={`w-3 h-3 transition-all duration-300 ${
+                                  copiedId === `custo-${i}`
+                                    ? "text-blue-500 scale-110"
+                                    : "text-white group-hover:text-blue-400"
+                                }`}
+                              />
+                            </button>
+                          </div>
+                        </TableCell>
 
-                      <TableCell className="flex gap-2 justify-center">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:text-[#1a8ceb] hover:scale-105 transition-all cursor-pointer"
-                          onClick={() => openEdit(c)}
-                          title="Editar"
-                        >
-                          <EditIcon className="h-4 w-4" />
-                        </Button>
+                        <TableCell className="text-neutral-300 text-center">
+                          R$ {Number(c["Custo Antigo"] || 0).toFixed(2)}
+                        </TableCell>
 
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-white hover:text-[#ef4444] hover:scale-105 transition-all cursor-pointer"
-                          onClick={() => {
-                            setSelectedRows([c]);
-                            setOpenDelete(true);
-                          }}
-                          title="Excluir"
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                        {/* === NCM com Copy === */}
+                        <TableCell className="text-neutral-300 text-center">
+                          <div className="flex justify-center items-center gap-1 group">
+                            {c["NCM"]}
+                            <button
+                              onClick={() => handleCopy(c["NCM"] || "", `ncm-${i}`)}
+                              title="Copiar"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+                            >
+                              <CopyIcon
+                                className={`w-3 h-3 transition-all duration-300 ${
+                                  copiedId === `ncm-${i}`
+                                    ? "text-blue-500 scale-110"
+                                    : "text-white group-hover:text-blue-400"
+                                }`}
+                              />
+                            </button>
+                          </div>
+                        </TableCell>
+
+                        <TableCell className="flex gap-2 justify-center">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-white hover:text-[#1a8ceb] hover:scale-105 transition-all cursor-pointer"
+                            onClick={() => openEdit(c)}
+                            title="Editar"
+                          >
+                            <EditIcon className="h-4 w-4" />
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-white hover:text-[#ef4444] hover:scale-105 transition-all cursor-pointer"
+                            onClick={() => {
+                              setSelectedRows([c]);
+                              setOpenDelete(true);
+                            }}
+                            title="Excluir"
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
@@ -544,6 +625,7 @@ export default function CostTable() {
               setItemsPerPage(v);
               setCurrentPage(1);
             }}
+            selectedCount={selectedRows.length}
           />
         </div>
       </div>

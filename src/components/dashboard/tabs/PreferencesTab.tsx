@@ -2,14 +2,15 @@
 
 import React from "react";
 import { Globe, Settings, Moon } from "lucide-react";
+import { GlassmorphicCard } from "@/components/ui/glassmorphic-card"; 
 
 export default function PreferencesTab() {
   return (
     <div className="space-y-8">
       <h3 className="text-[20px] font-normal">Preferências</h3>
 
-      {/* Card: Idioma e Região */}
-      <div className="bg-[#111111] border border-white/10 rounded-[20px] p-6 space-y-6">
+      {/* === Card: Idioma e Região === */}
+      <GlassmorphicCard className="p-6 space-y-6">
         <div className="flex items-center gap-3">
           <Globe className="w-5 h-5 text-muted-foreground" />
           <div>
@@ -41,10 +42,10 @@ export default function PreferencesTab() {
             </select>
           </div>
         </div>
-      </div>
+      </GlassmorphicCard>
 
-      {/* Card: Preferências de Exibição */}
-      <div className="bg-[#111111] border border-white/10 rounded-[20px] p-6 space-y-6">
+      {/* === Card: Preferências de Exibição === */}
+      <GlassmorphicCard className="p-6 space-y-6">
         <div className="flex items-center gap-3">
           <Settings className="w-5 h-5 text-muted-foreground" />
           <div>
@@ -94,7 +95,7 @@ export default function PreferencesTab() {
             </button>
           </div>
         </div>
-      </div>
+      </GlassmorphicCard>
     </div>
   );
 }

@@ -12,7 +12,8 @@ import ProfileTab from "./tabs/ProfileTab";
 import SecurityTab from "./tabs/SecurityTab";
 import NotificationsTab from "./tabs/NotificationsTab";
 import PreferencesTab from "./tabs/PreferencesTab";
-import FeedbacksTab from "./tabs/FeedbacksTab"; // 🆕 Nova aba importada
+import FeedbacksTab from "./tabs/FeedbacksTab";
+import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 
 export default function Configuration() {
   const { profile, updateProfile } = useProfile();
@@ -112,14 +113,12 @@ export default function Configuration() {
     }
   };
 
-  // ✅ Logout com segurança (SSR + client)
   const handleLogout = async () => {
     try {
-      await logoutAction(); // limpa cookies no servidor e termina sessão
-      router.replace("/"); // redireciona sem reload
+      await logoutAction();
+      router.replace("/");
     } catch (err) {
       console.error("Erro ao sair (SSR):", err);
-      // fallback se houver erro no action SSR
       await supabase.auth.signOut();
       router.replace("/");
     }
@@ -138,7 +137,7 @@ export default function Configuration() {
       <div className="w-full p-6 lg:p-8 mt-6">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Sidebar */}
-          <aside className="lg:col-span-1 bg-[#111111] rounded-[20px] border border-white/10 p-6">
+          <GlassmorphicCard className="lg:col-span-1 p-6">
             <nav className="space-y-2">
               {tabs.map(({ id, label, icon: Icon }) => (
                 <button
@@ -161,7 +160,7 @@ export default function Configuration() {
               ))}
             </nav>
 
-            {/* 🔹 Botão de sair seguro */}
+            {/* Botão de sair */}
             <div className="mt-8 pt-8 border-t border-white/10 space-y-2">
               <button
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-400 hover:bg-red-500/10 transition-all"
@@ -171,10 +170,10 @@ export default function Configuration() {
                 <span className="text-[14px]">Sair</span>
               </button>
             </div>
-          </aside>
+          </GlassmorphicCard>
 
-          {/* Conteúdo */}
-          <section className="lg:col-span-3 bg-[#111111] rounded-[20px] border border-white/10 p-6">
+          {/* Conteúdo principal */}
+          <GlassmorphicCard className="lg:col-span-3 p-6">
             <AnimatePresence mode="wait">
               {tab === "perfil" && (
                 <motion.div
@@ -184,17 +183,7 @@ export default function Configuration() {
                   exit={{ opacity: 0, x: -30 }}
                   transition={{ duration: 0.3 }}
                 >
-                  <ProfileTab
-                    name={name}
-                    email={email}
-                    avatarUrl={avatarUrl}
-                    setName={setName}
-                    setAvatarUrl={setAvatarUrl}
-                    onSave={onSave}
-                    onClickUpload={onClickUpload}
-                    fileInputRef={fileInputRef}
-                    onFileChange={onFileChange}
-                  />
+                  <ProfileTab />
                 </motion.div>
               )}
 
@@ -258,7 +247,7 @@ export default function Configuration() {
                 </motion.div>
               )}
             </AnimatePresence>
-          </section>
+          </GlassmorphicCard>
         </div>
       </div>
     </div>

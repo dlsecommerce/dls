@@ -32,13 +32,14 @@ export default function TableHeaderRow({
 
   return (
     <TableRow className="border-neutral-700">
-      {/* Checkbox Selecionar Todos */}
+      {/* Checkbox Selecionar Todos com cor personalizada #1A8CEB */}
       <TableHead className="w-[40px] text-center">
         <input
           type="checkbox"
           checked={allVisibleSelected}
           onChange={(e) => toggleSelectAllVisible(e.target.checked)}
-          className="accent-[#22c55e] w-4 h-4 cursor-pointer"
+          className="w-4 h-4 cursor-pointer accent-[#1A8CEB] [accent-color:#1A8CEB]"
+          style={{ accentColor: "#1A8CEB" }}
         />
       </TableHead>
 

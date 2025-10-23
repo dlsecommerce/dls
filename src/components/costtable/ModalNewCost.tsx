@@ -197,7 +197,7 @@ export default function ModalNewCost({
             </Button>
 
             <Button
-              className="bg-gradient-to-r from-[#7c3aed] to-[#6d28d9] text-white hover:scale-105 cursor-pointer flex items-center justify-center gap-2"
+              className="bg-gradient-to-r from-green-500 to-green-600 text-white hover:scale-105 cursor-pointer flex items-center justify-center gap-2"
               onClick={handleSave}
               disabled={saving}
             >

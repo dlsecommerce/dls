@@ -21,6 +21,11 @@ export default function AnnounceTable() {
   const impExp = useImportExport(data.loadAnuncios, data.currentPage);
   const totalPages = Math.max(1, Math.ceil(data.totalItems / data.itemsPerPage));
 
+  // ✅ Garante arrays vazios por segurança, sem alterar comportamento
+  const safeSelectedLoja = data.selectedLoja ?? [];
+  const safeSelectedBrands = data.selectedBrands ?? [];
+  const safeSelectedCategoria = data.selectedCategoria ?? [];
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-8">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -32,9 +37,9 @@ export default function AnnounceTable() {
             allBrands={data.allBrands}
             allLojas={data.allLojas}
             allCategorias={data.allCategorias}
-            selectedBrands={data.selectedBrands}
-            selectedLoja={data.selectedLoja}
-            selectedCategoria={data.selectedCategoria}
+            selectedBrands={safeSelectedBrands}
+            selectedLoja={safeSelectedLoja}
+            selectedCategoria={safeSelectedCategoria}
             setSelectedBrands={data.setSelectedBrands}
             setSelectedLoja={data.setSelectedLoja}
             setSelectedCategoria={data.setSelectedCategoria}
@@ -108,19 +113,18 @@ export default function AnnounceTable() {
       </div>
 
       <ConfirmDeleteModal
-      open={data.openDelete}
-      onOpenChange={data.setOpenDelete}
-      count={data.selectedRows.length}
-      selectedRows={data.selectedRows.map((r) => ({
-      ID: String(r.id ?? r.ID ?? ""),
-      Loja: String(r.loja ?? r.Loja ?? ""),
-      }))} // ✅ força ID e Loja válidos
-      onAfterDelete={async () => {
-      await data.loadAnuncios(data.currentPage);
-      data.setSelectedRows([]);
-      }}
-    />
-
+        open={data.openDelete}
+        onOpenChange={data.setOpenDelete}
+        count={data.selectedRows.length}
+        selectedRows={data.selectedRows.map((r) => ({
+          ID: String(r.id ?? r.ID ?? ""),
+          Loja: String(r.loja ?? r.Loja ?? ""),
+        }))} // ✅ força ID e Loja válidos
+        onAfterDelete={async () => {
+          await data.loadAnuncios(data.currentPage);
+          data.setSelectedRows([]);
+        }}
+      />
 
       <MassEditionModal
         open={impExp.openMassEdition}

@@ -28,21 +28,18 @@ export default function MassEditionModal({
     const headers = ["Código", "Marca", "Custo Atual", "Custo Antigo", "NCM"];
     const ws = XLSX.utils.aoa_to_sheet([headers]);
 
-    // 💙 Cabeçalho azul sem bordas
     const headerStyle = {
       font: { bold: true, color: { rgb: "FFFFFF" } },
-      fill: { fgColor: { rgb: "1A8CEB" } }, // azul DLS
+      fill: { fgColor: { rgb: "1A8CEB" } },
       alignment: { horizontal: "center", vertical: "center" },
     };
 
-    // Aplica o estilo do cabeçalho
     headers.forEach((_, idx) => {
       const cellAddress = XLSX.utils.encode_cell({ r: 0, c: idx });
       if (!ws[cellAddress]) ws[cellAddress] = {};
       ws[cellAddress].s = headerStyle;
     });
 
-    // Ajuste das larguras das colunas
     ws["!cols"] = [
       { wch: 15 },
       { wch: 20 },
@@ -51,7 +48,6 @@ export default function MassEditionModal({
       { wch: 12 },
     ];
 
-    // Dados de exemplo
     const sampleRows = [
       ["12345", "Liverpool", "250.00", "240.00", "851821"],
       ["67890", "SKP", "310.00", "299.00", "852729"],
@@ -61,7 +57,6 @@ export default function MassEditionModal({
     ];
     XLSX.utils.sheet_add_aoa(ws, sampleRows, { origin: -1 });
 
-    // Cria e salva o arquivo
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Inclusão");
 
@@ -115,32 +110,55 @@ export default function MassEditionModal({
             </p>
           </div>
 
-          {/* Botões */}
+          {/* === BOTÕES EM FORMATO DE CARD === */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* 🟣 Inclusão - botão roxo */}
-            <Button
-              className="w-full bg-gradient-to-r from-[#7c3aed] to-[#6d28d9] text-white 
-                         rounded-xl shadow-md hover:scale-[1.03] hover:shadow-lg 
-                         transition-all flex items-center justify-center gap-2 border border-neutral-700"
+            {/* Inclusão */}
+            <div
+              className="p-6 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-all duration-300 cursor-pointer"
               onClick={baixarModeloInclusao}
             >
-              <FileDown className="w-4 h-4 text-white" />
-              Baixar Modelo de Inclusão
-            </Button>
+              <div className="flex items-center gap-4">
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center"
+                  style={{ backgroundColor: "#10b98120" }}
+                >
+                  <FileDown className="w-6 h-6" style={{ color: "#10b981" }} />
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-bold mb-1">Modelo de Inclusão</h4>
+                  <p className="text-sm text-neutral-400">
+                    Baixe o modelo base para novos custos
+                  </p>
+                </div>
+              </div>
+            </div>
 
-            {/* 🟠 Alteração */}
-            <Button
-              className="w-full bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-white 
-                         rounded-xl shadow-md hover:scale-[1.03] hover:shadow-lg 
-                         transition-all flex items-center justify-center gap-2 border border-neutral-700"
+            {/* Alteração */}
+            <div
+              className="p-6 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-all duration-300 cursor-pointer"
               onClick={onExportModeloAlteracao}
             >
-              <FileSpreadsheet className="w-4 h-4 text-white" />
-              Baixar Modelo de Alteração
-            </Button>
+              <div className="flex items-center gap-4">
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center"
+                  style={{ backgroundColor: "#f59e0b20" }}
+                >
+                  <FileSpreadsheet
+                    className="w-6 h-6"
+                    style={{ color: "#f59e0b" }}
+                  />
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-bold mb-1">Modelo de Alteração</h4>
+                  <p className="text-sm text-neutral-400">
+                    Baixe o modelo para atualizar custos existentes
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Preview da planilha */}
+          {/* Preview */}
           <div className="border border-neutral-700 rounded-xl overflow-hidden">
             <table className="w-full text-sm text-neutral-300 border-collapse">
               <thead className="bg-neutral-800/80 text-white sticky top-0">

@@ -74,8 +74,18 @@ const navigationItems = [
       { title: "Custos", href: "/dashboard/precificacao/custos" },
     ],
   },
-  { title: "Marketplaces", href: "/dashboard/marketplaces", icon: Store },
   { title: "Anúncios", href: "/dashboard/anuncios", icon: Package },
+  {
+    title: "Marketplaces",
+    icon: Store,
+    children: [
+      { title: "Tray", href: "/dashboard/marketplaces/tray" },
+      { title: "Bling", href: "/dashboard/marketplaces/bling" },
+      { title: "Mercado Livre", href: "/dashboard/marketplaces/mercado-livre" },
+      { title: "Shopee", href: "/dashboard/marketplaces/shopee" },
+      { title: "Magalu", href: "/dashboard/marketplaces/magalu" },
+    ],
+  },
 ];
 
 type AppSidebarProps = {
@@ -96,6 +106,7 @@ export default function AppSidebar({
   const [openMenus, setOpenMenus] = React.useState<string[]>([
     "Automações",
     "Precificação",
+    "Marketplaces",
   ]);
 
   const toggleMenu = (title: string) => {

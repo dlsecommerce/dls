@@ -50,9 +50,9 @@ export default function FiltroMarcasPopover({
           side="bottom"
           align="start"
         >
-          {/* === BOTÃO ✕ ROXO NO CANTO SUPERIOR DIREITO === */}
+          {/* === BOTÃO ✕ VERDE NO CANTO SUPERIOR DIREITO === */}
           <button
-            className="absolute right-4 top-4 text-white hover:text-transparent bg-gradient-to-r from-[#7c3aed] to-[#6d28d9] bg-clip-text text-lg font-bold cursor-pointer transition-all hover:scale-110 hover:drop-shadow-[0_0_6px_#7c3aed]"
+            className="absolute right-4 top-4 text-white hover:text-transparent bg-gradient-to-r from-green-500 to-green-600 bg-clip-text text-lg font-bold cursor-pointer transition-all hover:scale-110 hover:drop-shadow-[0_0_6px_#22c55e]"
             title="Fechar"
             onClick={() => onOpenChange(false)}
           >
@@ -75,7 +75,7 @@ export default function FiltroMarcasPopover({
                     id={`brand-${m}`}
                     checked={checked}
                     onCheckedChange={(v) => toggle(m, v)}
-                    className="border-neutral-600 data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-[#7c3aed] data-[state=checked]:to-[#6d28d9]"
+                    className="border-neutral-600 data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-green-500 data-[state=checked]:to-green-600"
                   />
                   <span className="truncate" title={m}>
                     {m}
@@ -94,7 +94,7 @@ export default function FiltroMarcasPopover({
               Limpar
             </Button>
             <Button
-              className="bg-gradient-to-r from-[#7c3aed] to-[#6d28d9] text-white hover:scale-105 cursor-pointer rounded-xl"
+              className="bg-gradient-to-r from-green-500 to-green-600 text-white hover:scale-105 cursor-pointer rounded-xl"
               onClick={() => onOpenChange(false)}
             >
               Aplicar
@@ -120,15 +120,15 @@ export default function FiltroMarcasPopover({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.25 }}
-                className="flex items-center gap-1 bg-white/10 border border-[#7c3aed]/50 text-white px-2 py-[3px] rounded-md text-xs cursor-pointer hover:bg-[#7c3aed]/20 transition"
+                className="flex items-center gap-1 bg-white/10 border border-green-500/50 text-white px-2 py-[3px] rounded-md text-xs cursor-pointer hover:bg-green-600/20 transition"
                 onClick={() =>
                   setSelectedBrands(selectedBrands.filter((b) => b !== brand))
                 }
                 title={`Remover filtro: ${brand}`}
               >
                 <span className="truncate max-w-[100px]">{brand}</span>
-                {/* === “X” ROXO NOS BADGES === */}
-                <span className="text-[11px] font-bold ml-1 bg-gradient-to-r from-[#7c3aed] to-[#6d28d9] bg-clip-text text-transparent">
+                {/* === “X” VERDE NOS BADGES === */}
+                <span className="text-[11px] font-bold ml-1 bg-gradient-to-r from-green-500 to-green-600 bg-clip-text text-transparent">
                   ✕
                 </span>
               </motion.div>

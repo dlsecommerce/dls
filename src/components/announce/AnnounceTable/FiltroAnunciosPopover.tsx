@@ -42,6 +42,11 @@ export default function FiltroAnunciosPopover({
   open,
   onOpenChange,
 }: Props) {
+  // ✅ Corrige o erro de "undefined.length"
+  const safeSelectedLoja = selectedLoja ?? [];
+  const safeSelectedBrands = selectedBrands ?? [];
+  const safeSelectedCategoria = selectedCategoria ?? [];
+
   const toggle = (
     current: string[],
     set: (v: string[]) => void,
@@ -49,8 +54,8 @@ export default function FiltroAnunciosPopover({
     checked: boolean | string
   ) => {
     const v = checked === true;
-    if (v) set([...new Set([...current, value])]);
-    else set(current.filter((x) => x !== value));
+    if (v) set([...new Set([...(current ?? []), value])]);
+    else set((current ?? []).filter((x) => x !== value));
   };
 
   const limparTudo = () => {
@@ -96,9 +101,9 @@ export default function FiltroAnunciosPopover({
                   className="flex items-center gap-2 text-gray-200 text-sm cursor-pointer"
                 >
                   <Checkbox
-                    checked={!!selectedLoja.includes(loja)}
+                    checked={!!safeSelectedLoja.includes(loja)}
                     onCheckedChange={(v) =>
-                      toggle(selectedLoja, setSelectedLoja, loja, v)
+                      toggle(safeSelectedLoja, setSelectedLoja, loja, v)
                     }
                     className="border-neutral-600 data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-green-500 data-[state=checked]:to-green-600"
                   />
@@ -118,9 +123,9 @@ export default function FiltroAnunciosPopover({
                   className="flex items-center gap-2 text-gray-200 text-sm cursor-pointer"
                 >
                   <Checkbox
-                    checked={!!selectedBrands.includes(m)}
+                    checked={!!safeSelectedBrands.includes(m)}
                     onCheckedChange={(v) =>
-                      toggle(selectedBrands, setSelectedBrands, m, v)
+                      toggle(safeSelectedBrands, setSelectedBrands, m, v)
                     }
                     className="border-neutral-600 data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-green-500 data-[state=checked]:to-green-600"
                   />
@@ -142,9 +147,9 @@ export default function FiltroAnunciosPopover({
                   className="flex items-center gap-2 text-gray-200 text-sm cursor-pointer"
                 >
                   <Checkbox
-                    checked={!!selectedCategoria.includes(cat)}
+                    checked={!!safeSelectedCategoria.includes(cat)}
                     onCheckedChange={(v) =>
-                      toggle(selectedCategoria, setSelectedCategoria, cat, v)
+                      toggle(safeSelectedCategoria, setSelectedCategoria, cat, v)
                     }
                     className="border-neutral-600 data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-green-500 data-[state=checked]:to-green-600"
                   />
@@ -176,9 +181,9 @@ export default function FiltroAnunciosPopover({
 
       {/* === BADGES DOS FILTROS AO LADO === */}
       <AnimatePresence>
-        {(selectedLoja.length > 0 ||
-          selectedBrands.length > 0 ||
-          selectedCategoria.length > 0) && (
+        {(safeSelectedLoja.length > 0 ||
+          safeSelectedBrands.length > 0 ||
+          safeSelectedCategoria.length > 0) && (
           <motion.div
             className="flex flex-wrap items-center gap-2 ml-2"
             initial={{ opacity: 0, y: -4 }}
@@ -186,7 +191,7 @@ export default function FiltroAnunciosPopover({
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.25 }}
           >
-            {[...selectedLoja, ...selectedBrands, ...selectedCategoria].map(
+            {[...safeSelectedLoja, ...safeSelectedBrands, ...safeSelectedCategoria].map(
               (item) => (
                 <motion.div
                   key={item}
@@ -196,9 +201,9 @@ export default function FiltroAnunciosPopover({
                   transition={{ duration: 0.25 }}
                   className="flex items-center gap-1 bg-white/10 border border-green-500/50 text-white px-2 py-[3px] rounded-md text-xs cursor-pointer hover:bg-green-600/20 transition"
                   onClick={() => {
-                    setSelectedLoja(selectedLoja.filter((l) => l !== item));
-                    setSelectedBrands(selectedBrands.filter((b) => b !== item));
-                    setSelectedCategoria(selectedCategoria.filter((c) => c !== item));
+                    setSelectedLoja(safeSelectedLoja.filter((l) => l !== item));
+                    setSelectedBrands(safeSelectedBrands.filter((b) => b !== item));
+                    setSelectedCategoria(safeSelectedCategoria.filter((c) => c !== item));
                   }}
                   title={`Remover filtro: ${item}`}
                 >

@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Bell, Mail, Smartphone } from "lucide-react";
+import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 
 export default function NotificationsTab() {
   return (
@@ -9,8 +10,8 @@ export default function NotificationsTab() {
       {/* Cabeçalho */}
       <h3 className="text-[20px] font-normal">Notificações</h3>
 
-      {/* Card de preferências */}
-      <div className="bg-[#111111] border border-white/10 rounded-[20px] p-6 space-y-6">
+      {/* Card de preferências (agora com GlassmorphicCard) */}
+      <GlassmorphicCard className="p-6 space-y-6">
         {/* Header do card */}
         <div className="flex items-center gap-3">
           <Bell className="w-5 h-5 text-muted-foreground" />
@@ -62,7 +63,7 @@ export default function NotificationsTab() {
             </button>
           </div>
         </div>
-      </div>
+      </GlassmorphicCard>
     </div>
   );
 }

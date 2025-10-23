@@ -22,14 +22,14 @@ const actions = [
   },
   {
     title: "Marketplaces",
-    url: "/marketplaces",
+    url: "/dashboard/marketplaces",
     icon: Store,
     color: "#f59e0b",
     gradient: "from-[#f59e0b] to-[#d97706]",
   },
   {
     title: "Gerenciar Anúncios",
-    url: "/anuncios",
+    url: "/dashboard/anuncios",
     icon: Package,
     color: "#8b5cf6",
     gradient: "from-[#8b5cf6] to-[#7c3aed]",

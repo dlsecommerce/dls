@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Shield, Key, History, Eye, EyeOff } from "lucide-react";
+import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 
 interface SecurityTabProps {
   showPasswordForm: boolean;
@@ -34,8 +35,8 @@ export default function SecurityTab({
     <div className="space-y-8">
       <h3 className="text-[20px] font-normal mb-6">Segurança</h3>
 
-      {/* Card Segurança */}
-      <div className="bg-[#111111] border border-white/10 rounded-[20px] p-6 space-y-6">
+      {/* === Segurança da Conta === */}
+      <GlassmorphicCard className="p-6 space-y-6">
         <div className="flex items-center gap-3">
           <Shield className="w-5 h-5 text-muted-foreground" />
           <div>
@@ -68,7 +69,7 @@ export default function SecurityTab({
             </button>
           </div>
 
-          {/* Form Senha */}
+          {/* Form de Alteração de Senha */}
           {showPasswordForm && (
             <form onSubmit={onChangePassword} className="space-y-4 pt-4 ps-0 sm:ps-8">
               <div className="space-y-2">
@@ -122,10 +123,10 @@ export default function SecurityTab({
             </form>
           )}
         </div>
-      </div>
+      </GlassmorphicCard>
 
-      {/* Card Histórico */}
-      <div className="bg-[#111111] border border-white/10 rounded-[20px] p-6">
+      {/* === Histórico de Login === */}
+      <GlassmorphicCard className="p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <History className="w-5 h-5 text-muted-foreground" />
@@ -138,7 +139,7 @@ export default function SecurityTab({
             Ver
           </button>
         </div>
-      </div>
+      </GlassmorphicCard>
     </div>
   );
 }

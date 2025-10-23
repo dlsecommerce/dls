@@ -53,7 +53,7 @@ export function TableControls({
           {selectedCount > 0 && (
             <Badge
               variant="default"
-              className="ml-2 bg-[#1e1e1e] border border-neutral-700 text-white"
+              className="ml-2 bg-[#1e1e1e] border border-[#1A8CEB] text-white"
             >
               {selectedCount} selecionado{selectedCount > 1 ? "s" : ""}
             </Badge>
@@ -63,7 +63,6 @@ export function TableControls({
 
       {/* ⚙️ Controle de páginas */}
       <div className="flex items-center gap-6">
-        {/* Select customizado dark */}
         <div className="flex items-center gap-2">
           <p className="text-sm text-neutral-400">Linhas por página:</p>
 
@@ -75,7 +74,7 @@ export function TableControls({
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-[#111111] border border-neutral-700 text-white rounded-xl shadow-lg">
-              {[5, 10, 20, 50].map((num) => (
+              {[10, 20, 50, 100].map((num) => (
                 <SelectItem
                   key={num}
                   value={num.toString()}
@@ -110,7 +109,6 @@ export function TableControls({
             <ChevronLeft className="h-4 w-4" />
           </Button>
 
-          {/* Input da página */}
           <div className="flex items-center gap-1 mx-2">
             <input
               type="number"

@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useProfile } from "@/context/ProfileContext";
 import { MessageSquare, ThumbsUp, ThumbsDown, Send } from "lucide-react";
 import { motion } from "framer-motion";
+import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 
 interface Feedback {
   id: number;
@@ -112,12 +113,11 @@ export default function FeedbacksTab() {
 
   return (
     <div className="space-y-8">
-      {/* Cabeçalho */}
       <h3 className="text-[20px] font-normal">Feedbacks</h3>
 
-      {/* Card principal */}
-      <div className="bg-[#111111] border border-neutral-700 rounded-[20px] p-6 space-y-6">
-        {/* Header do card */}
+      {/* Substituição do card principal por GlassmorphicCard */}
+      <GlassmorphicCard className="p-6 space-y-6">
+        {/* Header */}
         <div className="flex items-center gap-3">
           <MessageSquare className="w-5 h-5 text-muted-foreground" />
           <div>
@@ -242,7 +242,7 @@ export default function FeedbacksTab() {
             ))
           )}
         </div>
-      </div>
+      </GlassmorphicCard>
     </div>
   );
 }

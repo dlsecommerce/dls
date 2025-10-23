@@ -5,6 +5,7 @@ import { Camera, CheckCircle2, Loader2, X, Check } from "lucide-react";
 import Image from "next/image";
 import { useProfile } from "@/context/ProfileContext";
 import { supabase } from "@/integrations/supabase/client";
+import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 
 export default function ProfileTab() {
   const { profile, updateProfile, refreshProfile } = useProfile();
@@ -124,8 +125,8 @@ export default function ProfileTab() {
   return (
     <>
       <form onSubmit={handleSave} className="space-y-8">
-        {/* Avatar e nome principal */}
-        <div className="bg-[#111111] border border-white/10 rounded-[20px] p-6 space-y-6">
+        {/* === Avatar e Nome === */}
+        <GlassmorphicCard className="p-6 space-y-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
             <div className="relative group">
               <div className="w-24 h-24 rounded-full bg-gradient-to-br from-primary to-pink-600 flex items-center justify-center overflow-hidden">
@@ -175,10 +176,10 @@ export default function ProfileTab() {
               <p className="text-muted-foreground text-[14px]">{profile?.email}</p>
             </div>
           </div>
-        </div>
+        </GlassmorphicCard>
 
-        {/* Campos editáveis */}
-        <div className="bg-[#111111] border border-white/10 rounded-[20px] p-6 space-y-6">
+        {/* === Campos Editáveis === */}
+        <GlassmorphicCard className="p-6 space-y-6">
           <div className="space-y-2">
             <label className="text-[14px] font-medium text-foreground">Nome</label>
             <input
@@ -197,9 +198,9 @@ export default function ProfileTab() {
               className="flex w-full rounded-lg border border-white/10 bg-[#1a1a1a] px-4 py-2 text-[14px] text-neutral-400 cursor-not-allowed"
             />
           </div>
-        </div>
+        </GlassmorphicCard>
 
-        {/* Botão Salvar */}
+        {/* === Botão Salvar === */}
         <div className="flex justify-end pt-2">
           <button
             type="submit"
@@ -217,10 +218,10 @@ export default function ProfileTab() {
         </div>
       </form>
 
-      {/* Modal de preview antes do upload */}
+      {/* === Modal Preview === */}
       {showModal && previewUrl && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-          <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-6 w-[320px] text-center">
+          <GlassmorphicCard className="w-[320px] p-6 text-center">
             <h2 className="text-white text-lg mb-4">Pré-visualização do avatar</h2>
             <Image
               src={previewUrl}
@@ -242,9 +243,7 @@ export default function ProfileTab() {
                 className="flex items-center gap-2 bg-[#2699fe] hover:bg-[#1a86e4] text-white px-4 py-2 rounded-md text-sm disabled:opacity-60"
               >
                 {uploading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  </>
+                  <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <>
                     <Check className="w-4 h-4" /> Salvar
@@ -252,11 +251,11 @@ export default function ProfileTab() {
                 )}
               </button>
             </div>
-          </div>
+          </GlassmorphicCard>
         </div>
       )}
 
-      {/* Toast de sucesso */}
+      {/* === Toast de sucesso === */}
       {showSuccess && (
         <div className="fixed bottom-6 right-6 bg-[#111111]/90 border border-white/10 rounded-lg shadow-lg px-4 py-3 text-sm text-white flex items-center gap-2 animate-fadeIn">
           <CheckCircle2 className="w-5 h-5 text-green-400" />
