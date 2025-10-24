@@ -59,7 +59,10 @@ const navigationItems = [
     title: "Automações",
     icon: Zap,
     children: [
-      { title: "Automação de Planilhas", href: "/dashboard/automacoes/automacao-planilhas" },
+      {
+        title: "Automação de Planilhas",
+        href: "/dashboard/automacoes/automacao-planilhas",
+      },
     ],
   },
   {
@@ -111,7 +114,9 @@ export default function AppSidebar({
 
   const toggleMenu = (title: string) => {
     setOpenMenus((prev) =>
-      prev.includes(title) ? prev.filter((t) => t !== title) : [...prev, title]
+      prev.includes(title)
+        ? prev.filter((t) => t !== title)
+        : [...prev, title]
     );
   };
 
@@ -138,30 +143,18 @@ export default function AppSidebar({
       transition={{
         width: { duration: 0.45, ease: [0.45, 0, 0.1, 1] },
       }}
-      className="
-        relative h-screen flex flex-col 
-        border-r border-white/10
-        overflow-hidden
-        fixed left-0 top-0 z-40
-        rounded-none shadow-none
-      "
+      className="relative h-screen flex flex-col border-r border-white/10 overflow-hidden fixed left-0 top-0 z-40 rounded-none shadow-none"
     >
-      {/* ✅ Fundo fixo animado — sem flicker preto */}
+      {/* ✅ Fundo fixo animado */}
       <motion.div
         key="sidebar-bg"
         initial={{ opacity: 0.9 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0.9 }}
         transition={{ duration: 0.4, ease: "easeInOut" }}
-        className="
-          absolute inset-0
-          bg-gradient-to-br from-[#0a0a0a]/95 to-[#1a1a1a]/80
-          backdrop-blur-xl
-          pointer-events-none
-        "
+        className="absolute inset-0 bg-gradient-to-br from-[#0a0a0a]/95 to-[#1a1a1a]/80 backdrop-blur-xl pointer-events-none"
       />
 
-      {/* Conteúdo real */}
       <div className="relative z-10 flex flex-col h-full">
         {/* Header */}
         <SidebarHeader className="border-b border-white/10 px-4 py-6 relative shrink-0 bg-transparent">
@@ -222,7 +215,7 @@ export default function AppSidebar({
           </button>
         </SidebarHeader>
 
-        {/* Menu com fade + blur */}
+        {/* Conteúdo principal */}
         <SidebarContent className="flex-1 p-3 overflow-hidden relative">
           <AnimatePresence mode="wait">
             <motion.div
@@ -251,167 +244,129 @@ export default function AppSidebar({
                           transition={{ delay: idx * 0.08 }}
                         >
                           <SidebarMenuItem>
-                            {/* Mesma lógica dos menus originais */}
+                            {/* Lógica dos menus */}
                             {item.children ? (
-                              collapsed ? (
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <SidebarMenuButton className="flex items-center justify-center w-full h-10 hover:bg-white/5 rounded-xl">
-                                      {item.icon && (
-                                        <item.icon className="w-5 h-5 text-neutral-300 group-hover:text-[#1a8ceb]" />
-                                      )}
-                                    </SidebarMenuButton>
-                                  </PopoverTrigger>
-                                  <PopoverContent
-                                    side="right"
-                                    className="bg-[#111111]/70 backdrop-blur-md text-white border border-white/10 rounded-xl p-2 w-56 shadow-lg"
-                                  >
-                                    {item.children.map((child) => (
-                                      <Link
-                                        key={child.title}
-                                        href={child.href}
-                                        onClick={() => {
-                                          setPageTitle(child.title);
-                                          triggerLoading();
-                                        }}
-                                        className={`px-3 py-2 text-sm flex items-center gap-2 rounded-lg hover:bg-white/5 hover:text-[#1a8ceb] transition-all ${
-                                          pathname === child.href
-                                            ? "bg-[#1a8ceb]/10 text-[#1a8ceb]"
-                                            : ""
-                                        }`}
+                              <Collapsible
+                                open={openMenus.includes(item.title)}
+                                onOpenChange={() => toggleMenu(item.title)}
+                              >
+                                <CollapsibleTrigger asChild>
+                                  <SidebarMenuButton className="w-full flex items-center gap-3 py-2.5 px-3 hover:bg-white/5 text-neutral-300 hover:text-white rounded-xl group relative">
+                                    {item.icon && (
+                                      <item.icon className="w-5 h-5 group-hover:text-[#1a8ceb]" />
+                                    )}
+                                    {!collapsed && (
+                                      <motion.span
+                                        className="font-medium flex items-center"
+                                        initial={{ opacity: 0, x: -10 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        exit={{ opacity: 0, x: -10 }}
+                                        transition={{ duration: 0.25 }}
                                       >
-                                        {child.title}
-                                      </Link>
-                                    ))}
-                                  </PopoverContent>
-                                </Popover>
-                              ) : (
-                                <Collapsible
-                                  open={openMenus.includes(item.title)}
-                                  onOpenChange={() => toggleMenu(item.title)}
-                                >
-                                  <CollapsibleTrigger asChild>
-                                    <SidebarMenuButton className="w-full flex items-center gap-3 py-2.5 px-3 hover:bg-white/5 text-neutral-300 hover:text-white rounded-xl group relative">
-                                      {item.icon && (
-                                        <item.icon className="w-5 h-5 group-hover:text-[#1a8ceb]" />
-                                      )}
-                                      {!collapsed && (
-                                        <motion.span
-                                          className="font-medium flex items-center"
-                                          initial={{ opacity: 0, x: -10 }}
-                                          animate={{ opacity: 1, x: 0 }}
-                                          exit={{ opacity: 0, x: -10 }}
-                                          transition={{ duration: 0.25 }}
-                                        >
-                                          {item.title}
-                                        </motion.span>
-                                      )}
-                                      {openMenus.includes(item.title) ? (
-                                        <ChevronDown className="w-4 h-4 ml-auto" />
-                                      ) : (
-                                        <ChevronRight className="w-4 h-4 ml-auto" />
-                                      )}
-                                    </SidebarMenuButton>
-                                  </CollapsibleTrigger>
+                                        {item.title}
+                                      </motion.span>
+                                    )}
+                                    {openMenus.includes(item.title) ? (
+                                      <ChevronDown className="w-4 h-4 ml-auto" />
+                                    ) : (
+                                      <ChevronRight className="w-4 h-4 ml-auto" />
+                                    )}
+                                  </SidebarMenuButton>
+                                </CollapsibleTrigger>
 
-                                  <CollapsibleContent asChild>
-                                    <motion.div
-                                      initial={{ opacity: 0, y: -8, height: 0 }}
-                                      animate={{
-                                        opacity: 1,
-                                        y: 0,
-                                        height: "auto",
-                                      }}
-                                      exit={{ opacity: 0, y: -8, height: 0 }}
-                                      transition={{
-                                        duration: 0.3,
-                                        ease: "easeInOut",
-                                      }}
-                                      className="ml-6 mt-1 overflow-hidden"
-                                    >
-                                      {item.children.map((child) => {
-                                        const childActive =
-                                          pathname === child.href;
-                                        return (
-                                          <SidebarMenuButton
-                                            key={child.title}
-                                            asChild
-                                            className={`flex items-center gap-3 py-2 px-3 text-sm hover:bg-white/5 text-neutral-400 hover:text-white rounded-xl ${
-                                              childActive
-                                                ? "bg-[#1a8ceb]/10 text-[#1a8ceb]"
-                                                : ""
-                                            }`}
-                                            onClick={() => {
-                                              setPageTitle(child.title);
-                                              triggerLoading();
-                                            }}
-                                          >
-                                            <Link href={child.href}>
-                                              {child.title}
-                                            </Link>
-                                          </SidebarMenuButton>
-                                        );
-                                      })}
-                                    </motion.div>
-                                  </CollapsibleContent>
-                                </Collapsible>
-                              )
+                                <CollapsibleContent asChild>
+                                  <motion.div
+                                    initial={{ opacity: 0, y: -8, height: 0 }}
+                                    animate={{ opacity: 1, y: 0, height: "auto" }}
+                                    exit={{ opacity: 0, y: -8, height: 0 }}
+                                    transition={{ duration: 0.3, ease: "easeInOut" }}
+                                    className="ml-6 mt-1 overflow-hidden"
+                                  >
+                                    {item.children.map((child) => {
+                                      const childActive = pathname === child.href;
+                                      return (
+                                        <SidebarMenuButton
+                                          key={child.title}
+                                          asChild
+                                          className={`flex items-center gap-3 py-2 px-3 text-sm hover:bg-white/5 text-neutral-400 hover:text-white rounded-xl ${
+                                            childActive
+                                              ? "bg-[#1a8ceb]/10 text-[#1a8ceb]"
+                                              : ""
+                                          }`}
+                                          onClick={() => {
+                                            setPageTitle(child.title);
+                                            triggerLoading();
+                                          }}
+                                        >
+                                          <Link href={child.href}>
+                                            {child.title}
+                                          </Link>
+                                        </SidebarMenuButton>
+                                      );
+                                    })}
+                                  </motion.div>
+                                </CollapsibleContent>
+                              </Collapsible>
                             ) : (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <SidebarMenuButton
-                                      asChild
-                                      className={`hover:bg-white/5 text-neutral-300 hover:text-white rounded-xl group ${
-                                        isActive
-                                          ? "bg-[#1a8ceb]/10 text-[#1a8ceb]"
-                                          : ""
-                                      } ${
-                                        collapsed
-                                          ? "flex justify-center items-center h-10"
-                                          : ""
-                                      }`}
-                                    >
-                                      <Link
-                                        href={item.href ?? "#"}
-                                        className={`flex items-center ${
-                                          collapsed
-                                            ? "justify-center w-full"
-                                            : "gap-3 px-3 py-2.5"
-                                        }`}
-                                      >
-                                        {item.icon && (
-                                          <item.icon className="w-5 h-5 group-hover:text-[#1a8ceb]" />
-                                        )}
-                                        {!collapsed && (
-                                          <motion.span
-                                            className="font-medium flex items-center"
-                                            initial={{ opacity: 0, x: -10 }}
-                                            animate={{ opacity: 1, x: 0 }}
-                                            exit={{ opacity: 0, x: -10 }}
-                                            transition={{ duration: 0.25 }}
-                                          >
-                                            {item.title}
-                                          </motion.span>
-                                        )}
-                                      </Link>
-                                    </SidebarMenuButton>
-                                  </TooltipTrigger>
-                                  {collapsed && (
-                                    <TooltipContent
-                                      side="right"
-                                      className="bg-[#111111] text-white border border-white/10"
+                              <SidebarMenuButton
+                                asChild
+                                className={`hover:bg-white/5 text-neutral-300 hover:text-white rounded-xl group ${
+                                  isActive
+                                    ? "bg-[#1a8ceb]/10 text-[#1a8ceb]"
+                                    : ""
+                                } ${collapsed ? "flex justify-center items-center h-10" : ""}`}
+                              >
+                                <Link
+                                  href={item.href ?? "#"}
+                                  className={`flex items-center ${
+                                    collapsed
+                                      ? "justify-center w-full"
+                                      : "gap-3 px-3 py-2.5"
+                                  }`}
+                                >
+                                  {item.icon && (
+                                    <item.icon className="w-5 h-5 group-hover:text-[#1a8ceb]" />
+                                  )}
+                                  {!collapsed && (
+                                    <motion.span
+                                      className="font-medium flex items-center"
+                                      initial={{ opacity: 0, x: -10 }}
+                                      animate={{ opacity: 1, x: 0 }}
+                                      exit={{ opacity: 0, x: -10 }}
+                                      transition={{ duration: 0.25 }}
                                     >
                                       {item.title}
-                                    </TooltipContent>
+                                    </motion.span>
                                   )}
-                                </Tooltip>
-                              </TooltipProvider>
+                                </Link>
+                              </SidebarMenuButton>
                             )}
                           </SidebarMenuItem>
                         </motion.div>
                       );
                     })}
+
+                    {/* 🔹 Botão "+" abaixo dos submenus Marketplaces */}
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <SidebarMenuItem>
+                        <motion.button
+                          whileHover={{ rotate: 45, scale: 1.1 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => {
+                            setPageTitle("Hub");
+                            triggerLoading();
+                            router.push("/dashboard/hub");
+                          }}
+                          className="w-10 h-10 mx-auto mt-3 flex items-center justify-center text-lg font-bold text-neutral-400 hover:text-[#1a8ceb] hover:bg-white/5 rounded-xl transition-all duration-300"
+                        >
+                          +
+                        </motion.button>
+                      </SidebarMenuItem>
+                    </motion.div>
                   </SidebarMenu>
                 </SidebarGroupContent>
               </SidebarGroup>
@@ -436,9 +391,7 @@ export default function AppSidebar({
               }`}
             >
               <Settings className="w-5 h-5 group-hover:text-[#1a8ceb]" />
-              {!collapsed && (
-                <span className="font-medium">Configurações</span>
-              )}
+              {!collapsed && <span className="font-medium">Configurações</span>}
             </Link>
           </SidebarMenuButton>
 

@@ -21,6 +21,7 @@ const routeTitles: Record<string, string> = {
   "/dashboard/marketplaces": "Marketplaces",
   "/dashboard/marketplaces/bling": "Bling",
   "/dashboard/marketplaces/tray": "Tray",
+  "/dashboard/hub": "Hub",
   "/dashboard/anuncios": "Anúncios",
   "/dashboard/anuncios/edit": "Detalhes",
   "/dashboard/configuracao": "Configurações",
