@@ -59,7 +59,7 @@ const navigationItems = [
     title: "Automações",
     icon: Zap,
     children: [
-      { title: "Automação de Planilhas", href: "/dashboard/automacao-modelo" },
+      { title: "Automação de Planilhas", href: "/dashboard/automacoes/automacao-planilhas" },
     ],
   },
   {

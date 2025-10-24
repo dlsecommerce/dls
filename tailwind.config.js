@@ -51,7 +51,6 @@ const config = {
         },
       },
       keyframes: {
-        // Fade suave
         "fade-in": {
           "0%": { opacity: "0", transform: "translateY(6px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
@@ -64,26 +63,18 @@ const config = {
           "0%": { opacity: "0", transform: "translateY(-12px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
-
-        // 🔹 Entrar → ArrowRight desliza lateral
         "fade-out-in-x": {
           "0%, 100%": { opacity: "1", transform: "translateX(0)" },
           "50%": { opacity: "0", transform: "translateX(8px)" },
         },
-
-        // 🔹 Criar conta → ArrowUpRight sobe e some
         "fade-out-in-y": {
           "0%, 100%": { opacity: "1", transform: "translateY(0)" },
           "50%": { opacity: "0", transform: "translateY(-8px)" },
         },
-
-        // 🔹 Brilho dos pontinhos
         twinkle: {
           "0%, 100%": { opacity: "0.2", transform: "scale(1)" },
           "50%": { opacity: "1", transform: "scale(1.3)" },
         },
-
-        // 🔹 Movimento leve (parallax/flutuação)
         floaty: {
           "0%": { transform: "translate(0,0)" },
           "25%": { transform: "translate(5px,-10px)" },
@@ -96,12 +87,8 @@ const config = {
         "fade-in": "fade-in .5s ease-out both",
         "slide-up": "slide-up .6s cubic-bezier(.2,.7,.2,1) both",
         "fade-in-down": "fade-in-down .6s ease-out both",
-
-        // Ícones
         "fade-out-in-x": "fade-out-in-x 1.5s ease-in-out",
         "fade-out-in-y": "fade-out-in-y 1.5s ease-in-out",
-
-        // Partículas
         twinkle: "twinkle 4s infinite ease-in-out",
         floaty: "floaty 12s infinite ease-in-out",
       },

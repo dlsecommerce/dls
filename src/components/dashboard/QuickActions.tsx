@@ -15,14 +15,14 @@ const actions = [
   },
   {
     title: "Precificação",
-    url: "/precificacao/precificacao-individual",
+    url: "/dashboard/precificacao/precificacao-individual",
     icon: DollarSign,
     color: "#10b981",
     gradient: "from-[#10b981] to-[#059669]",
   },
   {
     title: "Marketplaces",
-    url: "/dashboard/marketplaces",
+    url: "/dashboard/marketplaces/tray",
     icon: Store,
     color: "#f59e0b",
     gradient: "from-[#f59e0b] to-[#d97706]",

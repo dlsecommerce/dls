@@ -19,5 +19,100 @@
     "time_recent": "2 minutos atrás",
     "time_hour": "1 hora atrás",
     "time_day": "1 dia atrás"
+  },
+
+  "announceTable": {
+    "search_placeholder": "Buscar por nome, marca, ID Bling, ID Tray, referência...",
+    "import": "Importar",
+    "export": "Exportar",
+    "delete_selected": "Excluir Selecionados",
+    "clear_all": "Desmarcar Todos",
+    "mass_edit": "Edição em Massa",
+    "new_record": "Novo Cadastro",
+    "no_records": "Nenhum registro encontrado",
+    "loading": "Carregando...",
+    "showing": "Mostrando",
+    "to": "a",
+    "of": "de",
+    "ads": "anúncios",
+    "rows_per_page": "Linhas por página:",
+    "selected": "selecionado",
+    "selected_plural": "selecionados",
+    "filters": {
+      "title": "Filtros",
+      "store": "Loja",
+      "brand": "Marca",
+      "category": "Categoria",
+      "apply": "Aplicar",
+      "clear": "Limpar",
+      "clear_all": "Limpar tudo",
+      "close": "Fechar"
+    }
+  },
+
+  "deleteModal": {
+    "title": "Excluir Anúncio(s)",
+    "message": "Deseja realmente excluir {{count}} {{item}}?",
+    "item_single": "anúncio selecionado",
+    "item_plural": "anúncios selecionados",
+    "warning_title": "Atenção",
+    "warning_text": "Esta ação é permanente e não poderá ser desfeita.",
+    "cancel": "Cancelar",
+    "confirm": "Excluir",
+    "error": "Erro ao excluir anúncios.",
+    "none_selected": "Nenhum item selecionado para exclusão."
+  },
+
+  "massEdition": {
+    "title": "Edição em Massa",
+    "alteration": {
+      "title": "Alteração em Massa",
+      "description": "Importe planilha para alterar anúncios"
+    },
+    "inclusion": {
+      "title": "Inclusão em Massa",
+      "description": "Importe planilha para incluir novos anúncios"
+    },
+    "model": {
+      "title": "Modelo de Planilha",
+      "description": "Baixe o modelo base para edição"
+    },
+    "instructions": "Você pode importar arquivos em formato .xlsx ou .csv com as colunas do modelo. Após o upload, o sistema mostrará uma pré-visualização antes de confirmar a importação.",
+    "footer_note": "Mantenha os cabeçalhos exatamente como no modelo (.xlsx ou .csv) para evitar erros.",
+    "close": "Fechar"
+  },
+
+  "export": {
+    "no_data": "Nenhum dado encontrado para exportar.",
+    "file_default_name": "ANÚNCIOS - RELATÓRIO - {{date}}.xlsx",
+    "group_identificacao": "IDENTIFICAÇÃO",
+    "group_descricao": "DESCRIÇÃO",
+    "group_composicao": "COMPOSIÇÃO DE CUSTOS",
+    "columns": {
+      "id": "ID",
+      "loja": "Loja",
+      "id_bling": "ID Bling",
+      "id_tray": "ID Tray",
+      "referencia": "Referência",
+      "id_var": "ID Var",
+      "od": "OD",
+      "nome": "Nome",
+      "marca": "Marca",
+      "categoria": "Categoria",
+      "peso": "Peso",
+      "altura": "Altura",
+      "largura": "Largura",
+      "comprimento": "Comprimento",
+      "codigo": "Código {{index}}",
+      "quantidade": "Quantidade {{index}}"
+    }
+  },
+
+  "import": {
+    "error_read_sheet": "Não foi possível ler a planilha. Verifique o formato do arquivo.",
+    "no_data_after_header": "Nenhum dado encontrado após o cabeçalho.",
+    "ignored_records": "{{count}} registro(s) ignorado(s): sem loja identificada (Pikot Shop ou Sóbaquetas).",
+    "error_import_pikot": "Erro ao importar Pikot Shop: {{message}}",
+    "error_import_sobaquetas": "Erro ao importar Sóbaquetas: {{message}}"
   }
 }

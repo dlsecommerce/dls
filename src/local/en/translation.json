@@ -11,7 +11,7 @@
     "empty": "No notifications",
     "remove": "Remove",
     "payment_received": "Payment received",
-    "payment_message": "$ 2,500 have been credited to your account",
+    "payment_message": "$2,500 have been credited to your account",
     "spending_alert": "Spending alert",
     "spending_message": "You spent 80% of your monthly budget",
     "security_alert": "Security alert",
@@ -19,5 +19,100 @@
     "time_recent": "2 minutes ago",
     "time_hour": "1 hour ago",
     "time_day": "1 day ago"
+  },
+
+  "announceTable": {
+    "search_placeholder": "Search by name, brand, Bling ID, Tray ID, reference...",
+    "import": "Import",
+    "export": "Export",
+    "delete_selected": "Delete Selected",
+    "clear_all": "Unselect All",
+    "mass_edit": "Mass Edit",
+    "new_record": "New Record",
+    "no_records": "No records found",
+    "loading": "Loading...",
+    "showing": "Showing",
+    "to": "to",
+    "of": "of",
+    "ads": "ads",
+    "rows_per_page": "Rows per page:",
+    "selected": "selected",
+    "selected_plural": "selected",
+    "filters": {
+      "title": "Filters",
+      "store": "Store",
+      "brand": "Brand",
+      "category": "Category",
+      "apply": "Apply",
+      "clear": "Clear",
+      "clear_all": "Clear all",
+      "close": "Close"
+    }
+  },
+
+  "deleteModal": {
+    "title": "Delete Ad(s)",
+    "message": "Do you really want to delete {{count}} {{item}}?",
+    "item_single": "selected ad",
+    "item_plural": "selected ads",
+    "warning_title": "Attention",
+    "warning_text": "This action is permanent and cannot be undone.",
+    "cancel": "Cancel",
+    "confirm": "Delete",
+    "error": "Error deleting ads.",
+    "none_selected": "No items selected for deletion."
+  },
+
+  "massEdition": {
+    "title": "Mass Editing",
+    "alteration": {
+      "title": "Mass Update",
+      "description": "Import a spreadsheet to update ads"
+    },
+    "inclusion": {
+      "title": "Mass Inclusion",
+      "description": "Import a spreadsheet to add new ads"
+    },
+    "model": {
+      "title": "Spreadsheet Template",
+      "description": "Download the base model for editing"
+    },
+    "instructions": "You can import .xlsx or .csv files with the model columns. After uploading, the system will display a preview before confirming the import.",
+    "footer_note": "Keep headers exactly as in the model (.xlsx or .csv) to avoid errors.",
+    "close": "Close"
+  },
+
+  "export": {
+    "no_data": "No data found to export.",
+    "file_default_name": "ADS - REPORT - {{date}}.xlsx",
+    "group_identificacao": "IDENTIFICATION",
+    "group_descricao": "DESCRIPTION",
+    "group_composicao": "COST COMPOSITION",
+    "columns": {
+      "id": "ID",
+      "loja": "Store",
+      "id_bling": "Bling ID",
+      "id_tray": "Tray ID",
+      "referencia": "Reference",
+      "id_var": "Var ID",
+      "od": "OD",
+      "nome": "Name",
+      "marca": "Brand",
+      "categoria": "Category",
+      "peso": "Weight",
+      "altura": "Height",
+      "largura": "Width",
+      "comprimento": "Length",
+      "codigo": "Code {{index}}",
+      "quantidade": "Quantity {{index}}"
+    }
+  },
+
+  "import": {
+    "error_read_sheet": "Unable to read the spreadsheet. Please check the file format.",
+    "no_data_after_header": "No data found after the header.",
+    "ignored_records": "{{count}} record(s) ignored: no identified store (Pikot Shop or Sóbaquetas).",
+    "error_import_pikot": "Error importing Pikot Shop: {{message}}",
+    "error_import_sobaquetas": "Error importing Sóbaquetas: {{message}}"
   }
 }

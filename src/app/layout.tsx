@@ -9,6 +9,9 @@ import { cookies } from "next/headers";
 import type { Database } from "@/integrations/supabase/types";
 import SupabaseProvider from "@/components/provider/SupabaseProvider";
 
+// 🔹 Importa o ThemeProvider do next-themes
+import { ThemeProvider } from "next-themes";
+
 const inter = Inter({ subsets: ["latin"], display: "swap" });
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://pikotshop.com.br";
 
@@ -37,7 +40,7 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: light)", color: "#f3f3f3" },
     { media: "(prefers-color-scheme: dark)", color: "#090909" },
   ],
 };
@@ -47,10 +50,8 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // ✅ Correto no Next.js 15 — precisa ser await
   const cookieStore = await cookies();
 
-  // ✅ Criação correta do Supabase Server Client
   const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -60,7 +61,6 @@ export default async function RootLayout({
         setAll: async (cookiesToSet) => {
           try {
             for (const { name, value, options } of cookiesToSet) {
-              // ✅ Agora chamando cookies() novamente (mutável)
               (await cookies()).set(name, value, options);
             }
           } catch (error) {
@@ -71,21 +71,32 @@ export default async function RootLayout({
     }
   );
 
-  // ✅ Recupera o usuário autenticado no servidor
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   return (
     <html lang="pt-BR" suppressHydrationWarning>
+      {/* ⚡ ThemeProvider controla o modo claro/escuro via classe no <body> */}
       <body className={inter.className}>
-        <Providers>
-          <SupabaseProvider initialUser={user}>
-            <main className="relative z-10 text-foreground">
-              <ClientWrapper>{children}</ClientWrapper>
-            </main>
-          </SupabaseProvider>
-        </Providers>
+        <ThemeProvider
+          attribute="class"        // aplica 'light' ou 'dark' no body
+          defaultTheme="dark"      // 🌑 modo escuro padrão
+          enableSystem={false}     // desativa sincronização com o sistema
+          disableTransitionOnChange={false} // mantém transição suave
+          value={{
+            light: "light",        // força classe body.light
+            dark: "dark",          // força classe body.dark
+          }}
+        >
+          <Providers>
+            <SupabaseProvider initialUser={user}>
+              <main className="relative z-10 text-foreground min-h-screen">
+                <ClientWrapper>{children}</ClientWrapper>
+              </main>
+            </SupabaseProvider>
+          </Providers>
+        </ThemeProvider>
       </body>
     </html>
   );
