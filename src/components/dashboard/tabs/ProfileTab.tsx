@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { Camera, CheckCircle2, Loader2, X, Check } from "lucide-react";
+import { Camera, CheckCircle2, Loader, X, Check } from "lucide-react";
 import Image from "next/image";
 import { useProfile } from "@/context/ProfileContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -146,7 +146,7 @@ export default function ProfileTab() {
 
                 {uploading && (
                   <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                    <Loader2 className="w-6 h-6 text-white animate-spin" />
+                    <Loader className="w-6 h-6 text-white animate-spin" />
                   </div>
                 )}
               </div>
@@ -209,7 +209,7 @@ export default function ProfileTab() {
           >
             {saving ? (
               <span className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader className="w-4 h-4 animate-spin" />
               </span>
             ) : (
               "Salvar alterações"
@@ -243,7 +243,7 @@ export default function ProfileTab() {
                 className="flex items-center gap-2 bg-[#2699fe] hover:bg-[#1a86e4] text-white px-4 py-2 rounded-md text-sm disabled:opacity-60"
               >
                 {uploading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader className="w-4 h-4 animate-spin" />
                 ) : (
                   <>
                     <Check className="w-4 h-4" /> Salvar

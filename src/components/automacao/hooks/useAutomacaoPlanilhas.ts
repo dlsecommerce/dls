@@ -32,7 +32,6 @@ export function useAutomacaoPlanilhas() {
   /** 🔹 Envia as planilhas para o servidor Node.js */
   const iniciarAutomacao = async () => {
     if (!planilhas.modelo || !planilhas.vinculo || !planilhas.bling || !planilhas.tray) {
-      alert("⚠️ Selecione todas as planilhas: Modelo, Bling, Tray e Vínculo.");
       return;
     }
 
@@ -66,11 +65,9 @@ export function useAutomacaoPlanilhas() {
       saveAs(blob, nomeArquivo);
 
       setStatus("done");
-      alert("✅ Planilha modelo atualizada com sucesso!");
     } catch (error) {
       console.error("Erro:", error);
       setStatus("error");
-      alert("❌ Erro ao atualizar planilha modelo. Verifique o servidor Node.js.");
     }
   };
 

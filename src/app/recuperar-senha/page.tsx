@@ -11,7 +11,7 @@ export default function ForgotPasswordPage() {
       <LoadingBar />
 
       {/* 🔹 Suspense protege contra erros de hooks client no SSR */}
-      <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-white">Carregando...</div>}>
+      <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-white"></div>}>
         <ForgotPassword />
       </Suspense>
     </>

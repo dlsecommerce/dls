@@ -73,7 +73,7 @@ export const ProgressIndicator = ({
             <motion.div
               animate={{ width: `${progress}%` }}
               transition={{ duration: 0.4, ease: "easeInOut" }}
-              className="h-full bg-gradient-to-r from-blue-400 via-blue-500 to-cyan-400 rounded-full shadow-[0_0_10px_#3b82f6]"
+              className="h-full bg-gradient-to-r bg-blue-500 rounded-full shadow-[0_0_10px_#3b82f6]"
             />
           </motion.div>
         )}

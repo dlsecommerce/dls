@@ -11,7 +11,7 @@ export default function ResetPasswordPage() {
       <LoadingBar />
 
       {/* 🔹 Suspense garante que useSearchParams funcione sem erro */}
-      <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-white">Carregando...</div>}>
+      <Suspense fallback={<div className="flex items-center justify-center min-h-screen text-white"></div>}>
         <ResetPasswordForm />
       </Suspense>
     </>

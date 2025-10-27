@@ -15,12 +15,12 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import FiltroLoja from "@/components/automacao/modelo/FiltroLoja";
-import { useAutomacaoPlanilhas } from "@/components/automacao/hooks/useAutomacaoPlanilhas";
 import PreviewPlanilhaModal from "@/components/automacao/modelo/PreviewPlanilhaModal";
+import { useAutomacaoPlanilhas } from "@/components/automacao/hooks/useAutomacaoPlanilhas";
 
 export default function PlanilhaModelo() {
   const { planilhas, handleFileSelect, iniciarAutomacao, status } =
-    useAutomacaoPlanilhas();
+    useAutomacaoPlanilhas(); 
 
   const [selectedLoja, setSelectedLoja] = useState("Pikot Shop");
   const [buttonStatus, setButtonStatus] = useState<
@@ -113,14 +113,14 @@ export default function PlanilhaModelo() {
             />
           </div>
 
-          {/* 🔹 Indicador de progresso / carregamento */}
+          {/* 🔹 Indicador de progresso */}
           <ProgressIndicator
             totalSteps={4}
             completedSteps={selectedCount}
             loading={buttonStatus === "processing"}
           />
 
-          {/* 🔹 Cards de upload permanecem visíveis sempre */}
+          {/* 🔹 Cards de upload */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 px-6">
             {[
               { key: "bling", label: "Bling", icon: <Package className="w-8 h-8" /> },
@@ -145,7 +145,7 @@ export default function PlanilhaModelo() {
             ))}
           </div>
 
-          {/* 🔹 Status da seleção (some apenas enquanto carrega) */}
+          {/* 🔹 Status da seleção */}
           {buttonStatus !== "processing" && (
             <div className="flex items-center justify-center gap-2 text-sm">
               <div className={`w-3 h-3 rounded-full ${getDotColor()} animate-pulse`} />
