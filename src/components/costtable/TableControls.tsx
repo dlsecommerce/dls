@@ -70,11 +70,11 @@ export function TableControls({
             value={itemsPerPage.toString()}
             onValueChange={(value) => onItemsPerPageChange(Number(value))}
           >
-            <SelectTrigger className="w-[70px] h-8 bg-[#0f0f0f]/90 border border-neutral-700 text-white rounded-lg">
+            <SelectTrigger className="w-[70px] h-8 bg-[#0f0f0f]/90 border border-neutral-700 text-white rounded-lg focus:ring-1 focus:ring-neutral-600 transition-all">
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-[#111111] border border-neutral-700 text-white rounded-xl shadow-lg">
-              {[10, 20, 50, 100].map((num) => (
+              {[10, 20, 50].map((num) => (
                 <SelectItem
                   key={num}
                   value={num.toString()}

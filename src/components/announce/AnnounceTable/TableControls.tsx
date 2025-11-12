@@ -72,7 +72,7 @@ export function TableControls({
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-[#111111] border border-neutral-700 text-white rounded-xl shadow-lg">
-              {[10, 20, 50, 100].map((num) => (
+              {[10, 20, 50].map((num) => (
                 <SelectItem
                   key={num}
                   value={num.toString()}

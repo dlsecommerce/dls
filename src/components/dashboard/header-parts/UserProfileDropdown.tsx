@@ -70,7 +70,6 @@ export function UserProfileDropdown() {
     );
   }
 
-  const avatar = profile.avatar_url;
   const initials =
     profile.name
       ?.split(" ")
@@ -78,6 +77,13 @@ export function UserProfileDropdown() {
       .map((n) => n[0]?.toUpperCase())
       .join("")
       .slice(0, 2) || "?";
+
+  // ✅ Fallback remoto para avatar (sem gerar 404)
+  const avatarUrl =
+    profile.avatar_url ||
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(
+      profile.name || "Usuário"
+    )}&background=1a1a1a&color=ffffff&size=128`;
 
   const handleSaveMessage = async () => {
     setSaving(true);
@@ -109,19 +115,20 @@ export function UserProfileDropdown() {
                      before:absolute before:inset-0 before:rounded-full before:transition-all before:duration-300 
                      before:ring-0 hover:before:ring-4 hover:before:ring-white/10"
         >
-          {avatar ? (
-            <Image
-              src={avatar}
-              alt="avatar"
-              width={40}
-              height={40}
-              className="rounded-full object-cover"
-              unoptimized
-              onError={(e) => ((e.currentTarget.src = "/default-avatar.png"))}
-            />
-          ) : (
-            <span className="text-sm text-white">{initials}</span>
-          )}
+          <Image
+            src={avatarUrl}
+            alt="avatar"
+            width={40}
+            height={40}
+            className="rounded-full object-cover"
+            unoptimized
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).src =
+                `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                  profile.name || "Usuário"
+                )}&background=1a1a1a&color=ffffff&size=128`;
+            }}
+          />
           <span
             className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-[#111] ${
               profile.status === "disponivel"
@@ -144,12 +151,18 @@ export function UserProfileDropdown() {
         <div className="flex items-center gap-3 px-3 py-2 border-b border-white/10 relative">
           <div className="relative">
             <Image
-              src={avatar || "/default-avatar.png"}
+              src={avatarUrl}
               alt="avatar"
               width={40}
               height={40}
               className="rounded-full object-cover"
               unoptimized
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src =
+                  `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                    profile.name || "Usuário"
+                  )}&background=1a1a1a&color=ffffff&size=128`;
+              }}
             />
             <span
               className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-[#111] ${

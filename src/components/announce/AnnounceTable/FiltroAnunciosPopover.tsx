@@ -42,7 +42,6 @@ export default function FiltroAnunciosPopover({
   open,
   onOpenChange,
 }: Props) {
-  // ✅ Corrige o erro de "undefined.length"
   const safeSelectedLoja = selectedLoja ?? [];
   const safeSelectedBrands = selectedBrands ?? [];
   const safeSelectedCategoria = selectedCategoria ?? [];
@@ -63,6 +62,13 @@ export default function FiltroAnunciosPopover({
     setSelectedBrands([]);
     setSelectedCategoria([]);
   };
+
+  const getItemClasses = (isChecked: boolean) =>
+    `flex items-center gap-2 text-gray-200 text-sm px-2 py-[4px] rounded-md cursor-pointer select-none transition ${
+      isChecked
+        ? "bg-white/10 border border-green-500/40"
+        : "hover:bg-white/5"
+    }`;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -95,45 +101,62 @@ export default function FiltroAnunciosPopover({
           <div>
             <Label className="text-white text-sm mb-1 block">Loja</Label>
             <div className="max-h-28 overflow-auto pr-1 space-y-1 pl-1">
-              {allLojas.map((loja) => (
-                <label
-                  key={loja}
-                  className="flex items-center gap-2 text-gray-200 text-sm cursor-pointer"
-                >
-                  <Checkbox
-                    checked={!!safeSelectedLoja.includes(loja)}
-                    onCheckedChange={(v) =>
-                      toggle(safeSelectedLoja, setSelectedLoja, loja, v)
+              {allLojas.map((loja) => {
+                const isChecked = safeSelectedLoja.includes(loja);
+                return (
+                  <div
+                    key={loja}
+                    className={getItemClasses(isChecked)}
+                    onClick={() =>
+                      toggle(safeSelectedLoja, setSelectedLoja, loja, !isChecked)
                     }
-                    className="border-neutral-600 data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-green-500 data-[state=checked]:to-green-600"
-                  />
-                  {loja}
-                </label>
-              ))}
+                  >
+                    <Checkbox
+                      checked={isChecked}
+                      onCheckedChange={(v) =>
+                        toggle(safeSelectedLoja, setSelectedLoja, loja, v)
+                      }
+                      className="border-neutral-600 cursor-pointer data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-green-500 data-[state=checked]:to-green-600"
+                    />
+                    <span>{loja}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
           {/* === Marca === */}
           <div>
             <Label className="text-white text-sm mb-1 block">Marca</Label>
-            <div className="max-h-28 overflow-auto pr-1 space-y-1">
-              {allBrands.map((m) => (
-                <label
-                  key={m}
-                  className="flex items-center gap-2 text-gray-200 text-sm cursor-pointer"
-                >
-                  <Checkbox
-                    checked={!!safeSelectedBrands.includes(m)}
-                    onCheckedChange={(v) =>
-                      toggle(safeSelectedBrands, setSelectedBrands, m, v)
+            <div className="max-h-28 overflow-auto pr-1 space-y-1 pl-1">
+              {allBrands.map((m) => {
+                const isChecked = safeSelectedBrands.includes(m);
+                return (
+                  <div
+                    key={m}
+                    className={getItemClasses(isChecked)}
+                    onClick={() =>
+                      toggle(
+                        safeSelectedBrands,
+                        setSelectedBrands,
+                        m,
+                        !isChecked
+                      )
                     }
-                    className="border-neutral-600 data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-green-500 data-[state=checked]:to-green-600"
-                  />
-                  <span className="truncate" title={m}>
-                    {m}
-                  </span>
-                </label>
-              ))}
+                  >
+                    <Checkbox
+                      checked={isChecked}
+                      onCheckedChange={(v) =>
+                        toggle(safeSelectedBrands, setSelectedBrands, m, v)
+                      }
+                      className="border-neutral-600 cursor-pointer data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-green-500 data-[state=checked]:to-green-600"
+                    />
+                    <span className="truncate" title={m}>
+                      {m}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -141,26 +164,42 @@ export default function FiltroAnunciosPopover({
           <div>
             <Label className="text-white text-sm mb-1 block">Categoria</Label>
             <div className="max-h-28 overflow-auto pr-1 space-y-1 pl-1">
-              {allCategorias.map((cat) => (
-                <label
-                  key={cat}
-                  className="flex items-center gap-2 text-gray-200 text-sm cursor-pointer"
-                >
-                  <Checkbox
-                    checked={!!safeSelectedCategoria.includes(cat)}
-                    onCheckedChange={(v) =>
-                      toggle(safeSelectedCategoria, setSelectedCategoria, cat, v)
+              {allCategorias.map((cat) => {
+                const isChecked = safeSelectedCategoria.includes(cat);
+                return (
+                  <div
+                    key={cat}
+                    className={getItemClasses(isChecked)}
+                    onClick={() =>
+                      toggle(
+                        safeSelectedCategoria,
+                        setSelectedCategoria,
+                        cat,
+                        !isChecked
+                      )
                     }
-                    className="border-neutral-600 data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-green-500 data-[state=checked]:to-green-600"
-                  />
-                  {cat}
-                </label>
-              ))}
+                  >
+                    <Checkbox
+                      checked={isChecked}
+                      onCheckedChange={(v) =>
+                        toggle(
+                          safeSelectedCategoria,
+                          setSelectedCategoria,
+                          cat,
+                          v
+                        )
+                      }
+                      className="border-neutral-600 cursor-pointer data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-green-500 data-[state=checked]:to-green-600"
+                    />
+                    <span>{cat}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
           {/* === BOTÕES === */}
-          <div className="flex justify-between gap-2">
+          <div className="flex justify-between gap-2 pt-2">
             <Button
               variant="ghost"
               className="text-gray-300 hover:text-white hover:scale-105 cursor-pointer"
@@ -179,7 +218,7 @@ export default function FiltroAnunciosPopover({
         </PopoverContent>
       </Popover>
 
-      {/* === BADGES DOS FILTROS AO LADO === */}
+      {/* === BADGES === */}
       <AnimatePresence>
         {(safeSelectedLoja.length > 0 ||
           safeSelectedBrands.length > 0 ||
@@ -195,10 +234,6 @@ export default function FiltroAnunciosPopover({
               (item) => (
                 <motion.div
                   key={item}
-                  initial={{ opacity: 0, y: -6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.25 }}
                   className="flex items-center gap-1 bg-white/10 border border-green-500/50 text-white px-2 py-[3px] rounded-md text-xs cursor-pointer hover:bg-green-600/20 transition"
                   onClick={() => {
                     setSelectedLoja(safeSelectedLoja.filter((l) => l !== item));
@@ -215,21 +250,13 @@ export default function FiltroAnunciosPopover({
               )
             )}
 
-            {/* Botão limpar tudo */}
-            <motion.div
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.25 }}
+            <Button
+              variant="ghost"
+              className="text-gray-300 hover:text-white text-xs px-2 py-[3px] rounded-lg cursor-pointer hover:scale-105"
+              onClick={limparTudo}
             >
-              <Button
-                variant="ghost"
-                className="text-gray-300 hover:text-white text-xs px-2 py-[3px] rounded-lg cursor-pointer hover:scale-105"
-                onClick={limparTudo}
-              >
-                Limpar tudo
-              </Button>
-            </motion.div>
+              Limpar tudo
+            </Button>
           </motion.div>
         )}
       </AnimatePresence>

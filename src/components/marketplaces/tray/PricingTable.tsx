@@ -1,187 +1,390 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useMemo, useState, useCallback, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/integrations/supabase/client";
+import { useTrayImportExport } from "@/components/marketplaces/hooks/useTrayImportExport";
 import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 import { Table, TableBody, TableHeader } from "@/components/ui/table";
 import { TableControls } from "@/components/announce/AnnounceTable/TableControls";
-import TopBar from "@/components/announce/AnnounceTable/TopBar";
-import ConfirmImportModal from "@/components/announce/AnnounceTable/ConfirmImportModal";
-import { usePrecificacao } from "@/hooks/usePrecificacao";
-import { useTrayImportExport } from "@/components/marketplaces/hooks/useTrayImportExport";
-import { supabase } from "@/integrations/supabase/client";
+import { FloatingEditor } from "./FloatingEditor";
+import TopBarLite from "@/components/marketplaces/tray/TopBar";
+import { TableRows } from "@/components/marketplaces/tray/TableRows";
+import { toBR, parseBR } from "@/components/marketplaces/hooks/helpers";
+import { calcPrecoVenda } from "@/components/marketplaces/hooks/calcPrecoVenda";
+import { Row } from "@/components/marketplaces/hooks/types";
+import { Check as CheckIcon, X as XIcon } from "lucide-react";
+import PricingMassEditionModal from "@/components/marketplaces/tray/PricingMassEditionModal";
+import PricingHeaderRow from "@/components/marketplaces/tray/PricingHeaderRow";
 
 export default function PricingTable() {
-  const [rows, setRows] = React.useState<any[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const router = useRouter();
+  const [rows, setRows] = useState<Row[]>([]);
+  const [filteredRows, setFilteredRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
+  const [totalItems, setTotalItems] = useState(0);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<any>(null);
+  const [openPricingModal, setOpenPricingModal] = useState(false);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [sortColumn, setSortColumn] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [isPending, startTransition] = useTransition();
   const impExp = useTrayImportExport(rows);
-  const { calculo, setCalculo } = usePrecificacao();
 
-  React.useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
+  // 🧩 Estados dos filtros
+  const [selectedLoja, setSelectedLoja] = useState<string[]>([]);
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
+  const [filterOpen, setFilterOpen] = useState(false);
 
-      // 🔹 1. Busca anúncios
-      const { data: anuncios, error: err1 } = await supabase
-        .from("anuncios_all")
-        .select("id, marca, id_tray, referencia");
+  // 🕒 debounce otimizado
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(timeout);
+  }, [search]);
 
-      // 🔹 2. Busca custos
-      const { data: custos, error: err2 } = await supabase
-        .from("custos")
-        .select("id_produto, custo_total");
+  // ---------- carregar dados ----------
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    const start = (currentPage - 1) * itemsPerPage;
+    const end = start + itemsPerPage - 1;
 
-      if (err1 || err2) {
-        console.error("Erro ao carregar dados:", err1 || err2);
-        setLoading(false);
-        return;
-      }
+    let query = supabase
+      .from("marketplace_tray_all")
+      .select(
+        `
+        ID, Loja, "ID Tray", "ID Var", Marca, Referência, Categoria,
+        Desconto, Embalagem, Frete, Comissão, Imposto, Marketing,
+        "Margem de Lucro", Custo, "Preço de Venda"
+      `,
+        { count: "exact" }
+      );
 
-      // 🔹 3. Merge (anúncio + custo)
-      const merged = (anuncios || []).map((a) => {
-        const custoItem = (custos || []).find((c) => c.id_produto === a.id);
-        return {
-          ...a,
-          custo_total: custoItem?.custo_total ?? 0,
+    // 🟢 aplica filtros de loja e marca
+    if (selectedLoja.length) {
+      const lojasDB = selectedLoja.map((l) =>
+        l.includes("Pikot") ? "PK" :
+        l.includes("Sóbaquetas") ? "SB" :
+        l
+      );
+      query = query.in("Loja", lojasDB);
+    }
+
+    if (selectedBrands.length) {
+      query = query.in("Marca", selectedBrands);
+    }
+
+    // 🟢 ordenação
+    if (sortColumn) {
+      query = query.order(sortColumn, {
+        ascending: sortDirection === "asc",
+        nullsFirst: true,
+      });
+    } else {
+      query = query.order("ID", { ascending: true });
+    }
+
+    const { data, error, count } = await query.range(start, end);
+
+    if (error) {
+      console.error("❌ Supabase load error:", error);
+      setLoading(false);
+      return;
+    }
+
+    // 🔄 normaliza valores
+    const normalized = (data || []).map((r) => ({
+      ...r,
+      Desconto: parseBR(r["Desconto"]),
+      Embalagem: parseBR(r["Embalagem"]),
+      Frete: parseBR(r["Frete"]),
+      Comissão: parseBR(r["Comissão"]),
+      Imposto: parseBR(r["Imposto"]),
+      Marketing: parseBR(r["Marketing"]),
+      "Margem de Lucro": parseBR(r["Margem de Lucro"]),
+      Custo: parseBR(r["Custo"]),
+      "Preço de Venda": parseBR(r["Preço de Venda"]),
+    }));
+
+    startTransition(() => {
+      setRows(normalized);
+      setFilteredRows(normalized);
+      setTotalItems(count || 0);
+      setLoading(false);
+    });
+  }, [currentPage, itemsPerPage, sortColumn, sortDirection, selectedLoja, selectedBrands]);
+
+  // 🟢 recarrega ao mudar filtros
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // ---------- ordenação ----------
+  const handleSort = (col: string) => {
+    if (sortColumn === col) {
+      setSortDirection((p) => (p === "asc" ? "desc" : "asc"));
+    } else {
+      setSortColumn(col);
+      setSortDirection("asc");
+    }
+  };
+
+  // ---------- busca + filtro combinado ----------
+  useEffect(() => {
+    if (!rows.length) return;
+
+    const termo = debouncedSearch.toLowerCase().trim();
+    const isNumeric = /^\d+$/.test(termo);
+
+    const normalize = (val: any) =>
+      val
+        ? String(val)
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase()
+        : "";
+
+    startTransition(() => {
+      const filtrados = rows.filter((r) => {
+        const lojaNome =
+          r.Loja === "PK" ? "Pikot Shop" : r.Loja === "SB" ? "Sóbaquetas" : r.Loja;
+
+        const lojaOk =
+          selectedLoja.length === 0 || selectedLoja.includes(lojaNome);
+
+        const marcaOk =
+          selectedBrands.length === 0 || selectedBrands.includes(r.Marca);
+
+        const campos = {
+          id: normalize(r.ID),
+          idTray: normalize(r["ID Tray"]),
+          idVar: normalize(r["ID Var"]),
+          referencia: normalize(r.Referência),
+          marca: normalize(r.Marca),
+          categoria: normalize(r.Categoria),
+          loja: normalize(lojaNome),
         };
+
+        if (isNumeric) {
+          return (
+            lojaOk &&
+            marcaOk &&
+            (campos.id.includes(termo) ||
+              campos.idTray.includes(termo) ||
+              campos.idVar.includes(termo))
+          );
+        }
+
+        const searchOk =
+          termo === "" || Object.values(campos).some((campo) => campo.includes(termo));
+
+        return lojaOk && marcaOk && searchOk;
       });
 
-      setRows(merged);
-      setLoading(false);
-    };
+      setFilteredRows(filtrados);
+    });
+  }, [debouncedSearch, rows, selectedLoja, selectedBrands]);
 
-    loadData();
+  // ---------- copiar ----------
+  const handleCopy = useCallback((text: string, uniqueKey: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedId(uniqueKey);
+    setTimeout(() => setCopiedId(null), 1200);
   }, []);
 
+  // ---------- edição ----------
+  const openEditor = useCallback(
+    (row: Row, field: keyof Row, isMoney: boolean, e: React.MouseEvent) => {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const val = row[field] ?? 0;
+      const str = toBR(Number(val));
+      setEditing({
+        id: row.ID,
+        loja: row.Loja,
+        field,
+        value: str,
+        isMoney,
+        anchorRect: rect,
+      });
+    },
+    []
+  );
+
+  const confirmEdit = useCallback(async () => {
+    if (!editing) return;
+    const { id, loja, field, value } = editing;
+    const newVal = parseBR(value);
+
+    const updatedRows = rows.map((r) => {
+      if (r.ID === id && r.Loja === loja) {
+        const updated: Row = { ...r, [field]: newVal };
+        updated["Preço de Venda"] = calcPrecoVenda(updated);
+        return updated;
+      }
+      return r;
+    });
+
+    setRows(updatedRows);
+
+    const base = updatedRows.find((r) => r.ID === id && r.Loja === loja);
+    const precoNovo = base ? base["Preço de Venda"] : 0;
+
+    const { error } = await supabase
+      .from("marketplace_tray_all")
+      .update({ [String(field)]: newVal, "Preço de Venda": precoNovo })
+      .eq("ID", id)
+      .eq("Loja", loja);
+
+    if (error) console.error("❌ Erro ao salvar:", error);
+    setEditing(null);
+  }, [editing, rows]);
+
+  const cancelEdit = () => setEditing(null);
+
+  // ---------- importação pricing ----------
+  const handlePricingImport = async (data: any[]) => {
+    for (const row of data) {
+      const {
+        ID,
+        Desconto,
+        Embalagem,
+        Frete,
+        Comissão,
+        Imposto,
+        Marketing,
+        Custo,
+        "Preço de Venda": PrecoVenda,
+      } = row;
+
+      await supabase
+        .from("marketplace_tray_all")
+        .update({
+          Desconto: Desconto ?? null,
+          Embalagem: Embalagem ?? null,
+          Frete: Frete ?? null,
+          Comissão: Comissão ?? null,
+          Imposto: Imposto ?? null,
+          Marketing: Marketing ?? null,
+          Custo: Custo ?? null,
+          "Preço de Venda": PrecoVenda ?? null,
+        })
+        .eq("ID", ID);
+    }
+
+    setOpenPricingModal(false);
+    loadData(); // recarrega sem reload
+  };
+
+  // ---------- render ----------
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
+      <div className="mx-auto space-y-6 w-full">
         <GlassmorphicCard>
-          {/* 🔝 Barra superior (reutilizada) */}
-          <TopBar
-            search={""}
-            setSearch={() => {}}
+          <TopBarLite
+            search={search}
+            setSearch={setSearch}
+            onExport={() => impExp.handleExport(rows)}
+            onMassEditOpen={() => setOpenPricingModal(true)}
             allBrands={[]}
             allLojas={[]}
             allCategorias={[]}
-            selectedBrands={[]}
-            selectedLoja={null}
-            selectedCategoria={null}
-            setSelectedBrands={() => {}}
-            setSelectedLoja={() => {}}
+            selectedBrands={selectedBrands}
+            setSelectedBrands={setSelectedBrands}
+            selectedLoja={selectedLoja}
+            setSelectedLoja={setSelectedLoja}
+            selectedCategoria={[]}
             setSelectedCategoria={() => {}}
-            filterOpen={false}
-            setFilterOpen={() => {}}
-            fileInputRef={impExp.fileInputRef}
-            onFileSelect={impExp.handleFileSelect}
-            onExport={() => impExp.handleExport(rows)}
+            filterOpen={filterOpen}
+            setFilterOpen={setFilterOpen}
             selectedCount={0}
             onDeleteSelected={() => {}}
             onClearSelection={() => {}}
-            onMassEditOpen={() => {}}
-            onNew={() => {}}
           />
 
-          {/* 📋 Tabela */}
-          <Table>
-            <TableHeader>
-              <tr className="text-neutral-400 text-sm">
-                <th className="px-3 py-2 text-left">ID</th>
-                <th className="px-3 py-2 text-left">ID Tray</th>
-                <th className="px-3 py-2 text-left">Marca</th>
-                <th className="px-3 py-2 text-left">Referência</th>
-                <th className="px-3 py-2 text-left">Desconto (%)</th>
-                <th className="px-3 py-2 text-left">Frete (R$)</th>
-                <th className="px-3 py-2 text-left">Comissão (%)</th>
-                <th className="px-3 py-2 text-left">Imposto (%)</th>
-                <th className="px-3 py-2 text-left">Marketing (%)</th>
-                <th className="px-3 py-2 text-left">Custo (R$)</th>
-                <th className="px-3 py-2 text-left">Preço de Venda (R$)</th>
-              </tr>
-            </TableHeader>
+          <div className="w-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-700 scrollbar-track-transparent">
+            <Table>
+              <TableHeader>
+                <PricingHeaderRow
+                  sortColumn={sortColumn}
+                  sortDirection={sortDirection}
+                  onSort={handleSort}
+                />
+              </TableHeader>
 
-            <TableBody>
-              {loading ? (
-                <tr>
-                  <td colSpan={11} className="text-center text-neutral-500 py-6">
-                    Carregando dados...
-                  </td>
-                </tr>
-              ) : (
-                rows.map((row) => {
-                  const custo = Number(row.custo_total ?? 0);
-
-                  // 🔹 cálculo baseado no hook usePrecificacao
-                  const precoVendaCalc =
-                    custo > 0
-                      ? (custo + Number(calculo.frete || 0) + 2.5) /
-                        (1 -
-                          (Number(calculo.imposto || 0) / 100 +
-                            Number(calculo.margem || 0) / 100 +
-                            Number(calculo.comissao || 0) / 100 +
-                            Number(calculo.marketing || 0) / 100))
-                      : 0;
-
-                  return (
-                    <tr key={row.id} className="border-b border-white/10 hover:bg-white/5">
-                      <td className="px-3 py-2 text-white">{row.marca}</td>
-                      <td className="px-3 py-2 text-white">{row.id}</td>
-                      <td className="px-3 py-2 text-white">{row.id_tray}</td>
-                      <td className="px-3 py-2 text-white">{row.referencia}</td>
-
-                      {/* Campos editáveis */}
-                      {["desconto", "frete", "comissao", "imposto", "marketing"].map((campo) => (
-                        <td key={campo} className="px-3 py-2 text-white">
-                          <input
-                            type="number"
-                            value={(calculo as any)[campo] || ""}
-                            onChange={(e) =>
-                              setCalculo((prev) => ({
-                                ...prev,
-                                [campo]: e.target.value,
-                              }))
-                            }
-                            className="w-20 bg-transparent border border-white/10 rounded-md px-2 text-white text-sm"
-                          />
-                        </td>
-                      ))}
-
-                      {/* Custo */}
-                      <td className="px-3 py-2 text-white">
-                        {custo.toFixed(2)}
-                      </td>
-
-                      {/* Preço de venda */}
-                      <td className="px-3 py-2 text-[#4ade80] font-semibold">
-                        {precoVendaCalc.toFixed(2)}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
+              <TableBody>
+                <TableRows
+                  rows={filteredRows}
+                  loading={loading}
+                  copiedId={copiedId}
+                  editedId={null}
+                  handleCopy={handleCopy}
+                  openEditor={openEditor}
+                  handleEditFull={() => {}}
+                />
+              </TableBody>
+            </Table>
+          </div>
         </GlassmorphicCard>
 
         <TableControls
-          currentPage={1}
-          totalPages={1}
-          itemsPerPage={rows.length}
-          totalItems={rows.length}
-          onPageChange={() => {}}
-          onItemsPerPageChange={() => {}}
+          currentPage={currentPage}
+          totalPages={Math.ceil(totalItems / itemsPerPage)}
+          itemsPerPage={itemsPerPage}
+          totalItems={totalItems}
+          onPageChange={setCurrentPage}
+          onItemsPerPageChange={setItemsPerPage}
           selectedCount={0}
         />
-      </div>
 
-      <ConfirmImportModal
-        open={impExp.openConfirmImport}
-        onOpenChange={impExp.setOpenConfirmImport}
-        count={impExp.importCount}
-        onConfirm={impExp.confirmImport}
-        loading={impExp.importing}
-        preview={impExp.previewRows}
-        warnings={impExp.warnings}
-      />
+        <PricingMassEditionModal
+          open={openPricingModal}
+          onOpenChange={setOpenPricingModal}
+          onImportComplete={handlePricingImport}
+        />
+
+        {editing && (
+          <FloatingEditor anchorRect={editing.anchorRect} onClose={cancelEdit}>
+            <div className="relative flex items-center rounded-md border border-neutral-700 bg-black/30 px-2 py-1.5">
+              <span className="text-xs px-1 py-0.5 rounded bg-black/60 border border-neutral-700 mr-1">
+                {editing.isMoney ? "R$" : "%"}
+              </span>
+              <input
+                autoFocus
+                inputMode="decimal"
+                className="flex-1 bg-transparent outline-none text-sm text-white pr-10"
+                value={editing.value}
+                onChange={(e) =>
+                  setEditing((p) => (p ? { ...p, value: e.target.value } : p))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") confirmEdit();
+                  if (e.key === "Escape") cancelEdit();
+                }}
+              />
+              <div className="absolute right-1 flex items-center gap-1">
+                <button
+                  title="Cancelar"
+                  onClick={cancelEdit}
+                  className="text-red-400 hover:text-red-300"
+                >
+                  <XIcon className="w-4 h-4" />
+                </button>
+                <button
+                  title="Confirmar"
+                  onClick={confirmEdit}
+                  className="text-green-400 hover:text-green-300"
+                >
+                  <CheckIcon className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </FloatingEditor>
+        )}
+      </div>
     </div>
   );
 }

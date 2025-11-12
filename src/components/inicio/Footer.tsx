@@ -57,7 +57,7 @@ const Footer = () => {
             <li>
               <button
                 onClick={() => handleRoute("/dashboard")}
-                className="text-gray-400 hover:text-white transition-colors cursor-pointer text-base sm:text-lg"
+                className="text-neutral-400 hover:text-white transition-colors cursor-pointer text-base sm:text-lg"
               >
                 Dashboard
               </button>
@@ -65,7 +65,7 @@ const Footer = () => {
             <li>
               <button
                 onClick={() => handleScrollTo("#precificacao")}
-                className="text-gray-400 hover:text-white transition-colors cursor-pointer text-base sm:text-lg"
+                className="text-neutral-400 hover:text-white transition-colors cursor-pointer text-base sm:text-lg"
               >
                 Precificação
               </button>
@@ -73,7 +73,7 @@ const Footer = () => {
             <li>
               <button
                 onClick={() => handleScrollTo("#sobre-nos")}
-                className="text-gray-400 hover:text-white transition-colors cursor-pointer text-base sm:text-lg"
+                className="text-neutral-400 hover:text-white transition-colors cursor-pointer text-base sm:text-lg"
               >
                 Sobre nós
               </button>
@@ -82,7 +82,7 @@ const Footer = () => {
         </div>
 
         {/* Copyright */}
-        <div className="mt-10 text-center text-gray-500 text-xs sm:text-sm">
+        <div className="mt-10 text-center text-neutral-500 text-xs sm:text-sm">
           © 2025 DLS Multimarcas. Todos os direitos reservados.
         </div>
       </div>

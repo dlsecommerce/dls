@@ -9,7 +9,7 @@ interface GlassmorphicCardProps extends HTMLMotionProps<"div"> {
 export function GlassmorphicCard({
   children,
   className = "",
-  ...props
+  ...props  
 }: GlassmorphicCardProps) {
   return (
     <motion.div
