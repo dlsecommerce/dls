@@ -588,15 +588,6 @@ export default function PricingCalculatorModern() {
                       handleSugestoesKeys(e, idx);
                       handleGridNav(e, idx, 0);
                     }}
-                    onBlur={() => {
-                      if (campoAtivo === idx && sugestoes.length > 0) {
-                        const s = sugestoes[0];
-                        confirmarSugestaoPrimeira(idx, s.codigo, s.custo);
-                        setSugestoes([]);
-                        setCampoAtivo(null);
-                        setIndiceSelecionado(-1);
-                      }
-                    }}
                     className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
                   />
                   {campoAtivo === idx && sugestoes.length > 0 && (
