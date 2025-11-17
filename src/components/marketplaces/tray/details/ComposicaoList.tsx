@@ -2,6 +2,7 @@
 
 import ComposicaoItem from "./ComposicaoItem";
 import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
 
 const ComposicaoList = ({
   composicao,
@@ -43,9 +44,10 @@ const ComposicaoList = ({
       <Button
         onClick={adicionarItem}
         variant="outline"
-        className="w-full border-white/10 text-white text-xs hover:bg-white/5 hover:border-[#1a8ceb]/50 rounded-xl transition-all mt-2"
+        className="w-full border-white/10 text-white text-xs hover:bg-white/5 hover:border-[#1a8ceb]/50 rounded-xl transition-all mt-2 flex items-center justify-center"
       >
-        + Incluir Custos
+        <Plus className="w-3 h-3 mr-2" />
+        Incluir Custos
       </Button>
     </div>
   );

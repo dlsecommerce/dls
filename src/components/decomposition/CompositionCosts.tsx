@@ -5,6 +5,15 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { formatBR } from "@/components/decomposition/Decomposition";
 
+/* ========== DEBOUNCE 10ms ========== */
+function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
+  let timer: ReturnType<typeof setTimeout>;
+  return (...args: Parameters<T>) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
+}
+
 export type Item = { codigo: string; quantidade: string; custo: string };
 
 const HelpTooltip = ({ text }: { text: string }) => (
@@ -33,7 +42,6 @@ type Props = {
   autoSelecionarPrimeiro: (idx: number) => Promise<void>;
   handleKeyDownCodigo: (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => void;
   handleKeyDownQuantidade: (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => void;
-  handleKeyDownCusto: (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => void;
   onBlurQuantidade: (idx: number) => void;
   onBlurCusto: (idx: number) => void;
   adicionarItem: () => void;
@@ -56,11 +64,19 @@ export default function ComposicaoCustos({
   autoSelecionarPrimeiro,
   handleKeyDownCodigo,
   handleKeyDownQuantidade,
-  handleKeyDownCusto,
   onBlurQuantidade,
   onBlurCusto,
   adicionarItem,
 }: Props) {
+  
+  /* ========== DEBOUNCED buscarSugestoes ========== */
+  const buscarSugestoesDebounced = React.useRef(
+    debounce((termo: string, idx: number) => buscarSugestoes(termo, idx), 10)
+  ).current;
+
+  /* ========== FLAG PARA EVITAR BUG NO TAB (ignore blur) ========== */
+  const ignoreBlur = React.useRef(false);
+
   const leftColScroll =
     composicao.length > 10
       ? "max-h-[360px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#1a8ceb]/30 scrollbar-track-transparent"
@@ -68,6 +84,45 @@ export default function ComposicaoCustos({
 
   const removerItem = (idx: number) => {
     setComposicao((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  /* ==========================================================
+     TAB NO CUSTO — cria nova linha APENAS se todos preenchidos
+     ========================================================== */
+  const handleKeyDownCusto = (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
+    if (e.key === "Tab" || e.key === "Enter") {
+      e.preventDefault();
+
+      const item = composicao[idx];
+
+      const codigoOK = item.codigo.trim().length > 0;
+      const quantidadeOK = item.quantidade.trim().length > 0;
+      const custoOK = item.custo.trim().length > 0;
+
+      const isLast = idx === composicao.length - 1;
+
+      // Bloqueia onBlur durante o TAB para evitar flick
+      ignoreBlur.current = true;
+
+      // Cria nova linha somente se todos os campos estiverem preenchidos
+      if (isLast && codigoOK && quantidadeOK && custoOK) {
+        setComposicao((prev) => [...prev, { codigo: "", quantidade: "", custo: "" }]);
+
+        setTimeout(() => {
+          ignoreBlur.current = false;
+          codeRefs.current[idx + 1]?.focus();
+        }, 0);
+        return;
+      }
+
+      // Caso contrário, só pula para o próximo código
+      setTimeout(() => {
+        ignoreBlur.current = false;
+        codeRefs.current[idx + 1]?.focus();
+      }, 0);
+
+      return;
+    }
   };
 
   return (
@@ -86,7 +141,7 @@ export default function ComposicaoCustos({
             key={idx}
             className="relative grid grid-cols-3 gap-2 mb-1 p-2 rounded-lg bg-black/30 border border-white/10"
           >
-            {/* Botão X (não aparece no primeiro) */}
+            {/* Botão remove */}
             {idx > 0 && (
               <button
                 onClick={() => removerItem(idx)}
@@ -107,10 +162,13 @@ export default function ComposicaoCustos({
                   const novo = [...composicao];
                   novo[idx].codigo = e.target.value;
                   setComposicao(novo);
-                  buscarSugestoes(e.target.value, idx);
+
+                  buscarSugestoesDebounced(e.target.value, idx);
                 }}
                 onKeyDown={(e) => handleKeyDownCodigo(e, idx)}
-                onBlur={() => autoSelecionarPrimeiro(idx)}
+                onBlur={() => {
+                  if (!ignoreBlur.current) autoSelecionarPrimeiro(idx);
+                }}
                 className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
               />
               {campoAtivo === idx && sugestoes.length > 0 && (
@@ -164,7 +222,9 @@ export default function ComposicaoCustos({
                   novo[idx].custo = e.target.value;
                   setComposicao(novo);
                 }}
-                onBlur={() => onBlurCusto(idx)}
+                onBlur={() => {
+                  if (!ignoreBlur.current) onBlurCusto(idx);
+                }}
                 onKeyDown={(e) => handleKeyDownCusto(e, idx)}
                 className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
               />
