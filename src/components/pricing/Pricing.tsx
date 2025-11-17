@@ -25,25 +25,18 @@ type Calculo = {
   frete: string;
   comissao: string;
   marketing: string;
+  embalagem?: string;
 };
 
 // =====================
 // Helpers de número
 // =====================
 
-// Normaliza string digitada para formato interno (padrão JS):
-// - remove separador de milhar (ponto) no padrão pt-BR
-// - troca vírgula decimal por ponto
 const toInternal = (v: string): string => {
   if (!v) return "";
-  // remove espaços
   let s = v.replace(/\s+/g, "");
-  // se houver tanto ponto quanto vírgula, assume pt-BR (ponto milhar, vírgula decimal)
-  if (s.includes(","))
-    s = s.replace(/\./g, "").replace(",", ".");
-  // mantém apenas digitos, ponto e sinal negativo
+  if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
   s = s.replace(/[^\d.-]/g, "");
-  // evita múltiplos pontos/sinais malucos
   const parts = s.split(".");
   if (parts.length > 2) {
     s = parts.shift()! + "." + parts.join("");
@@ -51,7 +44,6 @@ const toInternal = (v: string): string => {
   return s;
 };
 
-// Formata para exibição pt-BR (milhar com ponto e decimal com vírgula)
 const toDisplay = (v: string): string => {
   if (!v) return "";
   const num = Number(v);
@@ -61,6 +53,17 @@ const toDisplay = (v: string): string => {
     maximumFractionDigits: 2,
   });
 };
+
+// =====================
+// Debounce genérico
+// =====================
+function debounce<T extends (...args: any[]) => any>(fn: T, delay: number) {
+  let timer: ReturnType<typeof setTimeout>;
+  return (...args: Parameters<T>) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delay);
+  };
+}
 
 // =====================
 // Animação de número
@@ -104,7 +107,7 @@ export default function PricingCalculatorModern() {
     acrescimos,
     setAcrescimos,
     custoTotal,
-    statusAcrescimo, // mantido
+    statusAcrescimo,
     adicionarItem,
     removerItem,
   } = usePrecificacao();
@@ -116,6 +119,7 @@ export default function PricingCalculatorModern() {
     frete: "",
     comissao: "",
     marketing: "",
+    embalagem: "2.5",
   });
 
   const [calculoMarketplace, setCalculoMarketplace] = useState<Calculo>({
@@ -125,6 +129,7 @@ export default function PricingCalculatorModern() {
     frete: "",
     comissao: "",
     marketing: "",
+    embalagem: "2.5",
   });
 
   // =====================
@@ -136,13 +141,12 @@ export default function PricingCalculatorModern() {
   const listaRef = useRef<HTMLDivElement>(null);
 
   // Refs para navegação por teclado
-  const inputRefs = useRef<HTMLInputElement[][]>([]); // composicao[row][col]
-  const calcLojaRefs = useRef<HTMLInputElement[]>([]); // 6 campos
-  const calcMktRefs = useRef<HTMLInputElement[]>([]);  // 6 campos
-  const acrescimosRefs = useRef<HTMLInputElement[]>([]); // 3 campos
+  const inputRefs = useRef<HTMLInputElement[][]>([]);
+  const calcLojaRefs = useRef<HTMLInputElement[]>([]);
+  const calcMktRefs = useRef<HTMLInputElement[]>([]);
+  const acrescimosRefs = useRef<HTMLInputElement[]>([]);
 
-  // Controle de foco para formatação pt-BR: enquanto editando, mostramos o que o usuário digitou;
-  // ao sair (blur), aplicamos toDisplay; ao voltar ao foco, re-normalizamos.
+  // Controle de foco / formatação
   const [editingFields, setEditingFields] = useState<Set<string>>(new Set());
   const setEditing = (key: string, editing: boolean) => {
     setEditingFields((prev) => {
@@ -154,7 +158,7 @@ export default function PricingCalculatorModern() {
   };
   const isEditing = (key: string) => editingFields.has(key);
 
-  // Fecha sugestões ao clicar fora; se houver sugestões abertas, Tab/click fora confirma a 1ª
+  // Fecha sugestões ao clicar fora
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (campoAtivo === null) return;
@@ -165,7 +169,6 @@ export default function PricingCalculatorModern() {
       const clickNoInputAtivo = !!(inputEl && inputEl.contains(target));
       if (!clickDentroLista && !clickNoInputAtivo) {
         if (sugestoes.length > 0) {
-          // confirma a primeira
           const s = sugestoes[0];
           confirmarSugestaoPrimeira(campoAtivo, s.codigo, s.custo);
         }
@@ -179,7 +182,7 @@ export default function PricingCalculatorModern() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [campoAtivo, sugestoes]);
 
-  // rolagem automática do item selecionado
+  // Rolagem automática da sugestão selecionada
   useEffect(() => {
     if (listaRef.current && indiceSelecionado >= 0) {
       const el = listaRef.current.children[indiceSelecionado] as HTMLElement;
@@ -187,7 +190,7 @@ export default function PricingCalculatorModern() {
     }
   }, [indiceSelecionado]);
 
-  // Busca Supabase (sem autopreencher). Preenche apenas quando aceitar.
+  // Busca Supabase
   const buscarSugestoes = async (termo: string, idx: number) => {
     if (!termo.trim()) {
       setSugestoes([]);
@@ -211,8 +214,11 @@ export default function PricingCalculatorModern() {
         custo: Number(d["Custo Atual"]) || 0,
       })) || []
     );
-    setIndiceSelecionado(0); // deixa a 1ª destacada por padrão
+    setIndiceSelecionado(0);
   };
+
+  // Debounce 10ms
+  const buscarSugestoesDebounced = useRef(debounce(buscarSugestoes, 10)).current;
 
   const confirmarSugestaoPrimeira = (idx: number, codigo: string, custo: number) => {
     const novo = [...composicao];
@@ -221,7 +227,6 @@ export default function PricingCalculatorModern() {
     setComposicao(novo);
   };
 
-  // Seleção manual (clique ou Enter na selecionada)
   const selecionarSugestao = (codigo: string, custo: number, idx: number) => {
     confirmarSugestaoPrimeira(idx, codigo, custo);
     setSugestoes([]);
@@ -232,44 +237,49 @@ export default function PricingCalculatorModern() {
     }, 50);
   };
 
-  // Teclas dentro do campo de código (quando lista aberta)
-  const handleSugestoesKeys = (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
+  const handleSugestoesKeys = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    idx: number
+  ) => {
     if (!sugestoes.length) return;
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setIndiceSelecionado((prev) => (prev < sugestoes.length - 1 ? prev + 1 : 0));
+      setIndiceSelecionado((prev) =>
+        prev < sugestoes.length - 1 ? prev + 1 : 0
+      );
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setIndiceSelecionado((prev) => (prev > 0 ? prev - 1 : sugestoes.length - 1));
+      setIndiceSelecionado((prev) =>
+        prev > 0 ? prev - 1 : sugestoes.length - 1
+      );
     } else if (e.key === "Enter") {
       e.preventDefault();
       const i = indiceSelecionado >= 0 ? indiceSelecionado : 0;
       const s = sugestoes[i];
       selecionarSugestao(s.codigo, s.custo, idx);
     } else if (e.key === "Tab") {
-      // confirma a primeira ao tab
-      const s = sugestoes[0];
+      e.preventDefault();
+      const i = indiceSelecionado >= 0 ? indiceSelecionado : 0;
+      const s = sugestoes[i];
       confirmarSugestaoPrimeira(idx, s.codigo, s.custo);
       setSugestoes([]);
       setCampoAtivo(null);
       setIndiceSelecionado(-1);
     } else if (e.key === "Escape") {
       e.preventDefault();
-      // fecha sem preencher
       setSugestoes([]);
       setCampoAtivo(null);
       setIndiceSelecionado(-1);
     }
   };
 
-  // Navegação entre inputs da composição (quando lista fechada)
   const handleGridNav = (
     e: React.KeyboardEvent<HTMLInputElement>,
     row: number,
     col: number
   ) => {
-    if (sugestoes.length && campoAtivo === row) return; // se a lista está aberta nesse row, não roubar setas/tab
+    if (sugestoes.length && campoAtivo === row) return;
     const totalRows = composicao.length;
     const goNext = () => {
       const nextRow = row + 1 < totalRows ? row + 1 : 0;
@@ -286,16 +296,9 @@ export default function PricingCalculatorModern() {
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       goPrev();
-    } else if (e.key === "Tab" && !e.shiftKey) {
-      // deixa o navegador decidir o próximo elemento naturalmente (ordem visual),
-      // mas evita conflito com lista
-      // aqui não previnimos o default
-    } else if (e.key === "Tab" && e.shiftKey) {
-      // idem para shift+tab
     }
   };
 
-  // Navegação linear nos blocos de cálculo e acréscimos
   const handleLinearNav = (
     e: React.KeyboardEvent<HTMLInputElement>,
     index: number,
@@ -315,7 +318,35 @@ export default function PricingCalculatorModern() {
   };
 
   // =====================
-  // Cálculos originais (intactos) — com embalagem somada no preço
+  // Embalagem sincronizada
+  // =====================
+  const handleEmbalagemChange = (raw: string) => {
+    const value = toInternal(raw);
+    setCalculoLoja((prev) => ({
+      ...prev,
+      embalagem: value,
+    }));
+    setCalculoMarketplace((prev) => ({
+      ...prev,
+      embalagem: value,
+    }));
+  };
+
+  const handleEmbalagemBlur = (raw: string) => {
+    const internal = toInternal(raw || "2.5");
+    const value = internal || "2.5";
+    setCalculoLoja((prev) => ({
+      ...prev,
+      embalagem: value,
+    }));
+    setCalculoMarketplace((prev) => ({
+      ...prev,
+      embalagem: value,
+    }));
+  };
+
+  // =====================
+  // Cálculo de preço
   // =====================
   const calcularPreco = (dados: Calculo) => {
     const custo = composicao.reduce(
@@ -331,12 +362,12 @@ export default function PricingCalculatorModern() {
     const comissao = (parseFloat(dados.comissao) || 0) / 100;
     const marketing = (parseFloat(dados.marketing) || 0) / 100;
     const frete = parseFloat(dados.frete) || 0;
+    const embalagem = parseFloat(dados.embalagem || "2.5") || 0;
 
     const custoLiquido = custo * (1 - desconto);
     const divisor = 1 - (imposto + margem + comissao + marketing);
 
-    // 🔹 SOMA DA EMBALAGEM AQUI (R$ 2,50) — NÃO altera custoTotal
-    const preco = divisor > 0 ? (custoLiquido + frete + 2.5) / divisor : 0;
+    const preco = divisor > 0 ? (custoLiquido + frete + embalagem) / divisor : 0;
 
     return isFinite(preco) ? preco : 0;
   };
@@ -354,7 +385,7 @@ export default function PricingCalculatorModern() {
   }, [precoLoja, precoMarketplace, calculoMarketplace.frete, setAcrescimos]);
 
   // =====================
-  // Limpar (com limite de 5 cliques)
+  // Limpar (com limite)
   // =====================
   const [isClearing, setIsClearing] = useState(false);
   const [clicks, setClicks] = useState(0);
@@ -373,6 +404,7 @@ export default function PricingCalculatorModern() {
           frete: "",
           comissao: "",
           marketing: "",
+          embalagem: "2.5",
         });
         setCalculoMarketplace({
           desconto: "",
@@ -381,6 +413,7 @@ export default function PricingCalculatorModern() {
           frete: "",
           comissao: "",
           marketing: "",
+          embalagem: "2.5",
         });
         setAcrescimos({
           precoTray: "",
@@ -405,7 +438,7 @@ export default function PricingCalculatorModern() {
   }, [clicks]);
 
   // =====================
-  // Download XLSX com estilo e nome custom
+  // Download XLSX
   // =====================
   const handleDownload = () => {
     const now = new Date();
@@ -419,7 +452,6 @@ export default function PricingCalculatorModern() {
       .padStart(2, "0")}m`;
     const fileName = `PRECIFICACAO_${dataFormatada}_${horaFormatada}.xlsx`;
 
-    // ABA 1: Composição
     const composicaoRows: (string | number)[][] = [
       ["Composição de Custos"],
       ["Gerado em", now.toLocaleString("pt-BR")],
@@ -433,7 +465,6 @@ export default function PricingCalculatorModern() {
     ];
     const composicaoSheet = XLSX.utils.aoa_to_sheet(composicaoRows);
 
-    // ABA 2: Resumo
     const resumoRows: (string | number)[][] = [
       ["Resumo de Precificação"],
       ["Gerado em", now.toLocaleString("pt-BR")],
@@ -450,7 +481,6 @@ export default function PricingCalculatorModern() {
     ];
     const resumoSheet = XLSX.utils.aoa_to_sheet(resumoRows);
 
-    // Estilo de cabeçalho
     const headerStyle = {
       fill: {
         type: "pattern",
@@ -482,19 +512,21 @@ export default function PricingCalculatorModern() {
       }
     };
 
-    // aplica cabeçalhos
-    applyHeaderStyle(composicaoSheet, 4, 3); // linha 4 = "Código ...", 3 cols
-    applyHeaderStyle(resumoSheet, 1, 1);     // título
-    // larguras
+    applyHeaderStyle(composicaoSheet, 4, 3);
+    applyHeaderStyle(resumoSheet, 1, 1);
+
     composicaoSheet["!cols"] = [{ wch: 24 }, { wch: 16 }, { wch: 16 }];
     resumoSheet["!cols"] = [{ wch: 28 }, { wch: 22 }];
 
-    // cria e baixa
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, composicaoSheet, "Composição");
     XLSX.utils.book_append_sheet(wb, resumoSheet, "Resumo");
 
-    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array", cellStyles: true });
+    const wbout = XLSX.write(wb, {
+      bookType: "xlsx",
+      type: "array",
+      cellStyles: true,
+    });
     const blob = new Blob([wbout], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
@@ -533,7 +565,7 @@ export default function PricingCalculatorModern() {
                 key={idx}
                 className="relative grid grid-cols-3 gap-2 mb-1 p-1.5 rounded-lg bg-black/30 border border-white/10"
               >
-                {/* Código com busca */}
+                {/* Código */}
                 <div className="relative">
                   <Label className="text-neutral-400 text-[10px] block mb-1">
                     Código
@@ -550,14 +582,13 @@ export default function PricingCalculatorModern() {
                       const novo = [...composicao];
                       novo[idx].codigo = e.target.value;
                       setComposicao(novo);
-                      buscarSugestoes(e.target.value, idx);
+                      buscarSugestoesDebounced(e.target.value, idx);
                     }}
                     onKeyDown={(e) => {
                       handleSugestoesKeys(e, idx);
                       handleGridNav(e, idx, 0);
                     }}
                     onBlur={() => {
-                      // blur confirma a primeira se houver lista aberta
                       if (campoAtivo === idx && sugestoes.length > 0) {
                         const s = sugestoes[0];
                         confirmarSugestaoPrimeira(idx, s.codigo, s.custo);
@@ -568,7 +599,6 @@ export default function PricingCalculatorModern() {
                     }}
                     className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
                   />
-                  {/* Sugestões */}
                   {campoAtivo === idx && sugestoes.length > 0 && (
                     <div
                       ref={listaRef}
@@ -606,11 +636,14 @@ export default function PricingCalculatorModern() {
                     }}
                     type="text"
                     placeholder="1"
-                    value={isEditing(`q-${idx}`) ? item.quantidade : toDisplay(item.quantidade)}
+                    value={
+                      isEditing(`q-${idx}`)
+                        ? item.quantidade
+                        : toDisplay(item.quantidade)
+                    }
                     onFocus={() => setEditing(`q-${idx}`, true)}
                     onBlur={(e) => {
                       setEditing(`q-${idx}`, false);
-                      // normaliza internamente
                       const novo = [...composicao];
                       novo[idx].quantidade = toInternal(e.target.value);
                       setComposicao(novo);
@@ -624,6 +657,7 @@ export default function PricingCalculatorModern() {
                     className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb]"
                   />
                 </div>
+
                 {/* Custo */}
                 <div>
                   <Label className="text-neutral-400 text-[10px] block mb-1">
@@ -636,7 +670,11 @@ export default function PricingCalculatorModern() {
                     }}
                     type="text"
                     placeholder="100"
-                    value={isEditing(`c-${idx}`) ? item.custo : toDisplay(item.custo)}
+                    value={
+                      isEditing(`c-${idx}`)
+                        ? item.custo
+                        : toDisplay(item.custo)
+                    }
                     onFocus={() => setEditing(`c-${idx}`, true)}
                     onBlur={(e) => {
                       setEditing(`c-${idx}`, false);
@@ -654,7 +692,6 @@ export default function PricingCalculatorModern() {
                   />
                 </div>
 
-                {/* ❌ Botão X com o MESMO estilo do CompositionSection */}
                 {idx >= 1 && (
                   <Button
                     onClick={() => removerItem(idx)}
@@ -682,7 +719,6 @@ export default function PricingCalculatorModern() {
             <Plus className="w-3 h-3 mr-2" /> Incluir Custos
           </Button>
 
-          {/* CUSTO TOTAL */}
           <div className="mt-3 p-3 bg-gradient-to-br from-[#1a8ceb]/20 to-[#1a8ceb]/5 rounded-xl border border-[#1a8ceb]/30">
             <div className="flex flex-col items-center justify-center">
               <span className="text-neutral-300 text-xs mb-1">Custo Total</span>
@@ -767,57 +803,71 @@ export default function PricingCalculatorModern() {
                     {bloco.nome}
                   </h4>
 
-                  {["desconto","frete","imposto","comissao","margem","marketing"].map((key, i) => (
-                    <div key={key} className="mb-1 w-full">
-                      <Label className="text-neutral-400 text-[10px] block">
-                        {key === "margem"
-                          ? "Margem de Lucro (%)"
-                          : key === "frete"
-                          ? "Frete (R$)"
-                          : key.charAt(0).toUpperCase() + key.slice(1) + " (%)"}
-                      </Label>
-                      <Input
-                        ref={(el) => (bloco.refs.current[i] = el!)}
-                        type="text"
-                        value={
-                          isEditing(`${blocoIndex}-${key}`)
-                            ? (bloco.state as any)[key]
-                            : toDisplay((bloco.state as any)[key])
-                        }
-                        onFocus={() => setEditing(`${blocoIndex}-${key}`, true)}
-                        onBlur={(e) => {
-                          setEditing(`${blocoIndex}-${key}`, false);
-                          bloco.set({
-                            ...bloco.state,
-                            [key]: toInternal(e.target.value),
-                          });
-                        }}
-                        onChange={(e) =>
-                          bloco.set({
-                            ...bloco.state,
-                            [key]: toInternal(e.target.value),
-                          })
-                        }
-                        onKeyDown={(e) => handleLinearNav(e, i, bloco.refs, 6)}
-                        className="bg-black/50 border border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
-                      />
+                  {["desconto", "frete", "imposto", "comissao", "margem", "marketing"].map(
+                    (key, i) => (
+                      <div key={key} className="mb-1 w-full">
+                        <Label className="text-neutral-400 text-[10px] block">
+                          {key === "margem"
+                            ? "Margem de Lucro (%)"
+                            : key === "frete"
+                            ? "Frete (R$)"
+                            : key.charAt(0).toUpperCase() + key.slice(1) + " (%)"}
+                        </Label>
+                        <Input
+                          ref={(el) => (bloco.refs.current[i] = el!)}
+                          type="text"
+                          value={
+                            isEditing(`${blocoIndex}-${key}`)
+                              ? (bloco.state as any)[key]
+                              : toDisplay((bloco.state as any)[key])
+                          }
+                          onFocus={() => setEditing(`${blocoIndex}-${key}`, true)}
+                          onBlur={(e) => {
+                            setEditing(`${blocoIndex}-${key}`, false);
+                            bloco.set({
+                              ...bloco.state,
+                              [key]: toInternal(e.target.value),
+                            });
+                          }}
+                          onChange={(e) =>
+                            bloco.set({
+                              ...bloco.state,
+                              [key]: toInternal(e.target.value),
+                            })
+                          }
+                          onKeyDown={(e) => handleLinearNav(e, i, bloco.refs, 6)}
+                          className="bg-black/50 border border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                        />
 
-                      {/* 🔹 Embalagem: campo fixo logo abaixo de Desconto */}
-                      {key === "desconto" && (
-                        <div className="mt-1">
-                          <Label className="text-neutral-400 text-[10px] block">
-                            Embalagem (R$)
-                          </Label>
-                          <Input
-                            type="text"
-                            value="2,50"
-                            readOnly
-                            className="bg-black/50 border border-white/10 text-white text-xs rounded-md opacity-70 cursor-not-allowed"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                        {/* Embalagem sincronizada logo abaixo do Desconto */}
+                        {key === "desconto" && (
+                          <div className="mt-1">
+                            <Label className="text-neutral-400 text-[10px] block">
+                              Embalagem (R$)
+                            </Label>
+                            <Input
+                              type="text"
+                              value={
+                                isEditing(`emb-${blocoIndex}`)
+                                  ? bloco.state.embalagem ?? ""
+                                  : toDisplay(bloco.state.embalagem ?? "2.5")
+                              }
+                              onFocus={() => setEditing(`emb-${blocoIndex}`, true)}
+                              onBlur={(e) => {
+                                setEditing(`emb-${blocoIndex}`, false);
+                                handleEmbalagemBlur(e.target.value);
+                              }}
+                              onChange={(e) => {
+                                handleEmbalagemChange(e.target.value);
+                              }}
+                              className="bg-black/50 border border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )
+                  )}
+
                   <div className="mt-1 text-center flex flex-col items-center justify-center py-1">
                     <span className="text-neutral-300 text-[10px]">
                       Preço de Venda
@@ -930,7 +980,6 @@ export default function PricingCalculatorModern() {
                   />
                 </div>
 
-                {/* ACRÉSCIMO (mesmo layout) */}
                 <div
                   className={`flex flex-col justify-center items-center text-[11px] mt-2 rounded-md p-3 transition-all duration-300 ${
                     acrescimos.acrescimo > 0
@@ -952,7 +1001,7 @@ export default function PricingCalculatorModern() {
                   >
                     <AnimatedNumber value={Number(acrescimos.acrescimo)} />%
                   </span>
-                  {/* statusAcrescimo mantido, sem exibir */}
+                  {/* statusAcrescimo mantido sem exibir */}
                 </div>
               </div>
             </div>

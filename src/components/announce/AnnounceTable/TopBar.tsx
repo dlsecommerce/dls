@@ -33,6 +33,7 @@ type TopBarProps = {
   onExport: () => void;
 
   selectedCount: number;
+  selectedRows: any[]; // ✅ adicionada
   onDeleteSelected: () => Promise<void> | void;
   onClearSelection: () => void;
   onMassEditOpen: () => void;
@@ -47,7 +48,8 @@ export default function TopBar(props: TopBarProps) {
   const handleConfirmDelete = async () => {
     try {
       setLoadingDelete(true);
-      await props.onDeleteSelected();
+      console.log("🔍 Itens selecionados:", props.selectedRows); // debug
+      await props.onDeleteSelected(); // ✅ agora usa os dados corretos
       setOpenDeleteModal(false);
     } catch (error) {
       console.error("Erro ao excluir anúncios:", error);
@@ -67,7 +69,7 @@ export default function TopBar(props: TopBarProps) {
             placeholder="Buscar por nome, marca, ID Bling, ID Tray, referência..."
             value={props.search}
             onChange={(e) => props.setSearch(e.target.value)}
-            className="pl-10 bg-white/5 border-neutral-700 text-white rounded-xl"
+            className="pl-10 bg-white/5 border-neutral-700 text-white rounded-xl focus-visible:ring-0 focus-visible:border-green-500"
           />
         </div>
 
@@ -157,8 +159,13 @@ export default function TopBar(props: TopBarProps) {
         open={openDeleteModal}
         onOpenChange={setOpenDeleteModal}
         count={props.selectedCount}
-        onConfirm={handleConfirmDelete}
-        loading={loadingDelete}
+        selectedRows={props.selectedRows.map((r) => ({
+          ID: String(r.id ?? r.ID ?? ""),
+          Loja: String(r.loja ?? r.Loja ?? ""),
+        }))} // ✅ envia os itens corretos
+        onAfterDelete={async () => {
+          await props.onDeleteSelected();
+        }}
       />
     </>
   );
