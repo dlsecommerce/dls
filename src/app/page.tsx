@@ -12,10 +12,6 @@ const HowItWorksSection = dynamic(() => import("@/components/inicio/HowItWorksSe
   loading: () => <LoadingBar />, 
 });
 
-const FeaturesSection = dynamic(() => import("@/components/inicio/FeaturesSection"), {
-  loading: () => <LoadingBar />,
-});
-
 const TeamSection = dynamic(() => import("@/components/inicio/TeamSection"), {
   loading: () => <LoadingBar />,
 });
@@ -32,7 +28,6 @@ export default function Page() {
 
       {/* As seções abaixo serão carregadas sob demanda */}
       <HowItWorksSection />
-      <FeaturesSection />
       <TeamSection />
       <AboutUsSection />
 

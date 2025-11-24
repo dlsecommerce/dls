@@ -117,6 +117,13 @@ export default function PricingCalculatorModern() {
     });
 
   // =====================
+  // FLAGS PARA EDIÇÃO MANUAL SHOPEE
+  // =====================
+  const [userEditedShopeeComissao, setUserEditedShopeeComissao] =
+    useState(false);
+  const [userEditedShopeeFrete, setUserEditedShopeeFrete] = useState(false);
+
+  // =====================
   // Sugestões Supabase
   // =====================
   const [sugestoes, setSugestoes] = useState<Sugestao[]>([]);
@@ -376,7 +383,8 @@ export default function PricingCalculatorModern() {
 
     const custoLiquido = custo * (1 - desconto);
     const divisor = 1 - (imposto + margem + comissao + marketing);
-    const preco = divisor > 0 ? (custoLiquido + frete + embalagem) / divisor : 0;
+    const preco =
+      divisor > 0 ? (custoLiquido + frete + embalagem) / divisor : 0;
     return isFinite(preco) ? preco : 0;
   };
 
@@ -386,28 +394,30 @@ export default function PricingCalculatorModern() {
   const precoMLPremium = calcularPreco(calculoMarketplacePremium);
 
   // =====================
-  // REGRA SHOPEE
+  // REGRA SHOPEE (500+/500-) EDITÁVEL
   // =====================
   useEffect(() => {
-    setCalculoShopee((prev) => {
-      const preco = precoShopee;
-      const desiredComissao = preco > 500 ? "0" : "20";
-      const desiredFrete = preco > 500 ? "100" : "0";
+    const desiredComissao = precoShopee > 500 ? "0" : "20";
+    const desiredFrete = precoShopee > 500 ? "100" : "0";
 
-      if (
-        prev.comissao === desiredComissao &&
-        (prev.frete === desiredFrete || (!prev.frete && desiredFrete === "0"))
-      ) {
+    setCalculoShopee((prev) => {
+      // se o usuário editou manualmente, respeita o valor
+      const newComissao = userEditedShopeeComissao
+        ? prev.comissao
+        : desiredComissao;
+      const newFrete = userEditedShopeeFrete ? prev.frete : desiredFrete;
+
+      if (newComissao === prev.comissao && newFrete === prev.frete) {
         return prev;
       }
 
       return {
         ...prev,
-        comissao: desiredComissao,
-        frete: desiredFrete,
+        comissao: newComissao,
+        frete: newFrete,
       };
     });
-  }, [precoShopee]);
+  }, [precoShopee, userEditedShopeeComissao, userEditedShopeeFrete]);
 
   // =============================
   // SINCRONIZAR PREÇOS PARA A SEÇÃO DE ACRÉSCIMOS
@@ -415,12 +425,9 @@ export default function PricingCalculatorModern() {
   useEffect(() => {
     setAcrescimos((prev) => ({
       ...prev,
-
-      // OPÇÃO 1 — nomes explícitos
       precoLoja: precoLoja.toFixed(2),
       precoMercadoLivreClassico: precoMLClassico.toFixed(2),
       precoMercadoLivrePremium: precoMLPremium.toFixed(2),
-
       freteMercadoLivreClassico: calculoMarketplaceClassico.frete || "0",
       freteMercadoLivrePremium: calculoMarketplacePremium.frete || "0",
     }));
@@ -495,6 +502,10 @@ export default function PricingCalculatorModern() {
           acrescimoClassico: 0,
           acrescimoPremium: 0,
         });
+
+        // resetar flags de edição manual da Shopee
+        setUserEditedShopeeComissao(false);
+        setUserEditedShopeeFrete(false);
 
         setTimeout(() => setIsClearing(false), 300);
       } else {
@@ -695,6 +706,10 @@ export default function PricingCalculatorModern() {
           clicks={clicks}
           statusAcrescimo={statusAcrescimo}
           syncDescontoFromLoja={syncDescontoFromLoja}
+          userEditedShopeeComissao={userEditedShopeeComissao}
+          setUserEditedShopeeComissao={setUserEditedShopeeComissao}
+          userEditedShopeeFrete={userEditedShopeeFrete}
+          setUserEditedShopeeFrete={setUserEditedShopeeFrete}
         />
       </div>
     </div>

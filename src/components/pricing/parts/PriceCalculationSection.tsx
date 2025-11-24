@@ -55,6 +55,12 @@ type PriceCalculationSectionProps = {
   statusAcrescimo: any;
 
   syncDescontoFromLoja: (descontoInternal: string) => void;
+
+  // NOVOS: controle de edição manual Shopee
+  userEditedShopeeComissao: boolean;
+  setUserEditedShopeeComissao: (v: boolean) => void;
+  userEditedShopeeFrete: boolean;
+  setUserEditedShopeeFrete: (v: boolean) => void;
 };
 
 export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = ({
@@ -92,6 +98,10 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
   clicks,
   statusAcrescimo,
   syncDescontoFromLoja,
+  userEditedShopeeComissao,
+  setUserEditedShopeeComissao,
+  userEditedShopeeFrete,
+  setUserEditedShopeeFrete,
 }) => {
   return (
     <motion.div
@@ -171,6 +181,34 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
             handleLinearNav={handleLinearNav}
             handleEmbalagemBlur={handleEmbalagemBlurShopee}
             handleEmbalagemChange={handleEmbalagemChangeShopee}
+            onFieldChange={(key, internalValue) => {
+              // marca edição manual para comissao/frete
+              if (key === "comissao") {
+                setUserEditedShopeeComissao(true);
+              }
+              if (key === "frete") {
+                setUserEditedShopeeFrete(true);
+              }
+
+              setCalculoShopee({
+                ...calculoShopee,
+                [key]: internalValue,
+              });
+            }}
+            onFieldBlur={(key, internalValue) => {
+              // se o usuário apagar o campo, volta para modo automático
+              if (key === "comissao" && !internalValue) {
+                setUserEditedShopeeComissao(false);
+              }
+              if (key === "frete" && !internalValue) {
+                setUserEditedShopeeFrete(false);
+              }
+
+              setCalculoShopee({
+                ...calculoShopee,
+                [key]: internalValue,
+              });
+            }}
           />
 
           {/* Preço Mercado Livre Clássico */}
