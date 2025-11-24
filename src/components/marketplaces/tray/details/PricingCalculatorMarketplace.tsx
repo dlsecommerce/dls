@@ -30,8 +30,8 @@ export default function PricingCalculatorMarketplace() {
     ?.trim();
 
   const loja =
-    lojaNormalizada === "PIKOTSHOP" ? "PK" :
-    lojaNormalizada === "SOBAQUETAS" ? "SB" :
+    lojaNormalizada === "Pikot Shop" ? "PK" :
+    lojaNormalizada === "Sóbaquetas" ? "SB" :
     lojaNormalizada || "";
 
   const {

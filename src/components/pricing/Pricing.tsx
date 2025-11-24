@@ -989,7 +989,7 @@ export default function PricingCalculatorModern() {
                         ? "text-red-400"
                         : "text-neutral-400"
                     }`}
-                  >
+                  > 
                     <AnimatedNumber value={Number(acrescimos.acrescimo)} />%
                   </span>
                   {/* statusAcrescimo mantido sem exibir */}

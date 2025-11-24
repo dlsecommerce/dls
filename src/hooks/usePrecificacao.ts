@@ -15,11 +15,16 @@ export function usePrecificacao() {
     marketing: "",
   });
 
+  // ✅ NOVO FORMATO (OPÇÃO 1)
   const [acrescimos, setAcrescimos] = useState({
-    precoTray: "",
-    precoMercadoLivre: "",
-    freteMercadoLivre: "",
-    acrescimo: 0,
+    precoLoja: "",
+    precoShopee: "",
+    precoMercadoLivreClassico: "",
+    precoMercadoLivrePremium: "",
+    freteMercadoLivreClassico: "",
+    freteMercadoLivrePremium: "",
+    acrescimoClassico: 0,
+    acrescimoPremium: 0,
   });
 
   const [alteracoes, setAlteracoes] = useState<
@@ -34,7 +39,7 @@ export function usePrecificacao() {
   >([]);
 
   // ==================================================
-  // 🔹 Função para parsear números (versão final segura)
+  // 🔹 Parser seguro
   // ==================================================
   const parseBR = (v: string | number | null | undefined): number => {
     if (v === null || v === undefined || v === "") return 0;
@@ -57,16 +62,16 @@ export function usePrecificacao() {
   };
 
   // ==================================================
-  // 💰 Cálculo de custo total (sem embalagem)
+  // 💰 Custo total
   // ==================================================
-  const EMBALAGEM_FIXA = 2.5; // 🔸 valor fixo da embalagem
+  const EMBALAGEM_FIXA = 2.5;
   const custoTotal = composicao.reduce(
     (sum, item) => sum + parseBR(item.custo) * parseBR(item.quantidade),
     0
   );
 
   // ==================================================
-  // 📊 Percentuais
+  // Fluxo antigo (mantido para compatibilidade)
   // ==================================================
   const desconto = parseBR(calculo.desconto) / 100;
   const imposto = parseBR(calculo.imposto) / 100;
@@ -75,43 +80,69 @@ export function usePrecificacao() {
   const marketing = parseBR(calculo.marketing) / 100;
   const frete = parseBR(calculo.frete);
 
-  // ==================================================
-  // 🧮 Cálculo principal (embalagem somada apenas no preço de venda)
-  // ==================================================
   const custoLiquido = custoTotal * (1 - desconto);
   const divisor = 1 - (imposto + lucro + comissao + marketing);
   const precoVenda =
     divisor > 0 ? (custoLiquido + frete + EMBALAGEM_FIXA) / divisor : 0;
 
   // ==================================================
-  // 📈 Cálculo de acréscimos
+  // 🟦 NOVO: CÁLCULO DE ACRÉSCIMO A1 (FUNCIONANDO)
   // ==================================================
   useEffect(() => {
-    const precoBase =
-      parseBR(acrescimos.precoTray) + parseBR(acrescimos.freteMercadoLivre);
-    const precoFinal = parseBR(acrescimos.precoMercadoLivre);
+    const precoLoja = parseBR(acrescimos.precoLoja);
 
-    if (precoBase > 0 && precoFinal > 0) {
-      const percentual = (precoFinal / precoBase - 1) * 100;
-      setAcrescimos((prev) => ({ ...prev, acrescimo: percentual }));
-    } else {
-      setAcrescimos((prev) => ({ ...prev, acrescimo: 0 }));
+    // =====================
+    // CLÁSSICO
+    // =====================
+    const precoClassico = parseBR(acrescimos.precoMercadoLivreClassico);
+    const freteClassico = parseBR(acrescimos.freteMercadoLivreClassico);
+
+    const baseClassico = precoLoja + freteClassico;
+
+    let acrescimoClassico = 0;
+    if (baseClassico > 0 && precoClassico > 0) {
+      acrescimoClassico = (precoClassico / baseClassico - 1) * 100;
     }
+
+    // =====================
+    // PREMIUM
+    // =====================
+    const precoPremium = parseBR(acrescimos.precoMercadoLivrePremium);
+    const fretePremium = parseBR(acrescimos.freteMercadoLivrePremium);
+
+    const basePremium = precoLoja + fretePremium;
+
+    let acrescimoPremium = 0;
+    if (basePremium > 0 && precoPremium > 0) {
+      acrescimoPremium = (precoPremium / basePremium - 1) * 100;
+    }
+
+    // Atualiza os valores calculados
+    setAcrescimos((prev) => ({
+      ...prev,
+      acrescimoClassico,
+      acrescimoPremium,
+    }));
   }, [
-    acrescimos.precoTray,
-    acrescimos.precoMercadoLivre,
-    acrescimos.freteMercadoLivre,
+    acrescimos.precoLoja,
+    acrescimos.precoMercadoLivreClassico,
+    acrescimos.precoMercadoLivrePremium,
+    acrescimos.freteMercadoLivreClassico,
+    acrescimos.freteMercadoLivrePremium,
   ]);
 
+  // ==================================================
+  // STATUS (baseado no Clássico)
+  // ==================================================
   const statusAcrescimo =
-    acrescimos.acrescimo > 0
+    acrescimos.acrescimoClassico > 0
       ? "Lucro"
-      : acrescimos.acrescimo < 0
+      : acrescimos.acrescimoClassico < 0
       ? "Prejuízo"
       : "Neutro";
 
   // ==================================================
-  // 🧱 Controle de composição
+  // COMPOSIÇÃO
   // ==================================================
   const adicionarItem = () => {
     setComposicao([...composicao, { codigo: "", quantidade: "", custo: "" }]);
@@ -150,9 +181,6 @@ export function usePrecificacao() {
     ]);
   };
 
-  // ==================================================
-  // 🔁 Retorno do hook
-  // ==================================================
   return {
     composicao,
     setComposicao,

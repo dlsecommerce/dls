@@ -35,6 +35,7 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
     altura: "",
     largura: "",
     comprimento: "",
+    embalagem: "",
   });
 
   const [calculoLoja, setCalculoLoja] = useState({
@@ -57,7 +58,7 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
   } = usePrecificacao();
 
   // ======================================================
-  // AUTOCOMPLETE
+  // AUTOCOMPLETE CUSTOS + DEBOUNCE 10ms
   // ======================================================
   const [sugestoes, setSugestoes] = useState<any[]>([]);
   const [campoAtivo, setCampoAtivo] = useState<number | null>(null);
@@ -66,48 +67,50 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
   const listaRef = useRef<HTMLDivElement | null>(null);
   const inputRefs = useRef<any[]>([]);
 
+  const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+
   const buscarSugestoes = async (termo: string, idx: number) => {
-    if (!termo.trim()) {
-      setSugestoes([]);
-      return;
-    }
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
-    const { data, error } = await supabase
-      .from("custos")
-      .select('"Código", "Custo Atual"')
-      .ilike('"Código"', `%${termo}%`)
-      .limit(5);
+    debounceTimer.current = setTimeout(async () => {
+      if (!termo.trim()) {
+        setSugestoes([]);
+        return;
+      }
 
-    if (error) {
-      console.error("Erro ao buscar sugestões:", error);
-      return;
-    }
+      const { data, error } = await supabase
+        .from("custos")
+        .select('"Código", "Custo Atual"')
+        .ilike('"Código"', `%${termo}%`)
+        .limit(5);
 
-    setCampoAtivo(idx);
-    setSugestoes(
-      data?.map((d) => ({
-        codigo: d["Código"],
-        custo: Number(d["Custo Atual"]) || 0,
-      })) || []
-    );
-    setIndiceSelecionado(0);
+      if (error) {
+        console.error("Erro ao buscar sugestões:", error);
+        return;
+      }
+
+      setCampoAtivo(idx);
+      setSugestoes(
+        data?.map((d) => ({
+          codigo: d["Código"],
+          custo: Number(d["Custo Atual"]) || 0,
+        })) || []
+      );
+      setIndiceSelecionado(0);
+    }, 10);
   };
 
-  // ======================================================
-  // 🔥 AJUSTE AQUI — selecionarSugestao COMPLETO
-  // ======================================================
   const selecionarSugestao = (codigo: string, custo: number, idx: number) => {
     const novo = [...composicao];
 
     novo[idx].codigo = codigo;
-    novo[idx].custo = custo.toFixed(2); // custo já vem correto do autocomplete
+    novo[idx].custo = custo.toFixed(2);
 
     setComposicao(novo);
 
     setSugestoes([]);
     setCampoAtivo(null);
 
-    // Foca no campo quantidade após selecionar
     setTimeout(() => {
       inputRefs.current[idx + 1]?.focus?.();
     }, 50);
@@ -140,7 +143,7 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
   };
 
   // ======================================================
-  // Buscar marketplace
+  // BUSCA marketplace_tray_all
   // ======================================================
   const buscarMarketplace = async (id: string) => {
     let { data } = await supabase
@@ -161,15 +164,29 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
   };
 
   // ======================================================
-  // Buscar anuncio_all
+  // BUSCA anuncios_all — CORRIGIDA COM ID + LOJA
   // ======================================================
-  const buscarAnuncioAll = async (base: any) => {
+  const buscarAnuncioAll = async (id: string, base: any, lojaParam: string) => {
+    const lojaNome = lojaParam === "SB" ? "Sóbaquetas" : "Pikot Shop";
+
+    // 1️⃣ Busca principal: ID + Loja
+    if (!isNaN(Number(id))) {
+      const { data: byIdLoja } = await supabase
+        .from("anuncios_all")
+        .select("*")
+        .eq("ID", Number(id))
+        .eq("Loja", lojaNome)
+        .maybeSingle();
+
+      if (byIdLoja) return byIdLoja;
+    }
+
+    // 2️⃣ Busca secundária sempre filtrando por Loja
     const tentativas = [
       ["ID Tray", base["ID Tray"]],
       ["ID Bling", base["ID Bling"]],
       ["ID Var", base["ID Var"]],
       ["Referência", base["Referência"]],
-      ["ID", base["ID"]],
     ];
 
     for (const [campo, valor] of tentativas) {
@@ -178,7 +195,9 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
           .from("anuncios_all")
           .select("*")
           .eq(campo, valor)
+          .eq("Loja", lojaNome)
           .maybeSingle();
+
         if (data) return data;
       }
     }
@@ -187,7 +206,7 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
   };
 
   // ======================================================
-  // Carregar tudo
+  // CARREGAR TUDO
   // ======================================================
   const carregar = useCallback(async () => {
     if (!id || !lojaParam) return;
@@ -200,9 +219,12 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
       return;
     }
 
-    const anuncioAll = await buscarAnuncioAll(base);
+    const anuncioAll = await buscarAnuncioAll(id, base, lojaParam);
 
-    let odFinal = anuncioAll?.["OD"] ?? "";
+    // ======================================================
+    // OD correto
+    // ======================================================
+    let odFinal = anuncioAll?.["OD"] ?? base["OD"] ?? "";
 
     if (!odFinal && anuncioAll) {
       for (let i = 1; i <= 10; i++) {
@@ -214,15 +236,18 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
       }
     }
 
+    // ======================================================
+    // PREENCHENDO PRODUTO
+    // ======================================================
     setProduto({
       id,
       loja: lojaParam === "SB" ? "Sóbaquetas" : "Pikot Shop",
       id_bling: base["ID Bling"] || "",
       id_tray: base["ID Tray"] || "",
-      id_var: anuncioAll?.["ID Var"] || base["ID Var"] || "",
+      id_var: anuncioAll?.["ID Var"] ?? base["ID Var"] ?? "",
       referencia: base["Referência"] || "",
       tipo_anuncio: detectarTipoAnuncio(base["Referência"]),
-      od: odFinal ?? "",
+      od: odFinal,
       nome: base["Nome"] ?? "",
       marca: base["Marca"] ?? "",
       categoria: base["Categoria"] ?? "",
@@ -230,8 +255,12 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
       altura: anuncioAll?.["Altura"] ?? "",
       largura: anuncioAll?.["Largura"] ?? "",
       comprimento: anuncioAll?.["Comprimento"] ?? "",
+      embalagem: base["Embalagem"] ?? "",
     });
 
+    // ======================================================
+    // CAMPOS DE CÁLCULO
+    // ======================================================
     setCalculoLoja({
       desconto: base["Desconto"] ?? "",
       imposto: base["Imposto"] ?? "",
@@ -242,30 +271,19 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
     });
 
     // ======================================================
-    // 🔥 MONTA A COMPOSIÇÃO USANDO anuncios_all
+    // COMPOSIÇÃO (AGORA FUNCIONA)
     // ======================================================
-
     const compArr: any[] = [];
 
     if (anuncioAll) {
       for (let i = 1; i <= 10; i++) {
-        const codigo =
-          anuncioAll[`Código ${i}`] ||
-          anuncioAll[`Codigo ${i}`] ||
-          anuncioAll[`Cód ${i}`] ||
-          anuncioAll[`Cod ${i}`];
-
-        const qtd =
-          anuncioAll[`Quantidade ${i}`] ||
-          anuncioAll[`Quant. ${i}`] ||
-          anuncioAll[`Qtd ${i}`] ||
-          anuncioAll[`Quant ${i}`] ||
-          1;
+        const codigo = anuncioAll[`Código ${i}`];
+        const qtd = anuncioAll[`Quantidade ${i}`];
 
         if (codigo) {
           compArr.push({
             codigo: codigo.toString(),
-            quantidade: qtd.toString(),
+            quantidade: (qtd ?? 1).toString(),
             custo: "0,00",
           });
         }
@@ -276,6 +294,7 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
       compArr.length ? compArr : [{ codigo: "", quantidade: "", custo: "" }]
     );
 
+    // Limpa cálculos antigos
     setAcrescimos((prev: any) => ({ ...prev, acrescimo: 0 }));
     setCalculo((prev: any) => ({ ...prev, custo: "0" }));
 
@@ -287,12 +306,14 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
   }, [carregar]);
 
   // ======================================================
-  // Salvar
+  // SALVAR
   // ======================================================
   const save = useCallback(async () => {
     if (!id || !lojaParam) return { error: null };
 
-    const tabela = lojaParam === "SB" ? "marketplace_tray_sb" : "marketplace_tray_pk";
+    const tabela = lojaParam === "SB"
+      ? "marketplace_tray_sb"
+      : "marketplace_tray_pk";
 
     setSaving(true);
 
@@ -313,6 +334,7 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
         Altura: produto.altura,
         Largura: produto.largura,
         Comprimento: produto.comprimento,
+        Embalagem: produto.embalagem,
         Desconto: calculoLoja.desconto,
         Imposto: calculoLoja.imposto,
         "Margem de Lucro": calculoLoja.margem,
@@ -352,8 +374,6 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
     adicionarItem,
     removerItem,
     save,
-
-    // 🔥 Autocomplete funcionando
     campoAtivo,
     sugestoes,
     indiceSelecionado,
