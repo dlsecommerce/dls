@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -39,14 +39,29 @@ export default function ModalNewCost({
   onSave,
 }: Props) {
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | null }>({
+  const [oldCodigo, setOldCodigo] = useState<string | null>(null);
+
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "error" | null;
+  }>({
     message: "",
     type: null,
   });
 
+  // Quando abrir no modo de edição → salvar o código antigo
+  useEffect(() => {
+    if (open && mode === "edit") {
+      setOldCodigo(form["Código"]);
+    }
+  }, [open, mode]);
+
   const handleSave = async () => {
     if (!form["Código"] || !form["Marca"]) {
-      setToast({ message: "Preencha Código e Marca antes de salvar.", type: "error" });
+      setToast({
+        message: "Preencha Código e Marca antes de salvar.",
+        type: "error",
+      });
       return;
     }
 
@@ -64,20 +79,29 @@ export default function ModalNewCost({
       let error = null;
 
       if (mode === "create") {
-        const { error: insertError } = await supabase.from("custos").insert([payload]);
+        const { error: insertError } = await supabase
+          .from("custos")
+          .insert([payload]);
         error = insertError;
       } else {
+        // Aqui está o ajuste crucial → usar o código antigo para o WHERE
+        const codigoParaBuscar = oldCodigo || form["Código"];
+
         const { error: updateError } = await supabase
           .from("custos")
           .update(payload)
-          .eq("Código", form["Código"]);
+          .eq("Código", codigoParaBuscar);
+
         error = updateError;
       }
 
       if (error) throw error;
 
       setToast({
-        message: mode === "create" ? "Custo incluído com sucesso." : "Custo atualizado com sucesso.",
+        message:
+          mode === "create"
+            ? "Custo incluído com sucesso."
+            : "Custo atualizado com sucesso.",
         type: "success",
       });
 
@@ -94,7 +118,7 @@ export default function ModalNewCost({
 
   return (
     <>
-      {/* Toast flutuante */}
+      {/* Toast */}
       {toast.type && (
         <div
           className={`fixed bottom-6 right-6 px-4 py-3 rounded-xl shadow-lg text-white text-sm transition-all duration-300 ${
@@ -118,7 +142,6 @@ export default function ModalNewCost({
                 {mode === "create" ? "Novo Custo" : "Editar Custo"}
               </DialogTitle>
 
-              {/* Tooltip simples */}
               <div className="relative group cursor-default">
                 <HelpCircle className="w-4 h-4 text-neutral-400 ml-1" />
                 <div
@@ -133,52 +156,65 @@ export default function ModalNewCost({
             </div>
           </DialogHeader>
 
-          {/* Campos */}
+          {/* Inputs */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
             <div>
               <Label className="text-neutral-300">Código</Label>
               <Input
                 value={form["Código"]}
-                onChange={(e) => setForm({ ...form, ["Código"]: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, ["Código"]: e.target.value })
+                }
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
                 placeholder="Ex: 5535"
-                disabled={mode === "edit"}
               />
             </div>
+
             <div>
               <Label className="text-neutral-300">Marca</Label>
               <Input
                 value={form["Marca"]}
-                onChange={(e) => setForm({ ...form, ["Marca"]: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, ["Marca"]: e.target.value })
+                }
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
                 placeholder="Ex: Liverpool"
               />
             </div>
+
             <div>
               <Label className="text-neutral-300">Custo Atual</Label>
               <Input
                 type="text"
                 value={String(form["Custo Atual"] || "")}
-                onChange={(e) => setForm({ ...form, ["Custo Atual"]: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, ["Custo Atual"]: e.target.value })
+                }
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
                 placeholder="Ex: 89.90"
               />
             </div>
+
             <div>
               <Label className="text-neutral-300">Custo Antigo</Label>
               <Input
                 type="text"
                 value={String(form["Custo Antigo"] || "")}
-                onChange={(e) => setForm({ ...form, ["Custo Antigo"]: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, ["Custo Antigo"]: e.target.value })
+                }
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
                 placeholder="Ex: 79.90"
               />
             </div>
+
             <div className="md:col-span-2">
               <Label className="text-neutral-300">NCM</Label>
               <Input
                 value={form["NCM"]}
-                onChange={(e) => setForm({ ...form, ["NCM"]: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, ["NCM"]: e.target.value })
+                }
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
                 placeholder="Ex: 85182100"
               />
