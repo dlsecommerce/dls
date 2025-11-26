@@ -6,7 +6,10 @@ type ImportResult = {
   warnings: string[];
 };
 
-export async function importFromXlsxOrCsv(file: File, previewOnly = false): Promise<ImportResult> {
+export async function importFromXlsxOrCsv(
+  file: File,
+  previewOnly = false
+): Promise<ImportResult> {
   const requiredColumns = ["Código", "Marca", "Custo Atual", "Custo Antigo", "NCM"];
   const warnings: string[] = [];
 
@@ -24,6 +27,22 @@ export async function importFromXlsxOrCsv(file: File, previewOnly = false): Prom
     warnings.push(`As seguintes colunas estão ausentes: ${missing.join(", ")}.`);
   }
 
+  // Função completa de conversão numérica (aceita 12,61 / 1.000 / 1.000,50 / 10000 / etc)
+  const toNumber = (value: any): number => {
+    if (value === undefined || value === null || value === "") return 0;
+
+    let raw = String(value).trim();
+
+    // remove pontos de milhar (ex.: 1.234,56 → 1234,56)
+    raw = raw.replace(/\./g, "");
+
+    // troca vírgula por ponto para parseFloat funcionar corretamente
+    raw = raw.replace(",", ".");
+
+    const n = parseFloat(raw);
+    return isNaN(n) ? 0 : n;
+  };
+
   const normalized = json
     .map((row) => {
       const findKey = (keys: string[]) => {
@@ -39,14 +58,16 @@ export async function importFromXlsxOrCsv(file: File, previewOnly = false): Prom
       return {
         "Código": String(codigo).trim(),
         "Marca": findKey(["Marca", "marca", "brand"]) || null,
-        "Custo Atual": parseFloat(findKey(["Custo Atual", "custo atual"])) || 0,
-        "Custo Antigo": parseFloat(findKey(["Custo Antigo", "custo antigo"])) || 0,
+        "Custo Atual": toNumber(findKey(["Custo Atual", "custo atual"])),
+        "Custo Antigo": toNumber(findKey(["Custo Antigo", "custo antigo"])),
         "NCM": findKey(["NCM", "ncm"]) || null,
       };
     })
     .filter((r) => r !== null);
 
-  if (previewOnly) return { data: normalized, warnings };
+  if (previewOnly) {
+    return { data: normalized, warnings };
+  }
 
   const { error } = await supabase.from("custos").insert(normalized, { upsert: true });
   if (error) throw error;

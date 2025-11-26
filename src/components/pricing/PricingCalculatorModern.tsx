@@ -171,7 +171,8 @@ export default function PricingCalculatorModern() {
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    return () =>
+      document.removeEventListener("mousedown", handleClickOutside);
   }, [campoAtivo, sugestoes]);
 
   // Rolagem automática
@@ -182,25 +183,74 @@ export default function PricingCalculatorModern() {
     }
   }, [indiceSelecionado]);
 
+  // ============================================================
+  // 🔥 BUSCA REFINADA (EXATO → COMEÇA COM → CONTÉM)
+  // ============================================================
+
+  let ultimaBusca = "";
+
   const buscarSugestoes = async (termo: string, idx: number) => {
-    if (!termo.trim()) {
+    const raw = termo.trim();
+    ultimaBusca = raw;
+    if (!raw) {
       setSugestoes([]);
       return;
     }
-    const { data, error } = await supabase
+
+    // 1 — EXATA
+    const exact = await supabase
       .from("custos")
       .select('"Código", "Custo Atual"')
-      .ilike('"Código"', `%${termo}%`)
+      .eq('"Código"', raw)
       .limit(5);
 
-    if (error) {
-      console.error("Erro ao buscar sugestões:", error);
+    if (ultimaBusca !== raw) return;
+
+    if (exact.data && exact.data.length > 0) {
+      setCampoAtivo(idx);
+      setSugestoes(
+        exact.data.map((d) => ({
+          codigo: d["Código"],
+          custo: Number(d["Custo Atual"]) || 0,
+        }))
+      );
+      setIndiceSelecionado(0);
       return;
     }
 
+    // 2 — COMEÇA COM
+    const starts = await supabase
+      .from("custos")
+      .select('"Código", "Custo Atual"')
+      .ilike('"Código"', `${raw}%`)
+      .limit(5);
+
+    if (ultimaBusca !== raw) return;  
+
+    if (starts.data && starts.data.length > 0) {
+      setCampoAtivo(idx);
+      setSugestoes(
+        starts.data.map((d) => ({
+          codigo: d["Código"],
+          custo: Number(d["Custo Atual"]) || 0,
+        }))
+      );
+      setIndiceSelecionado(0);
+      return;
+    }
+
+    // 3 — CONTÉM (fallback)
+    const partial = await supabase
+      .from("custos")
+      .select('"Código", "Custo Atual"')
+      .ilike('"Código"', `%${raw}%`)
+      .limit(5);
+      
+    if (ultimaBusca !== raw) return;    
+
     setCampoAtivo(idx);
     setSugestoes(
-      data?.map((d) => ({
+      partial.data?.map((d) => ({
         codigo: d["Código"],
         custo: Number(d["Custo Atual"]) || 0,
       })) || []
@@ -294,7 +344,6 @@ export default function PricingCalculatorModern() {
       goPrev();
     }
   };
-
   const handleLinearNav = (
     e: React.KeyboardEvent<HTMLInputElement>,
     index: number,
@@ -401,7 +450,6 @@ export default function PricingCalculatorModern() {
     const desiredFrete = precoShopee > 500 ? "100" : "0";
 
     setCalculoShopee((prev) => {
-      // se o usuário editou manualmente, respeita o valor
       const newComissao = userEditedShopeeComissao
         ? prev.comissao
         : desiredComissao;
@@ -503,7 +551,6 @@ export default function PricingCalculatorModern() {
           acrescimoPremium: 0,
         });
 
-        // resetar flags de edição manual da Shopee
         setUserEditedShopeeComissao(false);
         setUserEditedShopeeFrete(false);
 
