@@ -5,7 +5,7 @@
   "identifier": "com.dlsecommerce",
 
   "build": {
-    "frontendDist": "https://dlsecommerce.vercel.app",
+    "frontendDist": "../.next",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },
@@ -38,8 +38,6 @@
     "category": "Productivity",
     "shortDescription": "Aplicativo Desktop Oficial do DLS Ecommerce",
     "longDescription": "Aplicativo oficial do DLS Ecommerce para desktop.",
-    "identifier": "com.dlsecommerce",
-    "copyright": "",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
