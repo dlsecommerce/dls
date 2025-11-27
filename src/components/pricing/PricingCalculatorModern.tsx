@@ -259,7 +259,7 @@ export default function PricingCalculatorModern() {
   };
 
   const buscarSugestoesDebounced = useRef(
-    debounce(buscarSugestoes, 10)
+    debounce(buscarSugestoes, 120)
   ).current;
 
   const confirmarSugestaoPrimeira = (

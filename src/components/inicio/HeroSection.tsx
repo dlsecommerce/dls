@@ -22,7 +22,7 @@ const HeroSection = () => {
 
   // Função de download usando o link fornecido
   const handleDownload = () => {
-    const link = "https://github.com/dlsecommerce/dls/releases/download/v0.1.0/DLS.Ecommerce_0.1.0_x64-setup.exe";
+    const link = "https://github.com/dlsecommerce/dls/releases/latest";
     window.open(link, "_blank");
   };
 

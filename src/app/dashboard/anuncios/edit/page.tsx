@@ -1,7 +1,14 @@
 "use client";
-import React from "react";
+
+import React, { Suspense } from "react";
 import DetalhesProduto from "@/components/announce/ProductDetails/ProductDetails";
 
+export const dynamic = "force-dynamic";
+
 export default function EditPage() {
-  return <DetalhesProduto />;
+  return (
+    <Suspense fallback={null}>
+      <DetalhesProduto />
+    </Suspense>
+  );
 }

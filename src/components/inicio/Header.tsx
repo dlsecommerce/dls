@@ -199,7 +199,7 @@ const Header = () => {
                     setOpen(false);
                     handleRoute("/cadastro");
                   }}
-                  className="px-5 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition flex items-center justify-center cursor-pointer text-sm"
+                  className="px-5 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition flex items-center justify-center cursor-pointer text-sm"  
                 >
                   Criar conta
                   <ArrowUpRight size={16} className="ml-2" />

@@ -1,18 +1,17 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "DLS Ecommerce",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.dlsecommerce",
 
   "build": {
-    "frontendDist": "../out",
-    "beforeDevCommand": "next dev -p 3000",
+    "frontendDist": "https://dlsecommerce.vercel.app",
+    "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },
 
   "app": {
     "withGlobalTauri": true,
-
     "windows": [
       {
         "label": "main",
@@ -28,7 +27,6 @@
         "backgroundColor": "#090909"
       }
     ],
-
     "security": {
       "csp": null
     }
@@ -36,44 +34,32 @@
 
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": "nsis",
     "category": "Productivity",
-    "copyright": "© 2025 DLS Multimarcas. Todos os direitos reservados.",
     "shortDescription": "Aplicativo Desktop Oficial do DLS Ecommerce",
     "longDescription": "Aplicativo oficial do DLS Ecommerce para desktop.",
-
-    "windows": {
-      "wix": {
-        "language": "pt-BR"
-      },
-      "nsis": {
-        "displayLanguageSelector": false,
-        "installerIcon": "icons/icon.ico",
-        "installMode": "perMachine"
-      }
-    },
-
-    "linux": {},
-    "macOS": {
-      "entitlements": null,
-      "exceptionDomain": null,
-      "signingIdentity": null
-    },
-
+    "identifier": "com.dlsecommerce",
+    "copyright": "",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installMode": "perMachine"
+      }
+    }
   },
 
   "plugins": {
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/dlsecommerce/dls/releases/download/v0.1.0/DLS.Ecommerce_0.1.0_x64-setup.exe"
+        "https://github.com/dlsecommerce/dls/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJFMjE0ODk0QTIwN0Q5OEUKUldTTzJRZWlsRWdoTHRqeG1oRG9DalFHanJxTHBtWXQ4aFB6RXh4VlFBTkJ3VkRsQkxQcUN5aWoK"
     }

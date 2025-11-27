@@ -4,12 +4,10 @@ import { Providers } from "./providers";
 import "./globals.css";
 import { ClientWrapper } from "@/components/client/ClientWrapper";
 
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
-import type { Database } from "@/integrations/supabase/types";
+// 🔹 Provider do Supabase (client-side)
 import SupabaseProvider from "@/components/provider/SupabaseProvider";
 
-// 🔹 Importa o ThemeProvider do next-themes
+// 🔹 ThemeProvider do next-themes
 import { ThemeProvider } from "next-themes";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
@@ -45,52 +43,27 @@ export const viewport: Viewport = {
   ],
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const cookieStore = await cookies();
-
-  const supabase = createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll: async () => cookieStore.getAll(),
-        setAll: async (cookiesToSet) => {
-          try {
-            for (const { name, value, options } of cookiesToSet) {
-              (await cookies()).set(name, value, options);
-            }
-          } catch (error) {
-            console.error("Erro ao definir cookies Supabase:", error);
-          }
-        },
-      },
-    }
-  );
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
   return (
     <html lang="pt-BR" suppressHydrationWarning>
-      {/* ⚡ ThemeProvider controla o modo claro/escuro via classe no <body> */}
       <body className={inter.className}>
         <ThemeProvider
-          attribute="class"        // aplica 'light' ou 'dark' no body
-          defaultTheme="dark"      // 🌑 modo escuro padrão
-          enableSystem={false}     // desativa sincronização com o sistema
-          disableTransitionOnChange={false} // mantém transição suave
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem={false}
+          disableTransitionOnChange={false}
           value={{
-            light: "light",        // força classe body.light
-            dark: "dark",          // força classe body.dark
+            light: "light",
+            dark: "dark",
           }}
         >
           <Providers>
-            <SupabaseProvider initialUser={user}>
+            {/* SupabaseProvider agora cuida do usuário só no client */}
+            <SupabaseProvider>
               <main className="relative z-10 text-foreground min-h-screen">
                 <ClientWrapper>{children}</ClientWrapper>
               </main>

@@ -16,7 +16,7 @@ type CostItemRowProps = {
   sugestoes: { codigo: string; custo: number }[];
   indiceSelecionado: number;
   listaRef: React.RefObject<HTMLDivElement>;
-  buscarSugestoesDebounced: (termo: string, idx: number) => void;
+  buscarSugestoesDebounced: any;
   handleSugestoesKeys: (
     e: React.KeyboardEvent<HTMLInputElement>,
     idx: number
@@ -36,6 +36,10 @@ type CostItemRowProps = {
   setEditing: (key: string, editing: boolean) => void;
   toDisplay: (v: string) => string;
   toInternal: (v: string) => string;
+
+  // Necessário para fechar dropdown instantaneamente
+  setSugestoes?: any;
+  setCampoAtivo?: any;
 };
 
 export const CostItemRow: React.FC<CostItemRowProps> = ({
@@ -57,6 +61,8 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
   setEditing,
   toDisplay,
   toInternal,
+  setSugestoes,
+  setCampoAtivo,
 }) => {
   return (
     <div className="relative grid grid-cols-3 gap-2 mb-1 p-1.5 rounded-lg bg-black/30 border border-white/10">
@@ -65,6 +71,7 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
         <Label className="text-neutral-400 text-[10px] block mb-1">
           Código
         </Label>
+
         <Input
           ref={(el) => {
             if (!inputRefs.current[idx]) inputRefs.current[idx] = [];
@@ -74,10 +81,24 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
           placeholder="SKU"
           value={item.codigo}
           onChange={(e) => {
+            const value = e.target.value;
+
+            // Atualiza composição
             const novo = [...composicao];
-            novo[idx].codigo = e.target.value;
+            novo[idx].codigo = value;
             setComposicao(novo);
-            buscarSugestoesDebounced(e.target.value, idx);
+
+            // 🔥 FECHAR DROPDOWN AO APAGAR O INPUT
+            if (value.trim() === "") {
+              buscarSugestoesDebounced.cancel?.(); // cancela debounce se existir
+              setSugestoes?.([]);
+              setCampoAtivo?.(null);
+              return;
+            }
+
+            // 🔥 Buscar sugestões normalmente
+            buscarSugestoesDebounced(value, idx);
+            setCampoAtivo?.(idx);
           }}
           onKeyDown={(e) => {
             handleSugestoesKeys(e, idx);
@@ -100,6 +121,7 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
         <Label className="text-neutral-400 text-[10px] block mb-1">
           Quantidade
         </Label>
+
         <Input
           ref={(el) => {
             if (!inputRefs.current[idx]) inputRefs.current[idx] = [];
@@ -132,6 +154,7 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
         <Label className="text-neutral-400 text-[10px] block mb-1">
           Custo (R$)
         </Label>
+
         <Input
           ref={(el) => {
             if (!inputRefs.current[idx]) inputRefs.current[idx] = [];
@@ -157,6 +180,7 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
         />
       </div>
 
+      {/* Remover linha */}
       {idx >= 1 && (
         <Button
           onClick={() => removerItem(idx)}

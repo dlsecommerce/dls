@@ -1,11 +1,20 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
-import { LogOut, User, Shield, Bell, Sliders, MessageSquare } from "lucide-react";
+import {
+  LogOut,
+  User,
+  Shield,
+  Bell,
+  Sliders,
+  MessageSquare,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useProfile } from "@/context/ProfileContext";
+
+// ✔ IMPORTAÇÃO CORRETA DA SERVER ACTION
 import { logoutAction } from "@/app/actions/logout";
 
 import ProfileTab from "./tabs/ProfileTab";
@@ -18,12 +27,18 @@ import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 export default function Configuration() {
   const { profile, updateProfile } = useProfile();
   const [tab, setTab] = useState<
-    "perfil" | "seguranca" | "notificacoes" | "preferencias" | "feedbacks"
+    | "perfil"
+    | "seguranca"
+    | "notificacoes"
+    | "preferencias"
+    | "feedbacks"
   >("perfil");
 
   const [name, setName] = useState(profile?.name ?? "");
   const [email, setEmail] = useState(profile?.email ?? "");
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(profile?.avatar_url ?? null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(
+    profile?.avatar_url ?? null
+  );
   const [tempAvatarFile, setTempAvatarFile] = useState<File | null>(null);
 
   const [newPassword, setNewPassword] = useState("");
@@ -102,7 +117,9 @@ export default function Configuration() {
       alert("A senha deve ter pelo menos 6 caracteres.");
       return;
     }
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
     if (error) {
       alert("Erro ao alterar senha: " + error.message);
     } else {
@@ -113,15 +130,9 @@ export default function Configuration() {
     }
   };
 
+  // ✔ LOGOUT CORRETO: chamando server action no client
   const handleLogout = async () => {
-    try {
-      await logoutAction();
-      router.replace("/");
-    } catch (err) {
-      console.error("Erro ao sair (SSR):", err);
-      await supabase.auth.signOut();
-      router.replace("/");
-    }
+    await logoutAction();
   };
 
   const tabs = [
@@ -160,7 +171,6 @@ export default function Configuration() {
               ))}
             </nav>
 
-            {/* Botão de sair */}
             <div className="mt-8 pt-8 border-t border-white/10 space-y-2">
               <button
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-400 hover:bg-red-500/10 transition-all"
