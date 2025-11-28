@@ -28,36 +28,47 @@ export async function importFromXlsxOrCsv(
   }
 
   // ======================================
-  // ✅ FUNÇÃO ULTRA-ROBUSTA DE CONVERSÃO
+  // ✅ FUNÇÃO ULTRA-ROBUSTA DE CONVERSÃO FINAL
   // ======================================
   const toNumber = (value: any): number => {
     if (value === undefined || value === null || value === "") return 0;
 
-    // 1. XLSX já trouxe número real
-    if (typeof value === "number") {
-      return value;
-    }
+    // XLSX já trouxe número real
+    if (typeof value === "number") return value;
 
-    // 2. Converte para string limpa
     let raw = String(value).trim();
 
-    // 3. Remove caracteres que não fazem parte de números
-    // permite apenas dígitos, vírgula, ponto e "-"
+    // Remove caracteres não numéricos exceto . , -
     raw = raw.replace(/[^\d.,-]/g, "");
 
-    // 4. Se houver múltiplas vírgulas, mantém apenas a última como decimal
-    const commaCount = (raw.match(/,/g) || []).length;
-    if (commaCount > 1) {
-      const lastComma = raw.lastIndexOf(",");
-      raw = raw.replace(/,/g, "");
-      raw = raw.slice(0, lastComma) + "." + raw.slice(lastComma);
+    // Caso tenha vírgula e ponto → detectar padrão
+    if (raw.includes(",") && raw.includes(".")) {
+      // Se o último separador for vírgula → vírgula é decimal
+      if (raw.lastIndexOf(",") > raw.lastIndexOf(".")) {
+        raw = raw.replace(/\./g, ""); // remove pontos de milhar
+        raw = raw.replace(",", "."); // vírgula vira decimal
+      } else {
+        // Último separador é ponto → ponto é decimal
+        raw = raw.replace(/,/g, ""); // remove vírgulas de milhar
+      }
     }
+    // Caso tenha somente vírgula → vírgula é decimal
+    else if (raw.includes(",") && !raw.includes(".")) {
+      raw = raw.replace(",", ".");
+    }
+    // Caso tenha somente ponto
+    else if (raw.includes(".") && !raw.includes(",")) {
+      const parts = raw.split(".");
+      const decimal = parts[parts.length - 1];
 
-    // 5. Remove pontos de milhar (todos pontos seguidos de 3 dígitos)
-    raw = raw.replace(/\.(?=\d{3}(,|$))/g, "");
-
-    // 6. Troca vírgula decimal final por ponto
-    raw = raw.replace(",", ".");
+      // Se tiver 1 ou 2 dígitos depois → ponto é decimal
+      if (decimal.length <= 2) {
+        // nada a fazer
+      } else {
+        // mais de 2 dígitos → ponto era milhar
+        raw = raw.replace(/\./g, "");
+      }
+    }
 
     const n = parseFloat(raw);
     return isNaN(n) ? 0 : n;
