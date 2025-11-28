@@ -28,37 +28,39 @@ export async function importFromXlsxOrCsv(
   }
 
   // ============================================================
-  // 🔥 SUPER CONVERSOR FINAL (COMPATÍVEL COM EXCEL E PT-BR)
+  // 🔥 SUPER CONVERSOR FINAL — EXCEL (126.97), PT-BR (126,97), MILHAR
   // ============================================================
   const toNumber = (value: any): string => {
     if (!value) return "0,00";
 
     let raw = String(value).trim().replace(/[^\d.,-]/g, "");
 
-    // CASO 1: valor vindo do Excel com ponto decimal (ex.: 126.97)
+    // CASO 1 — Excel: 126.97 (ponto decimal)
     if (/^\d+\.\d+$/.test(raw)) {
       return Number(raw).toFixed(2).replace(".", ",");
     }
 
-    // CASO 2: formato brasileiro puro (ex.: 126,97)
+    // CASO 2 — Formato brasileiro simples: 126,97
     if (raw.includes(",") && !raw.includes(".")) {
       const n = parseFloat(raw.replace(",", "."));
       return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
     }
 
-    // CASO 3: milhar + decimal (ex.: 1.234,56)
+    // CASO 3 — Milhar + decimal: 1.234,56
     if (raw.includes(".") && raw.includes(",")) {
       raw = raw.replace(/\./g, "").replace(",", ".");
       const n = parseFloat(raw);
       return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
     }
 
-    // CASO 4: número inteiro simples
+    // CASO 4 — Número inteiro: 3100
     const n = parseFloat(raw);
     return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
   };
 
-  // NORMALIZAÇÃO
+  // ============================================================
+  // NORMALIZAÇÃO DOS DADOS
+  // ============================================================
   const normalized = json
     .map((row) => {
       const findKey = (keys: string[]) => {
@@ -75,6 +77,7 @@ export async function importFromXlsxOrCsv(
         "Código": String(codigo).trim(),
         "Marca": findKey(["Marca", "marca", "brand"]) || null,
 
+        // custos convertidos corretamente
         "Custo Atual": toNumber(findKey(["Custo Atual", "custo atual"])),
         "Custo Antigo": toNumber(findKey(["Custo Antigo", "custo antigo"])),
 
@@ -83,9 +86,23 @@ export async function importFromXlsxOrCsv(
     })
     .filter((r) => r !== null);
 
-  if (previewOnly) return { data: normalized, warnings };
+  // ============================================================
+  // PREVIEW
+  // ============================================================
+  if (previewOnly) {
+    return { data: normalized, warnings };
+  }
 
-  const { error } = await supabase.from("custos").insert(normalized, { upsert: true });
+  // ============================================================
+  // SUPABASE — AGORA COM UPSERT DE VERDADE (SEM DUPLICAÇÃO)
+  // ============================================================
+  const { error } = await supabase
+    .from("custos")
+    .insert(normalized, {
+      upsert: true,
+      onConflict: "Código", // <--- ESSENCIAL PARA NÃO DUPLICAR
+    });
+
   if (error) throw error;
 
   return { data: normalized, warnings };
