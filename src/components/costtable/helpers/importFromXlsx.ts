@@ -27,22 +27,45 @@ export async function importFromXlsxOrCsv(
     warnings.push(`As seguintes colunas estão ausentes: ${missing.join(", ")}.`);
   }
 
-  // Função completa de conversão numérica (aceita 12,61 / 1.000 / 1.000,50 / 10000 / etc)
+  // ======================================
+  // ✅ FUNÇÃO ULTRA-ROBUSTA DE CONVERSÃO
+  // ======================================
   const toNumber = (value: any): number => {
     if (value === undefined || value === null || value === "") return 0;
 
+    // 1. XLSX já trouxe número real
+    if (typeof value === "number") {
+      return value;
+    }
+
+    // 2. Converte para string limpa
     let raw = String(value).trim();
 
-    // remove pontos de milhar (ex.: 1.234,56 → 1234,56)
-    raw = raw.replace(/\./g, "");
+    // 3. Remove caracteres que não fazem parte de números
+    // permite apenas dígitos, vírgula, ponto e "-"
+    raw = raw.replace(/[^\d.,-]/g, "");
 
-    // troca vírgula por ponto para parseFloat funcionar corretamente
+    // 4. Se houver múltiplas vírgulas, mantém apenas a última como decimal
+    const commaCount = (raw.match(/,/g) || []).length;
+    if (commaCount > 1) {
+      const lastComma = raw.lastIndexOf(",");
+      raw = raw.replace(/,/g, "");
+      raw = raw.slice(0, lastComma) + "." + raw.slice(lastComma);
+    }
+
+    // 5. Remove pontos de milhar (todos pontos seguidos de 3 dígitos)
+    raw = raw.replace(/\.(?=\d{3}(,|$))/g, "");
+
+    // 6. Troca vírgula decimal final por ponto
     raw = raw.replace(",", ".");
 
     const n = parseFloat(raw);
     return isNaN(n) ? 0 : n;
   };
 
+  // ======================================
+  // NORMALIZAÇÃO
+  // ======================================
   const normalized = json
     .map((row) => {
       const findKey = (keys: string[]) => {
@@ -65,10 +88,16 @@ export async function importFromXlsxOrCsv(
     })
     .filter((r) => r !== null);
 
+  // ======================================
+  // PREVIEW
+  // ======================================
   if (previewOnly) {
     return { data: normalized, warnings };
   }
 
+  // ======================================
+  // INSERÇÃO NO SUPABASE
+  // ======================================
   const { error } = await supabase.from("custos").insert(normalized, { upsert: true });
   if (error) throw error;
 
