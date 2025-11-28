@@ -27,56 +27,38 @@ export async function importFromXlsxOrCsv(
     warnings.push(`As seguintes colunas estão ausentes: ${missing.join(", ")}.`);
   }
 
-  // ======================================
-  // ✅ FUNÇÃO ULTRA-ROBUSTA DE CONVERSÃO FINAL
-  // ======================================
-  const toNumber = (value: any): number => {
-    if (value === undefined || value === null || value === "") return 0;
+  // ============================================================
+  // 🔥 SUPER CONVERSOR FINAL (COMPATÍVEL COM EXCEL E PT-BR)
+  // ============================================================
+  const toNumber = (value: any): string => {
+    if (!value) return "0,00";
 
-    // XLSX já trouxe número real
-    if (typeof value === "number") return value;
+    let raw = String(value).trim().replace(/[^\d.,-]/g, "");
 
-    let raw = String(value).trim();
-
-    // Remove caracteres não numéricos exceto . , -
-    raw = raw.replace(/[^\d.,-]/g, "");
-
-    // Caso tenha vírgula e ponto → detectar padrão
-    if (raw.includes(",") && raw.includes(".")) {
-      // Se o último separador for vírgula → vírgula é decimal
-      if (raw.lastIndexOf(",") > raw.lastIndexOf(".")) {
-        raw = raw.replace(/\./g, ""); // remove pontos de milhar
-        raw = raw.replace(",", "."); // vírgula vira decimal
-      } else {
-        // Último separador é ponto → ponto é decimal
-        raw = raw.replace(/,/g, ""); // remove vírgulas de milhar
-      }
-    }
-    // Caso tenha somente vírgula → vírgula é decimal
-    else if (raw.includes(",") && !raw.includes(".")) {
-      raw = raw.replace(",", ".");
-    }
-    // Caso tenha somente ponto
-    else if (raw.includes(".") && !raw.includes(",")) {
-      const parts = raw.split(".");
-      const decimal = parts[parts.length - 1];
-
-      // Se tiver 1 ou 2 dígitos depois → ponto é decimal
-      if (decimal.length <= 2) {
-        // nada a fazer
-      } else {
-        // mais de 2 dígitos → ponto era milhar
-        raw = raw.replace(/\./g, "");
-      }
+    // CASO 1: valor vindo do Excel com ponto decimal (ex.: 126.97)
+    if (/^\d+\.\d+$/.test(raw)) {
+      return Number(raw).toFixed(2).replace(".", ",");
     }
 
+    // CASO 2: formato brasileiro puro (ex.: 126,97)
+    if (raw.includes(",") && !raw.includes(".")) {
+      const n = parseFloat(raw.replace(",", "."));
+      return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
+    }
+
+    // CASO 3: milhar + decimal (ex.: 1.234,56)
+    if (raw.includes(".") && raw.includes(",")) {
+      raw = raw.replace(/\./g, "").replace(",", ".");
+      const n = parseFloat(raw);
+      return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
+    }
+
+    // CASO 4: número inteiro simples
     const n = parseFloat(raw);
-    return isNaN(n) ? 0 : n;
+    return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
   };
 
-  // ======================================
   // NORMALIZAÇÃO
-  // ======================================
   const normalized = json
     .map((row) => {
       const findKey = (keys: string[]) => {
@@ -92,23 +74,17 @@ export async function importFromXlsxOrCsv(
       return {
         "Código": String(codigo).trim(),
         "Marca": findKey(["Marca", "marca", "brand"]) || null,
+
         "Custo Atual": toNumber(findKey(["Custo Atual", "custo atual"])),
         "Custo Antigo": toNumber(findKey(["Custo Antigo", "custo antigo"])),
+
         "NCM": findKey(["NCM", "ncm"]) || null,
       };
     })
     .filter((r) => r !== null);
 
-  // ======================================
-  // PREVIEW
-  // ======================================
-  if (previewOnly) {
-    return { data: normalized, warnings };
-  }
+  if (previewOnly) return { data: normalized, warnings };
 
-  // ======================================
-  // INSERÇÃO NO SUPABASE
-  // ======================================
   const { error } = await supabase.from("custos").insert(normalized, { upsert: true });
   if (error) throw error;
 

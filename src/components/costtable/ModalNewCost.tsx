@@ -16,8 +16,8 @@ import { supabase } from "@/integrations/supabase/client";
 export type Custo = {
   ["Código"]: string;
   ["Marca"]: string;
-  ["Custo Atual"]: number | string;
-  ["Custo Antigo"]: number | string;
+  ["Custo Atual"]: string;
+  ["Custo Antigo"]: string;
   ["NCM"]: string;
 };
 
@@ -49,7 +49,38 @@ export default function ModalNewCost({
     type: null,
   });
 
-  // Quando abrir no modo de edição → salvar o código antigo
+  /* ============================================================
+     🔥 SUPER CONVERSOR FINAL — EXCEL (126.97) + PT-BR (126,97)
+     ============================================================ */
+  const toNumber = (value: any): string => {
+    if (!value) return "0,00";
+
+    let raw = String(value).trim().replace(/[^\d.,-]/g, "");
+
+    // CASO 1: Excel exporta como 126.97 → manter decimal
+    if (/^\d+\.\d+$/.test(raw)) {
+      return Number(raw).toFixed(2).replace(".", ",");
+    }
+
+    // CASO 2: Formato brasileiro simples → 126,97
+    if (raw.includes(",") && !raw.includes(".")) {
+      const n = parseFloat(raw.replace(",", "."));
+      return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
+    }
+
+    // CASO 3: milhar + decimal → 1.234,56
+    if (raw.includes(".") && raw.includes(",")) {
+      raw = raw.replace(/\./g, "").replace(",", ".");
+      const n = parseFloat(raw);
+      return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
+    }
+
+    // CASO 4: número inteiro simples → "3100" etc
+    const n = parseFloat(raw);
+    return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
+  };
+
+  // Captura código antigo ao abrir modal
   useEffect(() => {
     if (open && mode === "edit") {
       setOldCodigo(form["Código"]);
@@ -68,11 +99,14 @@ export default function ModalNewCost({
     try {
       setSaving(true);
 
+      /* ================================
+            PAYLOAD TEXTO COM VÍRGULA
+         ================================ */
       const payload = {
         ["Código"]: form["Código"],
         ["Marca"]: form["Marca"],
-        ["Custo Atual"]: form["Custo Atual"] || null,
-        ["Custo Antigo"]: form["Custo Antigo"] || null,
+        ["Custo Atual"]: toNumber(form["Custo Atual"]),
+        ["Custo Antigo"]: toNumber(form["Custo Antigo"]),
         ["NCM"]: form["NCM"] || null,
       };
 
@@ -84,7 +118,6 @@ export default function ModalNewCost({
           .insert([payload]);
         error = insertError;
       } else {
-        // Aqui está o ajuste crucial → usar o código antigo para o WHERE
         const codigoParaBuscar = oldCodigo || form["Código"];
 
         const { error: updateError } = await supabase
@@ -188,10 +221,13 @@ export default function ModalNewCost({
                 type="text"
                 value={String(form["Custo Atual"] || "")}
                 onChange={(e) =>
-                  setForm({ ...form, ["Custo Atual"]: e.target.value })
+                  setForm({
+                    ...form,
+                    ["Custo Atual"]: toNumber(e.target.value),
+                  })
                 }
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
-                placeholder="Ex: 89.90"
+                placeholder="Ex: 89,90"
               />
             </div>
 
@@ -201,10 +237,13 @@ export default function ModalNewCost({
                 type="text"
                 value={String(form["Custo Antigo"] || "")}
                 onChange={(e) =>
-                  setForm({ ...form, ["Custo Antigo"]: e.target.value })
+                  setForm({
+                    ...form,
+                    ["Custo Antigo"]: toNumber(e.target.value),
+                  })
                 }
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
-                placeholder="Ex: 79.90"
+                placeholder="Ex: 79,90"
               />
             </div>
 
