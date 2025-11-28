@@ -1,0 +1,22 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/auth/callback/route": "/auth/callback",
+  "/cadastro/page": "/cadastro",
+  "/dashboard/anuncios/edit/page": "/dashboard/anuncios/edit",
+  "/dashboard/anuncios/page": "/dashboard/anuncios",
+  "/dashboard/automacoes/automacao-planilhas/page": "/dashboard/automacoes/automacao-planilhas",
+  "/dashboard/configuracao/page": "/dashboard/configuracao",
+  "/dashboard/hub/page": "/dashboard/hub",
+  "/dashboard/marketplaces/bling/page": "/dashboard/marketplaces/bling",
+  "/dashboard/marketplaces/tray/details/page": "/dashboard/marketplaces/tray/details",
+  "/dashboard/marketplaces/tray/page": "/dashboard/marketplaces/tray",
+  "/dashboard/page": "/dashboard",
+  "/dashboard/precificacao/custos/page": "/dashboard/precificacao/custos",
+  "/dashboard/precificacao/decomposicao/page": "/dashboard/precificacao/decomposicao",
+  "/dashboard/precificacao/precificacao-individual/page": "/dashboard/precificacao/precificacao-individual",
+  "/login/page": "/login",
+  "/page": "/",
+  "/recuperar-senha/page": "/recuperar-senha",
+  "/redefinir-senha/page": "/redefinir-senha"
+}

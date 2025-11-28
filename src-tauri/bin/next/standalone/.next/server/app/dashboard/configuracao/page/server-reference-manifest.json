@@ -1,0 +1,20 @@
+{
+  "node": {
+    "008e46d6ecc0789df9df14cb016efdb48d8d27d20b": {
+      "workers": {
+        "app/dashboard/configuracao/page": {
+          "moduleId": 15501,
+          "async": false,
+          "exportedName": "logoutAction",
+          "filename": "src/app/actions/logout.ts"
+        }
+      },
+      "layer": {
+        "app/dashboard/configuracao/page": "action-browser"
+      },
+      "exportedName": "logoutAction",
+      "filename": "src/app/actions/logout.ts"
+    }
+  },
+  "edge": {}
+}

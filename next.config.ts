@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
+
   images: {
     unoptimized: true,
     remotePatterns: [
@@ -10,7 +12,6 @@ const nextConfig: NextConfig = {
   },
 
   typescript: { ignoreBuildErrors: true },
-  eslint: { ignoreDuringBuilds: true },
 
   reactStrictMode: false,
 
@@ -21,13 +22,7 @@ const nextConfig: NextConfig = {
 
   experimental: {
     serverActions: { bodySizeLimit: "2mb" },
-  },
-
-  swcMinify: true,
-
-  // ❗ Remove output: "export"
-  // ✔ Tauri funciona com standalone
-  output: "standalone",
+  }
 };
 
 export default nextConfig;

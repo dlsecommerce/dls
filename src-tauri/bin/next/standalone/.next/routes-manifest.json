@@ -1,0 +1,164 @@
+{
+  "version": 3,
+  "pages404": true,
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/:path+/",
+      "destination": "/:path+",
+      "internal": true,
+      "priority": true,
+      "statusCode": 308,
+      "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
+    }
+  ],
+  "headers": [],
+  "rewrites": {
+    "beforeFiles": [],
+    "afterFiles": [],
+    "fallback": []
+  },
+  "dynamicRoutes": [],
+  "staticRoutes": [
+    {
+      "page": "/",
+      "regex": "^/(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/(?:/)?$"
+    },
+    {
+      "page": "/_global-error",
+      "regex": "^/_global\\-error(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_global\\-error(?:/)?$"
+    },
+    {
+      "page": "/_not-found",
+      "regex": "^/_not\\-found(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/auth/callback",
+      "regex": "^/auth/callback(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/auth/callback(?:/)?$"
+    },
+    {
+      "page": "/cadastro",
+      "regex": "^/cadastro(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/cadastro(?:/)?$"
+    },
+    {
+      "page": "/dashboard",
+      "regex": "^/dashboard(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard(?:/)?$"
+    },
+    {
+      "page": "/dashboard/anuncios",
+      "regex": "^/dashboard/anuncios(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/anuncios(?:/)?$"
+    },
+    {
+      "page": "/dashboard/anuncios/edit",
+      "regex": "^/dashboard/anuncios/edit(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/anuncios/edit(?:/)?$"
+    },
+    {
+      "page": "/dashboard/automacoes/automacao-planilhas",
+      "regex": "^/dashboard/automacoes/automacao\\-planilhas(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/automacoes/automacao\\-planilhas(?:/)?$"
+    },
+    {
+      "page": "/dashboard/configuracao",
+      "regex": "^/dashboard/configuracao(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/configuracao(?:/)?$"
+    },
+    {
+      "page": "/dashboard/hub",
+      "regex": "^/dashboard/hub(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/hub(?:/)?$"
+    },
+    {
+      "page": "/dashboard/marketplaces/bling",
+      "regex": "^/dashboard/marketplaces/bling(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/marketplaces/bling(?:/)?$"
+    },
+    {
+      "page": "/dashboard/marketplaces/tray",
+      "regex": "^/dashboard/marketplaces/tray(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/marketplaces/tray(?:/)?$"
+    },
+    {
+      "page": "/dashboard/marketplaces/tray/details",
+      "regex": "^/dashboard/marketplaces/tray/details(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/marketplaces/tray/details(?:/)?$"
+    },
+    {
+      "page": "/dashboard/precificacao/custos",
+      "regex": "^/dashboard/precificacao/custos(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/precificacao/custos(?:/)?$"
+    },
+    {
+      "page": "/dashboard/precificacao/decomposicao",
+      "regex": "^/dashboard/precificacao/decomposicao(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/precificacao/decomposicao(?:/)?$"
+    },
+    {
+      "page": "/dashboard/precificacao/precificacao-individual",
+      "regex": "^/dashboard/precificacao/precificacao\\-individual(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard/precificacao/precificacao\\-individual(?:/)?$"
+    },
+    {
+      "page": "/login",
+      "regex": "^/login(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/login(?:/)?$"
+    },
+    {
+      "page": "/recuperar-senha",
+      "regex": "^/recuperar\\-senha(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/recuperar\\-senha(?:/)?$"
+    },
+    {
+      "page": "/redefinir-senha",
+      "regex": "^/redefinir\\-senha(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/redefinir\\-senha(?:/)?$"
+    }
+  ],
+  "dataRoutes": [],
+  "rsc": {
+    "header": "rsc",
+    "varyHeader": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+    "prefetchHeader": "next-router-prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSuffix": ".prefetch.rsc",
+    "prefetchSegmentHeader": "next-router-segment-prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments",
+    "clientParamParsing": false,
+    "dynamicRSCPrerender": false
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  }
+}

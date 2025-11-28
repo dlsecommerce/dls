@@ -1,0 +1,17 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/dashboard/layout,_N_T_/dashboard/marketplaces/layout,_N_T_/dashboard/marketplaces/bling/layout,_N_T_/dashboard/marketplaces/bling/page,_N_T_/dashboard/marketplaces/bling"
+  },
+  "segmentPaths": [
+    "/_tree",
+    "/_full",
+    "/dashboard/marketplaces/bling/__PAGE__",
+    "/dashboard/marketplaces/bling",
+    "/dashboard/marketplaces",
+    "/dashboard",
+    "/_index",
+    "/_head"
+  ]
+}

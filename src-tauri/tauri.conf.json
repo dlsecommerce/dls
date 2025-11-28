@@ -16,9 +16,9 @@
       {
         "label": "main",
         "title": "DLS Ecommerce",
-        "url": "splash.html",
-        "width": 600,
-        "height": 400,
+        "url": "http://localhost:3000",
+        "width": 1000,
+        "height": 700,
         "center": true,
         "resizable": true,
         "fullscreen": false,

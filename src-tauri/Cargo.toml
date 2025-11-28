@@ -1,6 +1,6 @@
 [package]
 name = "dls-ecommerce"
-version = "0.1.0"
+version = "0.1.1"
 description = "Aplicativo Desktop DLS Ecommerce"
 authors = ["DLS Ecommerce"]
 license = "MIT"
