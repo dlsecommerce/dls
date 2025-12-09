@@ -62,7 +62,7 @@ export default function ModalNewCost({
       return Number(raw).toFixed(2).replace(".", ",");
     }
 
-    // CASO 2: Formato brasileiro simples → 126,97
+    // CASO 2: Formato brasileiro: 126,97
     if (raw.includes(",") && !raw.includes(".")) {
       const n = parseFloat(raw.replace(",", "."));
       return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
@@ -75,7 +75,7 @@ export default function ModalNewCost({
       return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
     }
 
-    // CASO 4: número inteiro simples → "3100" etc
+    // CASO 4: número inteiro simples → "3100"
     const n = parseFloat(raw);
     return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
   };
@@ -100,12 +100,12 @@ export default function ModalNewCost({
       setSaving(true);
 
       /* ================================
-            PAYLOAD TEXTO COM VÍRGULA
+            PAYLOAD COM CONVERSÃO
          ================================ */
       const payload = {
         ["Código"]: form["Código"],
         ["Marca"]: form["Marca"],
-        ["Custo Atual"]: toNumber(form["Custo Atual"]),
+        ["Custo Atual"]: toNumber(form["Custo Atual"]), // conversão apenas no salvar
         ["Custo Antigo"]: toNumber(form["Custo Antigo"]),
         ["NCM"]: form["NCM"] || null,
       };
@@ -215,15 +215,16 @@ export default function ModalNewCost({
               />
             </div>
 
+            {/* 🔧 CORRIGIDO — agora aceita digitação livre */}
             <div>
               <Label className="text-neutral-300">Custo Atual</Label>
               <Input
                 type="text"
-                value={String(form["Custo Atual"] || "")}
+                value={form["Custo Atual"] || ""}
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    ["Custo Atual"]: toNumber(e.target.value),
+                    ["Custo Atual"]: e.target.value, // sem conversão aqui
                   })
                 }
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
@@ -231,15 +232,16 @@ export default function ModalNewCost({
               />
             </div>
 
+            {/* 🔧 CORRIGIDO — agora aceita digitação livre */}
             <div>
               <Label className="text-neutral-300">Custo Antigo</Label>
               <Input
                 type="text"
-                value={String(form["Custo Antigo"] || "")}
+                value={form["Custo Antigo"] || ""}
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    ["Custo Antigo"]: toNumber(e.target.value),
+                    ["Custo Antigo"]: e.target.value, // sem conversão aqui
                   })
                 }
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
