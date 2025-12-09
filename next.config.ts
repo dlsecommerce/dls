@@ -22,6 +22,12 @@ const nextConfig: NextConfig = {
 
   experimental: {
     serverActions: { bodySizeLimit: "2mb" },
+
+    optimizeCss: {
+      lightningcss: {
+        target: "linux-x64-musl"
+      }
+    }
   }
 };
 
