@@ -1,6 +1,5 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   output: "standalone",
 
   images: {
@@ -23,9 +22,9 @@ const nextConfig: NextConfig = {
   experimental: {
     serverActions: { bodySizeLimit: "2mb" },
 
-    // 🚫 DESATIVAR lightningcss interno do Next e Tailwind
+    // DESATIVA LightningCSS do Next completamente
     optimizeCss: false,
   }
 };
 
-export default nextConfig;
+module.exports = nextConfig;
