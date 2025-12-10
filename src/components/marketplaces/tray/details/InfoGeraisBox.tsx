@@ -55,6 +55,7 @@ const InfoGeraisBox = ({ produto, setProduto, loading }: any) => {
           </div>
         ))}
 
+        {/* Select Tipo de Anúncio */}
         <div>
           <Label className="text-neutral-400 text-[10px] block mb-1">
             Tipo de Anúncio
@@ -72,8 +73,8 @@ const InfoGeraisBox = ({ produto, setProduto, loading }: any) => {
             </SelectTrigger>
 
             <SelectContent className="bg-[#0f0f0f] border-white/10 text-white">
-              <SelectItem value="simples">Simples</SelectItem>
-              <SelectItem value="variacoes">Com Variações</SelectItem>
+              <SelectItem value="Simples">Simples</SelectItem>
+              <SelectItem value="Com variações">Com Variações</SelectItem>
             </SelectContent>
           </Select>
         </div>

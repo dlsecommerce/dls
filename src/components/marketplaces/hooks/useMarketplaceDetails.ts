@@ -4,17 +4,14 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { usePrecificacao } from "@/hooks/usePrecificacao";
 
-// ======================================================
-// Detecta tipo de anúncio
-// ======================================================
 function detectarTipoAnuncio(ref: string = "") {
+  if (!ref) return "Simples";
   const r = ref.toUpperCase();
-  return r.includes("PAI") || r.includes("VAR") ? "variações" : "simples";
+  const ehPai = r.includes("PAI -");
+  const ehVar = r.includes("VAR -");
+  return ehPai || ehVar ? "Com variações" : "Simples";
 }
 
-// ======================================================
-// HOOK PRINCIPAL
-// ======================================================
 export function useMarketplaceDetails(id: string | null, lojaParam: string | null) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -57,16 +54,12 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
     removerItem,
   } = usePrecificacao();
 
-  // ======================================================
-  // AUTOCOMPLETE CUSTOS + DEBOUNCE 10ms
-  // ======================================================
   const [sugestoes, setSugestoes] = useState<any[]>([]);
   const [campoAtivo, setCampoAtivo] = useState<number | null>(null);
   const [indiceSelecionado, setIndiceSelecionado] = useState<number>(0);
 
   const listaRef = useRef<HTMLDivElement | null>(null);
   const inputRefs = useRef<any[]>([]);
-
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
 
   const buscarSugestoes = async (termo: string, idx: number) => {
@@ -102,12 +95,9 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
 
   const selecionarSugestao = (codigo: string, custo: number, idx: number) => {
     const novo = [...composicao];
-
     novo[idx].codigo = codigo;
     novo[idx].custo = custo.toFixed(2);
-
     setComposicao(novo);
-
     setSugestoes([]);
     setCampoAtivo(null);
 
@@ -142,223 +132,264 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
     }
   };
 
-  // ======================================================
-  // BUSCA marketplace_tray_all
-  // ======================================================
-  const buscarMarketplace = async (id: string) => {
-    let { data } = await supabase
-      .from("marketplace_tray_all")
-      .select("*")
-      .eq("ID Tray", id)
+  const buscarCustoPorCodigo = useCallback(async (codigo: string): Promise<number> => {
+    if (!codigo) return 0;
+
+    const { data, error } = await supabase
+      .from("custos")
+      .select('"Custo Atual"')
+      .eq('"Código"', codigo)
       .maybeSingle();
 
-    if (data) return data;
+    if (error) {
+      console.error("Erro ao buscar custo por código:", codigo, error);
+      return 0;
+    }
 
-    const { data: alt } = await supabase
-      .from("marketplace_tray_all")
-      .select("*")
-      .eq("ID Bling", id)
-      .maybeSingle();
+    return data ? Number(data["Custo Atual"]) || 0 : 0;
+  }, []);
 
-    return alt || null;
-  };
+  const buscarAnuncio = async (id: string, lojaParam: string) => {
+    const lojaNome = lojaParam === "SB" ? "SB" : "PK";
 
-  // ======================================================
-  // BUSCA anuncios_all — CORRIGIDA COM ID + LOJA
-  // ======================================================
-  const buscarAnuncioAll = async (id: string, base: any, lojaParam: string) => {
-    const lojaNome = lojaParam === "SB" ? "Sóbaquetas" : "Pikot Shop";
-
-    // 1️⃣ Busca principal: ID + Loja
     if (!isNaN(Number(id))) {
-      const { data: byIdLoja } = await supabase
+      const { data, error } = await supabase
         .from("anuncios_all")
         .select("*")
         .eq("ID", Number(id))
         .eq("Loja", lojaNome)
         .maybeSingle();
 
-      if (byIdLoja) return byIdLoja;
+      if (error) {
+        console.error("Erro buscar anuncio por ID:", error);
+      }
+
+      if (data) return data;
     }
 
-    // 2️⃣ Busca secundária sempre filtrando por Loja
-    const tentativas = [
-      ["ID Tray", base["ID Tray"]],
-      ["ID Bling", base["ID Bling"]],
-      ["ID Var", base["ID Var"]],
-      ["Referência", base["Referência"]],
-    ];
+    {
+      const { data, error } = await supabase
+        .from("anuncios_all")
+        .select("*")
+        .eq("ID Tray", id)
+        .eq("Loja", lojaNome)
+        .maybeSingle();
 
-    for (const [campo, valor] of tentativas) {
-      if (valor) {
-        const { data } = await supabase
-          .from("anuncios_all")
-          .select("*")
-          .eq(campo, valor)
-          .eq("Loja", lojaNome)
-          .maybeSingle();
-
-        if (data) return data;
+      if (error) {
+        console.error("Erro buscar anuncio por ID Tray:", error);
       }
+
+      if (data) return data;
+    }
+
+    {
+      const { data, error } = await supabase
+        .from("anuncios_all")
+        .select("*")
+        .eq("ID Bling", id)
+        .eq("Loja", lojaNome)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Erro buscar anuncio por ID Bling:", error);
+      }
+
+      if (data) return data;
     }
 
     return null;
   };
 
-  // ======================================================
-  // CARREGAR TUDO
-  // ======================================================
+  const buscarPercentuais = async (anuncio: any, lojaParam: string) => {
+    const tabela = lojaParam === "SB" ? "marketplace_tray_sb" : "marketplace_tray_pk";
+
+    const idGlobal = anuncio["ID"];
+    const idTray = anuncio["ID Tray"];
+    const idBling = anuncio["ID Bling"];
+
+    const campos: [string, any][] = [
+      ["ID", idGlobal],
+      ["ID Tray", idTray],
+      ["ID Bling", idBling],
+    ];
+
+    for (const [campo, valor] of campos) {
+      if (!valor) continue;
+
+      const { data, error } = await supabase
+        .from(tabela)
+        .select(
+          'Desconto, Embalagem, Frete, Imposto, "Margem de Lucro", Comissão, Marketing'
+        )
+        .eq(campo, valor)
+        .maybeSingle();
+
+      if (error) {
+        console.error(`Erro buscar percentuais por ${campo}:`, error);
+        continue;
+      }
+
+      if (data) return data;
+    }
+
+    return null;
+  };
+
+  // monta composição em paralelo (custos em Promise.all)
+  const montarComposicao = useCallback(
+    async (anuncio: any) => {
+      const itens: { codigo: string; quantidade: string }[] = [];
+
+      for (let i = 1; i <= 10; i++) {
+        const codigo = anuncio[`Código ${i}`];
+        const qtd = anuncio[`Quantidade ${i}`];
+
+        if (codigo) {
+          itens.push({
+            codigo: codigo.toString(),
+            quantidade: (qtd ?? 1).toString(),
+          });
+        }
+      }
+
+      if (!itens.length) {
+        return [{ codigo: "", quantidade: "", custo: "" }];
+      }
+
+      const custos = await Promise.all(
+        itens.map((item) => buscarCustoPorCodigo(item.codigo))
+      );
+
+      return itens.map((item, idx) => ({
+        codigo: item.codigo,
+        quantidade: item.quantidade,
+        custo: (custos[idx] || 0).toFixed(2),
+      }));
+    },
+    [buscarCustoPorCodigo]
+  );
+
   const carregar = useCallback(async () => {
     if (!id || !lojaParam) return;
 
     setLoading(true);
 
-    const base = await buscarMarketplace(id);
-    if (!base) {
+    try {
+      const anuncio = await buscarAnuncio(id, lojaParam);
+      if (!anuncio) {
+        console.warn("Nenhum anúncio encontrado para:", id, lojaParam);
+        setLoading(false);
+        return;
+      }
+
+      const [percentuais, compArr] = await Promise.all([
+        buscarPercentuais(anuncio, lojaParam),
+        montarComposicao(anuncio),
+      ]);
+
+      let odFinal = anuncio["OD"] ?? "";
+
+      if (!odFinal) {
+        for (let i = 1; i <= 10; i++) {
+          const cod = anuncio[`Código ${i}`];
+          if (cod && cod.toUpperCase().includes("OD")) {
+            odFinal = cod;
+            break;
+          }
+        }
+      }
+
+      setProduto({
+        id,
+        loja: lojaParam === "SB" ? "Sóbaquetas" : "Pikot Shop",
+        id_bling: anuncio["ID Bling"] || "",
+        id_tray: anuncio["ID Tray"] || "",
+        id_var: anuncio["ID Var"] || "",
+        referencia: anuncio["Referência"] || "",
+        tipo_anuncio: detectarTipoAnuncio(anuncio["Referência"]),
+        od: odFinal,
+        nome: anuncio["Nome"] ?? "",
+        marca: anuncio["Marca"] ?? "",
+        categoria: anuncio["Categoria"] ?? "",
+        peso: anuncio["Peso"] ?? "",
+        altura: anuncio["Altura"] ?? "",
+        largura: anuncio["Largura"] ?? "",
+        comprimento: anuncio["Comprimento"] ?? "",
+        embalagem: percentuais?.Embalagem ?? anuncio["Embalagem"] ?? "",
+      });
+
+      setCalculoLoja({
+        desconto: percentuais?.Desconto ?? "",
+        imposto: percentuais?.Imposto ?? "",
+        margem: percentuais?.["Margem de Lucro"] ?? "",
+        frete: percentuais?.Frete ?? "",
+        comissao: percentuais?.Comissão ?? "",
+        marketing: percentuais?.Marketing ?? "",
+      });
+
+      setComposicao(compArr);
+
+      setAcrescimos((prev: any) => ({ ...prev, acrescimo: 0 }));
+      setCalculo((prev: any) => ({ ...prev, custo: "0" }));
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const anuncioAll = await buscarAnuncioAll(id, base, lojaParam);
-
-    // ======================================================
-    // OD correto
-    // ======================================================
-    let odFinal = anuncioAll?.["OD"] ?? base["OD"] ?? "";
-
-    if (!odFinal && anuncioAll) {
-      for (let i = 1; i <= 10; i++) {
-        const cod = anuncioAll[`Código ${i}`];
-        if (cod && cod.toUpperCase().includes("OD")) {
-          odFinal = cod;
-          break;
-        }
-      }
-    }
-
-    // ======================================================
-    // PREENCHENDO PRODUTO
-    // ======================================================
-    setProduto({
-      id,
-      loja: lojaParam === "SB" ? "Sóbaquetas" : "Pikot Shop",
-      id_bling: base["ID Bling"] || "",
-      id_tray: base["ID Tray"] || "",
-      id_var: anuncioAll?.["ID Var"] ?? base["ID Var"] ?? "",
-      referencia: base["Referência"] || "",
-      tipo_anuncio: detectarTipoAnuncio(base["Referência"]),
-      od: odFinal,
-      nome: base["Nome"] ?? "",
-      marca: base["Marca"] ?? "",
-      categoria: base["Categoria"] ?? "",
-      peso: anuncioAll?.["Peso"] ?? "",
-      altura: anuncioAll?.["Altura"] ?? "",
-      largura: anuncioAll?.["Largura"] ?? "",
-      comprimento: anuncioAll?.["Comprimento"] ?? "",
-      embalagem: base["Embalagem"] ?? "",
-    });
-
-    // ======================================================
-    // CAMPOS DE CÁLCULO
-    // ======================================================
-    setCalculoLoja({
-      desconto: base["Desconto"] ?? "",
-      imposto: base["Imposto"] ?? "",
-      margem: base["Margem de Lucro"] ?? "",
-      frete: base["Frete"] ?? "",
-      comissao: base["Comissão"] ?? "",
-      marketing: base["Marketing"] ?? "",
-    });
-
-    // ======================================================
-    // COMPOSIÇÃO (AGORA FUNCIONA)
-    // ======================================================
-    const compArr: any[] = [];
-
-    if (anuncioAll) {
-      for (let i = 1; i <= 10; i++) {
-        const codigo = anuncioAll[`Código ${i}`];
-        const qtd = anuncioAll[`Quantidade ${i}`];
-
-        if (codigo) {
-          compArr.push({
-            codigo: codigo.toString(),
-            quantidade: (qtd ?? 1).toString(),
-            custo: "0,00",
-          });
-        }
-      }
-    }
-
-    setComposicao(
-      compArr.length ? compArr : [{ codigo: "", quantidade: "", custo: "" }]
-    );
-
-    // Limpa cálculos antigos
-    setAcrescimos((prev: any) => ({ ...prev, acrescimo: 0 }));
-    setCalculo((prev: any) => ({ ...prev, custo: "0" }));
-
-    setLoading(false);
-  }, [id, lojaParam, setComposicao]);
+  }, [
+    id,
+    lojaParam,
+    montarComposicao,
+    setComposicao,
+    setAcrescimos,
+    setCalculo,
+  ]);
 
   useEffect(() => {
     carregar();
   }, [carregar]);
 
-  // ======================================================
-  // SALVAR
-  // ======================================================
   const save = useCallback(async () => {
     if (!id || !lojaParam) return { error: null };
 
-    const tabela = lojaParam === "SB"
-      ? "marketplace_tray_sb"
-      : "marketplace_tray_pk";
+    const tabela = lojaParam === "SB" ? "marketplace_tray_sb" : "marketplace_tray_pk";
 
     setSaving(true);
 
-    await supabase
-      .from(tabela)
-      .update({
-        Loja: produto.loja,
-        "ID Bling": produto.id_bling,
-        "ID Tray": produto.id_tray,
-        "ID Var": produto.id_var,
-        OD: produto.od,
-        Referência: produto.referencia,
-        Tipo: produto.tipo_anuncio,
-        Nome: produto.nome,
-        Marca: produto.marca,
-        Categoria: produto.categoria,
-        Peso: produto.peso,
-        Altura: produto.altura,
-        Largura: produto.largura,
-        Comprimento: produto.comprimento,
-        Embalagem: produto.embalagem,
-        Desconto: calculoLoja.desconto,
-        Imposto: calculoLoja.imposto,
-        "Margem de Lucro": calculoLoja.margem,
-        Frete: calculoLoja.frete,
-        Comissão: calculoLoja.comissao,
-        Marketing: calculoLoja.marketing,
-      })
-      .eq("ID Tray", produto.id_tray);
+    try {
+      await supabase
+        .from(tabela)
+        .update({
+          Desconto: calculoLoja.desconto,
+          Imposto: calculoLoja.imposto,
+          "Margem de Lucro": calculoLoja.margem,
+          Frete: calculoLoja.frete,
+          Comissão: calculoLoja.comissao,
+          Marketing: calculoLoja.marketing,
+          Embalagem: produto.embalagem,
+        })
+        .or(
+          `ID.eq.${id},ID Tray.eq.${produto.id_tray},ID Bling.eq.${produto.id_bling}`
+        );
 
-    await supabase
-      .from("anuncios_all")
-      .update({
-        OD: produto.od,
-        Peso: produto.peso,
-        Altura: produto.altura,
-        Largura: produto.largura,
-        Comprimento: produto.comprimento,
-      })
-      .or(
-        `ID Var.eq.${produto.id_var},ID Tray.eq.${produto.id_tray},ID Bling.eq.${produto.id_bling}`
-      );
+      await supabase
+        .from("anuncios_all")
+        .update({
+          OD: produto.od,
+          Peso: produto.peso,
+          Altura: produto.altura,
+          Largura: produto.largura,
+          Comprimento: produto.comprimento,
+          Embalagem: produto.embalagem,
+          Referência: produto.referencia,
+          Tipo: produto.tipo_anuncio,
+        })
+        .or(
+          `ID.eq.${id},ID Var.eq.${produto.id_var},ID Tray.eq.${produto.id_tray},ID Bling.eq.${produto.id_bling}`
+        );
 
-    setSaving(false);
-    return {};
+      return {};
+    } finally {
+      setSaving(false);
+    }
   }, [id, lojaParam, produto, calculoLoja]);
 
   return {

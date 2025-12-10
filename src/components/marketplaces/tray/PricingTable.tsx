@@ -1,6 +1,11 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, useCallback, useTransition } from "react";
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
 import { useTrayImportExport } from "@/components/marketplaces/hooks/useTrayImportExport";
@@ -19,6 +24,13 @@ import PricingHeaderRow from "@/components/marketplaces/tray/PricingHeaderRow";
 
 export default function PricingTable() {
   const router = useRouter();
+
+  // ⭐ Filtros antes do hook
+  const [selectedLoja, setSelectedLoja] = useState<string[]>([]);
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  // Dados e controle da tabela
   const [rows, setRows] = useState<Row[]>([]);
   const [filteredRows, setFilteredRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,20 +45,21 @@ export default function PricingTable() {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [isPending, startTransition] = useTransition();
-  const impExp = useTrayImportExport(rows);
 
-  // 🧩 Estados dos filtros
-  const [selectedLoja, setSelectedLoja] = useState<string[]>([]);
-  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
-  const [filterOpen, setFilterOpen] = useState(false);
+  // Hook de exportação (usa filtros para nome do arquivo)
+  const impExp = useTrayImportExport(
+    filteredRows,
+    selectedLoja[0] ?? "",
+    selectedBrands[0] ?? ""
+  );
 
-  // 🕒 debounce otimizado
+  // Debounce da busca
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(timeout);
   }, [search]);
 
-  // ---------- carregar dados ----------
+  // ---------- carregar dados (apenas página atual para a UI) ----------
   const loadData = useCallback(async () => {
     setLoading(true);
     const start = (currentPage - 1) * itemsPerPage;
@@ -63,7 +76,7 @@ export default function PricingTable() {
         { count: "exact" }
       );
 
-    // 🟢 aplica filtros de loja e marca
+    // filtros de loja
     if (selectedLoja.length) {
       const lojasDB = selectedLoja.map((l) =>
         l.includes("Pikot") ? "PK" :
@@ -73,11 +86,12 @@ export default function PricingTable() {
       query = query.in("Loja", lojasDB);
     }
 
+    // filtros de marca
     if (selectedBrands.length) {
       query = query.in("Marca", selectedBrands);
     }
 
-    // 🟢 ordenação
+    // ordenação
     if (sortColumn) {
       query = query.order(sortColumn, {
         ascending: sortDirection === "asc",
@@ -95,7 +109,6 @@ export default function PricingTable() {
       return;
     }
 
-    // 🔄 normaliza valores
     const normalized = (data || []).map((r) => ({
       ...r,
       Desconto: parseBR(r["Desconto"]),
@@ -115,9 +128,15 @@ export default function PricingTable() {
       setTotalItems(count || 0);
       setLoading(false);
     });
-  }, [currentPage, itemsPerPage, sortColumn, sortDirection, selectedLoja, selectedBrands]);
+  }, [
+    currentPage,
+    itemsPerPage,
+    sortColumn,
+    sortDirection,
+    selectedLoja,
+    selectedBrands,
+  ]);
 
-  // 🟢 recarrega ao mudar filtros
   useEffect(() => {
     loadData();
   }, [loadData]);
@@ -132,14 +151,14 @@ export default function PricingTable() {
     }
   };
 
-  // ---------- busca + filtro combinado ----------
+  // ---------- busca + filtro em memória (sobre rows da página atual) ----------
   useEffect(() => {
     if (!rows.length) return;
 
     const termo = debouncedSearch.toLowerCase().trim();
     const isNumeric = /^\d+$/.test(termo);
 
-    const normalize = (val: any) =>
+    const normalizeStr = (val: any) =>
       val
         ? String(val)
             .normalize("NFD")
@@ -159,13 +178,13 @@ export default function PricingTable() {
           selectedBrands.length === 0 || selectedBrands.includes(r.Marca);
 
         const campos = {
-          id: normalize(r.ID),
-          idTray: normalize(r["ID Tray"]),
-          idVar: normalize(r["ID Var"]),
-          referencia: normalize(r.Referência),
-          marca: normalize(r.Marca),
-          categoria: normalize(r.Categoria),
-          loja: normalize(lojaNome),
+          id: normalizeStr(r.ID),
+          idTray: normalizeStr(r["ID Tray"]),
+          idVar: normalizeStr(r["ID Var"]),
+          referencia: normalizeStr(r.Referência),
+          marca: normalizeStr(r.Marca),
+          categoria: normalizeStr(r.Categoria),
+          loja: normalizeStr(lojaNome),
         };
 
         if (isNumeric) {
@@ -179,7 +198,8 @@ export default function PricingTable() {
         }
 
         const searchOk =
-          termo === "" || Object.values(campos).some((campo) => campo.includes(termo));
+          termo === "" ||
+          Object.values(campos).some((campo) => campo.includes(termo));
 
         return lojaOk && marcaOk && searchOk;
       });
@@ -245,7 +265,7 @@ export default function PricingTable() {
 
   const cancelEdit = () => setEditing(null);
 
-  // ---------- importação pricing ----------
+  // ---------- importação ----------
   const handlePricingImport = async (data: any[]) => {
     for (const row of data) {
       const {
@@ -276,8 +296,122 @@ export default function PricingTable() {
     }
 
     setOpenPricingModal(false);
-    loadData(); // recarrega sem reload
+    loadData();
   };
+
+  // ---------- EXPORTAR TODOS OS ANÚNCIOS DO FILTRO (SEM LIMITE) ----------
+  const handleExportAll = useCallback(async () => {
+    const pageSize = 1000;
+    let page = 0;
+    let allData: any[] = [];
+
+    // 1) Buscar TUDO do Supabase em blocos
+    while (true) {
+      let query = supabase
+        .from("marketplace_tray_all")
+        .select(
+          `
+          ID, Loja, "ID Tray", "ID Var", Marca, Referência, Categoria,
+          Desconto, Embalagem, Frete, Comissão, Imposto, Marketing,
+          "Margem de Lucro", Custo, "Preço de Venda"
+        `
+        )
+        .order("ID", { ascending: true })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error("❌ Erro ao exportar todos:", error);
+        alert("Erro ao exportar anúncios.");
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        break;
+      }
+
+      allData = allData.concat(data);
+
+      if (data.length < pageSize) {
+        break;
+      }
+
+      page++;
+    }
+
+    // 2) Normalizar números
+    const allNormalized = allData.map((r) => ({
+      ...r,
+      Desconto: parseBR(r["Desconto"]),
+      Embalagem: parseBR(r["Embalagem"]),
+      Frete: parseBR(r["Frete"]),
+      Comissão: parseBR(r["Comissão"]),
+      Imposto: parseBR(r["Imposto"]),
+      Marketing: parseBR(r["Marketing"]),
+      "Margem de Lucro": parseBR(r["Margem de Lucro"]),
+      Custo: parseBR(r["Custo"]),
+      "Preço de Venda": parseBR(r["Preço de Venda"]),
+    }));
+
+    // 3) Aplicar MESMA lógica de filtro da tabela (loja + marca + busca)
+    const termo = debouncedSearch.toLowerCase().trim();
+    const isNumeric = /^\d+$/.test(termo);
+
+    const normalizeStr = (val: any) =>
+      val
+        ? String(val)
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase()
+        : "";
+
+    const exportRows = allNormalized.filter((r) => {
+      const lojaNome =
+        r.Loja === "PK" ? "Pikot Shop" : r.Loja === "SB" ? "Sóbaquetas" : r.Loja;
+
+      const lojaOk =
+        selectedLoja.length === 0 || selectedLoja.includes(lojaNome);
+
+      const marcaOk =
+        selectedBrands.length === 0 || selectedBrands.includes(r.Marca);
+
+      const campos = {
+        id: normalizeStr(r.ID),
+        idTray: normalizeStr(r["ID Tray"]),
+        idVar: normalizeStr(r["ID Var"]),
+        referencia: normalizeStr(r.Referência),
+        marca: normalizeStr(r.Marca),
+        categoria: normalizeStr(r.Categoria),
+        loja: normalizeStr(lojaNome),
+      };
+
+      if (isNumeric) {
+        const hit =
+          campos.id.includes(termo) ||
+          campos.idTray.includes(termo) ||
+          campos.idVar.includes(termo);
+
+        return lojaOk && marcaOk && hit;
+      }
+
+      const searchOk =
+        termo === "" ||
+        Object.values(campos).some((campo) => campo.includes(termo));
+
+      return lojaOk && marcaOk && searchOk;
+    });
+
+    console.log("📦 Total exportado:", exportRows.length);
+
+    // 4) Passar para o hook que gera o Excel
+    await impExp.handleExport(exportRows);
+  }, [
+    debouncedSearch,
+    selectedLoja,
+    selectedBrands,
+    impExp,
+  ]);
 
   // ---------- render ----------
   return (
@@ -287,7 +421,7 @@ export default function PricingTable() {
           <TopBarLite
             search={search}
             setSearch={setSearch}
-            onExport={() => impExp.handleExport(rows)}
+            onExport={handleExportAll} // 🔥 agora exporta exatamente o que a tela filtraria, sem limite
             onMassEditOpen={() => setOpenPricingModal(true)}
             allBrands={[]}
             allLojas={[]}
