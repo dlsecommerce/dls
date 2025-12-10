@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 export function FloatingEditor({
@@ -13,36 +13,64 @@ export function FloatingEditor({
   onClose?: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Evita erro durante SSR
   if (typeof window === "undefined" || !anchorRect) return null;
 
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+
   const padding = 4;
-  const estAltura = 60;
-  const cabeAbaixo =
-    anchorRect.bottom + estAltura + padding <= window.innerHeight;
-
-  const top = cabeAbaixo
-    ? window.scrollY + anchorRect.bottom + padding
-    : window.scrollY + anchorRect.top - estAltura - padding;
-
+  const estimatedHeight = 70;
   const maxWidth = 220;
-  const left = Math.min(
-    window.scrollX + anchorRect.left,
-    window.scrollX + window.innerWidth - maxWidth - padding
-  );
 
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (!containerRef.current) return;
-      if (!containerRef.current.contains(e.target as Node)) onClose?.();
+  // 🔥 Calcula posição EXATA antes de renderizar (evita "pular" na tela)
+  useLayoutEffect(() => {
+    const calcPosition = () => {
+      const canShowBelow =
+        anchorRect.bottom + estimatedHeight + padding <= window.innerHeight;
+
+      const top = canShowBelow
+        ? window.scrollY + anchorRect.bottom + padding
+        : window.scrollY + anchorRect.top - estimatedHeight - padding;
+
+      const left = Math.min(
+        window.scrollX + anchorRect.left,
+        window.scrollX + window.innerWidth - maxWidth - padding
+      );
+
+      setCoords({ top, left });
     };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+
+    calcPosition();
+
+    // Recalcular em redimensionamento (UX forte 🔥)
+    window.addEventListener("resize", calcPosition);
+    return () => window.removeEventListener("resize", calcPosition);
+  }, [anchorRect]);
+
+  // 🔥 Fecha ao clicar fora
+  useEffect(() => {
+    const handleDown = (e: MouseEvent | PointerEvent) => {
+      if (!containerRef.current) return;
+
+      const target = e.target as Node;
+      if (!containerRef.current.contains(target)) {
+        onClose?.();
+      }
+    };
+
+    document.addEventListener("pointerdown", handleDown);
+    return () => document.removeEventListener("pointerdown", handleDown);
   }, [onClose]);
 
+  // 🔥 Fecha com ESC
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose?.();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose?.();
+    };
+
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
   return createPortal(
@@ -50,8 +78,8 @@ export function FloatingEditor({
       ref={containerRef}
       style={{
         position: "absolute",
-        top,
-        left,
+        top: coords.top,
+        left: coords.left,
         zIndex: 9999,
         width: maxWidth,
       }}

@@ -31,12 +31,13 @@ export function useTrayImportExport(
       const siglaLoja = gerarSigla(lojaFiltro);
 
       const categoriaPart = categoriaFiltro
-        ? "-" + categoriaFiltro.toUpperCase().replace(/\s+/g, "")
+        ? " - " + categoriaFiltro.toUpperCase().replace(/\s+/g, "")
         : "";
 
-      const prefixo = `${siglaLoja}${categoriaPart}`;
+      const prefixo = siglaLoja ? ` - ${siglaLoja}${categoriaPart}` : "";
 
-      const fileName = `PRECIFICAÇÃO ${prefixo} - TRAY - ${format(
+      // ✅ CORRIGIDO — sempre fica "PRECIFICAÇÃO - SKP - TRAY - DATA"
+      const fileName = `PRECIFICAÇÃO${prefixo} - TRAY - ${format(
         new Date(),
         "dd-MM-yyyy HH'h'mm",
         { locale: ptBR }
@@ -66,16 +67,16 @@ export function useTrayImportExport(
         "Nome",
         "Marca",
         "Categoria",
-        "Desconto",        // K
-        "Embalagem",       // L
-        "Frete",           // M
-        "Comissão",        // N
-        "Imposto",         // O
-        "Margem de Lucro", // P
-        "Marketing",       // Q
+        "Desconto",
+        "Embalagem",
+        "Frete",
+        "Comissão",
+        "Imposto",
+        "Margem de Lucro",
+        "Marketing",
         "",
-        "Custo",           // S
-        "Preço de Venda",  // T fórmula
+        "Custo",
+        "Preço de Venda",
       ];
 
       sheet.addRow([]);
@@ -129,10 +130,7 @@ export function useTrayImportExport(
 
       sheet.getRow(1).eachCell((cell) => (cell.border = undefined));
 
-      // ------------------------------------
-      // INSERÇÃO DOS DADOS + FORMATAÇÃO
-      // ------------------------------------
-
+      // INSERÇÃO DOS DADOS
       data.forEach((row) => {
         const line = [
           row.ID || "",
@@ -145,15 +143,15 @@ export function useTrayImportExport(
           row.Nome || "",
           row.Marca || "",
           row.Categoria || "",
-          row.Desconto || 0,           // K (número puro ex.: 10)
-          row.Embalagem || 2.5,        // L
-          row.Frete || 0,              // M
-          row.Comissão || 0,           // N (ex.: 11)
-          row.Imposto || 0,            // O (ex.: 5)
-          row["Margem de Lucro"] || 0, // P
-          row.Marketing || 0,          // Q
+          row.Desconto || 0,
+          row.Embalagem || 2.5,
+          row.Frete || 0,
+          row.Comissão || 0,
+          row.Imposto || 0,
+          row["Margem de Lucro"] || 0,
+          row.Marketing || 0,
           "",
-          row.Custo || 0,              // S
+          row.Custo || 0,
           null,
         ];
 
@@ -165,7 +163,6 @@ export function useTrayImportExport(
             cell.numFmt = '_("R$"* #,##0.00_)';
           }
 
-          // Apenas exibe algo como "10 %" sem mudar valor interno
           if ([11, 14, 15, 16, 17].includes(col)) {
             cell.numFmt = '0.00 " %"';
           }
@@ -173,22 +170,21 @@ export function useTrayImportExport(
           cell.alignment = { horizontal: "center", vertical: "middle" };
         });
 
-        // ------------------------------------
-        // ⭐ FÓRMULA CORRIGIDA (OPÇÃO B)
-        // Agora divide os percentuais por 100
-        // ------------------------------------
+        // ⭐ PREÇO DE VENDA COM ROUND(...; 2)
         sheet.getCell(`T${rowNumber}`).value = {
           formula: `
-            (
-              (S${rowNumber} * (1 - K${rowNumber}/100))
-              + M${rowNumber}
-              + L${rowNumber}
-            )
-            /
-            (
-              1 - ((N${rowNumber} + O${rowNumber} + P${rowNumber} + Q${rowNumber})/100)
-            )
-          `.replace(/\s+/g, "")
+            ROUND(
+              (
+                (S${rowNumber} * (1 - K${rowNumber}/100)) +
+                M${rowNumber} +
+                L${rowNumber}
+              )
+              /
+              (
+                1 - ((N${rowNumber} + O${rowNumber} + P${rowNumber} + Q${rowNumber})/100)
+              )
+            , 2)
+          `.replace(/\s+/g, ""),
         };
 
         sheet.getCell(`T${rowNumber}`).numFmt = '_("R$"* #,##0.00_)';

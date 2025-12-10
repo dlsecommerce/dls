@@ -25,58 +25,64 @@ import PricingHeaderRow from "@/components/marketplaces/tray/PricingHeaderRow";
 export default function PricingTable() {
   const router = useRouter();
 
-  // ⭐ Filtros antes do hook
+  // ------------------------------
+  // ESTADOS PRINCIPAIS
+  // ------------------------------
+  const [rows, setRows] = useState<Row[]>([]);
+  const [filteredRows, setFilteredRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const [selectedLoja, setSelectedLoja] = useState<string[]>([]);
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
 
-  // Dados e controle da tabela
-  const [rows, setRows] = useState<Row[]>([]);
-  const [filteredRows, setFilteredRows] = useState<Row[]>([]);
-  const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
   const [totalItems, setTotalItems] = useState(0);
+
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<any>(null);
+
   const [openPricingModal, setOpenPricingModal] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [isPending, startTransition] = useTransition();
 
-  // Hook de exportação (usa filtros para nome do arquivo)
+  // Exportador
   const impExp = useTrayImportExport(
     filteredRows,
     selectedLoja[0] ?? "",
     selectedBrands[0] ?? ""
   );
 
-  // Debounce da busca
+  // ------------------------------
+  // DEBOUNCE PESQUISA
+  // ------------------------------
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(timeout);
   }, [search]);
 
-  // ---------- carregar dados (apenas página atual para a UI) ----------
+  // ------------------------------
+  // CARREGAR DADOS
+  // ------------------------------
   const loadData = useCallback(async () => {
     setLoading(true);
+
     const start = (currentPage - 1) * itemsPerPage;
     const end = start + itemsPerPage - 1;
 
     let query = supabase
       .from("marketplace_tray_all")
-      .select(
-        `
+      .select(`
         ID, Loja, "ID Tray", "ID Var", Marca, Referência, Categoria,
         Desconto, Embalagem, Frete, Comissão, Imposto, Marketing,
         "Margem de Lucro", Custo, "Preço de Venda"
-      `,
-        { count: "exact" }
-      );
+      `, { count: "exact" });
 
-    // filtros de loja
     if (selectedLoja.length) {
       const lojasDB = selectedLoja.map((l) =>
         l.includes("Pikot") ? "PK" :
@@ -86,12 +92,10 @@ export default function PricingTable() {
       query = query.in("Loja", lojasDB);
     }
 
-    // filtros de marca
     if (selectedBrands.length) {
       query = query.in("Marca", selectedBrands);
     }
 
-    // ordenação
     if (sortColumn) {
       query = query.order(sortColumn, {
         ascending: sortDirection === "asc",
@@ -104,21 +108,22 @@ export default function PricingTable() {
     const { data, error, count } = await query.range(start, end);
 
     if (error) {
-      console.error("❌ Supabase load error:", error);
+      console.error("❌ Supabase error:", error);
       setLoading(false);
       return;
     }
 
+    // Normalização final (NUNCA Number())
     const normalized = (data || []).map((r) => ({
       ...r,
-      Desconto: parseBR(r["Desconto"]),
-      Embalagem: parseBR(r["Embalagem"]),
-      Frete: parseBR(r["Frete"]),
-      Comissão: parseBR(r["Comissão"]),
-      Imposto: parseBR(r["Imposto"]),
-      Marketing: parseBR(r["Marketing"]),
+      Desconto: parseBR(r.Desconto),
+      Embalagem: parseBR(r.Embalagem),
+      Frete: parseBR(r.Frete),
+      Comissão: parseBR(r.Comissão),
+      Imposto: parseBR(r.Imposto),
+      Marketing: parseBR(r.Marketing),
       "Margem de Lucro": parseBR(r["Margem de Lucro"]),
-      Custo: parseBR(r["Custo"]),
+      Custo: parseBR(r.Custo),
       "Preço de Venda": parseBR(r["Preço de Venda"]),
     }));
 
@@ -141,7 +146,9 @@ export default function PricingTable() {
     loadData();
   }, [loadData]);
 
-  // ---------- ordenação ----------
+  // ------------------------------
+  // ORDENAR
+  // ------------------------------
   const handleSort = (col: string) => {
     if (sortColumn === col) {
       setSortDirection((p) => (p === "asc" ? "desc" : "asc"));
@@ -151,82 +158,82 @@ export default function PricingTable() {
     }
   };
 
-  // ---------- busca + filtro em memória (sobre rows da página atual) ----------
+  // ------------------------------
+  // FILTRAGEM / BUSCA EM MEMÓRIA
+  // ------------------------------
   useEffect(() => {
     if (!rows.length) return;
 
-    const termo = debouncedSearch.toLowerCase().trim();
+    const termo = debouncedSearch.toLowerCase();
     const isNumeric = /^\d+$/.test(termo);
 
-    const normalizeStr = (val: any) =>
-      val
-        ? String(val)
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .toLowerCase()
-        : "";
+    const normalize = (v: any) =>
+      String(v || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
 
     startTransition(() => {
-      const filtrados = rows.filter((r) => {
-        const lojaNome =
-          r.Loja === "PK" ? "Pikot Shop" : r.Loja === "SB" ? "Sóbaquetas" : r.Loja;
+      const result = rows.filter((r) => {
+        const lojaNome = r.Loja === "PK" ? "Pikot Shop" : "Sóbaquetas";
 
         const lojaOk =
           selectedLoja.length === 0 || selectedLoja.includes(lojaNome);
-
         const marcaOk =
           selectedBrands.length === 0 || selectedBrands.includes(r.Marca);
 
-        const campos = {
-          id: normalizeStr(r.ID),
-          idTray: normalizeStr(r["ID Tray"]),
-          idVar: normalizeStr(r["ID Var"]),
-          referencia: normalizeStr(r.Referência),
-          marca: normalizeStr(r.Marca),
-          categoria: normalizeStr(r.Categoria),
-          loja: normalizeStr(lojaNome),
-        };
+        if (!lojaOk || !marcaOk) return false;
 
-        if (isNumeric) {
+        const campos = [
+          normalize(r.ID),
+          normalize(r["ID Tray"]),
+          normalize(r["ID Var"]),
+          normalize(r.Marca),
+          normalize(r.Referência),
+          normalize(r.Categoria),
+          normalize(lojaNome),
+        ];
+
+        if (termo === "") return true;
+
+        if (isNumeric)
           return (
-            lojaOk &&
-            marcaOk &&
-            (campos.id.includes(termo) ||
-              campos.idTray.includes(termo) ||
-              campos.idVar.includes(termo))
+            campos[0].includes(termo) ||
+            campos[1].includes(termo) ||
+            campos[2].includes(termo)
           );
-        }
 
-        const searchOk =
-          termo === "" ||
-          Object.values(campos).some((campo) => campo.includes(termo));
-
-        return lojaOk && marcaOk && searchOk;
+        return campos.some((c) => c.includes(termo));
       });
 
-      setFilteredRows(filtrados);
+      setFilteredRows(result);
     });
   }, [debouncedSearch, rows, selectedLoja, selectedBrands]);
 
-  // ---------- copiar ----------
-  const handleCopy = useCallback((text: string, uniqueKey: string) => {
-    if (!text) return;
+  // ------------------------------
+  // COPIAR
+  // ------------------------------
+  const handleCopy = useCallback((text: string, key: string) => {
     navigator.clipboard.writeText(text);
-    setCopiedId(uniqueKey);
+    setCopiedId(key);
     setTimeout(() => setCopiedId(null), 1200);
   }, []);
 
-  // ---------- edição ----------
+  // ------------------------------
+  // ABRIR EDITOR
+  // ------------------------------
   const openEditor = useCallback(
     (row: Row, field: keyof Row, isMoney: boolean, e: React.MouseEvent) => {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      const val = row[field] ?? 0;
-      const str = toBR(Number(val));
+
+      const rawValue = parseBR(row[field]);
+      const formatted = toBR(rawValue);
+
       setEditing({
         id: row.ID,
         loja: row.Loja,
         field,
-        value: str,
+        value: formatted,
         isMoney,
         anchorRect: rect,
       });
@@ -234,8 +241,12 @@ export default function PricingTable() {
     []
   );
 
+  // ------------------------------
+  // CONFIRMAR EDIÇÃO
+  // ------------------------------
   const confirmEdit = useCallback(async () => {
     if (!editing) return;
+
     const { id, loja, field, value } = editing;
     const newVal = parseBR(value);
 
@@ -250,170 +261,100 @@ export default function PricingTable() {
 
     setRows(updatedRows);
 
-    const base = updatedRows.find((r) => r.ID === id && r.Loja === loja);
-    const precoNovo = base ? base["Preço de Venda"] : 0;
+    const rowUpdated = updatedRows.find((r) => r.ID === id && r.Loja === loja);
+    const precoNovo = rowUpdated?.["Preço de Venda"] ?? 0;
 
     const { error } = await supabase
       .from("marketplace_tray_all")
-      .update({ [String(field)]: newVal, "Preço de Venda": precoNovo })
+      .update({
+        [String(field)]: newVal,
+        "Preço de Venda": precoNovo,
+      })
       .eq("ID", id)
       .eq("Loja", loja);
 
     if (error) console.error("❌ Erro ao salvar:", error);
+
     setEditing(null);
   }, [editing, rows]);
 
   const cancelEdit = () => setEditing(null);
 
-  // ---------- importação ----------
+  // ------------------------------
+  // IMPORTAÇÃO EM MASSA
+  // ------------------------------
   const handlePricingImport = async (data: any[]) => {
     for (const row of data) {
-      const {
-        ID,
-        Desconto,
-        Embalagem,
-        Frete,
-        Comissão,
-        Imposto,
-        Marketing,
-        Custo,
-        "Preço de Venda": PrecoVenda,
-      } = row;
-
       await supabase
         .from("marketplace_tray_all")
         .update({
-          Desconto: Desconto ?? null,
-          Embalagem: Embalagem ?? null,
-          Frete: Frete ?? null,
-          Comissão: Comissão ?? null,
-          Imposto: Imposto ?? null,
-          Marketing: Marketing ?? null,
-          Custo: Custo ?? null,
-          "Preço de Venda": PrecoVenda ?? null,
+          Desconto: row.Desconto,
+          Embalagem: row.Embalagem,
+          Frete: row.Frete,
+          Comissão: row.Comissão,
+          Imposto: row.Imposto,
+          Marketing: row.Marketing,
+          Custo: row.Custo,
+          "Preço de Venda": row["Preço de Venda"],
         })
-        .eq("ID", ID);
+        .eq("ID", row.ID);
     }
 
     setOpenPricingModal(false);
     loadData();
   };
 
-  // ---------- EXPORTAR TODOS OS ANÚNCIOS DO FILTRO (SEM LIMITE) ----------
+  // ------------------------------
+  // EXPORTAR TODOS
+  // ------------------------------
   const handleExportAll = useCallback(async () => {
     const pageSize = 1000;
     let page = 0;
-    let allData: any[] = [];
+    let all: any[] = [];
 
-    // 1) Buscar TUDO do Supabase em blocos
     while (true) {
-      let query = supabase
+      const { data, error } = await supabase
         .from("marketplace_tray_all")
-        .select(
-          `
+        .select(`
           ID, Loja, "ID Tray", "ID Var", Marca, Referência, Categoria,
           Desconto, Embalagem, Frete, Comissão, Imposto, Marketing,
           "Margem de Lucro", Custo, "Preço de Venda"
-        `
-        )
+        `)
         .order("ID", { ascending: true })
         .range(page * pageSize, (page + 1) * pageSize - 1);
 
-      const { data, error } = await query;
-
       if (error) {
-        console.error("❌ Erro ao exportar todos:", error);
-        alert("Erro ao exportar anúncios.");
+        alert("Erro ao exportar");
         return;
       }
 
-      if (!data || data.length === 0) {
-        break;
-      }
+      if (!data?.length) break;
 
-      allData = allData.concat(data);
-
-      if (data.length < pageSize) {
-        break;
-      }
+      all = [...all, ...data];
+      if (data.length < pageSize) break;
 
       page++;
     }
 
-    // 2) Normalizar números
-    const allNormalized = allData.map((r) => ({
+    const normalized = all.map((r) => ({
       ...r,
-      Desconto: parseBR(r["Desconto"]),
-      Embalagem: parseBR(r["Embalagem"]),
-      Frete: parseBR(r["Frete"]),
-      Comissão: parseBR(r["Comissão"]),
-      Imposto: parseBR(r["Imposto"]),
-      Marketing: parseBR(r["Marketing"]),
+      Desconto: parseBR(r.Desconto),
+      Embalagem: parseBR(r.Embalagem),
+      Frete: parseBR(r.Frete),
+      Comissão: parseBR(r.Comissão),
+      Imposto: parseBR(r.Imposto),
+      Marketing: parseBR(r.Marketing),
       "Margem de Lucro": parseBR(r["Margem de Lucro"]),
-      Custo: parseBR(r["Custo"]),
+      Custo: parseBR(r.Custo),
       "Preço de Venda": parseBR(r["Preço de Venda"]),
     }));
 
-    // 3) Aplicar MESMA lógica de filtro da tabela (loja + marca + busca)
-    const termo = debouncedSearch.toLowerCase().trim();
-    const isNumeric = /^\d+$/.test(termo);
+    await impExp.handleExport(normalized);
+  }, [selectedLoja, selectedBrands, debouncedSearch]);
 
-    const normalizeStr = (val: any) =>
-      val
-        ? String(val)
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .toLowerCase()
-        : "";
-
-    const exportRows = allNormalized.filter((r) => {
-      const lojaNome =
-        r.Loja === "PK" ? "Pikot Shop" : r.Loja === "SB" ? "Sóbaquetas" : r.Loja;
-
-      const lojaOk =
-        selectedLoja.length === 0 || selectedLoja.includes(lojaNome);
-
-      const marcaOk =
-        selectedBrands.length === 0 || selectedBrands.includes(r.Marca);
-
-      const campos = {
-        id: normalizeStr(r.ID),
-        idTray: normalizeStr(r["ID Tray"]),
-        idVar: normalizeStr(r["ID Var"]),
-        referencia: normalizeStr(r.Referência),
-        marca: normalizeStr(r.Marca),
-        categoria: normalizeStr(r.Categoria),
-        loja: normalizeStr(lojaNome),
-      };
-
-      if (isNumeric) {
-        const hit =
-          campos.id.includes(termo) ||
-          campos.idTray.includes(termo) ||
-          campos.idVar.includes(termo);
-
-        return lojaOk && marcaOk && hit;
-      }
-
-      const searchOk =
-        termo === "" ||
-        Object.values(campos).some((campo) => campo.includes(termo));
-
-      return lojaOk && marcaOk && searchOk;
-    });
-
-    console.log("📦 Total exportado:", exportRows.length);
-
-    // 4) Passar para o hook que gera o Excel
-    await impExp.handleExport(exportRows);
-  }, [
-    debouncedSearch,
-    selectedLoja,
-    selectedBrands,
-    impExp,
-  ]);
-
-  // ---------- render ----------
+  // ------------------------------
+  // RENDERIZAÇÃO
+  // ------------------------------
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-8">
       <div className="mx-auto space-y-6 w-full">
@@ -421,7 +362,7 @@ export default function PricingTable() {
           <TopBarLite
             search={search}
             setSearch={setSearch}
-            onExport={handleExportAll} // 🔥 agora exporta exatamente o que a tela filtraria, sem limite
+            onExport={handleExportAll}
             onMassEditOpen={() => setOpenPricingModal(true)}
             allBrands={[]}
             allLojas={[]}
@@ -486,6 +427,7 @@ export default function PricingTable() {
               <span className="text-xs px-1 py-0.5 rounded bg-black/60 border border-neutral-700 mr-1">
                 {editing.isMoney ? "R$" : "%"}
               </span>
+
               <input
                 autoFocus
                 inputMode="decimal"
@@ -499,6 +441,7 @@ export default function PricingTable() {
                   if (e.key === "Escape") cancelEdit();
                 }}
               />
+
               <div className="absolute right-1 flex items-center gap-1">
                 <button
                   title="Cancelar"
@@ -507,6 +450,7 @@ export default function PricingTable() {
                 >
                   <XIcon className="w-4 h-4" />
                 </button>
+
                 <button
                   title="Confirmar"
                   onClick={confirmEdit}

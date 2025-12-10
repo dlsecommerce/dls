@@ -52,9 +52,11 @@ export const Table: React.FC<{
   const sortedRows = [...rows].sort((a, b) => {
     const valA = a[sortField];
     const valB = b[sortField];
+
     if (typeof valA === "number" && typeof valB === "number") {
       return sortDirection === "asc" ? valA - valB : valB - valA;
     }
+
     return sortDirection === "asc"
       ? String(valA).localeCompare(String(valB))
       : String(valB).localeCompare(String(valA));
@@ -78,6 +80,7 @@ export const Table: React.FC<{
                 ))}
             </div>
           </th>
+
           <th>Loja</th>
           <th>ID Tray</th>
           <th>Marca</th>
@@ -141,6 +144,9 @@ export const TableRows: React.FC<TableRowsProps> = ({
   const lojaLabel = (loja: string) =>
     loja === "PK" ? "Pikot Shop" : loja === "SB" ? "Sóbaquetas" : loja;
 
+  /* ============================================================
+     CÉLULA EDITÁVEL
+  ============================================================ */
   const CellEditable = ({
     row,
     field,
@@ -152,14 +158,16 @@ export const TableRows: React.FC<TableRowsProps> = ({
     isMoney?: boolean;
     suffix?: string;
   }) => {
+    const rawValue = row[field] ?? 0;
     const displayVal = isMoney
-      ? `R$ ${toBR(Number(row[field] || 0))}`
-      : `${toBR(Number(row[field] || 0))}${suffix}`;
+      ? `R$ ${toBR(rawValue as number)}`
+      : `${toBR(rawValue as number)}${suffix}`;
 
     return (
       <td className="px-3 text-white text-center align-middle h-16 whitespace-nowrap">
-        <div className="flex justify-center items-center gap-1 group leading-none h-full">
+        <div className="flex justify-center items-center gap-1 group h-full">
           <span className="text-white">{displayVal}</span>
+
           <button
             onClick={(e) => openEditor(row, field, isMoney, e)}
             title="Editar"
@@ -172,67 +180,66 @@ export const TableRows: React.FC<TableRowsProps> = ({
     );
   };
 
+  /* ============================================================
+     LOADER CENTRALIZADO
+  ============================================================ */
   if (loading) {
     return (
-      <tr className="h-16">
-        <td
-          colSpan={15}
-          className="text-center text-neutral-400 py-6 align-middle"
-        >
-          <div className="flex items-center justify-center gap-2">
-            <LoaderIcon className="w-5 h-5 animate-spin text-neutral-400" />
+      <tr>
+        <td colSpan={15}>
+          <div className="flex justify-center items-center h-28">
+            <LoaderIcon className="w-8 h-8 animate-spin text-neutral-400" />
           </div>
         </td>
       </tr>
     );
   }
 
+  /* ============================================================
+     NENHUM RESULTADO
+  ============================================================ */
   if (rows.length === 0) {
     return (
-      <tr className="h-16">
-        <td
-          colSpan={15}
-          className="text-center text-neutral-400 py-6 align-middle"
-        >
-          Nenhum registro encontrado
+      <tr>
+        <td colSpan={15}>
+          <div className="flex justify-center items-center h-40 text-neutral-400">
+            Nenhum registro encontrado
+          </div>
         </td>
       </tr>
     );
   }
 
+  /* ============================================================
+     RENDERIZAÇÃO DAS LINHAS
+  ============================================================ */
   return (
     <>
       {rows.map((row, i) => (
         <tr
           key={`${row.Loja}-${row.ID}-${i}`}
-          className="h-16 border-b border-neutral-700 hover:bg-white/10 transition-colors text-center align-middle"
+          className="h-16 border-b border-neutral-700 hover:bg-white/10 transition-colors text-center"
         >
           {/* ID */}
-          <td className="px-3 text-white align-middle break-all max-w-[90px]">
-            {row.ID}
-          </td>
+          <td className="px-3 text-white">{row.ID}</td>
 
           {/* Loja */}
-          <td className="px-3 text-neutral-300 align-middle h-16 whitespace-nowrap">
-            {lojaLabel(row.Loja)}
-          </td>
+          <td className="px-3 text-neutral-300">{lojaLabel(row.Loja)}</td>
 
           {/* ID Tray */}
-          <td className="px-3 text-neutral-300 align-middle break-words max-w-[120px]">
-            <div className="flex flex-col justify-center items-center gap-1 group leading-none h-full">
-              <span className="break-all text-center">
-                {row["ID Tray"] || "-"}
-              </span>
+          <td className="px-3 text-neutral-300 break-words max-w-[120px]">
+            <div className="flex flex-col items-center gap-1 group">
+              <span>{row["ID Tray"] || "-"}</span>
+
               {row["ID Tray"] && (
                 <button
                   onClick={() =>
                     handleCopy(String(row["ID Tray"]), `tray-${row.ID}`)
                   }
-                  title="Copiar"
-                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+                  className="opacity-0 group-hover:opacity-100 cursor-pointer"
                 >
                   <CopyIcon
-                    className={`w-3 h-3 transition-all duration-300 ${
+                    className={`w-3 h-3 ${
                       copiedId === `tray-${row.ID}`
                         ? "text-blue-500 scale-110"
                         : "text-white group-hover:text-blue-400"
@@ -244,24 +251,24 @@ export const TableRows: React.FC<TableRowsProps> = ({
           </td>
 
           {/* Marca */}
-          <td className="px-3 text-neutral-300 align-middle break-words max-w-[140px] text-center">
+          <td className="px-3 text-neutral-300 break-words max-w-[140px]">
             {row.Marca}
           </td>
 
           {/* Referência */}
-          <td className="px-3 text-neutral-300 align-middle break-all max-w-[150px]">
-            <div className="flex flex-col justify-center items-center gap-1 group leading-none h-full text-center">
-              <span className="break-all">{row["Referência"] || "-"}</span>
+          <td className="px-3 text-neutral-300 break-all max-w-[150px]">
+            <div className="flex flex-col items-center gap-1 group">
+              <span>{row["Referência"] || "-"}</span>
+
               {row["Referência"] && (
                 <button
                   onClick={() =>
                     handleCopy(String(row["Referência"]), `ref-${row.ID}`)
                   }
-                  title="Copiar"
-                  className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+                  className="opacity-0 group-hover:opacity-100 cursor-pointer"
                 >
                   <CopyIcon
-                    className={`w-3 h-3 transition-all duration-300 ${
+                    className={`w-3 h-3 ${
                       copiedId === `ref-${row.ID}`
                         ? "text-blue-500 scale-110"
                         : "text-white group-hover:text-blue-400"
@@ -272,7 +279,7 @@ export const TableRows: React.FC<TableRowsProps> = ({
             </div>
           </td>
 
-          {/* Campos editáveis */}
+          {/* CAMPOS EDITÁVEIS */}
           <CellEditable row={row} field="Desconto" suffix="%" />
           <CellEditable row={row} field="Embalagem" isMoney />
           <CellEditable row={row} field="Frete" isMoney />
@@ -282,26 +289,24 @@ export const TableRows: React.FC<TableRowsProps> = ({
           <CellEditable row={row} field="Marketing" suffix="%" />
 
           {/* Custo */}
-          <td className="px-3 text-white whitespace-nowrap align-middle h-16">
-            R$ {toBR(row.Custo || 0)}
-          </td>
+          <td className="px-3 text-white">R$ {toBR(row.Custo)}</td>
 
           {/* Preço de Venda */}
-          <td className="px-3 whitespace-nowrap text-[#4ade80] font-semibold align-middle h-16">
-            <div className="flex justify-center items-center gap-1 group leading-none h-full">
-              R$ {toBR(row["Preço de Venda"] || 0)}
+          <td className="px-3 text-[#4ade80] font-semibold">
+            <div className="flex justify-center gap-1 group">
+              R$ {toBR(row["Preço de Venda"])}
+
               <button
                 onClick={() =>
                   handleCopy(
-                    String(toBR(row["Preço de Venda"] || 0)),
+                    String(toBR(row["Preço de Venda"])),
                     `preco-${row.ID}`
                   )
                 }
-                title="Copiar"
-                className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+                className="opacity-0 group-hover:opacity-100 cursor-pointer"
               >
                 <CopyIcon
-                  className={`w-3 h-3 transition-all duration-300 ${
+                  className={`w-3 h-3 ${
                     copiedId === `preco-${row.ID}`
                       ? "text-blue-500 scale-110"
                       : "text-white group-hover:text-blue-400"
@@ -311,20 +316,18 @@ export const TableRows: React.FC<TableRowsProps> = ({
             </div>
           </td>
 
-          {/* Ações */}
-          <td className="px-3 whitespace-nowrap align-middle h-16">
+          {/* AÇÕES */}
+          <td className="px-3">
             <button
-              onClick={() => {
-                // Correção: sempre enviar PK ou SB
+              onClick={() =>
                 router.push(
                   `/dashboard/marketplaces/tray/details?id=${row.ID}&loja=${row.Loja}`
-                );
-              }}
-              title="Editar detalhes"
-              className="cursor-pointer text-white hover:text-[#1A8CEB] transition-colors"
+                )
+              }
+              className="text-white hover:text-[#1A8CEB] cursor-pointer"
             >
               <EditIcon
-                className={`w-4 h-4 inline-block transition-all duration-300 ${
+                className={`w-4 h-4 ${
                   editedId === `${row.Loja}-${row.ID}`
                     ? "text-[#1A8CEB] scale-110"
                     : ""
