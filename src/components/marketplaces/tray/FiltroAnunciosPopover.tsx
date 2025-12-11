@@ -24,7 +24,7 @@ type Props = {
   onOpenChange: (v: boolean) => void;
 };
 
-// Mapas de conversão
+// Mapas corretos
 const lojaMap: Record<string, string> = {
   PK: "Pikot Shop",
   SB: "Sóbaquetas",
@@ -36,8 +36,8 @@ const reverseLojaMap: Record<string, string> = {
 
 // Lojas disponíveis (fixas)
 const sources = [
-  { table: "marketplace_tray_all", code: "PK", displayName: "Pikot Shop" },
-  { table: "marketplace_tray_all", code: "SB", displayName: "Sóbaquetas" },
+  { code: "PK", displayName: "Pikot Shop" },
+  { code: "SB", displayName: "Sóbaquetas" },
 ];
 
 export default function FiltroAnunciosPopover({
@@ -52,78 +52,53 @@ export default function FiltroAnunciosPopover({
   const [allBrands, setAllBrands] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Cache de marcas por loja (displayName)
-  const cacheRef = useRef<Record<string, string[]>>({});
-
-  // Normaliza o que vier de cima: aceita "PK"/"SB" OU nomes amigáveis
-  const selectedLojaDisplay = useMemo(
-    () => selectedLoja.map((v) => lojaMap[v] || v),
-    [selectedLoja]
-  );
-  const selectedLojaCodes = useMemo(
-    () => selectedLoja.map((v) => reverseLojaMap[v] || v), // devolve "PK"/"SB" se vier nome amigável
-    [selectedLoja]
-  );
-
-  // Lojas fixas (o que aparece no UI)
+  // Lojas mostradas no UI
   useEffect(() => {
     setAllLojas(sources.map((s) => s.displayName));
   }, []);
 
-  // Carrega marcas conforme seleção de loja
+  // Carrega marcas filtrando pelo código da loja (PK/SB)
   useEffect(() => {
     const loadBrands = async () => {
       setLoading(true);
       try {
-        // Determina códigos ativos (PK / SB)
-        const activeCodes =
-          selectedLojaCodes.length > 0 ? new Set(selectedLojaCodes) : null;
-
-        // Cache total, caso precise reaproveitar
-        let allMarcas: string[] = [];
-
-        // Busca sempre na tabela unificada
         const { data, error } = await supabase
           .from("marketplace_tray_all")
           .select("Loja, Marca");
 
-        if (error) {
-          console.error("Erro ao buscar marcas:", error.message);
+        if (error || !data) {
+          console.error("Erro ao buscar marcas:", error?.message);
           setAllBrands([]);
           return;
         }
 
-        if (data && data.length > 0) {
-          // Filtra em memória conforme loja selecionada (PK / SB)
-          const filteredRows =
-            activeCodes && activeCodes.size > 0
-              ? data.filter((r: any) => activeCodes.has(r?.Loja))
-              : data;
+        const filtered = selectedLoja.length
+          ? data.filter((r: any) => selectedLoja.includes(r.Loja))
+          : data;
 
-          // Extrai e ordena as marcas únicas
-          allMarcas = Array.from(
-            new Set(filteredRows.map((r: any) => r?.Marca).filter(Boolean))
-          ).sort();
-        }
+        const uniqueBrands = Array.from(
+          new Set(filtered.map((r: any) => r.Marca).filter(Boolean))
+        ).sort();
 
-        setAllBrands(allMarcas);
+        setAllBrands(uniqueBrands);
       } finally {
         setLoading(false);
       }
     };
 
     loadBrands();
-  }, [selectedLojaDisplay, selectedLojaCodes]);
+  }, [selectedLoja]);
 
-  const toggle = (
-    set: (v: string[]) => void,
-    current: string[],
-    value: string
-  ) => {
-    // Sempre armazene no estado o DISPLAY NAME para manter o UI consistente
-    const display = lojaMap[value] || value; // se vier "PK", vira "Pikot Shop"
-    if (current.includes(display)) set(current.filter((x) => x !== display));
-    else set([...current, display]);
+  // 🔥 Toggle corrigido — sempre salva PK / SB no estado principal
+  const toggleLoja = (lojaDisplay: string) => {
+    const code = reverseLojaMap[lojaDisplay]; // Pikot Shop → PK
+    if (!code) return;
+
+    if (selectedLoja.includes(code)) {
+      setSelectedLoja(selectedLoja.filter((x) => x !== code));
+    } else {
+      setSelectedLoja([...selectedLoja, code]);
+    }
   };
 
   const limparTudo = () => {
@@ -167,7 +142,9 @@ export default function FiltroAnunciosPopover({
                 <Label className="text-white text-sm mb-1 block">Loja</Label>
                 <div className="max-h-28 overflow-auto pr-1 space-y-1 pl-1">
                   {allLojas.map((loja, idx) => {
-                    const isChecked = selectedLojaDisplay.includes(loja);
+                    const code = reverseLojaMap[loja]; // Pikot Shop → PK
+                    const isChecked = selectedLoja.includes(code);
+
                     return (
                       <div
                         key={idx}
@@ -178,14 +155,12 @@ export default function FiltroAnunciosPopover({
                         } cursor-pointer hover:scale-[1.02]`}
                         onClick={(e) => {
                           e.stopPropagation();
-                          toggle(setSelectedLoja, selectedLojaDisplay, loja);
+                          toggleLoja(loja);
                         }}
                       >
                         <Checkbox
                           checked={isChecked}
-                          onCheckedChange={() =>
-                            toggle(setSelectedLoja, selectedLojaDisplay, loja)
-                          }
+                          onCheckedChange={() => toggleLoja(loja)}
                           className="border-neutral-600 cursor-pointer data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-green-500 data-[state=checked]:to-green-600"
                         />
                         <span>{loja}</span>
@@ -225,13 +200,13 @@ export default function FiltroAnunciosPopover({
                         >
                           <Checkbox
                             checked={isChecked}
-                            onCheckedChange={() => {
-                              if (isChecked)
-                                setSelectedBrands(
-                                  selectedBrands.filter((x) => x !== m)
-                                );
-                              else setSelectedBrands([...selectedBrands, m]);
-                            }}
+                            onCheckedChange={() =>
+                              isChecked
+                                ? setSelectedBrands(
+                                    selectedBrands.filter((x) => x !== m)
+                                  )
+                                : setSelectedBrands([...selectedBrands, m])
+                            }
                             className="border-neutral-600 cursor-pointer data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-green-500 data-[state=checked]:to-green-600"
                           />
                           <span className="truncate" title={m}>
@@ -268,7 +243,7 @@ export default function FiltroAnunciosPopover({
 
       {/* 🟢 Filtros ativos na Topbar */}
       <AnimatePresence>
-        {(selectedLojaDisplay.length > 0 || selectedBrands.length > 0) && (
+        {(selectedLoja.length > 0 || selectedBrands.length > 0) && (
           <motion.div
             className="flex flex-wrap items-center gap-2 ml-2"
             initial={{ opacity: 0, y: -4 }}
@@ -276,21 +251,24 @@ export default function FiltroAnunciosPopover({
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.25 }}
           >
-            {[...selectedLojaDisplay, ...selectedBrands].map((item) => (
-              <motion.div
-                key={item}
-                className="flex items-center gap-1 bg-white/10 border border-green-500/50 text-white px-2 py-[3px] rounded-md text-xs cursor-pointer hover:bg-green-600/20 transition-all"
-                onClick={() => {
-                  setSelectedLoja(selectedLojaDisplay.filter((l) => l !== item));
-                  setSelectedBrands(selectedBrands.filter((b) => b !== item));
-                }}
-              >
-                <span className="truncate max-w-[100px]">{item}</span>
-                <span className="text-[11px] font-bold ml-1 text-green-500">
-                  ✕
-                </span>
-              </motion.div>
-            ))}
+            {[...selectedLoja.map((c) => lojaMap[c]), ...selectedBrands].map(
+              (item) => (
+                <motion.div
+                  key={item}
+                  className="flex items-center gap-1 bg-white/10 border border-green-500/50 text-white px-2 py-[3px] rounded-md text-xs cursor-pointer hover:bg-green-600/20 transition-all"
+                  onClick={() => {
+                    const code = reverseLojaMap[item];
+                    if (code) setSelectedLoja(selectedLoja.filter((l) => l !== code));
+                    setSelectedBrands(selectedBrands.filter((b) => b !== item));
+                  }}
+                >
+                  <span className="truncate max-w-[100px]">{item}</span>
+                  <span className="text-[11px] font-bold ml-1 text-green-500">
+                    ✕
+                  </span>
+                </motion.div>
+              )
+            )}
 
             <Button
               variant="ghost"

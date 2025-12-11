@@ -8,7 +8,7 @@ import { ptBR } from "date-fns/locale";
 
 export function useTrayImportExport(
   rows: any[],
-  lojaFiltro?: string,
+  lojasFiltro?: string | string[],
   categoriaFiltro?: string
 ) {
   const handleExport = useCallback(
@@ -20,15 +20,41 @@ export function useTrayImportExport(
         return;
       }
 
-      const gerarSigla = (nome?: string) =>
-        nome
-          ? nome
-              .split(" ")
-              .map((w) => w[0]?.toUpperCase())
-              .join("")
-          : "";
+      // ---------------------------------------------------------
+      // 🔥 NORMALIZA LISTA DE LOJAS
+      // ---------------------------------------------------------
+      const lojasSelecionadas = Array.isArray(lojasFiltro)
+        ? lojasFiltro
+        : lojasFiltro
+        ? [lojasFiltro]
+        : [];
 
-      const siglaLoja = gerarSigla(lojaFiltro);
+      // ---------------------------------------------------------
+      // 🔥 MAPEAMENTO OFICIAL DAS SIGLAS
+      // ---------------------------------------------------------
+      const mapSigla = (nomeLoja: string) => {
+        const loja = nomeLoja.toLowerCase();
+
+        if (loja.includes("sobaquetas") || loja === "sb") return "SB";
+        if (loja.includes("pikot") || loja === "pk") return "PK";
+
+        // fallback — primeira letra de cada palavra
+        return nomeLoja
+          .split(" ")
+          .map((w) => w[0]?.toUpperCase())
+          .join("");
+      };
+
+      // ---------------------------------------------------------
+      // 🔥 SE TIVER MAIS DE UMA LOJA, JUNTA ASSIM: PK_SB
+      // ---------------------------------------------------------
+      let siglaLoja = "";
+
+      if (lojasSelecionadas.length === 1) {
+        siglaLoja = mapSigla(lojasSelecionadas[0]);
+      } else if (lojasSelecionadas.length > 1) {
+        siglaLoja = lojasSelecionadas.map(mapSigla).join("_");
+      }
 
       const categoriaPart = categoriaFiltro
         ? " - " + categoriaFiltro.toUpperCase().replace(/\s+/g, "")
@@ -36,13 +62,18 @@ export function useTrayImportExport(
 
       const prefixo = siglaLoja ? ` - ${siglaLoja}${categoriaPart}` : "";
 
-      // ✅ CORRIGIDO — sempre fica "PRECIFICAÇÃO - SKP - TRAY - DATA"
+      // ---------------------------------------------------------
+      // 🔥 NOME FINAL DO ARQUIVO
+      // ---------------------------------------------------------
       const fileName = `PRECIFICAÇÃO${prefixo} - TRAY - ${format(
         new Date(),
         "dd-MM-yyyy HH'h'mm",
         { locale: ptBR }
       )}.xlsx`;
 
+      // ---------------------------------------------------------
+      // EXCEL WORKBOOK
+      // ---------------------------------------------------------
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet("PRECIFICAÇÃO");
 
@@ -130,7 +161,9 @@ export function useTrayImportExport(
 
       sheet.getRow(1).eachCell((cell) => (cell.border = undefined));
 
+      // ---------------------------------------------------------
       // INSERÇÃO DOS DADOS
+      // ---------------------------------------------------------
       data.forEach((row) => {
         const line = [
           row.ID || "",
@@ -170,7 +203,6 @@ export function useTrayImportExport(
           cell.alignment = { horizontal: "center", vertical: "middle" };
         });
 
-        // ⭐ PREÇO DE VENDA COM ROUND(...; 2)
         sheet.getCell(`T${rowNumber}`).value = {
           formula: `
             ROUND(
@@ -197,7 +229,7 @@ export function useTrayImportExport(
       saveAs(new Blob([buffer]), fileName);
     },
 
-    [rows, lojaFiltro, categoriaFiltro]
+    [rows, lojasFiltro, categoriaFiltro]
   );
 
   return { handleExport };

@@ -1,6 +1,5 @@
 "use client";
-
-import React from "react";
+import React, { useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,34 +9,42 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
-import { FileDown, FileSpreadsheet } from "lucide-react";
+import { FileDown, FileSpreadsheet, Upload } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
 
 type Props = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onExportModeloAlteracao: () => Promise<void> | void;
+  onImportInclusao: (file: File) => void;
+  onImportAlteracao: (file: File) => void;
 };
 
 export default function MassEditionModal({
   open,
   onOpenChange,
   onExportModeloAlteracao,
+  onImportInclusao,
+  onImportAlteracao,
 }: Props) {
+  const inputInclusaoRef = useRef<HTMLInputElement | null>(null);
+  const inputAlteracaoRef = useRef<HTMLInputElement | null>(null);
+
+  /* === MODELO DE INCLUSÃO === */
   const baixarModeloInclusao = () => {
     const headers = ["Código", "Marca", "Custo Atual", "Custo Antigo", "NCM"];
     const ws = XLSX.utils.aoa_to_sheet([headers]);
 
-    const headerStyle = {
+    const style = {
       font: { bold: true, color: { rgb: "FFFFFF" } },
       fill: { fgColor: { rgb: "1A8CEB" } },
       alignment: { horizontal: "center", vertical: "center" },
     };
 
     headers.forEach((_, idx) => {
-      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: idx });
-      if (!ws[cellAddress]) ws[cellAddress] = {};
-      ws[cellAddress].s = headerStyle;
+      const cell = XLSX.utils.encode_cell({ r: 0, c: idx });
+      ws[cell] = ws[cell] || {};
+      ws[cell].s = style;
     });
 
     ws["!cols"] = [
@@ -48,36 +55,50 @@ export default function MassEditionModal({
       { wch: 12 },
     ];
 
-    const sampleRows = [
+    XLSX.utils.sheet_add_aoa(ws, [
       ["12345", "Liverpool", "250.00", "240.00", "851821"],
-      ["67890", "SKP", "310.00", "299.00", "852729"],
-      ["11223", "IZZO", "199.00", "189.00", "853690"],
-      ["44556", "Fischer", "430.00", "415.00", "854370"],
-      ["77889", "Trapp", "285.00", "270.00", "851890"],
-    ];
-    XLSX.utils.sheet_add_aoa(ws, sampleRows, { origin: -1 });
+    ], { origin: -1 });
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Inclusão");
 
     const now = new Date();
-    const dia = String(now.getDate()).padStart(2, "0");
-    const mes = String(now.getMonth() + 1).padStart(2, "0");
-    const ano = now.getFullYear();
-    const hora = String(now.getHours()).padStart(2, "0");
-    const min = String(now.getMinutes()).padStart(2, "0");
-    const seg = String(now.getSeconds()).padStart(2, "0");
+    const nomeArquivo = `INCLUSÃO - ${now.toLocaleDateString()} ${now
+      .toLocaleTimeString()
+      .replace(/:/g, "-")}.xlsx`;
 
-    const nomeArquivo = `INCLUSÃO - ${dia}-${mes}-${ano} ${hora}-${min}-${seg}.xlsx`;
     XLSX.writeFile(wb, nomeArquivo);
   };
 
+  /* === INPUTS HANDLE === */
+  const handleImportInclusaoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) onImportInclusao(file);
+    e.target.value = "";
+  };
+
+  const handleImportAlteracaoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) onImportAlteracao(file);
+    e.target.value = "";
+  };
+
+  /* === PREVIEW EXEMPLO === */
   const previewData = [
-    { Código: "12345", Marca: "Liverpool", "Custo Atual": "250.00", "Custo Antigo": "240.00", NCM: "851821" },
-    { Código: "67890", Marca: "SKP", "Custo Atual": "310.00", "Custo Antigo": "299.00", NCM: "852729" },
-    { Código: "11223", Marca: "IZZO", "Custo Atual": "199.00", "Custo Antigo": "189.00", NCM: "853690" },
-    { Código: "44556", Marca: "Fischer", "Custo Atual": "430.00", "Custo Antigo": "415.00", NCM: "854370" },
-    { Código: "77889", Marca: "Trapp", "Custo Atual": "285.00", "Custo Antigo": "270.00", NCM: "851890" },
+    {
+      Código: "12345",
+      Marca: "Liverpool",
+      "Custo Atual": "250.00",
+      "Custo Antigo": "240.00",
+      NCM: "851821",
+    },
+    {
+      Código: "67890",
+      Marca: "SKP",
+      "Custo Atual": "310.00",
+      "Custo Antigo": "299.00",
+      NCM: "852729",
+    },
   ];
 
   const columns = ["Código", "Marca", "Custo Atual", "Custo Antigo", "NCM"];
@@ -85,15 +106,31 @@ export default function MassEditionModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="bg-[#0f0f0f]/95 backdrop-blur-xl border border-neutral-700 rounded-2xl 
-                   shadow-2xl text-white max-w-2xl p-6"
+        onClick={(e) => e.stopPropagation()}  // 🔥 Impede click bubbling
+        className="bg-[#0f0f0f]/95 backdrop-blur-xl border border-neutral-700 rounded-2xl shadow-2xl text-white max-w-2xl p-6"
       >
+        
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold text-white flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-white" />
             Edição em Massa
           </DialogTitle>
         </DialogHeader>
+
+        {/* Inputs ocultos */}
+        <input
+          type="file"
+          ref={inputInclusaoRef}
+          className="hidden"
+          accept=".xlsx,.csv"
+          onChange={handleImportInclusaoFile}
+        />
+        <input
+          type="file"
+          ref={inputAlteracaoRef}
+          className="hidden"
+          accept=".xlsx,.csv"
+          onChange={handleImportAlteracaoFile}
+        />
 
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -101,73 +138,92 @@ export default function MassEditionModal({
           transition={{ duration: 0.3 }}
           className="space-y-6"
         >
-          {/* Instruções */}
-          <div className="rounded-xl p-4 bg-white/5 border border-neutral-700">
-            <p className="text-neutral-300 text-sm leading-relaxed">
-              Baixe um modelo, preencha os dados e depois use{" "}
-              <strong className="text-white">Importar</strong> na tela principal
-              para atualizar ou incluir custos.
-            </p>
-          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
 
-          {/* === BOTÕES EM FORMATO DE CARD === */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Inclusão */}
-            <div
-              className="p-6 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-all duration-300 cursor-pointer"
-              onClick={baixarModeloInclusao}
-            >
-              <div className="flex items-center gap-4">
-                <div
-                  className="w-12 h-12 rounded-xl flex items-center justify-center"
-                  style={{ backgroundColor: "#10b98120" }}
-                >
-                  <FileDown className="w-6 h-6" style={{ color: "#10b981" }} />
-                </div>
-                <div className="flex-1">
-                  <h4 className="font-bold mb-1">Modelo de Inclusão</h4>
-                  <p className="text-sm text-neutral-400">
-                    Baixe o modelo base para novos custos
-                  </p>
+            {/* === CARD INCLUSÃO === */}
+            <div>
+              <div
+                className="p-6 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-all duration-300"
+                onClick={(e) => {
+                  e.stopPropagation();   // 🔥 impede disparo acidental
+                  baixarModeloInclusao();
+                }}
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="w-12 h-12 rounded-xl flex items-center justify-center"
+                    style={{ backgroundColor: "#10b98120" }}
+                  >
+                    <FileDown className="w-6 h-6" style={{ color: "#10b981" }} />
+                  </div>
+
+                  <div className="flex-1">
+                    <h4 className="font-bold mb-1">Modelo de Inclusão</h4>
+                    <p className="text-sm text-neutral-400">
+                      Baixe o modelo base para novos custos
+                    </p>
+                  </div>
                 </div>
               </div>
+
+              {/* Botão IMPORTAR FORA DO CARD */}
+              <Button
+                className="mt-3 w-full bg-green-600 hover:bg-green-700 cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation(); // 🔥 evitar abrir input indevidamente
+                  inputInclusaoRef.current?.click();
+                }}
+              >
+                <Upload className="w-4 h-4 mr-2" /> Importar Inclusão
+              </Button>
             </div>
 
-            {/* Alteração */}
-            <div
-              className="p-6 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-all duration-300 cursor-pointer"
-              onClick={onExportModeloAlteracao}
-            >
-              <div className="flex items-center gap-4">
-                <div
-                  className="w-12 h-12 rounded-xl flex items-center justify-center"
-                  style={{ backgroundColor: "#f59e0b20" }}
-                >
-                  <FileSpreadsheet
-                    className="w-6 h-6"
-                    style={{ color: "#f59e0b" }}
-                  />
-                </div>
-                <div className="flex-1">
-                  <h4 className="font-bold mb-1">Modelo de Alteração</h4>
-                  <p className="text-sm text-neutral-400">
-                    Baixe o modelo para atualizar custos existentes
-                  </p>
+            {/* === CARD ALTERAÇÃO === */}
+            <div>
+              <div
+                className="p-6 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-all duration-300"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onExportModeloAlteracao();
+                }}
+              >
+                <div className="flex items-center gap-4">
+                  <div
+                    className="w-12 h-12 rounded-xl flex items-center justify-center"
+                    style={{ backgroundColor: "#f59e0b20" }}
+                  >
+                    <FileSpreadsheet className="w-6 h-6" style={{ color: "#f59e0b" }} />
+                  </div>
+
+                  <div className="flex-1">
+                    <h4 className="font-bold mb-1">Modelo de Alteração</h4>
+                    <p className="text-sm text-neutral-400">
+                      Baixe o modelo para atualizar custos existentes
+                    </p>
+                  </div>
                 </div>
               </div>
+
+              <Button
+                className="mt-3 w-full bg-yellow-600 hover:bg-yellow-700 cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  inputAlteracaoRef.current?.click();
+                }}
+              >
+                <Upload className="w-4 h-4 mr-2" /> Importar Alteração
+              </Button>
             </div>
+
           </div>
 
-          {/* Preview */}
+          {/* PREVIEW TABELA */}
           <div className="border border-neutral-700 rounded-xl overflow-hidden">
             <table className="w-full text-sm text-neutral-300 border-collapse">
-              <thead className="bg-neutral-800/80 text-white sticky top-0">
+              <thead className="bg-neutral-800 text-white">
                 <tr>
                   {columns.map((col) => (
-                    <th
-                      key={col}
-                      className="p-2 border-b border-neutral-700 text-left font-semibold"
-                    >
+                    <th key={col} className="p-2 border-b border-neutral-700 text-left font-semibold">
                       {col}
                     </th>
                   ))}
@@ -179,7 +235,7 @@ export default function MassEditionModal({
                     key={i}
                     className={`${
                       i % 2 === 0 ? "bg-neutral-900/40" : "bg-neutral-800/40"
-                    } hover:bg-white/10 transition-colors`}
+                    } hover:bg-white/10 transition`}
                   >
                     {columns.map((col) => (
                       <td key={col} className="p-2 border-b border-neutral-800">
@@ -192,20 +248,21 @@ export default function MassEditionModal({
             </table>
           </div>
 
-          <p className="text-sm text-neutral-400 italic">
-            Mantenha os cabeçalhos exatamente como no modelo para evitar erros na importação.
-          </p>
         </motion.div>
 
-        <DialogFooter className="mt-6 flex justify-end">
+        <DialogFooter className="mt-6">
           <Button
             variant="outline"
-            className="border-neutral-700 text-white hover:bg-white/10 transition-all rounded-xl"
-            onClick={() => onOpenChange(false)}
+            className="border-neutral-700 text-white"
+            onClick={(e) => {
+              e.stopPropagation(); 
+              onOpenChange(false);
+            }}
           >
             Fechar
           </Button>
         </DialogFooter>
+
       </DialogContent>
     </Dialog>
   );

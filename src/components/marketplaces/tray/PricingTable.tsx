@@ -25,9 +25,6 @@ import PricingHeaderRow from "@/components/marketplaces/tray/PricingHeaderRow";
 export default function PricingTable() {
   const router = useRouter();
 
-  // ------------------------------
-  // ESTADOS PRINCIPAIS
-  // ------------------------------
   const [rows, setRows] = useState<Row[]>([]);
   const [filteredRows, setFilteredRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,24 +48,17 @@ export default function PricingTable() {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [isPending, startTransition] = useTransition();
 
-  // Exportador
   const impExp = useTrayImportExport(
     filteredRows,
-    selectedLoja[0] ?? "",
-    selectedBrands[0] ?? ""
+    selectedLoja,
+    selectedBrands
   );
 
-  // ------------------------------
-  // DEBOUNCE PESQUISA
-  // ------------------------------
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(timeout);
   }, [search]);
 
-  // ------------------------------
-  // CARREGAR DADOS
-  // ------------------------------
   const loadData = useCallback(async () => {
     setLoading(true);
 
@@ -77,19 +67,17 @@ export default function PricingTable() {
 
     let query = supabase
       .from("marketplace_tray_all")
-      .select(`
-        ID, Loja, "ID Tray", "ID Var", Marca, Referência, Categoria,
+      .select(
+        `
+        ID, Loja, "ID Tray", "ID Var", "ID Bling", Nome, Marca, Referência, Categoria,
         Desconto, Embalagem, Frete, Comissão, Imposto, Marketing,
         "Margem de Lucro", Custo, "Preço de Venda"
-      `, { count: "exact" });
+      `,
+        { count: "exact" }
+      );
 
     if (selectedLoja.length) {
-      const lojasDB = selectedLoja.map((l) =>
-        l.includes("Pikot") ? "PK" :
-        l.includes("Sóbaquetas") ? "SB" :
-        l
-      );
-      query = query.in("Loja", lojasDB);
+      query = query.in("Loja", selectedLoja);
     }
 
     if (selectedBrands.length) {
@@ -113,19 +101,26 @@ export default function PricingTable() {
       return;
     }
 
-    // Normalização final (NUNCA Number())
-    const normalized = (data || []).map((r) => ({
-      ...r,
-      Desconto: parseBR(r.Desconto),
-      Embalagem: parseBR(r.Embalagem),
-      Frete: parseBR(r.Frete),
-      Comissão: parseBR(r.Comissão),
-      Imposto: parseBR(r.Imposto),
-      Marketing: parseBR(r.Marketing),
-      "Margem de Lucro": parseBR(r["Margem de Lucro"]),
-      Custo: parseBR(r.Custo),
-      "Preço de Venda": parseBR(r["Preço de Venda"]),
-    }));
+    const normalized = (data || []).map((r) => {
+      let OD = 3;
+      const ref = String(r.Referência || "").trim();
+      if (ref.startsWith("PAI -")) OD = 1;
+      else if (ref.startsWith("VAR -")) OD = 2;
+
+      return {
+        ...r,
+        OD,
+        Desconto: parseBR(r.Desconto),
+        Embalagem: parseBR(r.Embalagem),
+        Frete: parseBR(r.Frete),
+        Comissão: parseBR(r.Comissão),
+        Imposto: parseBR(r.Imposto),
+        Marketing: parseBR(r.Marketing),
+        "Margem de Lucro": parseBR(r["Margem de Lucro"]),
+        Custo: parseBR(r.Custo),
+        "Preço de Venda": parseBR(r["Preço de Venda"]),
+      };
+    });
 
     startTransition(() => {
       setRows(normalized);
@@ -146,9 +141,6 @@ export default function PricingTable() {
     loadData();
   }, [loadData]);
 
-  // ------------------------------
-  // ORDENAR
-  // ------------------------------
   const handleSort = (col: string) => {
     if (sortColumn === col) {
       setSortDirection((p) => (p === "asc" ? "desc" : "asc"));
@@ -158,9 +150,6 @@ export default function PricingTable() {
     }
   };
 
-  // ------------------------------
-  // FILTRAGEM / BUSCA EM MEMÓRIA
-  // ------------------------------
   useEffect(() => {
     if (!rows.length) return;
 
@@ -175,12 +164,12 @@ export default function PricingTable() {
 
     startTransition(() => {
       const result = rows.filter((r) => {
-        const lojaNome = r.Loja === "PK" ? "Pikot Shop" : "Sóbaquetas";
-
         const lojaOk =
-          selectedLoja.length === 0 || selectedLoja.includes(lojaNome);
+          selectedLoja.length === 0 || selectedLoja.includes(r.Loja);
+
         const marcaOk =
-          selectedBrands.length === 0 || selectedBrands.includes(r.Marca);
+          selectedBrands.length === 0 ||
+          selectedBrands.includes(r.Marca);
 
         if (!lojaOk || !marcaOk) return false;
 
@@ -191,7 +180,7 @@ export default function PricingTable() {
           normalize(r.Marca),
           normalize(r.Referência),
           normalize(r.Categoria),
-          normalize(lojaNome),
+          normalize(r.Nome),
         ];
 
         if (termo === "") return true;
@@ -210,18 +199,12 @@ export default function PricingTable() {
     });
   }, [debouncedSearch, rows, selectedLoja, selectedBrands]);
 
-  // ------------------------------
-  // COPIAR
-  // ------------------------------
   const handleCopy = useCallback((text: string, key: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(key);
     setTimeout(() => setCopiedId(null), 1200);
   }, []);
 
-  // ------------------------------
-  // ABRIR EDITOR
-  // ------------------------------
   const openEditor = useCallback(
     (row: Row, field: keyof Row, isMoney: boolean, e: React.MouseEvent) => {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -241,9 +224,6 @@ export default function PricingTable() {
     []
   );
 
-  // ------------------------------
-  // CONFIRMAR EDIÇÃO
-  // ------------------------------
   const confirmEdit = useCallback(async () => {
     if (!editing) return;
 
@@ -280,9 +260,6 @@ export default function PricingTable() {
 
   const cancelEdit = () => setEditing(null);
 
-  // ------------------------------
-  // IMPORTAÇÃO EM MASSA
-  // ------------------------------
   const handlePricingImport = async (data: any[]) => {
     for (const row of data) {
       await supabase
@@ -304,24 +281,36 @@ export default function PricingTable() {
     loadData();
   };
 
-  // ------------------------------
-  // EXPORTAR TODOS
-  // ------------------------------
+  // ----------------------------------------------------------
+  // ✅ EXPORT TOTALMENTE CORRIGIDO (PK / SB / Marca)
+  // ----------------------------------------------------------
   const handleExportAll = useCallback(async () => {
     const pageSize = 1000;
     let page = 0;
     let all: any[] = [];
 
     while (true) {
-      const { data, error } = await supabase
+      let exportQuery = supabase
         .from("marketplace_tray_all")
         .select(`
-          ID, Loja, "ID Tray", "ID Var", Marca, Referência, Categoria,
+          ID, Loja, "ID Tray", "ID Var", "ID Bling", Nome, Marca, Referência, Categoria,
           Desconto, Embalagem, Frete, Comissão, Imposto, Marketing,
           "Margem de Lucro", Custo, "Preço de Venda"
         `)
         .order("ID", { ascending: true })
         .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      // 🔥 Aplicar filtro por loja
+      if (selectedLoja.length) {
+        exportQuery = exportQuery.in("Loja", selectedLoja);
+      }
+
+      // 🔥 Aplicar filtro por marca
+      if (selectedBrands.length) {
+        exportQuery = exportQuery.in("Marca", selectedBrands);
+      }
+
+      const { data, error } = await exportQuery;
 
       if (error) {
         alert("Erro ao exportar");
@@ -331,30 +320,36 @@ export default function PricingTable() {
       if (!data?.length) break;
 
       all = [...all, ...data];
+
       if (data.length < pageSize) break;
 
       page++;
     }
 
-    const normalized = all.map((r) => ({
-      ...r,
-      Desconto: parseBR(r.Desconto),
-      Embalagem: parseBR(r.Embalagem),
-      Frete: parseBR(r.Frete),
-      Comissão: parseBR(r.Comissão),
-      Imposto: parseBR(r.Imposto),
-      Marketing: parseBR(r.Marketing),
-      "Margem de Lucro": parseBR(r["Margem de Lucro"]),
-      Custo: parseBR(r.Custo),
-      "Preço de Venda": parseBR(r["Preço de Venda"]),
-    }));
+    const normalized = all.map((r) => {
+      let OD = 3;
+      const ref = String(r.Referência || "");
+      if (ref.startsWith("PAI -")) OD = 1;
+      else if (ref.startsWith("VAR -")) OD = 2;
+
+      return {
+        ...r,
+        OD,
+        Desconto: parseBR(r.Desconto),
+        Embalagem: parseBR(r.Embalagem),
+        Frete: parseBR(r.Frete),
+        Comissão: parseBR(r.Comissão),
+        Imposto: parseBR(r.Imposto),
+        Marketing: parseBR(r.Marketing),
+        "Margem de Lucro": parseBR(r["Margem de Lucro"]),
+        Custo: parseBR(r.Custo),
+        "Preço de Venda": parseBR(r["Preço de Venda"]),
+      };
+    });
 
     await impExp.handleExport(normalized);
   }, [selectedLoja, selectedBrands, debouncedSearch]);
 
-  // ------------------------------
-  // RENDERIZAÇÃO
-  // ------------------------------
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-8">
       <div className="mx-auto space-y-6 w-full">
