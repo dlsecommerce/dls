@@ -105,8 +105,12 @@ export default function ModalNewCost({
       const payload = {
         ["Código"]: form["Código"],
         ["Marca"]: form["Marca"],
-        ["Custo Atual"]: toNumber(form["Custo Atual"]), // conversão apenas no salvar
-        ["Custo Antigo"]: toNumber(form["Custo Antigo"]),
+        ["Custo Atual"]: Number(
+          toNumber(form["Custo Atual"]).replace(",", ".")
+        ),
+        ["Custo Antigo"]: Number(
+          toNumber(form["Custo Antigo"]).replace(",", ".")
+        ),
         ["NCM"]: form["NCM"] || null,
       };
 
@@ -198,6 +202,7 @@ export default function ModalNewCost({
                 onChange={(e) =>
                   setForm({ ...form, ["Código"]: e.target.value })
                 }
+                disabled={mode === "edit"} // ✅ ÚNICA ALTERAÇÃO
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
                 placeholder="Ex: 5535"
               />
@@ -215,7 +220,6 @@ export default function ModalNewCost({
               />
             </div>
 
-            {/* 🔧 CORRIGIDO — agora aceita digitação livre */}
             <div>
               <Label className="text-neutral-300">Custo Atual</Label>
               <Input
@@ -224,7 +228,7 @@ export default function ModalNewCost({
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    ["Custo Atual"]: e.target.value, // sem conversão aqui
+                    ["Custo Atual"]: e.target.value,
                   })
                 }
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
@@ -232,7 +236,6 @@ export default function ModalNewCost({
               />
             </div>
 
-            {/* 🔧 CORRIGIDO — agora aceita digitação livre */}
             <div>
               <Label className="text-neutral-300">Custo Antigo</Label>
               <Input
@@ -241,7 +244,7 @@ export default function ModalNewCost({
                 onChange={(e) =>
                   setForm({
                     ...form,
-                    ["Custo Antigo"]: e.target.value, // sem conversão aqui
+                    ["Custo Antigo"]: e.target.value,
                   })
                 }
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
@@ -262,7 +265,6 @@ export default function ModalNewCost({
             </div>
           </div>
 
-          {/* Botões */}
           <DialogFooter className="mt-5">
             <Button
               variant="outline"

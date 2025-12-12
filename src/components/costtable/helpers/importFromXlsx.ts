@@ -70,12 +70,14 @@ export async function importFromXlsxOrCsv(
 
   const warnings: string[] = [];
 
-  // Nome automático do arquivo
+  // Nome automático do arquivo (APENAS REFERÊNCIA / LOG)
   const now = new Date();
   const fileName = `${
     tipo === "inclusao" ? "INCLUSÃO" : "ALTERAÇÃO"
-  } - ${now.toLocaleDateString()} ${now
-    .toLocaleTimeString()
+  } - ${now
+    .toLocaleDateString("pt-BR")
+    .replace(/\//g, "-")} ${now
+    .toLocaleTimeString("pt-BR")
     .replace(/:/g, "-")}.xlsx`;
 
   let rows: Record<string, any>[] = [];
@@ -102,9 +104,7 @@ export async function importFromXlsxOrCsv(
   // =====================================================================
   else if (Array.isArray(input)) {
     rows = input;
-  }
-
-  else {
+  } else {
     throw new Error("Formato de importação inválido.");
   }
 
@@ -116,8 +116,7 @@ export async function importFromXlsxOrCsv(
     const missing = requiredColumns.filter(
       (col) =>
         !headers.some(
-          (h) =>
-            h.trim().toLowerCase() === col.trim().toLowerCase()
+          (h) => h.trim().toLowerCase() === col.trim().toLowerCase()
         )
     );
 
@@ -136,8 +135,7 @@ export async function importFromXlsxOrCsv(
       const findKey = (keys: string[]) => {
         const key = Object.keys(row).find((k) =>
           keys.some(
-            (p) =>
-              k.trim().toLowerCase() === p.trim().toLowerCase()
+            (p) => k.trim().toLowerCase() === p.trim().toLowerCase()
           )
         );
         return key ? row[key] : undefined;
@@ -194,16 +192,8 @@ export async function importFromXlsxOrCsv(
   }
 
   // =====================================================================
-  // 🟨 ALTERAÇÃO — UPSERT + ARQUIVO DE ALTERAÇÕES
+  // 🟨 ALTERAÇÃO — UPSERT (SEM DOWNLOAD)
   // =====================================================================
-  const newWorkbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(
-    newWorkbook,
-    XLSX.utils.json_to_sheet(normalized),
-    "Alterações"
-  );
-  XLSX.writeFile(newWorkbook, fileName);
-
   const { error } = await supabase
     .from("custos")
     .upsert(normalized, { onConflict: "Código" });

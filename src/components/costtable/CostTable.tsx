@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -40,7 +41,7 @@ import { importFromXlsxOrCsv } from "@/components/costtable/helpers/importFromXl
 type Custo = CustoType;
 
 export default function CostTable() {
-  /* === Estados === */
+  /* ================= ESTADOS ================= */
   const [rows, setRows] = useState<Custo[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -53,7 +54,8 @@ export default function CostTable() {
   const [filterOpen, setFilterOpen] = useState(false);
 
   const [sortColumn, setSortColumn] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [sortDirection, setSortDirection] =
+    useState<"asc" | "desc">("asc");
 
   const [openNew, setOpenNew] = useState(false);
   const [mode, setMode] = useState<"create" | "edit">("create");
@@ -70,9 +72,8 @@ export default function CostTable() {
   const [openImport, setOpenImport] = useState(false);
   const [importCount, setImportCount] = useState(0);
   const [previewRows, setPreviewRows] = useState<any[]>([]);
-  const [parsedRows, setParsedRows] = useState<any[]>([]); // 🔥 AJUSTE
+  const [parsedRows, setParsedRows] = useState<any[]>([]);
   const [importing, setImporting] = useState(false);
-  const [importFile, setImportFile] = useState<File | null>(null); // mantém
   const [warnings, setWarnings] = useState<string[]>([]);
   const [importTipo, setImportTipo] =
     useState<"inclusao" | "alteracao">("inclusao");
@@ -88,6 +89,7 @@ export default function CostTable() {
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  /* ================= HELPERS ================= */
   const handleCopy = (text: string, key: string) => {
     if (!text) return;
     navigator.clipboard.writeText(text);
@@ -95,7 +97,7 @@ export default function CostTable() {
     setTimeout(() => setCopiedId(null), 1500);
   };
 
-  /* === carregar marcas === */
+  /* ================= LOAD ================= */
   const loadAllBrands = async () => {
     const { data } = await supabase.from("custos").select("Marca");
     const setBrands = new Set<string>();
@@ -103,7 +105,6 @@ export default function CostTable() {
     setAllBrands(Array.from(setBrands).sort());
   };
 
-  /* === query === */
   const buildQuery = (countOnly = false) => {
     let q = supabase
       .from("custos")
@@ -113,8 +114,10 @@ export default function CostTable() {
       q = q.or(
         `Código.ilike.%${search}%,Marca.ilike.%${search}%,NCM.ilike.%${search}%`
       );
+
     if (selectedBrands.length)
       q = q.in("Marca", selectedBrands);
+
     if (sortColumn)
       q = q.order(sortColumn, { ascending: sortDirection === "asc" });
 
@@ -134,6 +137,7 @@ export default function CostTable() {
     setLoading(false);
   };
 
+  /* ================= EFFECTS ================= */
   useEffect(() => {
     loadAllBrands();
     loadData();
@@ -144,26 +148,38 @@ export default function CostTable() {
     loadData(1, itemsPerPage);
   }, [search, selectedBrands]);
 
-  const handleSort = (col: string) => {
-    if (sortColumn === col)
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-    else {
-      setSortColumn(col);
-      setSortDirection("asc");
-    }
-  };
+  useEffect(() => {
+    loadData(currentPage, itemsPerPage);
+  }, [currentPage, itemsPerPage]);
 
-  /* === EXPORTAÇÃO === */
+  /* ================= EXPORTAÇÃO ================= */
   const handleExport = async () => {
     const data =
       selectedRows.length > 0
         ? selectedRows
-        : await supabase.from("custos").select("*").then((r) => r.data || []);
+        : await supabase
+            .from("custos")
+            .select("*")
+            .then((r) => r.data || []);
 
     exportFilteredToXlsx(data as Custo[], "CUSTOS.xlsx");
   };
 
-  /* === CRUD === */
+  // ✅ EXPORTAÇÃO ESPECÍFICA PARA MODELO DE ALTERAÇÃO
+  const handleExportModeloAlteracao = async () => {
+    const { data } = await supabase.from("custos").select("*");
+
+    const now = new Date();
+    const fileName = `ALTERAÇÃO - ${now
+      .toLocaleDateString("pt-BR")
+      .replace(/\//g, "-")} ${now
+      .toLocaleTimeString("pt-BR")
+      .replace(/:/g, "-")}.xlsx`;
+
+    exportFilteredToXlsx((data || []) as Custo[], fileName);
+  };
+
+  /* ================= CRUD ================= */
   const openCreate = () => {
     setMode("create");
     setForm({
@@ -190,20 +206,25 @@ export default function CostTable() {
   const deleteSelected = async () => {
     if (!selectedRows.length) return;
     setDeleting(true);
-    const codigos = selectedRows.map((r) => r["Código"]);
-    await supabase.from("custos").delete().in("Código", codigos);
+
+    await supabase
+      .from("custos")
+      .delete()
+      .in(
+        "Código",
+        selectedRows.map((r) => r["Código"])
+      );
+
     setSelectedRows([]);
     setOpenDelete(false);
     setDeleting(false);
     loadData();
   };
 
-  /* === IMPORTAÇÃO (🔥 AJUSTE REAL) === */
-
+  /* ================= IMPORTAÇÃO ================= */
   const handleImportInclusao = async (file: File) => {
     const { data, warnings } = await importFromXlsxOrCsv(file, true);
-    setImportFile(file); // mantém
-    setParsedRows(data); // 🔥 usado depois
+    setParsedRows(data);
     setPreviewRows(data.slice(0, 5));
     setImportCount(data.length);
     setWarnings(warnings || []);
@@ -213,8 +234,7 @@ export default function CostTable() {
 
   const handleImportAlteracao = async (file: File) => {
     const { data, warnings } = await importFromXlsxOrCsv(file, true);
-    setImportFile(file); // mantém
-    setParsedRows(data); // 🔥 usado depois
+    setParsedRows(data);
     setPreviewRows(data.slice(0, 5));
     setImportCount(data.length);
     setWarnings(warnings || []);
@@ -224,10 +244,9 @@ export default function CostTable() {
 
   const confirmImport = async () => {
     if (!parsedRows.length) return;
-
     setImporting(true);
+
     try {
-      // 🔥 NÃO USA File → não reabre file picker
       await importFromXlsxOrCsv(parsedRows, false, importTipo);
       await loadData();
       await loadAllBrands();
@@ -236,14 +255,16 @@ export default function CostTable() {
         message: "Importação concluída com sucesso!",
         type: "success",
       });
-    } catch (e) {
-      console.error(e);
-      setToast({ message: "Erro ao importar.", type: "error" });
+    } catch (err: any) {
+      console.error(err);
+      setToast({
+        message: err.message || "Erro ao importar.",
+        type: "error",
+      });
     } finally {
       setImporting(false);
       setOpenImport(false);
       setParsedRows([]);
-      setImportFile(null);
     }
   };
 
@@ -583,7 +604,7 @@ export default function CostTable() {
       <MassEditionModal
         open={openMass}
         onOpenChange={setOpenMass}
-        onExportModeloAlteracao={handleExport}
+        onExportModeloAlteracao={handleExportModeloAlteracao}
         onImportInclusao={handleImportInclusao}
         onImportAlteracao={handleImportAlteracao}
       />
