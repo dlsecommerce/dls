@@ -8,16 +8,16 @@ import React, {
 } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
-import { useTrayImportExport } from "@/components/marketplaces/hooks/useTrayImportExport";
+import { useTrayImportExport } from "@/components/marketplaces/tray/hooks/useTrayImportExport";
 import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 import { Table, TableBody, TableHeader } from "@/components/ui/table";
 import { TableControls } from "@/components/announce/AnnounceTable/TableControls";
 import { FloatingEditor } from "./FloatingEditor";
 import TopBarLite from "@/components/marketplaces/tray/TopBar";
 import { TableRows } from "@/components/marketplaces/tray/TableRows";
-import { toBR, parseBR } from "@/components/marketplaces/hooks/helpers";
-import { calcPrecoVenda } from "@/components/marketplaces/hooks/calcPrecoVenda";
-import { Row } from "@/components/marketplaces/hooks/types";
+import { toBR, parseBR } from "@/components/marketplaces/tray/hooks/helpers";
+import { calcPrecoVenda } from "@/components/marketplaces/tray/hooks/calcPrecoVenda";
+import { Row } from "@/components/marketplaces/tray/hooks/types";
 import { Check as CheckIcon, X as XIcon } from "lucide-react";
 import PricingMassEditionModal from "@/components/marketplaces/tray/PricingMassEditionModal";
 import PricingHeaderRow from "@/components/marketplaces/tray/PricingHeaderRow";
@@ -76,13 +76,8 @@ export default function PricingTable() {
         { count: "exact" }
       );
 
-    if (selectedLoja.length) {
-      query = query.in("Loja", selectedLoja);
-    }
-
-    if (selectedBrands.length) {
-      query = query.in("Marca", selectedBrands);
-    }
+    if (selectedLoja.length) query = query.in("Loja", selectedLoja);
+    if (selectedBrands.length) query = query.in("Marca", selectedBrands);
 
     if (sortColumn) {
       query = query.order(sortColumn, {
@@ -224,6 +219,9 @@ export default function PricingTable() {
     []
   );
 
+  // =====================================================
+  // 🔥 AJUSTE NECESSÁRIO — SALVAR EM PK / SB (NÃO NA VIEW)
+  // =====================================================
   const confirmEdit = useCallback(async () => {
     if (!editing) return;
 
@@ -241,17 +239,22 @@ export default function PricingTable() {
 
     setRows(updatedRows);
 
-    const rowUpdated = updatedRows.find((r) => r.ID === id && r.Loja === loja);
-    const precoNovo = rowUpdated?.["Preço de Venda"] ?? 0;
+    const rowUpdated = updatedRows.find(
+      (r) => r.ID === id && r.Loja === loja
+    );
+
+    const table =
+      loja === "PK"
+        ? "marketplace_tray_pk"
+        : "marketplace_tray_sb";
 
     const { error } = await supabase
-      .from("marketplace_tray_all")
+      .from(table)
       .update({
         [String(field)]: newVal,
-        "Preço de Venda": precoNovo,
+        "Preço de Venda": rowUpdated?.["Preço de Venda"],
       })
-      .eq("ID", id)
-      .eq("Loja", loja);
+      .eq("ID", id);
 
     if (error) console.error("❌ Erro ao salvar:", error);
 
@@ -260,10 +263,18 @@ export default function PricingTable() {
 
   const cancelEdit = () => setEditing(null);
 
+  // =====================================================
+  // 🔥 AJUSTE NECESSÁRIO — BULK UPDATE EM PK / SB
+  // =====================================================
   const handlePricingImport = async (data: any[]) => {
     for (const row of data) {
+      const table =
+        row.Loja === "PK"
+          ? "marketplace_tray_pk"
+          : "marketplace_tray_sb";
+
       await supabase
-        .from("marketplace_tray_all")
+        .from(table)
         .update({
           Desconto: row.Desconto,
           Embalagem: row.Embalagem,
@@ -282,7 +293,7 @@ export default function PricingTable() {
   };
 
   // ----------------------------------------------------------
-  // ✅ EXPORT TOTALMENTE CORRIGIDO (PK / SB / Marca)
+  // EXPORT
   // ----------------------------------------------------------
   const handleExportAll = useCallback(async () => {
     const pageSize = 1000;
@@ -300,55 +311,22 @@ export default function PricingTable() {
         .order("ID", { ascending: true })
         .range(page * pageSize, (page + 1) * pageSize - 1);
 
-      // 🔥 Aplicar filtro por loja
-      if (selectedLoja.length) {
+      if (selectedLoja.length)
         exportQuery = exportQuery.in("Loja", selectedLoja);
-      }
-
-      // 🔥 Aplicar filtro por marca
-      if (selectedBrands.length) {
+      if (selectedBrands.length)
         exportQuery = exportQuery.in("Marca", selectedBrands);
-      }
 
       const { data, error } = await exportQuery;
-
-      if (error) {
-        alert("Erro ao exportar");
-        return;
-      }
-
+      if (error) return alert("Erro ao exportar");
       if (!data?.length) break;
 
       all = [...all, ...data];
-
       if (data.length < pageSize) break;
-
       page++;
     }
 
-    const normalized = all.map((r) => {
-      let OD = 3;
-      const ref = String(r.Referência || "");
-      if (ref.startsWith("PAI -")) OD = 1;
-      else if (ref.startsWith("VAR -")) OD = 2;
-
-      return {
-        ...r,
-        OD,
-        Desconto: parseBR(r.Desconto),
-        Embalagem: parseBR(r.Embalagem),
-        Frete: parseBR(r.Frete),
-        Comissão: parseBR(r.Comissão),
-        Imposto: parseBR(r.Imposto),
-        Marketing: parseBR(r.Marketing),
-        "Margem de Lucro": parseBR(r["Margem de Lucro"]),
-        Custo: parseBR(r.Custo),
-        "Preço de Venda": parseBR(r["Preço de Venda"]),
-      };
-    });
-
-    await impExp.handleExport(normalized);
-  }, [selectedLoja, selectedBrands, debouncedSearch]);
+    await impExp.handleExport(all);
+  }, [selectedLoja, selectedBrands]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-8">

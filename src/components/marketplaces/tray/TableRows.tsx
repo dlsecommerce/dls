@@ -2,8 +2,8 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Row } from "@/components/marketplaces/hooks/types";
-import { toBR } from "@/components/marketplaces/hooks/helpers";
+import { Row } from "@/components/marketplaces/tray/hooks/types";
+import { toBR } from "@/components/marketplaces/tray/hooks/helpers";
 import {
   Edit as EditIcon,
   Copy as CopyIcon,

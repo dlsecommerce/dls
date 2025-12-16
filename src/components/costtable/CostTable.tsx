@@ -105,21 +105,28 @@ export default function CostTable() {
     setAllBrands(Array.from(setBrands).sort());
   };
 
+  /* ================= QUERY BUILDER ================= */
   const buildQuery = (countOnly = false) => {
     let q = supabase
       .from("custos")
       .select("*", { count: "exact", head: countOnly });
 
-    if (search)
+    if (search) {
       q = q.or(
         `Código.ilike.%${search}%,Marca.ilike.%${search}%,NCM.ilike.%${search}%`
       );
+    }
 
-    if (selectedBrands.length)
+    if (selectedBrands.length) {
       q = q.in("Marca", selectedBrands);
+    }
 
-    if (sortColumn)
+    // ✅ AJUSTE CRÍTICO
+    if (sortColumn) {
       q = q.order(sortColumn, { ascending: sortDirection === "asc" });
+    } else {
+      q = q.order("created_at", { ascending: false });
+    }
 
     return q;
   };
@@ -165,7 +172,6 @@ export default function CostTable() {
     exportFilteredToXlsx(data as Custo[], "CUSTOS.xlsx");
   };
 
-  // ✅ EXPORTAÇÃO ESPECÍFICA PARA MODELO DE ALTERAÇÃO
   const handleExportModeloAlteracao = async () => {
     const { data } = await supabase.from("custos").select("*");
 
@@ -256,7 +262,6 @@ export default function CostTable() {
         type: "success",
       });
     } catch (err: any) {
-      console.error(err);
       setToast({
         message: err.message || "Erro ao importar.",
         type: "error",

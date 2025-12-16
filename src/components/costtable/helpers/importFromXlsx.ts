@@ -53,7 +53,7 @@ function parseCurrency(value: any): number | null {
 }
 
 // =====================================================================
-// 🔥 FUNÇÃO PRINCIPAL DE IMPORTAÇÃO (FILE OU DADOS JÁ PARSEADOS)
+// 🔥 FUNÇÃO PRINCIPAL DE IMPORTAÇÃO
 // =====================================================================
 export async function importFromXlsxOrCsv(
   input: File | any[],
@@ -70,7 +70,6 @@ export async function importFromXlsxOrCsv(
 
   const warnings: string[] = [];
 
-  // Nome automático do arquivo (APENAS REFERÊNCIA / LOG)
   const now = new Date();
   const fileName = `${
     tipo === "inclusao" ? "INCLUSÃO" : "ALTERAÇÃO"
@@ -83,7 +82,7 @@ export async function importFromXlsxOrCsv(
   let rows: Record<string, any>[] = [];
 
   // =====================================================================
-  // 📁 CASO 1 — INPUT É FILE (preview ou importação direta)
+  // 📁 INPUT FILE
   // =====================================================================
   if (input instanceof File) {
     const buffer = await input.arrayBuffer();
@@ -100,7 +99,7 @@ export async function importFromXlsxOrCsv(
   }
 
   // =====================================================================
-  // 📦 CASO 2 — INPUT JÁ É ARRAY (confirmImport)
+  // 📦 INPUT ARRAY
   // =====================================================================
   else if (Array.isArray(input)) {
     rows = input;
@@ -109,7 +108,7 @@ export async function importFromXlsxOrCsv(
   }
 
   // =====================================================================
-  // 🔎 Validação de colunas (somente quando vem de File)
+  // 🔎 Validação de colunas
   // =====================================================================
   if (rows.length > 0 && input instanceof File) {
     const headers = Object.keys(rows[0] || {});
@@ -128,7 +127,7 @@ export async function importFromXlsxOrCsv(
   }
 
   // =====================================================================
-  // 🔧 Normalização das linhas
+  // 🔧 NORMALIZAÇÃO
   // =====================================================================
   const normalized = rows
     .map((row) => {
@@ -144,21 +143,22 @@ export async function importFromXlsxOrCsv(
       const codigo = findKey(["Código", "codigo", "code"]);
       if (!codigo || String(codigo).trim() === "") return null;
 
-      const custoAtualRaw = findKey(["Custo Atual", "custo atual"]);
-      const custoAntigoRaw = findKey(["Custo Antigo", "custo antigo"]);
-
       return {
         Código: String(codigo).trim(),
         Marca: findKey(["Marca", "marca", "brand"]) || null,
-        "Custo Atual": parseCurrency(custoAtualRaw),
-        "Custo Antigo": parseCurrency(custoAntigoRaw),
+        "Custo Atual": parseCurrency(
+          findKey(["Custo Atual", "custo atual"])
+        ),
+        "Custo Antigo": parseCurrency(
+          findKey(["Custo Antigo", "custo antigo"])
+        ),
         NCM: findKey(["NCM", "ncm"]) || null,
       };
     })
     .filter(Boolean) as any[];
 
   // =====================================================================
-  // 🔍 PREVIEW — NÃO GRAVA NADA
+  // 🔍 PREVIEW
   // =====================================================================
   if (previewOnly) {
     return {
@@ -169,20 +169,23 @@ export async function importFromXlsxOrCsv(
   }
 
   // =====================================================================
-  // 🟩 INCLUSÃO — INSERT
+  // 🟩 INCLUSÃO — UPSERT COM IGNORE DUPLICATES
   // =====================================================================
   if (tipo === "inclusao") {
-    const { error } = await supabase.from("custos").insert(normalized);
+    const { error } = await supabase
+      .from("custos")
+      .upsert(normalized, {
+        onConflict: "Código",
+        ignoreDuplicates: true,
+      });
 
     if (error) {
-      if (error.code === "23505") {
-        warnings.push(
-          "Alguns códigos já existem e foram bloqueados."
-        );
-      } else {
-        throw error;
-      }
+      throw error;
     }
+
+    warnings.push(
+      "Códigos já existentes foram ignorados automaticamente."
+    );
 
     return {
       data: normalized,
@@ -192,7 +195,7 @@ export async function importFromXlsxOrCsv(
   }
 
   // =====================================================================
-  // 🟨 ALTERAÇÃO — UPSERT (SEM DOWNLOAD)
+  // 🟨 ALTERAÇÃO — UPSERT
   // =====================================================================
   const { error } = await supabase
     .from("custos")

@@ -11,7 +11,7 @@ import CalculoPrecoBox from "@/components/marketplaces/tray/details/CalculoPreco
 import MedidasBox from "@/components/marketplaces/tray/details/MedidasBox";
 import InfoGeraisBox from "@/components/marketplaces/tray/details/InfoGeraisBox";
 
-import { useMarketplaceDetails } from "@/components/marketplaces/hooks/useMarketplaceDetails";
+import { useMarketplaceDetails } from "@/components/marketplaces/tray/hooks/useMarketplaceDetails";
 
 export default function PricingCalculatorMarketplace() {
   const searchParams = useSearchParams();
