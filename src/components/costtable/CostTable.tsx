@@ -98,11 +98,35 @@ export default function CostTable() {
   };
 
   /* ================= LOAD ================= */
+  // ✅ AJUSTE: buscar TODAS as marcas (paginação), evitando limite de ~1000
   const loadAllBrands = async () => {
-    const { data } = await supabase.from("custos").select("Marca");
+    const pageSize = 1000;
+    let from = 0;
+
     const setBrands = new Set<string>();
-    (data || []).forEach((r: any) => r?.Marca && setBrands.add(r.Marca));
-    setAllBrands(Array.from(setBrands).sort());
+
+    while (true) {
+      const to = from + pageSize - 1;
+
+      const { data, error } = await supabase
+        .from("custos")
+        .select("Marca")
+        .range(from, to);
+
+      if (error) {
+        console.error("Erro ao carregar marcas:", error);
+        break;
+      }
+
+      (data || []).forEach((r: any) => {
+        if (r?.Marca) setBrands.add(String(r.Marca).trim());
+      });
+
+      if (!data || data.length < pageSize) break;
+      from += pageSize;
+    }
+
+    setAllBrands(Array.from(setBrands).sort((a, b) => a.localeCompare(b)));
   };
 
   /* ================= QUERY BUILDER ================= */
@@ -121,7 +145,6 @@ export default function CostTable() {
       q = q.in("Marca", selectedBrands);
     }
 
-    // ✅ AJUSTE CRÍTICO
     if (sortColumn) {
       q = q.order(sortColumn, { ascending: sortDirection === "asc" });
     } else {
@@ -160,17 +183,30 @@ export default function CostTable() {
   }, [currentPage, itemsPerPage]);
 
   /* ================= EXPORTAÇÃO ================= */
+  // ✅ AJUSTE: export com data/hora + abreviação de marca (quando filtrado)
+  // ✅ AJUSTE: export sem seleção busca TUDO (paginação por range)
   const handleExport = async () => {
+    const now = new Date();
+    const date = now.toLocaleDateString("pt-BR").replace(/\//g, "-");
+    const time = now.toLocaleTimeString("pt-BR").replace(/:/g, "-");
+
+    const brandPrefix =
+      selectedBrands.length === 1
+        ? `${selectedBrands[0].substring(0, 3).toUpperCase()}-`
+        : "";
+
+    const fileName = `RELATÓRIO - ${brandPrefix}CUSTOS - ${date} ${time}.xlsx`;
+
     // ✅ Se tiver seleção, exporta somente os selecionados
     if (selectedRows.length > 0) {
-      exportFilteredToXlsx(selectedRows as Custo[], "CUSTOS.xlsx");
+      exportFilteredToXlsx(selectedRows as Custo[], fileName);
       return;
     }
 
-    // ✅ Sem seleção: buscar TODOS os registros (paginação por range)
+    // ✅ Sem seleção: buscar TODOS os registros (respeitando busca/filtro/ordem)
     setLoading(true);
     try {
-      const pageSize = 1000; // tamanho do "chunk" por requisição
+      const pageSize = 1000;
       let all: Custo[] = [];
       let from = 0;
 
@@ -183,13 +219,11 @@ export default function CostTable() {
         const chunk = (data || []) as Custo[];
         all = all.concat(chunk);
 
-        // se veio menos que o pageSize, acabou
         if (chunk.length < pageSize) break;
-
         from += pageSize;
       }
 
-      exportFilteredToXlsx(all as Custo[], "CUSTOS.xlsx");
+      exportFilteredToXlsx(all, fileName);
     } finally {
       setLoading(false);
     }
@@ -333,8 +367,6 @@ export default function CostTable() {
                 open={filterOpen}
                 onOpenChange={setFilterOpen}
               />
-
-              {/* Importar foi removido daqui – agora só via Edição em Massa */}
 
               <Button
                 variant="outline"
