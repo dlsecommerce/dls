@@ -25,22 +25,23 @@ export const parseBR = (v: string | number | null | undefined): number => {
 };
 
 /**
- * Calcula o preço de venda seguindo a mesma fórmula usada no hook:
+ * Calcula o preço de venda seguindo a mesma fórmula do Excel:
  *
- * PV = (custoLiquido + frete + EMBALAGEM_FIXA) / (1 - (imposto + lucro + comissao + marketing))
+ * PV = (custoLiquido + frete + embalagem) / (1 - (imposto + lucro + comissao + marketing))
  *
  * Onde:
  * custoLiquido = custo * (1 - desconto)
  */
 export function calcPrecoVenda(row: Row, overrides?: Partial<Row>) {
-  // Utiliza override se existir
   const get = (k: keyof Row, fallback = 0) =>
     parseBR(overrides?.[k] ?? row[k] ?? fallback);
 
   // ----------- valores base -----------
   const custo = get("Custo");
   const frete = get("Frete");
-  const EMBALAGEM_FIXA = 2.5; // Mesmo do hook
+
+  // ✅ AJUSTE: embalagem vem da linha (fallback 2.5 se vier vazio)
+  const embalagem = get("Embalagem", 2.5);
 
   // ----------- percentuais -----------
   const desconto = get("Desconto") / 100;
@@ -57,14 +58,12 @@ export function calcPrecoVenda(row: Row, overrides?: Partial<Row>) {
   // ----------- soma de taxas -----------
   const divisor = 1 - (imposto + lucro + comissao + marketing);
 
-  // Proteção para divisor inválido
   if (divisor <= 0 || !isFinite(divisor)) return 0;
 
-  // ----------- cálculo final -----------
-  const preco = (custoLiquido + frete + EMBALAGEM_FIXA) / divisor;
+  // ✅ cálculo final (agora igual Excel/painel)
+  const preco = (custoLiquido + frete + embalagem) / divisor;
 
   if (!isFinite(preco) || isNaN(preco)) return 0;
 
-  // ✅ retorna com 2 casas decimais
   return Number(preco.toFixed(2));
 }
