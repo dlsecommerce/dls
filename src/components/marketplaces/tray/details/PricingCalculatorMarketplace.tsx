@@ -13,6 +13,9 @@ import InfoGeraisBox from "@/components/marketplaces/tray/details/InfoGeraisBox"
 
 import { useMarketplaceDetails } from "@/components/marketplaces/tray/hooks/useMarketplaceDetails";
 
+/* ============================================================
+   COMPONENTE WRAPPER (FORÇA REMOUNT POR ID + LOJA)
+============================================================ */
 export default function PricingCalculatorMarketplace() {
   const searchParams = useSearchParams();
 
@@ -30,10 +33,31 @@ export default function PricingCalculatorMarketplace() {
     ?.trim();
 
   const loja =
-    lojaNormalizada === "Pikot Shop" ? "PK" :
-    lojaNormalizada === "Sóbaquetas" ? "SB" :
-    lojaNormalizada || "";
+    lojaNormalizada === "PIKOTSHOP"
+      ? "PK"
+      : lojaNormalizada === "SOBAQUETAS"
+      ? "SB"
+      : lojaNormalizada || "";
 
+  return (
+    <PricingCalculatorMarketplaceInternal
+      key={`${id}-${loja}`} // 🔥 AJUSTE ÚNICO
+      id={id}
+      loja={loja}
+    />
+  );
+}
+
+/* ============================================================
+   COMPONENTE INTERNO (CONTEÚDO ORIGINAL, SEM ALTERAÇÕES)
+============================================================ */
+function PricingCalculatorMarketplaceInternal({
+  id,
+  loja,
+}: {
+  id: string | null;
+  loja: string;
+}) {
   const {
     produto,
     setProduto,
@@ -53,8 +77,7 @@ export default function PricingCalculatorMarketplace() {
     listaRef,
     buscarSugestoes,
     handleSugestoesKeys,
-    selecionarSugestao
-
+    selecionarSugestao,
   } = useMarketplaceDetails(id, loja);
 
   const calcularPreco = () => {
@@ -72,7 +95,6 @@ export default function PricingCalculatorMarketplace() {
     const f = parse(calculoLoja.frete);
 
     const divisor = 1 - (i + m + c + mk);
-
     const preco = divisor > 0 ? (custo * (1 - d) + f + 2.5) / divisor : 0;
 
     return isFinite(preco) ? preco : 0;
@@ -101,7 +123,6 @@ export default function PricingCalculatorMarketplace() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-4 md:p-8 pt-24">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-
         {/* LEFT SIDE */}
         <motion.div
           className="lg:col-span-7 p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg h-full flex flex-col gap-3"
@@ -114,13 +135,11 @@ export default function PricingCalculatorMarketplace() {
               <h3 className="text-base font-bold text-white">Composição</h3>
             </div>
 
-            {/* 🔥 AGORA COMPLETO */}
             <ComposicaoList
               composicao={composicao}
               adicionarItem={adicionarItem}
               removerItem={removerItem}
               setComposicao={setComposicao}
-
               campoAtivo={campoAtivo}
               sugestoes={sugestoes}
               indiceSelecionado={indiceSelecionado}

@@ -161,15 +161,38 @@ export default function CostTable() {
 
   /* ================= EXPORTAÇÃO ================= */
   const handleExport = async () => {
-    const data =
-      selectedRows.length > 0
-        ? selectedRows
-        : await supabase
-            .from("custos")
-            .select("*")
-            .then((r) => r.data || []);
+    // ✅ Se tiver seleção, exporta somente os selecionados
+    if (selectedRows.length > 0) {
+      exportFilteredToXlsx(selectedRows as Custo[], "CUSTOS.xlsx");
+      return;
+    }
 
-    exportFilteredToXlsx(data as Custo[], "CUSTOS.xlsx");
+    // ✅ Sem seleção: buscar TODOS os registros (paginação por range)
+    setLoading(true);
+    try {
+      const pageSize = 1000; // tamanho do "chunk" por requisição
+      let all: Custo[] = [];
+      let from = 0;
+
+      while (true) {
+        const to = from + pageSize - 1;
+
+        const { data, error } = await buildQuery(false).range(from, to);
+        if (error) throw error;
+
+        const chunk = (data || []) as Custo[];
+        all = all.concat(chunk);
+
+        // se veio menos que o pageSize, acabou
+        if (chunk.length < pageSize) break;
+
+        from += pageSize;
+      }
+
+      exportFilteredToXlsx(all as Custo[], "CUSTOS.xlsx");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleExportModeloAlteracao = async () => {

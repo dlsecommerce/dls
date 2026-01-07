@@ -215,9 +215,9 @@ export const TableRows: React.FC<TableRowsProps> = ({
   ============================================================ */
   return (
     <>
-      {rows.map((row, i) => (
+      {rows.map((row) => (
         <tr
-          key={`${row.Loja}-${row.ID}-${i}`}
+          key={`${row.Loja}-${row.ID}`}
           className="h-16 border-b border-neutral-700 hover:bg-white/10 transition-colors text-center"
         >
           {/* ID */}

@@ -12,12 +12,20 @@ function detectarTipoAnuncio(ref: string = "") {
   return ehPai || ehVar ? "Com variações" : "Simples";
 }
 
-export function useMarketplaceDetails(id: string | null, lojaParam: string | null) {
+export function useMarketplaceDetails(
+  idParam: string | null,
+  lojaParam: string | null
+) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  /**
+   * produto.id = UUID (PK real do banco)
+   * produto.id_logico = campo "ID" de negócio
+   */
   const [produto, setProduto] = useState<any>({
-    id: "",
+    id: "", // 🔥 UUID
+    id_logico: "",
     loja: "",
     id_bling: "",
     id_tray: "",
@@ -93,7 +101,11 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
     }, 10);
   };
 
-  const selecionarSugestao = (codigo: string, custo: number, idx: number) => {
+  const selecionarSugestao = (
+    codigo: string,
+    custo: number,
+    idx: number
+  ) => {
     const novo = [...composicao];
     novo[idx].codigo = codigo;
     novo[idx].custo = custo.toFixed(2);
@@ -111,12 +123,16 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setIndiceSelecionado((p) => (p < sugestoes.length - 1 ? p + 1 : 0));
+      setIndiceSelecionado((p) =>
+        p < sugestoes.length - 1 ? p + 1 : 0
+      );
     }
 
     if (e.key === "ArrowUp") {
       e.preventDefault();
-      setIndiceSelecionado((p) => (p > 0 ? p - 1 : sugestoes.length - 1));
+      setIndiceSelecionado((p) =>
+        p > 0 ? p - 1 : sugestoes.length - 1
+      );
     }
 
     if (e.key === "Enter") {
@@ -149,50 +165,47 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
     return data ? Number(data["Custo Atual"]) || 0 : 0;
   }, []);
 
-  const buscarAnuncio = async (id: string, lojaParam: string) => {
-    const lojaNome = lojaParam === "SB" ? "SB" : "PK";
+  /**
+   * 🔎 BUSCA DO ANÚNCIO (LEITURA)
+   */
+  const buscarAnuncio = async (valor: string, loja: string) => {
+    const lojaNome = loja === "SB" ? "SB" : "PK";
 
-    if (!isNaN(Number(id))) {
-      const { data, error } = await supabase
+    if (!isNaN(Number(valor))) {
+      const { data } = await supabase
         .from("anuncios_all")
         .select("*")
-        .eq("ID", Number(id))
+        .eq("ID", Number(valor))
         .eq("Loja", lojaNome)
-        .maybeSingle();
-
-      if (error) {
-        console.error("Erro buscar anuncio por ID:", error);
-      }
+        .order("id", { ascending: false })
+        .limit(1)
+        .single();
 
       if (data) return data;
     }
 
     {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("anuncios_all")
         .select("*")
-        .eq("ID Tray", id)
+        .eq("ID Tray", valor)
         .eq("Loja", lojaNome)
-        .maybeSingle();
-
-      if (error) {
-        console.error("Erro buscar anuncio por ID Tray:", error);
-      }
+        .order("id", { ascending: false })
+        .limit(1)
+        .single();
 
       if (data) return data;
     }
 
     {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("anuncios_all")
         .select("*")
-        .eq("ID Bling", id)
+        .eq("ID Bling", valor)
         .eq("Loja", lojaNome)
-        .maybeSingle();
-
-      if (error) {
-        console.error("Erro buscar anuncio por ID Bling:", error);
-      }
+        .order("id", { ascending: false })
+        .limit(1)
+        .single();
 
       if (data) return data;
     }
@@ -200,42 +213,31 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
     return null;
   };
 
-  const buscarPercentuais = async (anuncio: any, lojaParam: string) => {
-    const tabela = lojaParam === "SB" ? "marketplace_tray_sb" : "marketplace_tray_pk";
+  /**
+   * 🔎 BUSCA DE PERCENTUAIS (VIEW)
+   */
+  const buscarPercentuais = async (anuncio: any, loja: string) => {
+    const lojaNome = loja === "SB" ? "SB" : "PK";
 
-    const idGlobal = anuncio["ID"];
-    const idTray = anuncio["ID Tray"];
-    const idBling = anuncio["ID Bling"];
+    const { data, error } = await supabase
+      .from("marketplace_tray_all")
+      .select(
+        'Desconto, Embalagem, Frete, Imposto, "Margem de Lucro", Comissão, Marketing'
+      )
+      .eq("ID", anuncio["ID"])
+      .eq("Loja", lojaNome)
+      .order("id", { ascending: false })
+      .limit(1)
+      .single();
 
-    const campos: [string, any][] = [
-      ["ID", idGlobal],
-      ["ID Tray", idTray],
-      ["ID Bling", idBling],
-    ];
-
-    for (const [campo, valor] of campos) {
-      if (!valor) continue;
-
-      const { data, error } = await supabase
-        .from(tabela)
-        .select(
-          'Desconto, Embalagem, Frete, Imposto, "Margem de Lucro", Comissão, Marketing'
-        )
-        .eq(campo, valor)
-        .maybeSingle();
-
-      if (error) {
-        console.error(`Erro buscar percentuais por ${campo}:`, error);
-        continue;
-      }
-
-      if (data) return data;
+    if (error) {
+      console.error("Erro ao buscar percentuais:", error);
+      return null;
     }
 
-    return null;
+    return data;
   };
 
-  // monta composição em paralelo (custos em Promise.all)
   const montarComposicao = useCallback(
     async (anuncio: any) => {
       const itens: { codigo: string; quantidade: string }[] = [];
@@ -270,17 +272,13 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
   );
 
   const carregar = useCallback(async () => {
-    if (!id || !lojaParam) return;
+    if (!idParam || !lojaParam) return;
 
     setLoading(true);
 
     try {
-      const anuncio = await buscarAnuncio(id, lojaParam);
-      if (!anuncio) {
-        console.warn("Nenhum anúncio encontrado para:", id, lojaParam);
-        setLoading(false);
-        return;
-      }
+      const anuncio = await buscarAnuncio(idParam, lojaParam);
+      if (!anuncio) return;
 
       const [percentuais, compArr] = await Promise.all([
         buscarPercentuais(anuncio, lojaParam),
@@ -300,7 +298,8 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
       }
 
       setProduto({
-        id,
+        id: anuncio.id, // 🔥 UUID
+        id_logico: anuncio["ID"],
         loja: lojaParam === "SB" ? "Sóbaquetas" : "Pikot Shop",
         id_bling: anuncio["ID Bling"] || "",
         id_tray: anuncio["ID Tray"] || "",
@@ -315,7 +314,10 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
         altura: anuncio["Altura"] ?? "",
         largura: anuncio["Largura"] ?? "",
         comprimento: anuncio["Comprimento"] ?? "",
-        embalagem: percentuais?.Embalagem ?? anuncio["Embalagem"] ?? "",
+        embalagem:
+          percentuais?.Embalagem ??
+          anuncio["Embalagem"] ??
+          "",
       });
 
       setCalculoLoja({
@@ -328,29 +330,27 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
       });
 
       setComposicao(compArr);
-
-      setAcrescimos((prev: any) => ({ ...prev, acrescimo: 0 }));
-      setCalculo((prev: any) => ({ ...prev, custo: "0" }));
+      setAcrescimos((p: any) => ({ ...p, acrescimo: 0 }));
+      setCalculo((p: any) => ({ ...p, custo: "0" }));
     } finally {
       setLoading(false);
     }
-  }, [
-    id,
-    lojaParam,
-    montarComposicao,
-    setComposicao,
-    setAcrescimos,
-    setCalculo,
-  ]);
+  }, [idParam, lojaParam, montarComposicao]);
 
   useEffect(() => {
     carregar();
   }, [carregar]);
 
+  /**
+   * 💾 SAVE — UPDATE DETERMINÍSTICO (UUID)
+   */
   const save = useCallback(async () => {
-    if (!id || !lojaParam) return { error: null };
+    if (!produto.id || !lojaParam) return { error: null };
 
-    const tabela = lojaParam === "SB" ? "marketplace_tray_sb" : "marketplace_tray_pk";
+    const tabela =
+      lojaParam === "SB"
+        ? "marketplace_tray_sb"
+        : "marketplace_tray_pk";
 
     setSaving(true);
 
@@ -366,9 +366,7 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
           Marketing: calculoLoja.marketing,
           Embalagem: produto.embalagem,
         })
-        .or(
-          `ID.eq.${id},ID Tray.eq.${produto.id_tray},ID Bling.eq.${produto.id_bling}`
-        );
+        .eq("id", produto.id); // ✅ UUID
 
       await supabase
         .from("anuncios_all")
@@ -382,15 +380,13 @@ export function useMarketplaceDetails(id: string | null, lojaParam: string | nul
           Referência: produto.referencia,
           Tipo: produto.tipo_anuncio,
         })
-        .or(
-          `ID.eq.${id},ID Var.eq.${produto.id_var},ID Tray.eq.${produto.id_tray},ID Bling.eq.${produto.id_bling}`
-        );
+        .eq("id", produto.id); // ✅ UUID
 
       return {};
     } finally {
       setSaving(false);
     }
-  }, [id, lojaParam, produto, calculoLoja]);
+  }, [produto, calculoLoja, lojaParam]);
 
   return {
     loading,

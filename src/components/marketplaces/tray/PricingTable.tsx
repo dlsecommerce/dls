@@ -38,14 +38,19 @@ export default function PricingTable() {
   const [totalItems, setTotalItems] = useState(0);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // 🔥 edição baseada no UUID
   const [editing, setEditing] = useState<any>(null);
 
   const [openPricingModal, setOpenPricingModal] = useState(false);
+
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
   const [sortColumn, setSortColumn] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [sortDirection, setSortDirection] =
+    useState<"asc" | "desc">("asc");
+
   const [isPending, startTransition] = useTransition();
 
   const impExp = useTrayImportExport(
@@ -55,7 +60,10 @@ export default function PricingTable() {
   );
 
   useEffect(() => {
-    const timeout = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    const timeout = setTimeout(
+      () => setDebouncedSearch(search.trim()),
+      300
+    );
     return () => clearTimeout(timeout);
   }, [search]);
 
@@ -69,9 +77,27 @@ export default function PricingTable() {
       .from("marketplace_tray_all")
       .select(
         `
-        ID, Loja, "ID Tray", "ID Var", "ID Bling", Nome, Marca, Referência, Categoria,
-        Desconto, Embalagem, Frete, Comissão, Imposto, Marketing,
-        "Margem de Lucro", Custo, "Preço de Venda"
+        id,
+        anuncio_id,
+        ID,
+        Loja,
+        "ID Tray",
+        "ID Var",
+        "ID Bling",
+        Nome,
+        Marca,
+        Referência,
+        Categoria,
+        Desconto,
+        Embalagem,
+        Frete,
+        Comissão,
+        Imposto,
+        Marketing,
+        "Margem de Lucro",
+        Custo,
+        "Preço de Venda",
+        "Atualizado em"
       `,
         { count: "exact" }
       );
@@ -80,12 +106,17 @@ export default function PricingTable() {
     if (selectedBrands.length) query = query.in("Marca", selectedBrands);
 
     if (sortColumn) {
-      query = query.order(sortColumn, {
-        ascending: sortDirection === "asc",
-        nullsFirst: true,
-      });
+      query = query
+        .order(sortColumn, {
+          ascending: sortDirection === "asc",
+          nullsFirst: true,
+        })
+        .order("Atualizado em", { ascending: false })
+        .order("id", { ascending: false });
     } else {
-      query = query.order("ID", { ascending: true });
+      query = query
+        .order("Atualizado em", { ascending: false })
+        .order("id", { ascending: false });
     }
 
     const { data, error, count } = await query.range(start, end);
@@ -96,7 +127,7 @@ export default function PricingTable() {
       return;
     }
 
-    const normalized = (data || []).map((r) => {
+    const normalized = (data || []).map((r: any) => {
       let OD = 3;
       const ref = String(r.Referência || "").trim();
       if (ref.startsWith("PAI -")) OD = 1;
@@ -104,6 +135,8 @@ export default function PricingTable() {
 
       return {
         ...r,
+        id: r.id,                 // UUID
+        anuncio_id: r.anuncio_id, // vínculo lógico
         OD,
         Desconto: parseBR(r.Desconto),
         Embalagem: parseBR(r.Embalagem),
@@ -160,8 +193,8 @@ export default function PricingTable() {
     startTransition(() => {
       const result = rows.filter((r) => {
         const lojaOk =
-          selectedLoja.length === 0 || selectedLoja.includes(r.Loja);
-
+          selectedLoja.length === 0 ||
+          selectedLoja.includes(r.Loja);
         const marcaOk =
           selectedBrands.length === 0 ||
           selectedBrands.includes(r.Marca);
@@ -201,14 +234,21 @@ export default function PricingTable() {
   }, []);
 
   const openEditor = useCallback(
-    (row: Row, field: keyof Row, isMoney: boolean, e: React.MouseEvent) => {
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    (
+      row: Row,
+      field: keyof Row,
+      isMoney: boolean,
+      e: React.MouseEvent
+    ) => {
+      const rect = (
+        e.currentTarget as HTMLElement
+      ).getBoundingClientRect();
 
       const rawValue = parseBR(row[field]);
       const formatted = toBR(rawValue);
 
       setEditing({
-        id: row.ID,
+        dbId: row.id, // UUID
         loja: row.Loja,
         field,
         value: formatted,
@@ -219,17 +259,14 @@ export default function PricingTable() {
     []
   );
 
-  // =====================================================
-  // 🔥 AJUSTE NECESSÁRIO — SALVAR EM PK / SB (NÃO NA VIEW)
-  // =====================================================
   const confirmEdit = useCallback(async () => {
     if (!editing) return;
 
-    const { id, loja, field, value } = editing;
+    const { dbId, loja, field, value } = editing;
     const newVal = parseBR(value);
 
     const updatedRows = rows.map((r) => {
-      if (r.ID === id && r.Loja === loja) {
+      if (r.id === dbId) {
         const updated: Row = { ...r, [field]: newVal };
         updated["Preço de Venda"] = calcPrecoVenda(updated);
         return updated;
@@ -240,7 +277,7 @@ export default function PricingTable() {
     setRows(updatedRows);
 
     const rowUpdated = updatedRows.find(
-      (r) => r.ID === id && r.Loja === loja
+      (r) => r.id === dbId
     );
 
     const table =
@@ -254,18 +291,16 @@ export default function PricingTable() {
         [String(field)]: newVal,
         "Preço de Venda": rowUpdated?.["Preço de Venda"],
       })
-      .eq("ID", id);
+      .eq("id", dbId);
 
-    if (error) console.error("❌ Erro ao salvar:", error);
+    if (error)
+      console.error("❌ Erro ao salvar:", error);
 
     setEditing(null);
   }, [editing, rows]);
 
   const cancelEdit = () => setEditing(null);
 
-  // =====================================================
-  // 🔥 AJUSTE NECESSÁRIO — BULK UPDATE EM PK / SB
-  // =====================================================
   const handlePricingImport = async (data: any[]) => {
     for (const row of data) {
       const table =
@@ -285,16 +320,13 @@ export default function PricingTable() {
           Custo: row.Custo,
           "Preço de Venda": row["Preço de Venda"],
         })
-        .eq("ID", row.ID);
+        .eq("id", row.id);
     }
 
     setOpenPricingModal(false);
     loadData();
   };
 
-  // ----------------------------------------------------------
-  // EXPORT
-  // ----------------------------------------------------------
   const handleExportAll = useCallback(async () => {
     const pageSize = 1000;
     let page = 0;
@@ -303,25 +335,56 @@ export default function PricingTable() {
     while (true) {
       let exportQuery = supabase
         .from("marketplace_tray_all")
-        .select(`
-          ID, Loja, "ID Tray", "ID Var", "ID Bling", Nome, Marca, Referência, Categoria,
-          Desconto, Embalagem, Frete, Comissão, Imposto, Marketing,
-          "Margem de Lucro", Custo, "Preço de Venda"
-        `)
-        .order("ID", { ascending: true })
-        .range(page * pageSize, (page + 1) * pageSize - 1);
+        .select(
+          `
+          id,
+          anuncio_id,
+          ID,
+          Loja,
+          "ID Tray",
+          "ID Var",
+          "ID Bling",
+          Nome,
+          Marca,
+          Referência,
+          Categoria,
+          Desconto,
+          Embalagem,
+          Frete,
+          Comissão,
+          Imposto,
+          Marketing,
+          "Margem de Lucro",
+          Custo,
+          "Preço de Venda"
+        `
+        )
+        .order("Atualizado em", { ascending: false })
+        .order("id", { ascending: false })
+        .range(
+          page * pageSize,
+          (page + 1) * pageSize - 1
+        );
 
       if (selectedLoja.length)
-        exportQuery = exportQuery.in("Loja", selectedLoja);
+        exportQuery = exportQuery.in(
+          "Loja",
+          selectedLoja
+        );
       if (selectedBrands.length)
-        exportQuery = exportQuery.in("Marca", selectedBrands);
+        exportQuery = exportQuery.in(
+          "Marca",
+          selectedBrands
+        );
 
       const { data, error } = await exportQuery;
+
       if (error) return alert("Erro ao exportar");
       if (!data?.length) break;
 
       all = [...all, ...data];
       if (data.length < pageSize) break;
+
       page++;
     }
 
@@ -336,7 +399,9 @@ export default function PricingTable() {
             search={search}
             setSearch={setSearch}
             onExport={handleExportAll}
-            onMassEditOpen={() => setOpenPricingModal(true)}
+            onMassEditOpen={() =>
+              setOpenPricingModal(true)
+            }
             allBrands={[]}
             allLojas={[]}
             allCategorias={[]}
@@ -362,7 +427,6 @@ export default function PricingTable() {
                   onSort={handleSort}
                 />
               </TableHeader>
-
               <TableBody>
                 <TableRows
                   rows={filteredRows}
@@ -380,7 +444,9 @@ export default function PricingTable() {
 
         <TableControls
           currentPage={currentPage}
-          totalPages={Math.ceil(totalItems / itemsPerPage)}
+          totalPages={Math.ceil(
+            totalItems / itemsPerPage
+          )}
           itemsPerPage={itemsPerPage}
           totalItems={totalItems}
           onPageChange={setCurrentPage}
@@ -395,7 +461,10 @@ export default function PricingTable() {
         />
 
         {editing && (
-          <FloatingEditor anchorRect={editing.anchorRect} onClose={cancelEdit}>
+          <FloatingEditor
+            anchorRect={editing.anchorRect}
+            onClose={cancelEdit}
+          >
             <div className="relative flex items-center rounded-md border border-neutral-700 bg-black/30 px-2 py-1.5">
               <span className="text-xs px-1 py-0.5 rounded bg-black/60 border border-neutral-700 mr-1">
                 {editing.isMoney ? "R$" : "%"}
@@ -407,7 +476,14 @@ export default function PricingTable() {
                 className="flex-1 bg-transparent outline-none text-sm text-white pr-10"
                 value={editing.value}
                 onChange={(e) =>
-                  setEditing((p) => (p ? { ...p, value: e.target.value } : p))
+                  setEditing((p: any) =>
+                    p
+                      ? {
+                          ...p,
+                          value: e.target.value,
+                        }
+                      : p
+                  )
                 }
                 onKeyDown={(e) => {
                   if (e.key === "Enter") confirmEdit();
