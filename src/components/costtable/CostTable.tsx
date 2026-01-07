@@ -45,6 +45,7 @@ export default function CostTable() {
   const [rows, setRows] = useState<Custo[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false); 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
 
@@ -98,7 +99,7 @@ export default function CostTable() {
   };
 
   /* ================= LOAD ================= */
-  // ✅ AJUSTE: buscar TODAS as marcas (paginação), evitando limite de ~1000
+  // ✅ Busca TODAS as marcas (paginação), evitando limite de ~1000
   const loadAllBrands = async () => {
     const pageSize = 1000;
     let from = 0;
@@ -183,16 +184,16 @@ export default function CostTable() {
   }, [currentPage, itemsPerPage]);
 
   /* ================= EXPORTAÇÃO ================= */
-  // ✅ AJUSTE: export com data/hora + abreviação de marca (quando filtrado)
-  // ✅ AJUSTE: export sem seleção busca TUDO (paginação por range)
   const handleExport = async () => {
     const now = new Date();
     const date = now.toLocaleDateString("pt-BR").replace(/\//g, "-");
     const time = now.toLocaleTimeString("pt-BR").replace(/:/g, "-");
 
     const brandPrefix =
-      selectedBrands.length === 1
-        ? `${selectedBrands[0].substring(0, 3).toUpperCase()}-`
+      selectedBrands.length === 0
+        ? `${selectedBrands
+            .map((b) => String(b).trim().substring(0, 3).toUpperCase())
+            .join("-")}-`
         : "";
 
     const fileName = `RELATÓRIO - ${brandPrefix}CUSTOS - ${date} ${time}.xlsx`;
@@ -204,7 +205,7 @@ export default function CostTable() {
     }
 
     // ✅ Sem seleção: buscar TODOS os registros (respeitando busca/filtro/ordem)
-    setLoading(true);
+    setExporting(true);
     try {
       const pageSize = 1000;
       let all: Custo[] = [];
@@ -225,7 +226,7 @@ export default function CostTable() {
 
       exportFilteredToXlsx(all, fileName);
     } finally {
-      setLoading(false);
+      setExporting(false);
     }
   };
 
@@ -372,8 +373,17 @@ export default function CostTable() {
                 variant="outline"
                 className="border-neutral-700 hover:scale-105 transition-all text-white rounded-xl cursor-pointer"
                 onClick={handleExport}
+                disabled={exporting}
               >
-                <Download className="w-4 h-4 mr-2" /> Exportar
+                {exporting ? (
+                  <>
+                    <Loader className="w-4 h-4 mr-2 animate-spin" /> Exportando...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4 mr-2" /> Exportar
+                  </>
+                )}
               </Button>
 
               {selectedRows.length > 0 && (
