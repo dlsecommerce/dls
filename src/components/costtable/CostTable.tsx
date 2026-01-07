@@ -175,6 +175,7 @@ export default function CostTable() {
   }, []);
 
   useEffect(() => {
+    setSelectedRows([]);
     setCurrentPage(1);
     loadData(1, itemsPerPage);
   }, [search, selectedBrands]);
@@ -196,7 +197,9 @@ export default function CostTable() {
             .join("-")}-`
         : "";
 
-    const fileName = `RELATÓRIO - ${brandPrefix}CUSTOS - ${date} ${time}.xlsx`;
+    const fileName = brandPrefix
+    ? `RELATÓRIO - ${brandPrefix}-CUSTOS - ${date} ${time}.xlsx`
+    : `RELATÓRIO - CUSTOS - ${date} ${time}.xlsx`;
 
     // ✅ Se tiver seleção, exporta somente os selecionados
     if (selectedRows.length > 0) {
@@ -377,7 +380,7 @@ export default function CostTable() {
               >
                 {exporting ? (
                   <>
-                    <Loader className="w-4 h-4 mr-2 animate-spin" /> Exportando...
+                    <Loader className="w-4 h-4 mr-2 animate-spin" /> 
                   </>
                 ) : (
                   <>
