@@ -45,7 +45,7 @@ export default function CostTable() {
   const [rows, setRows] = useState<Custo[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState(false); 
+  const [exporting, setExporting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
 
@@ -175,7 +175,7 @@ export default function CostTable() {
   }, []);
 
   useEffect(() => {
-    setSelectedRows([]);
+    setSelectedRows([]); // ✅ limpa seleção ao trocar filtros/busca
     setCurrentPage(1);
     loadData(1, itemsPerPage);
   }, [search, selectedBrands]);
@@ -190,16 +190,18 @@ export default function CostTable() {
     const date = now.toLocaleDateString("pt-BR").replace(/\//g, "-");
     const time = now.toLocaleTimeString("pt-BR").replace(/:/g, "-");
 
-    const brandPrefix =
-      selectedBrands.length === 0
-        ? `${selectedBrands
+    // ✅ AJUSTE: prefixo correto (1 ou mais marcas) e sem hífen duplicado quando vazio
+    const brandTag =
+      selectedBrands.length > 0
+        ? selectedBrands
             .map((b) => String(b).trim().substring(0, 3).toUpperCase())
-            .join("-")}-`
+            .filter(Boolean)
+            .join("-")
         : "";
 
-    const fileName = brandPrefix
-    ? `RELATÓRIO - ${brandPrefix}-CUSTOS - ${date} ${time}.xlsx`
-    : `RELATÓRIO - CUSTOS - ${date} ${time}.xlsx`;
+    const fileName = `RELATÓRIO - ${
+      brandTag ? `${brandTag}-` : ""
+    }CUSTOS - ${date} ${time}.xlsx`;
 
     // ✅ Se tiver seleção, exporta somente os selecionados
     if (selectedRows.length > 0) {
@@ -380,7 +382,7 @@ export default function CostTable() {
               >
                 {exporting ? (
                   <>
-                    <Loader className="w-4 h-4 mr-2 animate-spin" /> 
+                    <Loader className="w-4 h-4 mr-2 animate-spin" /> Exportando...
                   </>
                 ) : (
                   <>
@@ -525,7 +527,6 @@ export default function CostTable() {
                           />
                         </TableCell>
 
-                        {/* === Código com Copy === */}
                         <TableCell className="text-white text-center">
                           <div className="flex justify-center items-center gap-1 group">
                             {c["Código"]}
@@ -551,7 +552,6 @@ export default function CostTable() {
                           {c["Marca"]}
                         </TableCell>
 
-                        {/* === Custo Atual com Copy === */}
                         <TableCell className="text-neutral-300 text-center">
                           <div className="flex justify-center items-center gap-1 group">
                             R${" "}
@@ -584,7 +584,6 @@ export default function CostTable() {
                           {Number(c["Custo Antigo"] || 0).toFixed(2)}
                         </TableCell>
 
-                        {/* === NCM com Copy === */}
                         <TableCell className="text-neutral-300 text-center">
                           <div className="flex justify-center items-center gap-1 group">
                             {c["NCM"]}
@@ -639,7 +638,6 @@ export default function CostTable() {
           </div>
         </GlassmorphicCard>
 
-        {/* Paginação */}
         <div className="mt-2">
           <TableControls
             currentPage={currentPage}
@@ -656,7 +654,6 @@ export default function CostTable() {
         </div>
       </div>
 
-      {/* Modais */}
       <ModalNewCost
         open={openNew}
         onOpenChange={setOpenNew}
