@@ -1,11 +1,6 @@
 "use client";
 
-import React, {
-  useEffect,
-  useState,
-  useCallback,
-  useTransition,
-} from "react";
+import React, { useEffect, useState, useCallback, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
 import { useTrayImportExport } from "@/components/marketplaces/tray/hooks/useTrayImportExport";
@@ -48,22 +43,17 @@ export default function PricingTable() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
   const [sortColumn, setSortColumn] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] =
-    useState<"asc" | "desc">("asc");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
   const [isPending, startTransition] = useTransition();
 
-  const impExp = useTrayImportExport(
-    filteredRows,
-    selectedLoja,
-    selectedBrands
-  );
+  // ✅ loader do botão Exportar
+  const [exporting, setExporting] = useState(false);
+
+  const impExp = useTrayImportExport(filteredRows, selectedLoja, selectedBrands);
 
   useEffect(() => {
-    const timeout = setTimeout(
-      () => setDebouncedSearch(search.trim()),
-      300
-    );
+    const timeout = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(timeout);
   }, [search]);
 
@@ -135,8 +125,8 @@ export default function PricingTable() {
 
       return {
         ...r,
-        id: r.id,                 // UUID
-        anuncio_id: r.anuncio_id, // vínculo lógico
+        id: r.id,
+        anuncio_id: r.anuncio_id,
         OD,
         Desconto: parseBR(r.Desconto),
         Embalagem: parseBR(r.Embalagem),
@@ -192,12 +182,9 @@ export default function PricingTable() {
 
     startTransition(() => {
       const result = rows.filter((r) => {
-        const lojaOk =
-          selectedLoja.length === 0 ||
-          selectedLoja.includes(r.Loja);
+        const lojaOk = selectedLoja.length === 0 || selectedLoja.includes(r.Loja);
         const marcaOk =
-          selectedBrands.length === 0 ||
-          selectedBrands.includes(r.Marca);
+          selectedBrands.length === 0 || selectedBrands.includes(r.Marca);
 
         if (!lojaOk || !marcaOk) return false;
 
@@ -234,21 +221,14 @@ export default function PricingTable() {
   }, []);
 
   const openEditor = useCallback(
-    (
-      row: Row,
-      field: keyof Row,
-      isMoney: boolean,
-      e: React.MouseEvent
-    ) => {
-      const rect = (
-        e.currentTarget as HTMLElement
-      ).getBoundingClientRect();
+    (row: Row, field: keyof Row, isMoney: boolean, e: React.MouseEvent) => {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 
       const rawValue = parseBR(row[field]);
       const formatted = toBR(rawValue);
 
       setEditing({
-        dbId: row.id, // UUID
+        dbId: row.id,
         loja: row.Loja,
         field,
         value: formatted,
@@ -276,14 +256,9 @@ export default function PricingTable() {
 
     setRows(updatedRows);
 
-    const rowUpdated = updatedRows.find(
-      (r) => r.id === dbId
-    );
+    const rowUpdated = updatedRows.find((r) => r.id === dbId);
 
-    const table =
-      loja === "PK"
-        ? "marketplace_tray_pk"
-        : "marketplace_tray_sb";
+    const table = loja === "PK" ? "marketplace_tray_pk" : "marketplace_tray_sb";
 
     const { error } = await supabase
       .from(table)
@@ -293,22 +268,24 @@ export default function PricingTable() {
       })
       .eq("id", dbId);
 
-    if (error)
-      console.error("❌ Erro ao salvar:", error);
+    if (error) console.error("❌ Erro ao salvar:", error);
 
     setEditing(null);
   }, [editing, rows]);
 
   const cancelEdit = () => setEditing(null);
 
+  // ✅ AJUSTE IMPORTAÇÃO: atualizar por (ID + Loja), NÃO por UUID
   const handlePricingImport = async (data: any[]) => {
     for (const row of data) {
-      const table =
-        row.Loja === "PK"
-          ? "marketplace_tray_pk"
-          : "marketplace_tray_sb";
+      const loja = String(row.Loja || "").trim().toUpperCase(); // PK/SB
+      const id = String(row.ID ?? "").trim();
 
-      await supabase
+      if (!id || !loja) continue;
+
+      const table = loja === "PK" ? "marketplace_tray_pk" : "marketplace_tray_sb";
+
+      const { error } = await supabase
         .from(table)
         .update({
           Desconto: row.Desconto,
@@ -318,9 +295,13 @@ export default function PricingTable() {
           Imposto: row.Imposto,
           Marketing: row.Marketing,
           Custo: row.Custo,
+          "Margem de Lucro": row["Margem de Lucro"],
           "Preço de Venda": row["Preço de Venda"],
         })
-        .eq("id", row.id);
+        .eq("ID", id)
+        .eq("Loja", loja);
+
+      if (error) console.error("❌ Erro ao importar:", error);
     }
 
     setOpenPricingModal(false);
@@ -328,15 +309,17 @@ export default function PricingTable() {
   };
 
   const handleExportAll = useCallback(async () => {
-    const pageSize = 1000;
-    let page = 0;
-    let all: any[] = [];
+    setExporting(true);
+    try {
+      const pageSize = 1000;
+      let page = 0;
+      let all: any[] = [];
 
-    while (true) {
-      let exportQuery = supabase
-        .from("marketplace_tray_all")
-        .select(
-          `
+      while (true) {
+        let exportQuery = supabase
+          .from("marketplace_tray_all")
+          .select(
+            `
           id,
           anuncio_id,
           ID,
@@ -358,38 +341,33 @@ export default function PricingTable() {
           Custo,
           "Preço de Venda"
         `
-        )
-        .order("Atualizado em", { ascending: false })
-        .order("id", { ascending: false })
-        .range(
-          page * pageSize,
-          (page + 1) * pageSize - 1
-        );
+          )
+          .order("Atualizado em", { ascending: false })
+          .order("id", { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
 
-      if (selectedLoja.length)
-        exportQuery = exportQuery.in(
-          "Loja",
-          selectedLoja
-        );
-      if (selectedBrands.length)
-        exportQuery = exportQuery.in(
-          "Marca",
-          selectedBrands
-        );
+        if (selectedLoja.length) exportQuery = exportQuery.in("Loja", selectedLoja);
+        if (selectedBrands.length) exportQuery = exportQuery.in("Marca", selectedBrands);
 
-      const { data, error } = await exportQuery;
+        const { data, error } = await exportQuery;
 
-      if (error) return alert("Erro ao exportar");
-      if (!data?.length) break;
+        if (error) throw error;
+        if (!data?.length) break;
 
-      all = [...all, ...data];
-      if (data.length < pageSize) break;
+        all = all.concat(data);
+        if (data.length < pageSize) break;
 
-      page++;
+        page++;
+      }
+
+      await impExp.handleExport(all);
+    } catch (e) {
+      console.error("ERRO EXPORT:", e);
+      alert("Erro ao exportar. Veja o console.");
+    } finally {
+      setExporting(false);
     }
-
-    await impExp.handleExport(all);
-  }, [selectedLoja, selectedBrands]);
+  }, [selectedLoja, selectedBrands, impExp]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-8">
@@ -399,9 +377,8 @@ export default function PricingTable() {
             search={search}
             setSearch={setSearch}
             onExport={handleExportAll}
-            onMassEditOpen={() =>
-              setOpenPricingModal(true)
-            }
+            exporting={exporting}
+            onMassEditOpen={() => setOpenPricingModal(true)}
             allBrands={[]}
             allLojas={[]}
             allCategorias={[]}
@@ -444,9 +421,7 @@ export default function PricingTable() {
 
         <TableControls
           currentPage={currentPage}
-          totalPages={Math.ceil(
-            totalItems / itemsPerPage
-          )}
+          totalPages={Math.ceil(totalItems / itemsPerPage)}
           itemsPerPage={itemsPerPage}
           totalItems={totalItems}
           onPageChange={setCurrentPage}
@@ -461,10 +436,7 @@ export default function PricingTable() {
         />
 
         {editing && (
-          <FloatingEditor
-            anchorRect={editing.anchorRect}
-            onClose={cancelEdit}
-          >
+          <FloatingEditor anchorRect={editing.anchorRect} onClose={cancelEdit}>
             <div className="relative flex items-center rounded-md border border-neutral-700 bg-black/30 px-2 py-1.5">
               <span className="text-xs px-1 py-0.5 rounded bg-black/60 border border-neutral-700 mr-1">
                 {editing.isMoney ? "R$" : "%"}

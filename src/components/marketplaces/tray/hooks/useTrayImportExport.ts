@@ -8,8 +8,8 @@ import { ptBR } from "date-fns/locale";
 
 export function useTrayImportExport(
   rows: any[],
-  lojasFiltro?: string | string[],
-  categoriaFiltro?: string
+  lojasFiltro?: string[] | string,
+  marcasFiltro?: string[] | string
 ) {
   const handleExport = useCallback(
     async (dataToExport?: any[]) => {
@@ -20,60 +20,72 @@ export function useTrayImportExport(
         return;
       }
 
-      // ---------------------------------------------------------
-      // 🔥 NORMALIZA LISTA DE LOJAS
-      // ---------------------------------------------------------
+      // -----------------------------
+      // Normaliza lojas e marcas
+      // -----------------------------
       const lojasSelecionadas = Array.isArray(lojasFiltro)
         ? lojasFiltro
         : lojasFiltro
         ? [lojasFiltro]
         : [];
 
-      // ---------------------------------------------------------
-      // 🔥 MAPEAMENTO OFICIAL DAS SIGLAS
-      // ---------------------------------------------------------
-      const mapSigla = (nomeLoja: string) => {
-        const loja = nomeLoja.toLowerCase();
+      const marcasSelecionadas = Array.isArray(marcasFiltro)
+        ? marcasFiltro
+        : marcasFiltro
+        ? [marcasFiltro]
+        : [];
 
+      // -----------------------------
+      // Siglas de loja (PK / SB)
+      // -----------------------------
+      const mapLojaSigla = (nomeLoja: string) => {
+        const loja = String(nomeLoja || "").trim().toLowerCase();
         if (loja.includes("sobaquetas") || loja === "sb") return "SB";
         if (loja.includes("pikot") || loja === "pk") return "PK";
 
-        // fallback — primeira letra de cada palavra
-        return nomeLoja
-          .split(" ")
+        // fallback
+        return String(nomeLoja || "")
+          .trim()
+          .split(/\s+/)
           .map((w) => w[0]?.toUpperCase())
           .join("");
       };
 
-      // ---------------------------------------------------------
-      // 🔥 SE TIVER MAIS DE UMA LOJA, JUNTA ASSIM: PK_SB
-      // ---------------------------------------------------------
-      let siglaLoja = "";
+      // -----------------------------
+      // Siglas de marca (usa o texto “limpo”)
+      // Ex: "VDR Relatório" -> "VDRRELATORIO" (ajustável)
+      // -----------------------------
+      const mapMarcaSigla = (marca: string) =>
+        String(marca || "")
+          .trim()
+          .toUpperCase()
+          .replace(/\s+/g, "")     // remove espaços
+          .replace(/[^A-Z0-9-]/g, ""); // remove caracteres estranhos
 
-      if (lojasSelecionadas.length === 1) {
-        siglaLoja = mapSigla(lojasSelecionadas[0]);
-      } else if (lojasSelecionadas.length > 1) {
-        siglaLoja = lojasSelecionadas.map(mapSigla).join("_");
+      // monta lista do meio: LOJAS + MARCAS
+      const partes: string[] = [];
+
+      if (lojasSelecionadas.length) {
+        partes.push(...lojasSelecionadas.map(mapLojaSigla));
       }
 
-      const categoriaPart = categoriaFiltro
-        ? " - " + categoriaFiltro.toUpperCase().replace(/\s+/g, "")
-        : "";
+      if (marcasSelecionadas.length) {
+        partes.push(...marcasSelecionadas.map(mapMarcaSigla));
+      }
 
-      const prefixo = siglaLoja ? ` - ${siglaLoja}${categoriaPart}` : "";
+      // remove duplicados e vazios
+      const middle = Array.from(new Set(partes)).filter(Boolean).join("-");
 
-      // ---------------------------------------------------------
-      // 🔥 NOME FINAL DO ARQUIVO
-      // ---------------------------------------------------------
-      const fileName = `PRECIFICAÇÃO${prefixo} - TRAY - ${format(
-        new Date(),
-        "dd-MM-yyyy HH'h'mm",
-        { locale: ptBR }
-      )}.xlsx`;
+      const stamp = format(new Date(), "dd-MM-yyyy HH'h'mm", { locale: ptBR });
 
-      // ---------------------------------------------------------
-      // EXCEL WORKBOOK
-      // ---------------------------------------------------------
+      const fileName =
+        middle.length > 0
+          ? `PRECIFICAÇÃO TRAY - ${middle}-RELATÓRIO - ${stamp}.xlsx`
+          : `PRECIFICAÇÃO TRAY - RELATÓRIO - ${stamp}.xlsx`;
+
+      // -----------------------------
+      // EXCEL WORKBOOK (seu código igual)
+      // -----------------------------
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet("PRECIFICAÇÃO");
 
@@ -161,9 +173,6 @@ export function useTrayImportExport(
 
       sheet.getRow(1).eachCell((cell) => (cell.border = undefined));
 
-      // ---------------------------------------------------------
-      // INSERÇÃO DOS DADOS
-      // ---------------------------------------------------------
       data.forEach((row) => {
         const line = [
           row.ID || "",
@@ -226,10 +235,15 @@ export function useTrayImportExport(
       sheet.getRow(2).height = 22;
 
       const buffer = await workbook.xlsx.writeBuffer();
-      saveAs(new Blob([buffer]), fileName);
-    },
 
-    [rows, lojasFiltro, categoriaFiltro]
+      saveAs(
+        new Blob([buffer], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }),
+        fileName
+      );
+    },
+    [rows, lojasFiltro, marcasFiltro]
   );
 
   return { handleExport };

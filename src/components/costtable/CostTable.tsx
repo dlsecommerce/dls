@@ -199,9 +199,9 @@ export default function CostTable() {
             .join("-")
         : "";
 
-    const fileName = `RELATÓRIO - ${
+    const fileName = `CUSTOS - ${
       brandTag ? `${brandTag}-` : ""
-    }CUSTOS - ${date} ${time}.xlsx`;
+    }RELATÓRIO - ${date} ${time}.xlsx`;
 
     // ✅ Se tiver seleção, exporta somente os selecionados
     if (selectedRows.length > 0) {

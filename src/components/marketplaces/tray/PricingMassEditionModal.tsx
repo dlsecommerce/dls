@@ -55,6 +55,47 @@ export default function PricingMassEditionModal({
   ];
 
   // =============================================================
+  // ✅ AJUSTE: parser robusto p/ XLSX (trata objeto {v,w}, "R$", "%", BR/US)
+  // =============================================================
+  const toNumberBR = (v: any) => {
+    if (v === null || v === undefined) return null;
+
+    // XLSX às vezes entrega objeto: { v, w, t }
+    if (typeof v === "object") {
+      if (typeof v.v === "number") return v.v;
+      if (typeof v.v === "string") v = v.v;
+      else if (typeof v.w === "string") v = v.w;
+      else return null;
+    }
+
+    if (typeof v === "number") return v;
+
+    let s = String(v)
+      .replace(/\u00A0/g, " ") // NBSP
+      .trim();
+
+    if (!s) return null;
+
+    s = s
+      .replace(/\s+/g, " ")
+      .replace(/R\$\s?/gi, "")
+      .replace(/%/g, "")
+      .trim();
+
+    // suporta "1.234,56" e "1234.56"
+    if (s.includes(",") && s.includes(".")) {
+      // assume BR: "." milhar e "," decimal
+      s = s.replace(/\./g, "").replace(",", ".");
+    } else if (s.includes(",")) {
+      // assume "," decimal
+      s = s.replace(",", ".");
+    }
+
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  // =============================================================
   // 📌 IMPORTAÇÃO DA PLANILHA
   // =============================================================
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -111,7 +152,8 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // 📌 ATUALIZAÇÃO NO SUPABASE (PK/SB) + ARREDONDAMENTO
+  // ✅ AJUSTE: ATUALIZAÇÃO NO SUPABASE (ID + Loja)
+  // ✅ AJUSTE: percentuais aceitam 10 OU 0.10 (converte)
   // =============================================================
   const handleUpdateConfirm = async () => {
     if (previewData.length === 0) return;
@@ -124,54 +166,70 @@ export default function PricingMassEditionModal({
 
     try {
       for (const row of previewData) {
-        const id = row["ID"];
-        const loja = row["Loja"]?.toString().toUpperCase();
+        const id = String(row["ID"] ?? "").trim();
+        const loja = String(row["Loja"] ?? "").trim().toUpperCase(); // PK/SB
 
-        if (!id || !loja) continue;
+        if (!id || !loja) {
+          processed++;
+          setProgress(Math.round((processed / total) * 100));
+          continue;
+        }
 
-        // 🔥 Seleciona tabela correta
-        const tabela =
-          loja === "SB" ? "marketplace_tray_sb" : "marketplace_tray_pk";
+        const tabela = loja === "SB" ? "marketplace_tray_sb" : "marketplace_tray_pk";
 
-        // Campos a serem atualizados
         const updateFields: Record<string, any> = {};
 
-        [
+        const percentCols = [
           "Desconto",
-          "Embalagem",
-          "Frete",
           "Comissão",
           "Imposto",
           "Margem de Lucro",
           "Marketing",
+        ];
+        const moneyCols = [
+          "Embalagem",
+          "Frete",
+          "Custo",
           "Preço de Venda",
-        ].forEach((col) => {
-          let value = row[col];
+        ];
 
-          if (value !== undefined && value !== "") {
-            // 🔥 Valor numérico seguro
-            let num = Number(value);
-
-            if (isNaN(num)) num = 0;
-
-            // 🔥 Arredonda apenas Preço de Venda
-            if (col === "Preço de Venda") {
-              num = Number(num.toFixed(2));
-            }
-
-            updateFields[col] = num;
+        // percentuais
+        for (const col of percentCols) {
+          const num = toNumberBR(row[col]);
+          if (num !== null) {
+            // ✅ se vier 0.1 (10%), converte pra 10
+            const fixed = num > 0 && num <= 1 ? num * 100 : num;
+            updateFields[col] = fixed;
           }
-        });
+        }
+
+        // monetários
+        for (const col of moneyCols) {
+          const num = toNumberBR(row[col]);
+          if (num !== null) {
+            updateFields[col] =
+              col === "Preço de Venda" ? Number(num.toFixed(2)) : num;
+          }
+        }
 
         if (Object.keys(updateFields).length > 0) {
-          const { error } = await supabase
+          const { data: updated, error } = await supabase
             .from(tabela)
             .update(updateFields)
-            .eq("ID", id);
+            .eq("ID", id)
+            .eq("Loja", loja)
+            .select("ID");
 
           if (error) {
-            console.warn(`Erro ao atualizar ID ${id}:`, error.message);
+            console.warn(`❌ Erro ao atualizar ID ${id} (${loja}):`, error.message);
+          } else if (!updated || updated.length === 0) {
+            console.warn(
+              `⚠️ Atualizou 0 linhas para ID ${id} (${loja}). Confira se existe no banco.`,
+              updateFields
+            );
           }
+        } else {
+          console.warn("⚠️ Linha sem campos válidos para update:", { id, loja, row });
         }
 
         processed++;
@@ -283,7 +341,10 @@ export default function PricingMassEditionModal({
                           } hover:bg-white/10`}
                         >
                           {columns.map((col) => (
-                            <td key={col} className="p-2 border-b border-neutral-800">
+                            <td
+                              key={col}
+                              className="p-2 border-b border-neutral-800"
+                            >
                               {row[col] ?? ""}
                             </td>
                           ))}

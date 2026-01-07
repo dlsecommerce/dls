@@ -1,11 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import React, { useEffect, useState } from "react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -57,30 +53,45 @@ export default function FiltroAnunciosPopover({
     setAllLojas(sources.map((s) => s.displayName));
   }, []);
 
-  // Carrega marcas filtrando pelo código da loja (PK/SB)
+  // ✅ AJUSTE: Carrega TODAS as marcas com paginação (evita limite do Supabase)
+  // ✅ E quando selectedLoja estiver selecionada, filtra no banco com .in("Loja", selectedLoja)
   useEffect(() => {
     const loadBrands = async () => {
       setLoading(true);
       try {
-        const { data, error } = await supabase
-          .from("marketplace_tray_all")
-          .select("Loja, Marca");
+        const pageSize = 1000;
+        let from = 0;
 
-        if (error || !data) {
-          console.error("Erro ao buscar marcas:", error?.message);
-          setAllBrands([]);
-          return;
+        const setBrands = new Set<string>();
+
+        while (true) {
+          const to = from + pageSize - 1;
+
+          let q = supabase
+            .from("marketplace_tray_all")
+            .select("Loja, Marca")
+            .range(from, to);
+
+          if (selectedLoja.length) {
+            q = q.in("Loja", selectedLoja);
+          }
+
+          const { data, error } = await q;
+
+          if (error) {
+            console.error("Erro ao buscar marcas:", error.message);
+            break;
+          }
+
+          (data || []).forEach((r: any) => {
+            if (r?.Marca) setBrands.add(String(r.Marca).trim());
+          });
+
+          if (!data || data.length < pageSize) break;
+          from += pageSize;
         }
 
-        const filtered = selectedLoja.length
-          ? data.filter((r: any) => selectedLoja.includes(r.Loja))
-          : data;
-
-        const uniqueBrands = Array.from(
-          new Set(filtered.map((r: any) => r.Marca).filter(Boolean))
-        ).sort();
-
-        setAllBrands(uniqueBrands);
+        setAllBrands(Array.from(setBrands).sort((a, b) => a.localeCompare(b)));
       } finally {
         setLoading(false);
       }
@@ -258,7 +269,8 @@ export default function FiltroAnunciosPopover({
                   className="flex items-center gap-1 bg-white/10 border border-green-500/50 text-white px-2 py-[3px] rounded-md text-xs cursor-pointer hover:bg-green-600/20 transition-all"
                   onClick={() => {
                     const code = reverseLojaMap[item];
-                    if (code) setSelectedLoja(selectedLoja.filter((l) => l !== code));
+                    if (code)
+                      setSelectedLoja(selectedLoja.filter((l) => l !== code));
                     setSelectedBrands(selectedBrands.filter((b) => b !== item));
                   }}
                 >
