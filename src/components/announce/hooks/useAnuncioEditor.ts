@@ -37,21 +37,28 @@ interface CustoRow {
 export const parseValorBR = (v: string | number | null | undefined): number => {
   if (v === null || v === undefined || v === "") return 0;
   if (typeof v === "number") return v;
+
   let str = String(v).trim();
   str = str.replace(/[^\d.,-]/g, "");
+
   const temVirgula = str.includes(",");
   const temPonto = str.includes(".");
+
   if (temVirgula && temPonto) {
+    // se a última vírgula vem depois do último ponto, assume formato BR (milhar '.' e decimal ',')
     if (str.lastIndexOf(",") > str.lastIndexOf(".")) {
       str = str.replace(/\./g, "");
       str = str.replace(",", ".");
     } else {
+      // assume formato US (milhar ',' e decimal '.')
       str = str.replace(/,/g, "");
     }
   } else if (temVirgula) {
+    // formato BR simples: "981,73"
     str = str.replace(/\./g, "");
     str = str.replace(",", ".");
   }
+
   const num = parseFloat(str);
   return isNaN(num) ? 0 : num;
 };
@@ -77,11 +84,17 @@ export const inferirOD = (referencia?: string | null): number => {
 // =========================
 // ler e adicionar custos
 // =========================
-async function fetchOrAddCustos(codigos: string[]): Promise<Record<string, number>> {
+async function fetchOrAddCustos(
+  codigos: string[]
+): Promise<Record<string, number>> {
   if (codigos.length === 0) return {};
 
   // 🔹 Busca custos existentes
-  const { data, error } = await supabase.from("custos").select("*").in("Código", codigos);
+  const { data, error } = await supabase
+    .from("custos")
+    .select("*")
+    .in("Código", codigos);
+
   let rows: CustoRow[] = data || [];
 
   // 🔁 Se não achar na coluna "Código", tenta "Codigo"
@@ -98,6 +111,7 @@ async function fetchOrAddCustos(codigos: string[]): Promise<Record<string, numbe
     const codigo = (r.Código || r.Codigo || "").toString().trim();
     const custoRaw = r["Custo Atual"] ?? r["Custo_Atual"] ?? r.custo ?? 0;
     const custoNum = parseValorBR(custoRaw as any);
+
     if (codigo) {
       map[codigo] = isNaN(custoNum) ? 0 : custoNum;
       codigosEncontrados.add(codigo);
@@ -135,7 +149,8 @@ export function useAnuncioEditor(id?: string) {
   const params = useSearchParams();
   const lojaParam = params.get("loja");
 
-  const { composicao, setComposicao, custoTotal, setCalculo, setAcrescimos } = usePrecificacao();
+  const { composicao, setComposicao, custoTotal, setCalculo, setAcrescimos } =
+    usePrecificacao();
 
   // ===========================================================
   // 🔹 CARREGAR ANÚNCIO
@@ -171,7 +186,12 @@ export function useAnuncioEditor(id?: string) {
       }
 
       if (!data || data.length === 0) {
-        console.warn("⚠️ Nenhum dado encontrado para ID:", id, "Loja:", lojaCodigo);
+        console.warn(
+          "⚠️ Nenhum dado encontrado para ID:",
+          id,
+          "Loja:",
+          lojaCodigo
+        );
         setProduto(null);
         return;
       }
@@ -196,17 +216,25 @@ export function useAnuncioEditor(id?: string) {
         comprimento: parseValorBR(row["Comprimento"]),
       });
 
-      // 🔹 Monta composição
-      const compTmp = [];
+      // 🔹 Monta composição (custo como number puro)
+      const compTmp: Array<{
+        codigo: string;
+        quantidade: string;
+        custo: number;
+      }> = [];
+
       for (let i = 1; i <= 10; i++) {
         const codigo = row[`Código ${i}`];
         const quantidade = row[`Quantidade ${i}`];
+
         if (codigo) {
           compTmp.push({
             codigo: String(codigo).trim(),
             quantidade:
-              !quantidade || quantidade === "" ? "1" : String(quantidade).replace(".", ","),
-            custo: "0,00",
+              !quantidade || quantidade === ""
+                ? "1"
+                : String(quantidade).replace(".", ","),
+            custo: 0, // ✅ number puro (sem formatar BR aqui)
           });
         }
       }
@@ -217,15 +245,15 @@ export function useAnuncioEditor(id?: string) {
 
       const compFinal = compTmp.map((c) => ({
         ...c,
-        custo: formatValorBR(custosMap[c.codigo] ?? 0),
+        custo: custosMap[c.codigo] ?? 0, // ✅ number puro
       }));
 
-      setComposicao(compFinal);
+      setComposicao(compFinal as any);
       setAcrescimos((prev) => ({ ...prev, acrescimo: 0 }));
 
-      // 🔹 Calcula custo total
+      // 🔹 Calcula custo total (quantidade pode vir BR, custo já é number)
       const total = compFinal.reduce(
-        (sum, item) => sum + parseValorBR(item.quantidade) * parseValorBR(item.custo),
+        (sum, item) => sum + parseValorBR(item.quantidade) * Number(item.custo),
         0
       );
 

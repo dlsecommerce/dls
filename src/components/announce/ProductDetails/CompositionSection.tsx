@@ -20,15 +20,45 @@ const HelpTooltip = ({ text }: { text: string }) => (
 );
 
 // ================================
-// Formatação BR
+// Helpers BR (state sempre NUMBER)
 // ================================
-const toDisplay = (v: any) => {
-  const num = parseFloat(String(v).replace(",", "."));
-  if (isNaN(num)) return "";
+const formatBR = (v: any) => {
+  const num = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(num)) return "";
   return num.toLocaleString("pt-BR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+};
+
+// Converte texto digitado (BR/US) para number puro
+const parseInputMoney = (raw: string): number => {
+  if (!raw) return 0;
+
+  let str = String(raw).trim();
+  // deixa só dígitos, ponto, vírgula e sinal
+  str = str.replace(/[^\d.,-]/g, "");
+
+  const temVirgula = str.includes(",");
+  const temPonto = str.includes(".");
+
+  if (temVirgula && temPonto) {
+    // se a última vírgula vem depois do último ponto, assume BR
+    if (str.lastIndexOf(",") > str.lastIndexOf(".")) {
+      str = str.replace(/\./g, "");
+      str = str.replace(",", ".");
+    } else {
+      // assume US
+      str = str.replace(/,/g, "");
+    }
+  } else if (temVirgula) {
+    // BR simples
+    str = str.replace(/\./g, "");
+    str = str.replace(",", ".");
+  }
+
+  const n = Number(str);
+  return Number.isFinite(n) ? n : 0;
 };
 
 // ================================
@@ -41,7 +71,9 @@ export const CompositionSection = ({
   AnimatedNumber,
 }: any) => {
   const gridRefs = useRef<HTMLInputElement[][]>([]);
-  const [sugestoes, setSugestoes] = useState<{ codigo: string; custo: number }[]>([]);
+  const [sugestoes, setSugestoes] = useState<{ codigo: string; custo: number }[]>(
+    []
+  );
   const [campoAtivo, setCampoAtivo] = useState<number | null>(null);
   const [indiceSelecionado, setIndiceSelecionado] = useState<number>(-1);
   const listaRef = useRef<HTMLDivElement>(null);
@@ -70,7 +102,11 @@ export const CompositionSection = ({
     setSugestoes(
       data?.map((d) => ({
         codigo: d["Código"],
-        custo: Number(d["Custo Atual"]) || 0,
+        // ✅ garante number puro
+        custo:
+          typeof d["Custo Atual"] === "number"
+            ? d["Custo Atual"]
+            : parseInputMoney(String(d["Custo Atual"] ?? "")),
       })) || []
     );
     setIndiceSelecionado(0);
@@ -79,7 +115,8 @@ export const CompositionSection = ({
   const selecionarSugestao = (codigo: string, custo: number, idx: number) => {
     const novo = [...composicao];
     novo[idx].codigo = codigo;
-    novo[idx].custo = custo.toFixed(2);
+    // ✅ state fica NUMBER
+    novo[idx].custo = Number.isFinite(custo) ? custo : 0;
     setComposicao(novo);
     setSugestoes([]);
     setCampoAtivo(null);
@@ -137,7 +174,9 @@ export const CompositionSection = ({
             >
               {/* Código */}
               <div className="relative">
-                <Label className="text-neutral-400 text-[10px] mb-1 block">Código</Label>
+                <Label className="text-neutral-400 text-[10px] mb-1 block">
+                  Código
+                </Label>
                 <Input
                   ref={(el) => {
                     if (!gridRefs.current[idx]) gridRefs.current[idx] = [];
@@ -212,6 +251,7 @@ export const CompositionSection = ({
                   }}
                   className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
                 />
+
                 {campoAtivo === idx && sugestoes.length > 0 && (
                   <div
                     ref={listaRef}
@@ -228,7 +268,9 @@ export const CompositionSection = ({
                         onClick={() => selecionarSugestao(s.codigo, s.custo, idx)}
                       >
                         <span>{s.codigo}</span>
-                        <span className="text-[#1a8ceb]">R$ {s.custo.toFixed(2)}</span>
+                        <span className="text-[#1a8ceb]">
+                          R$ {formatBR(s.custo)}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -237,7 +279,9 @@ export const CompositionSection = ({
 
               {/* Quantidade */}
               <div>
-                <Label className="text-neutral-400 text-[10px] mb-1 block">Quantidade</Label>
+                <Label className="text-neutral-400 text-[10px] mb-1 block">
+                  Quantidade
+                </Label>
                 <Input
                   ref={(el) => {
                     if (!gridRefs.current[idx]) gridRefs.current[idx] = [];
@@ -256,17 +300,36 @@ export const CompositionSection = ({
 
               {/* Custo + botão X */}
               <div className="relative">
-                <Label className="text-neutral-400 text-[10px] mb-1 block">Custo (R$)</Label>
+                <Label className="text-neutral-400 text-[10px] mb-1 block">
+                  Custo (R$)
+                </Label>
                 <Input
                   ref={(el) => {
                     if (!gridRefs.current[idx]) gridRefs.current[idx] = [];
                     gridRefs.current[idx][2] = el!;
                   }}
-                  value={toDisplay(item.custo)}
+                  // ✅ exibe BR, mas state é number
+                  value={formatBR(item.custo)}
                   placeholder="100,00"
+                  onFocus={(e) => {
+                    // ao focar, mostra o valor "cru" com ponto pra facilitar edição
+                    const num =
+                      typeof item.custo === "number" ? item.custo : Number(item.custo);
+                    e.currentTarget.value = Number.isFinite(num)
+                      ? String(num.toFixed(2)).replace(".", ",")
+                      : "";
+                  }}
                   onChange={(e) => {
                     const novo = [...composicao];
-                    novo[idx].custo = e.target.value;
+                    // ✅ salva NUMBER puro
+                    novo[idx].custo = parseInputMoney(e.target.value);
+                    setComposicao(novo);
+                  }}
+                  onBlur={(e) => {
+                    // garante que o input volte formatado
+                    const novo = [...composicao];
+                    const num = parseInputMoney(e.target.value);
+                    novo[idx].custo = num;
                     setComposicao(novo);
                   }}
                   className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
@@ -301,7 +364,10 @@ export const CompositionSection = ({
       {/* ➕ Adicionar linha */}
       <Button
         onClick={() =>
-          setComposicao((prev: any) => [...prev, { codigo: "", quantidade: "", custo: "" }])
+          setComposicao((prev: any) => [
+            ...prev,
+            { codigo: "", quantidade: "", custo: 0 },
+          ])
         }
         variant="outline"
         className="w-full border-white/10 text-white text-xs hover:bg-white/5 hover:border-[#1a8ceb]/50 rounded-xl transition-all mt-2"
