@@ -13,6 +13,7 @@ import { motion } from "framer-motion";
 import { UploadCloud, Layers, Loader, AlertTriangle } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 type Props = {
   open: boolean;
@@ -55,12 +56,11 @@ export default function PricingMassEditionModal({
   ];
 
   // =============================================================
-  // ✅ AJUSTE: parser robusto p/ XLSX (trata objeto {v,w}, "R$", "%", BR/US)
+  // ✅ parser robusto p/ XLSX (trata objeto {v,w}, "R$", "%", BR/US)
   // =============================================================
   const toNumberBR = (v: any) => {
     if (v === null || v === undefined) return null;
 
-    // XLSX às vezes entrega objeto: { v, w, t }
     if (typeof v === "object") {
       if (typeof v.v === "number") return v.v;
       if (typeof v.v === "string") v = v.v;
@@ -70,10 +70,7 @@ export default function PricingMassEditionModal({
 
     if (typeof v === "number") return v;
 
-    let s = String(v)
-      .replace(/\u00A0/g, " ") // NBSP
-      .trim();
-
+    let s = String(v).replace(/\u00A0/g, " ").trim();
     if (!s) return null;
 
     s = s
@@ -82,12 +79,9 @@ export default function PricingMassEditionModal({
       .replace(/%/g, "")
       .trim();
 
-    // suporta "1.234,56" e "1234.56"
     if (s.includes(",") && s.includes(".")) {
-      // assume BR: "." milhar e "," decimal
       s = s.replace(/\./g, "").replace(",", ".");
     } else if (s.includes(",")) {
-      // assume "," decimal
       s = s.replace(",", ".");
     }
 
@@ -142,9 +136,14 @@ export default function PricingMassEditionModal({
       });
 
       setPreviewData(normalized);
+      toast.success("Planilha carregada!", {
+        description: `Encontrados ${normalized.length} itens.`,
+      });
     } catch (err) {
       console.error("Erro ao ler arquivo:", err);
-      alert("Erro ao processar a planilha.");
+      toast.error("Erro ao processar a planilha", {
+        description: "Verifique o arquivo e tente novamente.",
+      });
     } finally {
       setLoading(false);
       e.target.value = "";
@@ -152,8 +151,8 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ AJUSTE: ATUALIZAÇÃO NO SUPABASE (ID + Loja)
-  // ✅ AJUSTE: percentuais aceitam 10 OU 0.10 (converte)
+  // ✅ ATUALIZAÇÃO NO SUPABASE (ID + Loja)
+  // ✅ percentuais aceitam 10 OU 0.10
   // =============================================================
   const handleUpdateConfirm = async () => {
     if (previewData.length === 0) return;
@@ -163,6 +162,10 @@ export default function PricingMassEditionModal({
 
     const total = previewData.length;
     let processed = 0;
+
+    let updatedCount = 0;
+    let notFoundCount = 0;
+    let errorCount = 0;
 
     try {
       for (const row of previewData) {
@@ -175,7 +178,8 @@ export default function PricingMassEditionModal({
           continue;
         }
 
-        const tabela = loja === "SB" ? "marketplace_tray_sb" : "marketplace_tray_pk";
+        const tabela =
+          loja === "SB" ? "marketplace_tray_sb" : "marketplace_tray_pk";
 
         const updateFields: Record<string, any> = {};
 
@@ -186,24 +190,16 @@ export default function PricingMassEditionModal({
           "Margem de Lucro",
           "Marketing",
         ];
-        const moneyCols = [
-          "Embalagem",
-          "Frete",
-          "Custo",
-          "Preço de Venda",
-        ];
+        const moneyCols = ["Embalagem", "Frete", "Custo", "Preço de Venda"];
 
-        // percentuais
         for (const col of percentCols) {
           const num = toNumberBR(row[col]);
           if (num !== null) {
-            // ✅ se vier 0.1 (10%), converte pra 10
             const fixed = num > 0 && num <= 1 ? num * 100 : num;
             updateFields[col] = fixed;
           }
         }
 
-        // monetários
         for (const col of moneyCols) {
           const num = toNumberBR(row[col]);
           if (num !== null) {
@@ -221,36 +217,59 @@ export default function PricingMassEditionModal({
             .select("ID");
 
           if (error) {
+            errorCount++;
             console.warn(`❌ Erro ao atualizar ID ${id} (${loja}):`, error.message);
           } else if (!updated || updated.length === 0) {
+            notFoundCount++;
             console.warn(
               `⚠️ Atualizou 0 linhas para ID ${id} (${loja}). Confira se existe no banco.`,
               updateFields
             );
+          } else {
+            updatedCount++;
           }
-        } else {
-          console.warn("⚠️ Linha sem campos válidos para update:", { id, loja, row });
         }
 
         processed++;
         setProgress(Math.round((processed / total) * 100));
       }
 
-      alert("✅ Atualização concluída com sucesso!");
+      // ✅ Toast final (sem alert)
+      if (updatedCount > 0) {
+        toast.success("Atualização concluída!", {
+          description: `${updatedCount} item(ns) atualizado(s).`,
+        });
+      } else {
+        toast.warning("Nenhum item foi atualizado", {
+          description: "Confira se ID e Loja (PK/SB) batem com o banco.",
+        });
+      }
+
+      if (notFoundCount > 0) {
+        toast.warning("Alguns itens não foram encontrados", {
+          description: `${notFoundCount} linha(s) não bateram com ID + Loja.`,
+        });
+      }
+
+      if (errorCount > 0) {
+        toast.error("Algumas atualizações falharam", {
+          description: `${errorCount} erro(s). Veja o console.`,
+        });
+      }
+
       onImportComplete(previewData);
       onOpenChange(false);
       setConfirmOpen(false);
     } catch (err) {
       console.error("Erro ao atualizar preços:", err);
-      alert("Erro ao atualizar no Supabase.");
+      toast.error("Erro ao atualizar no Supabase", {
+        description: "Veja o console para mais detalhes.",
+      });
     } finally {
       setUpdating(false);
     }
   };
 
-  // =============================================================
-  // 📌 UI DO MODAL
-  // =============================================================
   const columns =
     previewData.length > 0
       ? Object.keys(previewData[0])
@@ -258,7 +277,6 @@ export default function PricingMassEditionModal({
 
   return (
     <>
-      {/* MODAL PRINCIPAL */}
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="bg-[#0f0f0f]/95 backdrop-blur-xl border border-neutral-700 rounded-2xl text-white max-w-5xl shadow-2xl max-h-[90vh] overflow-hidden">
           <DialogHeader>
@@ -275,7 +293,6 @@ export default function PricingMassEditionModal({
               transition={{ duration: 0.3 }}
               className="space-y-6 pb-6"
             >
-              {/* INPUT */}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -310,7 +327,6 @@ export default function PricingMassEditionModal({
                 </div>
               </div>
 
-              {/* PREVIEW */}
               {loading ? (
                 <div className="flex justify-center py-6">
                   <Loader className="w-6 h-6 animate-spin text-neutral-400" />
@@ -361,7 +377,6 @@ export default function PricingMassEditionModal({
             </motion.div>
           </div>
 
-          {/* PROGRESS BAR */}
           {updating && (
             <div className="w-full h-2 bg-neutral-800 rounded-full mt-2">
               <div
@@ -399,7 +414,6 @@ export default function PricingMassEditionModal({
         </DialogContent>
       </Dialog>
 
-      {/* CONFIRMAÇÃO */}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="bg-[#0f0f0f]/95 border border-neutral-700 rounded-2xl text-white max-w-md shadow-2xl">
           <DialogHeader>
@@ -411,7 +425,10 @@ export default function PricingMassEditionModal({
 
           <p className="mt-3 text-neutral-300">
             Deseja realmente atualizar
-            <span className="text-white font-semibold"> {previewData.length} </span>
+            <span className="text-white font-semibold">
+              {" "}
+              {previewData.length}{" "}
+            </span>
             itens?
           </p>
 

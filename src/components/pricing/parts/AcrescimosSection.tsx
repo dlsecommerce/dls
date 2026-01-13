@@ -1,7 +1,7 @@
 import React from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Calculator } from "lucide-react";
+import { Calculator, Copy } from "lucide-react";
 import { AnimatedNumber } from "./AnimatedNumber";
 import { HelpTooltip } from "./HelpTooltip";
 
@@ -32,6 +32,12 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
   handleLinearNav,
   acrescimosRefs,
 }) => {
+  const copyPercent = async (value: any) => {
+    const n = Number(value ?? 0);
+    const text = Number.isFinite(n) ? n.toFixed(2) : "0.00";
+    await navigator.clipboard.writeText(text);
+  };
+
   return (
     <div className="p-3 rounded-lg bg-black/30 border border-white/10">
       <h4 className="font-bold text-white text-xs mb-2 flex items-center gap-2">
@@ -41,7 +47,7 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
       </h4>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        
+
         {/* ============================
              PREÇO LOJA
            ============================ */}
@@ -80,14 +86,12 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
         </div>
 
         {/* ============================
-             PREÇOS + FRETES (CLÁSSICO / PREMIUM)
+             PREÇOS + FRETES
            ============================ */}
         <div className="flex flex-col gap-2">
-          
+
           {/* PREÇOS */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-
-            {/* CLÁSSICO */}
             <div>
               <Label className="text-neutral-400 text-[10px] mb-1 block">
                 Preço Mercado Livre Clássico (R$)
@@ -119,7 +123,6 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
               />
             </div>
 
-            {/* PREMIUM */}
             <div>
               <Label className="text-neutral-400 text-[10px] mb-1 block">
                 Preço Mercado Livre Premium (R$)
@@ -154,8 +157,6 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
 
           {/* FRETES */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-
-            {/* FRETE CLÁSSICO */}
             <div>
               <Label className="text-neutral-400 text-[10px] mb-1 block">
                 Frete Clássico (R$)
@@ -187,7 +188,6 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
               />
             </div>
 
-            {/* FRETE PREMIUM */}
             <div>
               <Label className="text-neutral-400 text-[10px] mb-1 block">
                 Frete Premium (R$)
@@ -220,51 +220,82 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
             </div>
           </div>
 
-          {/* BLOCOS DE ACRÉSCIMO */}
+          {/* ============================
+               BLOCOS DE ACRÉSCIMO
+             ============================ */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
 
-            {/* CLASSICO */}
-            <div className={`flex flex-col justify-center items-center text-[11px] rounded-md p-3 transition-all duration-300 ${
-              acrescimos.acrescimoClassico > 0
-                ? "bg-green-500/10 border border-green-500/30"
-                : acrescimos.acrescimoClassico < 0
-                ? "bg-red-500/10 border border-red-500/30"
-                : "bg-white/5 border border-white/10"
-            }`}>
-              <span className="text-neutral-300 mb-1">Acréscimo Clássico</span>
-              <span className={`font-semibold text-base ${
+            {/* CLÁSSICO */}
+            <div
+              className={`group flex flex-col justify-center items-center text-[11px] rounded-md p-3 transition-all duration-300 ${
                 acrescimos.acrescimoClassico > 0
-                  ? "text-green-400"
+                  ? "bg-green-500/10 border border-green-500/30"
                   : acrescimos.acrescimoClassico < 0
-                  ? "text-red-400"
-                  : "text-neutral-400"
-              }`}>
+                  ? "bg-red-500/10 border border-red-500/30"
+                  : "bg-white/5 border border-white/10"
+              }`}
+            >
+              <span className="text-neutral-300 mb-1">
+                Acréscimo Clássico
+              </span>
+
+              <span
+                className={`font-semibold text-base inline-flex items-center gap-0 ${
+                  acrescimos.acrescimoClassico > 0
+                    ? "text-green-400"
+                    : acrescimos.acrescimoClassico < 0
+                    ? "text-red-400"
+                    : "text-neutral-400"
+                }`}
+              >
                 <AnimatedNumber value={Number(acrescimos.acrescimoClassico || 0)} />%
+                <button
+                  type="button"
+                  onClick={() => copyPercent(acrescimos.acrescimoClassico)}
+                  className="ml-[3px] opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
+                  title="Copiar"
+                >
+                  <Copy className="w-3 h-3" />
+                </button>
               </span>
             </div>
 
             {/* PREMIUM */}
-            <div className={`flex flex-col justify-center items-center text-[11px] rounded-md p-3 transition-all duration-300 ${
-              acrescimos.acrescimoPremium > 0
-                ? "bg-green-500/10 border border-green-500/30"
-                : acrescimos.acrescimoPremium < 0
-                ? "bg-red-500/10 border border-red-500/30"
-                : "bg-white/5 border border-white/10"
-            }`}>
-              <span className="text-neutral-300 mb-1">Acréscimo Premium</span>
-              <span className={`font-semibold text-base ${
+            <div
+              className={`group flex flex-col justify-center items-center text-[11px] rounded-md p-3 transition-all duration-300 ${
                 acrescimos.acrescimoPremium > 0
-                  ? "text-green-400"
+                  ? "bg-green-500/10 border border-green-500/30"
                   : acrescimos.acrescimoPremium < 0
-                  ? "text-red-400"
-                  : "text-neutral-400"
-              }`}>
+                  ? "bg-red-500/10 border border-red-500/30"  
+                  : "bg-white/5 border border-white/10"
+              }`}
+            >
+              <span className="text-neutral-300 mb-1">
+                Acréscimo Premium
+              </span>
+
+              <span
+                className={`font-semibold text-base inline-flex items-center gap-0 ${
+                  acrescimos.acrescimoPremium >  0
+                    ? "text-green-400"
+                    : acrescimos.acrescimoPremium < 0
+                    ? "text-red-400"
+                    : "text-neutral-400"
+                }`}
+              >
                 <AnimatedNumber value={Number(acrescimos.acrescimoPremium || 0)} />%
+                <button
+                  type="button"
+                  onClick={() => copyPercent(acrescimos.acrescimoPremium)}
+                  className="ml-[3px] opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
+                  title="Copiar"
+                >
+                  <Copy className="w-3 h-3" />
+                </button>
               </span>
             </div>
 
           </div>
-
         </div>
       </div>
     </div>

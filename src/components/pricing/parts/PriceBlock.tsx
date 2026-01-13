@@ -2,6 +2,7 @@ import React from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { AnimatedNumber } from "./AnimatedNumber";
+import { Copy } from "lucide-react";
 import type { Calculo } from "../PricingCalculatorModern";
 
 type PriceBlockProps = {
@@ -23,8 +24,6 @@ type PriceBlockProps = {
   ) => void;
   handleEmbalagemBlur: (raw: string) => void;
   handleEmbalagemChange: (raw: string) => void;
-
-  // Handlers opcionais para sincronização extra (ex: desconto Loja)
   onFieldChange?: (key: keyof Calculo, internalValue: string) => void;
   onFieldBlur?: (key: keyof Calculo, internalValue: string) => void;
 };
@@ -79,8 +78,20 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
     }
   };
 
+  /* ============================
+     COPY PREÇO (SÓ VALOR PT-BR)
+     ============================ */
+  const copyPreco = async () => {
+    const valorSemSimbolo = preco.toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+    await navigator.clipboard.writeText(valorSemSimbolo);
+  };
+
   return (
-    <div className="p-2 rounded-lg bg-black/30 border border-white/10 flex flex-col justify-center items-center">
+    <div className="group p-2 rounded-lg bg-black/30 border border-white/10 flex flex-col justify-center items-center">
       <h4 className="text-white font-semibold text-xs mb-1 text-center">
         {nome}
       </h4>
@@ -94,6 +105,7 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
               ? "Frete (R$)"
               : key.charAt(0).toUpperCase() + key.slice(1) + " (%)"}
           </Label>
+
           <Input
             ref={(el) => (refs.current[i] = el!)}
             type="text"
@@ -112,7 +124,6 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
             className="bg-black/50 border border-white/10 text-white text-[11px] rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
           />
 
-          {/* Embalagem logo abaixo do Desconto */}
           {key === "desconto" && (
             <div className="mt-1">
               <Label className="text-neutral-400 text-[10px] block">
@@ -130,9 +141,7 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
                   setEditing(`emb-${blocoIndex}`, false);
                   handleEmbalagemBlur(e.target.value);
                 }}
-                onChange={(e) => {
-                  handleEmbalagemChange(e.target.value);
-                }}
+                onChange={(e) => handleEmbalagemChange(e.target.value)}
                 className="bg-black/50 border border-white/10 text-white text-[11px] rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
               />
             </div>
@@ -140,10 +149,27 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
         </div>
       ))}
 
-      <div className="mt-1 text-center flex flex-col items-center justify-center py-1">
-        <span className="text-neutral-300 text-[10px]">Preço de Venda</span>
-        <div className="text-lg font-bold text-[#1a8ceb] leading-tight">
-          R$ <AnimatedNumber value={preco} />
+      {/* ============================
+           PREÇO DE VENDA + COPY
+         ============================ */}
+      <div className="mt-1 flex flex-col items-center justify-center py-1">
+        <span className="text-neutral-300 text-[10px]">
+          Preço de Venda
+        </span>
+
+        <div className="flex items-center gap-2">
+          <div className="text-lg font-bold text-[#1a8ceb] leading-tight">
+            R$ <AnimatedNumber value={preco} />
+          </div>
+
+          <button
+            type="button"
+            onClick={copyPreco}
+            className="-ml-[3px] opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
+            title="Copiar valor"
+          >
+            <Copy className="w-3 h-3 text-white" />
+          </button>
         </div>
       </div>
     </div>
