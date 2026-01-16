@@ -12,17 +12,6 @@ function detectarTipoAnuncio(ref: string = "") {
   return ehPai || ehVar ? "Com variações" : "Simples";
 }
 
-/**
- * ✅ Ajuste principal:
- * - O idParam que chega na tela de details deve ser o UUID do marketplace_tray_pk/sb (PK dessas tabelas).
- * - A partir desse UUID, buscamos o registro marketplace (que contém anuncio_id).
- * - Depois buscamos o anúncio em anuncios_all usando anuncio_id.
- * - Save: atualiza marketplace por marketplace_id (UUID) e anuncios_all por anuncio_id.
- *
- * Isso resolve:
- * - Não carregar ao clicar em Edit (quando antes você passava o ID lógico e tentava achar no lugar errado)
- * - Save atualizando linhas erradas (mistura de ids)
- */
 export function useMarketplaceDetails(
   idParam: string | null,
   lojaParam: string | null
@@ -31,15 +20,12 @@ export function useMarketplaceDetails(
   const [saving, setSaving] = useState(false);
 
   /**
-   * produto.marketplace_id = UUID do marketplace_tray_pk/sb
-   * produto.anuncio_id = id (PK) do anuncios_all
-   * produto.id_logico = campo "ID" de negócio (coluna "ID" do anuncios_all)
+   * produto.id = UUID (PK real do banco)
+   * produto.id_logico = campo "ID" de negócio
    */
   const [produto, setProduto] = useState<any>({
-    marketplace_id: "", // ✅ UUID marketplace_tray_*
-    anuncio_id: "", // ✅ id do anuncios_all (FK em marketplace)
+    id: "", // 🔥 UUID
     id_logico: "",
-
     loja: "",
     id_bling: "",
     id_tray: "",
@@ -115,7 +101,11 @@ export function useMarketplaceDetails(
     }, 10);
   };
 
-  const selecionarSugestao = (codigo: string, custo: number, idx: number) => {
+  const selecionarSugestao = (
+    codigo: string,
+    custo: number,
+    idx: number
+  ) => {
     const novo = [...composicao];
     novo[idx].codigo = codigo;
     novo[idx].custo = custo.toFixed(2);
@@ -133,12 +123,16 @@ export function useMarketplaceDetails(
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setIndiceSelecionado((p) => (p < sugestoes.length - 1 ? p + 1 : 0));
+      setIndiceSelecionado((p) =>
+        p < sugestoes.length - 1 ? p + 1 : 0
+      );
     }
 
     if (e.key === "ArrowUp") {
       e.preventDefault();
-      setIndiceSelecionado((p) => (p > 0 ? p - 1 : sugestoes.length - 1));
+      setIndiceSelecionado((p) =>
+        p > 0 ? p - 1 : sugestoes.length - 1
+      );
     }
 
     if (e.key === "Enter") {
@@ -172,61 +166,76 @@ export function useMarketplaceDetails(
   }, []);
 
   /**
-   * 🔎 Buscar registro do marketplace (PK = UUID) na tabela correta (sb/pk)
+   * 🔎 BUSCA DO ANÚNCIO (LEITURA)
    */
-  const buscarMarketplacePorId = async (marketplaceId: string, loja: string) => {
-    const tabela = loja === "SB" ? "marketplace_tray_sb" : "marketplace_tray_pk";
+  const buscarAnuncio = async (valor: string, loja: string) => {
+    const lojaNome = loja === "SB" ? "SB" : "PK";
 
-    const { data, error } = await supabase
-      .from(tabela)
-      .select("*")
-      .eq("id", marketplaceId) // ✅ UUID do marketplace
-      .maybeSingle();
+    if (!isNaN(Number(valor))) {
+      const { data } = await supabase
+        .from("anuncios_all")
+        .select("*")
+        .eq("ID", Number(valor))
+        .eq("Loja", lojaNome)
+        .order("id", { ascending: false })
+        .limit(1)
+        .single();
 
-    if (error) {
-      console.error("Erro ao buscar marketplace:", { tabela, marketplaceId, error });
-      return null;
+      if (data) return data;
     }
 
-    return data;
+    {
+      const { data } = await supabase
+        .from("anuncios_all")
+        .select("*")
+        .eq("ID Tray", valor)
+        .eq("Loja", lojaNome)
+        .order("id", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (data) return data;
+    }
+
+    {
+      const { data } = await supabase
+        .from("anuncios_all")
+        .select("*")
+        .eq("ID Bling", valor)
+        .eq("Loja", lojaNome)
+        .order("id", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (data) return data;
+    }
+
+    return null;
   };
 
   /**
-   * 🔎 Buscar anúncio por anuncio_id (FK)
+   * 🔎 BUSCA DE PERCENTUAIS (VIEW)
    */
-  const buscarAnuncioPorAnuncioId = async (anuncioId: string, loja: string) => {
+  const buscarPercentuais = async (anuncio: any, loja: string) => {
     const lojaNome = loja === "SB" ? "SB" : "PK";
 
     const { data, error } = await supabase
-      .from("anuncios_all")
-      .select("*")
-      .eq("id", anuncioId) // ✅ PK do anuncios_all
+      .from("marketplace_shopee_all")
+      .select(
+        'Desconto, Embalagem, Frete, Imposto, "Margem de Lucro", Comissão, Marketing'
+      )
+      .eq("ID", anuncio["ID"])
       .eq("Loja", lojaNome)
-      .maybeSingle();
+      .order("id", { ascending: false })
+      .limit(1)
+      .single();
 
     if (error) {
-      console.error("Erro ao buscar anuncio por anuncio_id:", { anuncioId, lojaNome, error });
+      console.error("Erro ao buscar percentuais:", error);
       return null;
     }
 
     return data;
-  };
-
-  /**
-   * 🔎 BUSCA DE PERCENTUAIS
-   * Agora: vem do próprio registro marketplace (sb/pk), e não da view por ID lógico.
-   * (evita misturar ID lógico x UUID e evita pegar linha errada se a view tiver duplicidade)
-   */
-  const mapPercentuaisDoMarketplace = (mp: any) => {
-    return {
-      desconto: mp?.Desconto ?? "",
-      imposto: mp?.Imposto ?? "",
-      margem: mp?.["Margem de Lucro"] ?? "",
-      frete: mp?.Frete ?? "",
-      comissao: mp?.["Comissão"] ?? mp?.Comissão ?? "",
-      marketing: mp?.Marketing ?? "",
-      embalagem: mp?.Embalagem ?? "",
-    };
   };
 
   const montarComposicao = useCallback(
@@ -249,7 +258,9 @@ export function useMarketplaceDetails(
         return [{ codigo: "", quantidade: "", custo: "" }];
       }
 
-      const custos = await Promise.all(itens.map((item) => buscarCustoPorCodigo(item.codigo)));
+      const custos = await Promise.all(
+        itens.map((item) => buscarCustoPorCodigo(item.codigo))
+      );
 
       return itens.map((item, idx) => ({
         codigo: item.codigo,
@@ -266,33 +277,16 @@ export function useMarketplaceDetails(
     setLoading(true);
 
     try {
-      // 1) pega marketplace pelo UUID (idParam)
-      const mp = await buscarMarketplacePorId(idParam, lojaParam);
-      if (!mp) {
-        console.warn("Marketplace não encontrado:", { idParam, lojaParam });
-        return;
-      }
+      const anuncio = await buscarAnuncio(idParam, lojaParam);
+      if (!anuncio) return;
 
-      if (!mp.anuncio_id) {
-        console.warn("Marketplace sem anuncio_id:", { idParam, lojaParam, mp });
-        return;
-      }
+      const [percentuais, compArr] = await Promise.all([
+        buscarPercentuais(anuncio, lojaParam),
+        montarComposicao(anuncio),
+      ]);
 
-      // 2) pega anúncio pelo anuncio_id
-      const anuncio = await buscarAnuncioPorAnuncioId(String(mp.anuncio_id), lojaParam);
-      if (!anuncio) {
-        console.warn("Anuncio não encontrado para anuncio_id:", { anuncio_id: mp.anuncio_id });
-        return;
-      }
-
-      // 3) composição (vem do anuncio)
-      const compArr = await montarComposicao(anuncio);
-
-      // 4) percentuais (vem do marketplace)
-      const pct = mapPercentuaisDoMarketplace(mp);
-
-      // 5) OD fallback (mesma lógica)
       let odFinal = anuncio["OD"] ?? "";
+
       if (!odFinal) {
         for (let i = 1; i <= 10; i++) {
           const cod = anuncio[`Código ${i}`];
@@ -303,12 +297,9 @@ export function useMarketplaceDetails(
         }
       }
 
-      // 6) set states com IDs corretos
       setProduto({
-        marketplace_id: mp.id, // ✅ UUID marketplace_tray_*
-        anuncio_id: mp.anuncio_id, // ✅ FK para anuncios_all.id
+        id: anuncio.id, // 🔥 UUID
         id_logico: anuncio["ID"],
-
         loja: lojaParam === "SB" ? "Sóbaquetas" : "Pikot Shop",
         id_bling: anuncio["ID Bling"] || "",
         id_tray: anuncio["ID Tray"] || "",
@@ -316,7 +307,6 @@ export function useMarketplaceDetails(
         referencia: anuncio["Referência"] || "",
         tipo_anuncio: detectarTipoAnuncio(anuncio["Referência"]),
         od: odFinal,
-
         nome: anuncio["Nome"] ?? "",
         marca: anuncio["Marca"] ?? "",
         categoria: anuncio["Categoria"] ?? "",
@@ -324,18 +314,19 @@ export function useMarketplaceDetails(
         altura: anuncio["Altura"] ?? "",
         largura: anuncio["Largura"] ?? "",
         comprimento: anuncio["Comprimento"] ?? "",
-
-        // Embalagem: prioridade marketplace > anuncio
-        embalagem: pct.embalagem || anuncio["Embalagem"] || "",
+        embalagem:
+          percentuais?.Embalagem ??
+          anuncio["Embalagem"] ??
+          "",
       });
 
       setCalculoLoja({
-        desconto: pct.desconto,
-        imposto: pct.imposto,
-        margem: pct.margem,
-        frete: pct.frete,
-        comissao: pct.comissao,
-        marketing: pct.marketing,
+        desconto: percentuais?.Desconto ?? "",
+        imposto: percentuais?.Imposto ?? "",
+        margem: percentuais?.["Margem de Lucro"] ?? "",
+        frete: percentuais?.Frete ?? "",
+        comissao: percentuais?.Comissão ?? "",
+        marketing: percentuais?.Marketing ?? "",
       });
 
       setComposicao(compArr);
@@ -344,25 +335,27 @@ export function useMarketplaceDetails(
     } finally {
       setLoading(false);
     }
-  }, [idParam, lojaParam, montarComposicao, setAcrescimos, setCalculo, setComposicao]);
+  }, [idParam, lojaParam, montarComposicao]);
 
   useEffect(() => {
     carregar();
   }, [carregar]);
 
   /**
-   * 💾 SAVE — cada tabela com seu PK correto
+   * 💾 SAVE — UPDATE DETERMINÍSTICO (UUID)
    */
   const save = useCallback(async () => {
-    if (!produto.marketplace_id || !produto.anuncio_id || !lojaParam) return { error: null };
+    if (!produto.id || !lojaParam) return { error: null };
 
-    const tabela = lojaParam === "SB" ? "marketplace_tray_sb" : "marketplace_tray_pk";
+    const tabela =
+      lojaParam === "SB"
+        ? "marketplace_tray_sb"
+        : "marketplace_tray_pk";
 
     setSaving(true);
 
     try {
-      // ✅ 1) Atualiza marketplace pelo UUID
-      const { error: errMp } = await supabase
+      await supabase
         .from(tabela)
         .update({
           Desconto: calculoLoja.desconto,
@@ -373,12 +366,9 @@ export function useMarketplaceDetails(
           Marketing: calculoLoja.marketing,
           Embalagem: produto.embalagem,
         })
-        .eq("id", produto.marketplace_id);
+        .eq("id", produto.id); // ✅ UUID
 
-      if (errMp) console.error("Erro ao salvar marketplace:", errMp);
-
-      // ✅ 2) Atualiza anuncios_all pelo anuncio_id (FK)
-      const { error: errAn } = await supabase
+      await supabase
         .from("anuncios_all")
         .update({
           OD: produto.od,
@@ -390,9 +380,7 @@ export function useMarketplaceDetails(
           Referência: produto.referencia,
           Tipo: produto.tipo_anuncio,
         })
-        .eq("id", produto.anuncio_id);
-
-      if (errAn) console.error("Erro ao salvar anuncio:", errAn);
+        .eq("id", produto.id); // ✅ UUID
 
       return {};
     } finally {

@@ -81,7 +81,6 @@ const navigationItems = [
     children: [
       { title: "Tray", href: "/dashboard/marketplaces/tray" },
       { title: "Bling", href: "/dashboard/marketplaces/bling" },
-      { title: "Mercado Livre", href: "/dashboard/marketplaces/mercado-livre" },
       { title: "Shopee", href: "/dashboard/marketplaces/shopee" },
       { title: "Magalu", href: "/dashboard/marketplaces/magalu" },     
     ],

@@ -166,7 +166,7 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
             type="button"
             onClick={copyPreco}
             className="-ml-[3px] opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
-            title="Copiar valor"
+            title="Copiar"
           >
             <Copy className="w-3 h-3 text-white" />
           </button>

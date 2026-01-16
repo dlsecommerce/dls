@@ -144,16 +144,6 @@ export const TableRows: React.FC<TableRowsProps> = ({
   const lojaLabel = (loja: string) =>
     loja === "PK" ? "Pikot Shop" : loja === "SB" ? "Sóbaquetas" : loja;
 
-  /**
-   * ✅ ID CORRETO PARA DETALHES
-   * Pela sua modelagem, o "details" deve carregar via UUID do marketplace_tray_*.
-   * Então precisamos enviar o UUID (row.id). Se não vier, caímos no row.ID (fallback).
-   */
-  const getDetailsId = (row: Row) => {
-    const anyRow = row as any;
-    return anyRow.id ?? row.ID; // <- row.id (UUID marketplace) preferencial
-  };
-
   /* ============================================================
      CÉLULA EDITÁVEL
   ============================================================ */
@@ -225,133 +215,128 @@ export const TableRows: React.FC<TableRowsProps> = ({
   ============================================================ */
   return (
     <>
-      {rows.map((row) => {
-        const detailsId = getDetailsId(row);
+      {rows.map((row) => (
+        <tr
+          key={`${row.Loja}-${row.ID}`}
+          className="h-16 border-b border-neutral-700 hover:bg-white/10 transition-colors text-center"
+        >
+          {/* ID */}
+          <td className="px-3 text-white">{row.ID}</td>
 
-        return (
-          <tr
-            key={`${row.Loja}-${row.ID}`}
-            className="h-16 border-b border-neutral-700 hover:bg-white/10 transition-colors text-center"
-          >
-            {/* ID */}
-            <td className="px-3 text-white">{row.ID}</td>
+          {/* Loja */}
+          <td className="px-3 text-neutral-300">{lojaLabel(row.Loja)}</td>
 
-            {/* Loja */}
-            <td className="px-3 text-neutral-300">{lojaLabel(row.Loja)}</td>
+          {/* ID Tray */}
+          <td className="px-3 text-neutral-300 break-words max-w-[120px]">
+            <div className="flex flex-col items-center gap-1 group">
+              <span>{row["ID Tray"] || "-"}</span>
 
-            {/* ID Tray */}
-            <td className="px-3 text-neutral-300 break-words max-w-[120px]">
-              <div className="flex flex-col items-center gap-1 group">
-                <span>{row["ID Tray"] || "-"}</span>
-
-                {row["ID Tray"] && (
-                  <button
-                    onClick={() =>
-                      handleCopy(String(row["ID Tray"]), `tray-${row.ID}`)
-                    }
-                    className="opacity-0 group-hover:opacity-100 cursor-pointer"
-                  >
-                    <CopyIcon
-                      className={`w-3 h-3 ${
-                        copiedId === `tray-${row.ID}`
-                          ? "text-blue-500 scale-110"
-                          : "text-white group-hover:text-blue-400"
-                      }`}
-                    />
-                  </button>
-                )}
-              </div>
-            </td>
-
-            {/* Marca */}
-            <td className="px-3 text-neutral-300 break-words max-w-[140px]">
-              {row.Marca}
-            </td>
-
-            {/* Referência */}
-            <td className="px-3 text-neutral-300 break-all max-w-[150px]">
-              <div className="flex flex-col items-center gap-1 group">
-                <span>{row["Referência"] || "-"}</span>
-
-                {row["Referência"] && (
-                  <button
-                    onClick={() =>
-                      handleCopy(String(row["Referência"]), `ref-${row.ID}`)
-                    }
-                    className="opacity-0 group-hover:opacity-100 cursor-pointer"
-                  >
-                    <CopyIcon
-                      className={`w-3 h-3 ${
-                        copiedId === `ref-${row.ID}`
-                          ? "text-blue-500 scale-110"
-                          : "text-white group-hover:text-blue-400"
-                      }`}
-                    />
-                  </button>
-                )}
-              </div>
-            </td>
-
-            {/* CAMPOS EDITÁVEIS */}
-            <CellEditable row={row} field="Desconto" suffix="%" />
-            <CellEditable row={row} field="Embalagem" isMoney />
-            <CellEditable row={row} field="Frete" isMoney />
-            <CellEditable row={row} field="Comissão" suffix="%" />
-            <CellEditable row={row} field="Imposto" suffix="%" />
-            <CellEditable row={row} field="Margem de Lucro" suffix="%" />
-            <CellEditable row={row} field="Marketing" suffix="%" />
-
-            {/* Custo */}
-            <td className="px-3 text-white">R$ {toBR(row.Custo)}</td>
-
-            {/* Preço de Venda */}
-            <td className="px-3 text-[#4ade80] font-semibold">
-              <div className="flex justify-center gap-1 group">
-                R$ {toBR(row["Preço de Venda"])}
-
+              {row["ID Tray"] && (
                 <button
                   onClick={() =>
-                    handleCopy(
-                      String(toBR(row["Preço de Venda"])),
-                      `preco-${row.ID}`
-                    )
+                    handleCopy(String(row["ID Tray"]), `tray-${row.ID}`)
                   }
                   className="opacity-0 group-hover:opacity-100 cursor-pointer"
                 >
                   <CopyIcon
                     className={`w-3 h-3 ${
-                      copiedId === `preco-${row.ID}`
+                      copiedId === `tray-${row.ID}`
                         ? "text-blue-500 scale-110"
                         : "text-white group-hover:text-blue-400"
                     }`}
                   />
                 </button>
-              </div>
-            </td>
+              )}
+            </div>
+          </td>
 
-            {/* AÇÕES */}
-            <td className="px-3">
+          {/* Marca */}
+          <td className="px-3 text-neutral-300 break-words max-w-[140px]">
+            {row.Marca}
+          </td>
+
+          {/* Referência */}
+          <td className="px-3 text-neutral-300 break-all max-w-[150px]">
+            <div className="flex flex-col items-center gap-1 group">
+              <span>{row["Referência"] || "-"}</span>
+
+              {row["Referência"] && (
+                <button
+                  onClick={() =>
+                    handleCopy(String(row["Referência"]), `ref-${row.ID}`)
+                  }
+                  className="opacity-0 group-hover:opacity-100 cursor-pointer"
+                >
+                  <CopyIcon
+                    className={`w-3 h-3 ${
+                      copiedId === `ref-${row.ID}`
+                        ? "text-blue-500 scale-110"
+                        : "text-white group-hover:text-blue-400"
+                    }`}
+                  />
+                </button>
+              )}
+            </div>
+          </td>
+
+          {/* CAMPOS EDITÁVEIS */}
+          <CellEditable row={row} field="Desconto" suffix="%" />
+          <CellEditable row={row} field="Embalagem" isMoney />
+          <CellEditable row={row} field="Frete" isMoney />
+          <CellEditable row={row} field="Comissão" suffix="%" />
+          <CellEditable row={row} field="Imposto" suffix="%" />
+          <CellEditable row={row} field="Margem de Lucro" suffix="%" />
+          <CellEditable row={row} field="Marketing" suffix="%" />
+
+          {/* Custo */}
+          <td className="px-3 text-white">R$ {toBR(row.Custo)}</td>
+
+          {/* Preço de Venda */}
+          <td className="px-3 text-[#4ade80] font-semibold">
+            <div className="flex justify-center gap-1 group">
+              R$ {toBR(row["Preço de Venda"])}
+
               <button
                 onClick={() =>
-                  router.push(
-                    `/dashboard/marketplaces/tray/details?id=${detailsId}&loja=${row.Loja}`
+                  handleCopy(
+                    String(toBR(row["Preço de Venda"])),
+                    `preco-${row.ID}`
                   )
                 }
-                className="text-white hover:text-[#1A8CEB] cursor-pointer"
-                title="Editar anúncio"
+                className="opacity-0 group-hover:opacity-100 cursor-pointer"
               >
-                <EditIcon
-                  className={`w-4 h-4 ${
-                    editedId === `${row.Loja}-${row.ID}`
-                      ? "text-[#1A8CEB] scale-110"
-                      : ""
+                <CopyIcon
+                  className={`w-3 h-3 ${
+                    copiedId === `preco-${row.ID}`
+                      ? "text-blue-500 scale-110"
+                      : "text-white group-hover:text-blue-400"
                   }`}
                 />
               </button>
-            </td>
-          </tr>
-        );
-      })}
+            </div>
+          </td>
+
+          {/* AÇÕES */}
+          <td className="px-3">
+            <button
+              onClick={() =>
+                router.push(
+                  `/dashboard/marketplaces/tray/details?id=${row.ID}&loja=${row.Loja}`
+                )
+              }
+              className="text-white hover:text-[#1A8CEB] cursor-pointer"
+            >
+              <EditIcon
+                className={`w-4 h-4 ${
+                  editedId === `${row.Loja}-${row.ID}`
+                    ? "text-[#1A8CEB] scale-110"
+                    : ""
+                }`}
+              />
+            </button>
+          </td>
+        </tr>
+      ))}
     </>
   );
 };
