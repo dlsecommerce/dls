@@ -21,7 +21,7 @@ export function useTrayImportExport(
       }
 
       // -----------------------------
-      // Normaliza filtros
+      // Normaliza lojas e marcas
       // -----------------------------
       const lojasSelecionadas = Array.isArray(lojasFiltro)
         ? lojasFiltro
@@ -35,41 +35,54 @@ export function useTrayImportExport(
         ? [marcasFiltro]
         : [];
 
-      const mapLojaSigla = (nome: string) => {
-        const n = String(nome || "").toLowerCase();
-        if (n.includes("sobaquetas") || n === "sb") return "SB";
-        if (n.includes("pikot") || n === "pk") return "PK";
-        return String(nome || "")
+      // -----------------------------
+      // Siglas de loja (PK / SB)
+      // -----------------------------
+      const mapLojaSigla = (nomeLoja: string) => {
+        const loja = String(nomeLoja || "").trim().toLowerCase();
+        if (loja.includes("sobaquetas") || loja === "sb") return "SB";
+        if (loja.includes("pikot") || loja === "pk") return "PK";
+
+        // fallback
+        return String(nomeLoja || "")
+          .trim()
           .split(/\s+/)
           .map((w) => w[0]?.toUpperCase())
           .join("");
       };
 
+      // -----------------------------
+      // Siglas de marca
+      // -----------------------------
       const mapMarcaSigla = (marca: string) =>
         String(marca || "")
+          .trim()
           .toUpperCase()
           .replace(/\s+/g, "")
           .replace(/[^A-Z0-9-]/g, "");
 
-      const middle = Array.from(
-        new Set([
-          ...lojasSelecionadas.map(mapLojaSigla),
-          ...marcasSelecionadas.map(mapMarcaSigla),
-        ])
-      )
-        .filter(Boolean)
-        .join("-");
+      const partes: string[] = [];
 
-      const stamp = format(new Date(), "dd-MM-yyyy HH'h'mm", {
-        locale: ptBR,
-      });
+      if (lojasSelecionadas.length) {
+        partes.push(...lojasSelecionadas.map(mapLojaSigla));
+      }
 
-      const fileName = middle
-        ? `PRECIFICAÇÃO SHOPEE - ${middle}-RELATÓRIO - ${stamp}.xlsx`
-        : `PRECIFICAÇÃO SHOPEE - RELATÓRIO - ${stamp}.xlsx`;
+      if (marcasSelecionadas.length) {
+        partes.push(...marcasSelecionadas.map(mapMarcaSigla));
+      }
+
+      const middle = Array.from(new Set(partes)).filter(Boolean).join("-");
+
+      const stamp = format(new Date(), "dd-MM-yyyy HH'h'mm", { locale: ptBR });
+
+      // ✅ Nome correto: SHOPEE
+      const fileName =
+        middle.length > 0
+          ? `PRECIFICAÇÃO SHOPEE - ${middle}-RELATÓRIO - ${stamp}.xlsx`
+          : `PRECIFICAÇÃO SHOPEE - RELATÓRIO - ${stamp}.xlsx`;
 
       // -----------------------------
-      // Workbook
+      // EXCEL WORKBOOK
       // -----------------------------
       const workbook = new ExcelJS.Workbook();
 
@@ -77,6 +90,16 @@ export function useTrayImportExport(
       workbook.calcProperties.fullCalcOnLoad = true;
 
       const sheet = workbook.addWorksheet("PRECIFICAÇÃO");
+
+      const colors = {
+        azulEscuro: "1A8CEB",
+        azulClaro: "D6E9FF",
+        laranjaEscuro: "F59E0B",
+        laranjaClaro: "FFE6B3",
+        verdeEscuro: "22C55E",
+        verdeClaro: "C7F5C4",
+        branco: "FFFFFF",
+      };
 
       const headers = [
         "ID",
@@ -118,30 +141,55 @@ export function useTrayImportExport(
       sheet.mergeCells("S1:T1");
       sheet.getCell("S1").value = "PREÇO";
 
-      // -----------------------------
-      // Helper parse BR
-      // -----------------------------
-      const parseBR = (v: any, fallback = 0): number => {
-        if (v === null || v === undefined || v === "") return fallback;
-        if (typeof v === "number") return v;
-        const s = String(v).replace(/\./g, "").replace(",", ".");
-        return Number(s) || fallback;
+      const styleTitle = (cell: ExcelJS.Cell, color: string) => {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: color },
+        };
+        cell.font = { bold: true, color: { argb: "FFFFFF" }, size: 12 };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
       };
 
-      // -----------------------------
-      // Dados
-      // -----------------------------
-      data.forEach((row) => {
-        const desconto = parseBR(row.Desconto, 0);
-        const embalagem = parseBR(row.Embalagem, 2.5);
-        const frete = parseBR(row.Frete, 0);
-        const comissao = parseBR(row.Comissão, 0);
-        const imposto = parseBR(row.Imposto, 0);
-        const lucro = parseBR(row["Margem de Lucro"], 0);
-        const marketing = parseBR(row.Marketing, 0);
-        const custo = parseBR(row.Custo, 0);
+      styleTitle(sheet.getCell("A1"), colors.azulEscuro);
+      styleTitle(sheet.getCell("H1"), colors.azulEscuro);
+      styleTitle(sheet.getCell("K1"), colors.laranjaEscuro);
+      styleTitle(sheet.getCell("S1"), colors.verdeEscuro);
 
-        const newRow = sheet.addRow([
+      const row2 = sheet.getRow(2);
+      row2.eachCell((cell, col) => {
+        let fillColor = colors.azulClaro;
+        if (col >= 11 && col <= 17) fillColor = colors.laranjaClaro;
+        if (col >= 19) fillColor = colors.verdeClaro;
+        if (col === 18) fillColor = colors.branco;
+
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: fillColor },
+        };
+
+        cell.font = { bold: true, color: { argb: "000000" } };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+      });
+
+      sheet.getRow(1).eachCell((cell) => (cell.border = undefined));
+
+      // -----------------------------
+      // Helper parse number (inclui string)
+      // -----------------------------
+      const parseNum = (v: any): number | null => {
+        if (v === null || v === undefined || v === "") return null;
+        if (typeof v === "number") return Number.isFinite(v) ? v : null;
+
+        // aceita "12,34" ou "12.34"
+        const s = String(v).trim().replace(/\./g, "").replace(",", ".");
+        const n = Number(s);
+        return Number.isFinite(n) ? n : null;
+      };
+
+      data.forEach((row) => {
+        const line = [
           row.ID || "",
           row.Loja || "",
           row["ID Bling"] || "",
@@ -152,51 +200,61 @@ export function useTrayImportExport(
           row.Nome || "",
           row.Marca || "",
           row.Categoria || "",
-          desconto, // K
-          embalagem, // L
-          frete, // M
-          comissao, // N
-          imposto, // O
-          lucro, // P
-          marketing, // Q
-          "", // R (coluna vazia)
-          custo, // S
-          null, // T
-        ]);
+          row.Desconto ?? 0, // K
+          row.Embalagem ?? 2.5, // L
+          row.Frete ?? 0, // M
+          row.Comissão ?? 0, // N
+          row.Imposto ?? 0, // O
+          row["Margem de Lucro"] ?? 0, // P
+          row.Marketing ?? 0, // Q
+          "", // R
+          row.Custo ?? 0, // S
+          null, // T (vamos preencher com fórmula + result abaixo)
+        ];
 
-        const r = newRow.number;
+        const newRow = sheet.addRow(line);
+        const rowNumber = newRow.number;
 
-        // Formatação moeda (Embalagem, Frete, Custo)
-        [12, 13, 19].forEach((c) => {
-          sheet.getCell(r, c).numFmt = '_("R$"* #,##0.00_)';
+        newRow.eachCell((cell, col) => {
+          if ([12, 13, 19].includes(col)) {
+            cell.numFmt = '_("R$"* #,##0.00_)';
+          }
+
+          if ([11, 14, 15, 16, 17].includes(col)) {
+            cell.numFmt = '0.00 " %"';
+          }
+
+          cell.alignment = { horizontal: "center", vertical: "middle" };
         });
 
-        // Formatação percentuais (Desconto, Comissão, Imposto, Margem, Marketing)
-        [11, 14, 15, 16, 17].forEach((c) => {
-          sheet.getCell(r, c).numFmt = '0.00 " %"';
-        });
+        // ✅ Opção 2: valor inicial vindo do Supabase (se existir)
+        const precoVendaDB = parseNum(row["Preço de Venda"]);
 
-        // -----------------------------
-        // PREÇO DE VENDA (T)
-        // ✅ Fórmula em PT-BR (SE / ARRED) + separador ";"
-        // -----------------------------
-        sheet.getCell(`T${r}`).value = {
-          formula: `
-            ARRED(
-              SE(
-                (S${r}*(1-K${r}/100)+L${r}+M${r})>500;
-                (S${r}*(1-K${r}/100)+L${r}+100)/
-                  (1-((O${r}+P${r}+Q${r})/100));
-                (S${r}*(1-K${r}/100)+L${r}+M${r})/
-                  (1-((N${r}+O${r}+P${r}+Q${r})/100))
-              );
-              2
-            )
-          `.replace(/\s+/g, ""),
+        // ✅ Fórmula SEMPRE (pra recalcular ao editar)
+        // ⚠️ Fórmula precisa estar no formato interno do XLSX (inglês).
+        const formulaInvariant = `
+          ROUND(
+            IF(
+              (S${rowNumber}*(1-K${rowNumber}/100)+L${rowNumber}+M${rowNumber})>500,
+              (S${rowNumber}*(1-K${rowNumber}/100)+L${rowNumber}+100)/
+                (1-((O${rowNumber}+P${rowNumber}+Q${rowNumber})/100)),
+              (S${rowNumber}*(1-K${rowNumber}/100)+L${rowNumber}+M${rowNumber})/
+                (1-((N${rowNumber}+O${rowNumber}+P${rowNumber}+Q${rowNumber})/100))
+            ),
+            2
+          )
+        `.replace(/\s+/g, "");
+
+        sheet.getCell(`T${rowNumber}`).value = {
+          formula: formulaInvariant,
+          ...(precoVendaDB !== null ? { result: precoVendaDB } : {}),
         };
 
-        sheet.getCell(`T${r}`).numFmt = '_("R$"* #,##0.00_)';
+        sheet.getCell(`T${rowNumber}`).numFmt = '_("R$"* #,##0.00_)';
       });
+
+      sheet.getRow(1).height = 25;
+      sheet.getRow(2).height = 22;
 
       const buffer = await workbook.xlsx.writeBuffer();
 
