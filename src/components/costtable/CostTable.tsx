@@ -91,6 +91,17 @@ export default function CostTable() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   /* ================= HELPERS ================= */
+
+  // ✅ Formata número em PT-BR (milhar + vírgula) para exibição
+  const formatBR = (v: any) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return "0,00";
+    return new Intl.NumberFormat("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(n);
+  };
+
   const handleCopy = (text: string, key: string) => {
     if (!text) return;
     navigator.clipboard.writeText(text);
@@ -168,6 +179,16 @@ export default function CostTable() {
     setLoading(false);
   };
 
+  /* ================= SORT ================= */
+  const handleSort = (col: string) => {
+    if (sortColumn === col) {
+      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortColumn(col);
+      setSortDirection("asc");
+    }
+  };
+
   /* ================= EFFECTS ================= */
   useEffect(() => {
     loadAllBrands();
@@ -182,7 +203,7 @@ export default function CostTable() {
 
   useEffect(() => {
     loadData(currentPage, itemsPerPage);
-  }, [currentPage, itemsPerPage]);
+  }, [currentPage, itemsPerPage, sortColumn, sortDirection]);
 
   /* ================= EXPORTAÇÃO ================= */
   const handleExport = async () => {
@@ -552,16 +573,14 @@ export default function CostTable() {
                           {c["Marca"]}
                         </TableCell>
 
+                        {/* ✅ AJUSTE: exibição pt-BR (milhar + vírgula) + copiar no mesmo formato */}
                         <TableCell className="text-neutral-300 text-center">
                           <div className="flex justify-center items-center gap-1 group">
-                            R${" "}
-                            {Number(c["Custo Atual"] || 0).toFixed(2)}
+                            R$ {formatBR(c["Custo Atual"])}
                             <button
                               onClick={() =>
                                 handleCopy(
-                                  String(
-                                    Number(c["Custo Atual"] || 0).toFixed(2)
-                                  ),
+                                  `R$ ${formatBR(c["Custo Atual"])}`,
                                   `custo-${i}`
                                 )
                               }
@@ -580,8 +599,7 @@ export default function CostTable() {
                         </TableCell>
 
                         <TableCell className="text-neutral-300 text-center">
-                          R${" "}
-                          {Number(c["Custo Antigo"] || 0).toFixed(2)}
+                          R$ {formatBR(c["Custo Antigo"])}
                         </TableCell>
 
                         <TableCell className="text-neutral-300 text-center">

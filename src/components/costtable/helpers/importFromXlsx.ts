@@ -1,3 +1,4 @@
+// 📄 src/components/costtable/helpers/importFromXlsxOrCsv.ts
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -15,41 +16,56 @@ function parseCurrency(value: any): number | null {
 
   let str = String(value).trim();
 
-  // Remove R$ e espaços
-  str = str.replace(/R\$/g, "").replace(/\s/g, "");
+  // Remove símbolo de moeda e espaços
+  str = str.replace(/R\$/gi, "").replace(/\s/g, "");
 
-  // Somente números
-  if (/^\d+$/.test(str)) {
-    return Number(str);
+  // Remove qualquer coisa que não seja número, ponto, vírgula ou sinal
+  str = str.replace(/[^\d.,-]/g, "");
+
+  if (!str) return null;
+
+  // -------------------------------------------------------------
+  // CASO 1: só ponto (sem vírgula)
+  // Pode ser:
+  // - milhar pt-BR: 25.000 / 1.250.000
+  // - decimal US: 126.97
+  // -------------------------------------------------------------
+  if (str.includes(".") && !str.includes(",")) {
+    const parts = str.split(".");
+    const last = parts[parts.length - 1];
+
+    // Se termina com 3 dígitos → milhar
+    if (/^\d{3}$/.test(last)) {
+      const n = Number(str.replace(/\./g, ""));
+      return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
+    }
+
+    // Senão → decimal
+    const n = Number(str);
+    return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
   }
 
-  // Formato BR: 1.234,56
-  if (/^\d{1,3}(\.\d{3})*,\d+$/.test(str)) {
-    return Number(str.replace(/\./g, "").replace(",", "."));
-  }
-
-  // Formato US: 1234.56
-  if (/^\d+(\.\d+)?$/.test(str)) {
-    return Number(str);
-  }
-
-  // Formato híbrido: 1,234.56
-  if (/^\d{1,3}(,\d{3})+\.\d+$/.test(str)) {
-    return Number(str.replace(/,/g, ""));
-  }
-
-  // Remove tudo exceto números, vírgula e ponto
-  str = str.replace(/[^0-9.,]/g, "");
-
-  // Se tiver só vírgula -> decimal BR
+  // -------------------------------------------------------------
+  // CASO 2: só vírgula → decimal pt-BR (126,97)
+  // -------------------------------------------------------------
   if (str.includes(",") && !str.includes(".")) {
-    str = str.replace(",", ".");
+    const n = Number(str.replace(",", "."));
+    return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
   }
 
-  const n = Number(str);
-  if (isNaN(n)) return null;
+  // -------------------------------------------------------------
+  // CASO 3: ponto + vírgula → pt-BR milhar + decimal (1.234,56)
+  // -------------------------------------------------------------
+  if (str.includes(".") && str.includes(",")) {
+    const n = Number(str.replace(/\./g, "").replace(",", "."));
+    return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
+  }
 
-  return Number(n.toFixed(2));
+  // -------------------------------------------------------------
+  // CASO 4: inteiro simples (2500)
+  // -------------------------------------------------------------
+  const n = Number(str);
+  return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
 }
 
 // =====================================================================
@@ -179,9 +195,7 @@ export async function importFromXlsxOrCsv(
         ignoreDuplicates: true,
       });
 
-    if (error) {
-      throw error;
-    }
+    if (error) throw error;
 
     warnings.push(
       "Códigos já existentes foram ignorados automaticamente."
@@ -201,9 +215,7 @@ export async function importFromXlsxOrCsv(
     .from("custos")
     .upsert(normalized, { onConflict: "Código" });
 
-  if (error) {
-    throw error;
-  }
+  if (error) throw error;
 
   return {
     data: normalized,
