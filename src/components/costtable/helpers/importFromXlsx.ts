@@ -16,12 +16,15 @@ const REQUIRED_COLUMNS = ["Código", "Marca", "Custo Atual", "Custo Antigo", "NC
 // - PT-BR: 1.234,56 | 25,50 | R$ 1.234,56
 // - US/Excel: 126.97 | 25.50
 // - Milhar com ponto: 25.000 | 1.250.000  -> 25000 / 1250000
-// + BLINDAGEM: nunca deixa "0,3" chegar no banco (vira 0.30)
+//
+// ✅ GARANTIA GLOBAL:
+// - Esta função SEMPRE retorna number | null.
+// - Ela NUNCA retorna string (logo "0,3" nunca chega ao Supabase).
 // =====================================================================
 function parseCurrency(value: any): number | null {
   if (value === null || value === undefined || value === "") return null;
 
-  // Se já veio number (excel geralmente vem assim), só normaliza casas
+  // Se já veio number (Excel geralmente vem assim), só normaliza casas
   if (typeof value === "number") {
     return Number.isFinite(value) ? Number(value.toFixed(2)) : null;
   }
@@ -35,8 +38,20 @@ function parseCurrency(value: any): number | null {
   str = str.replace(/[^\d.,-]/g, "");
   if (!str) return null;
 
-  // CASO 1: só ponto (sem vírgula)
-  // Pode ser milhar (25.000) ou decimal US (126.97)
+  // CASO 1: ponto + vírgula => milhar BR + decimal BR (1.234,56)
+  if (str.includes(".") && str.includes(",")) {
+    const n = Number(str.replace(/\./g, "").replace(",", "."));
+    return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
+  }
+
+  // CASO 2: só vírgula => decimal BR (0,3 / 25,50)
+  if (str.includes(",") && !str.includes(".")) {
+    const n = Number(str.replace(",", "."));
+    return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
+  }
+
+  // CASO 3: só ponto (sem vírgula)
+  // Pode ser milhar (25.000 / 1.250.000) OU decimal US (126.97)
   if (str.includes(".") && !str.includes(",")) {
     const parts = str.split(".");
     const last = parts[parts.length - 1];
@@ -52,22 +67,8 @@ function parseCurrency(value: any): number | null {
     return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
   }
 
-  // CASO 2: só vírgula => decimal BR
-  if (str.includes(",") && !str.includes(".")) {
-    // 🔥 BLINDAGEM: troca vírgula por ponto antes do Number()
-    const n = Number(str.replace(",", "."));
-    return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
-  }
-
-  // CASO 3: ponto + vírgula => milhar BR + decimal BR
-  if (str.includes(".") && str.includes(",")) {
-    const n = Number(str.replace(/\./g, "").replace(",", "."));
-    return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
-  }
-
   // CASO 4: inteiro simples
-  // 🔥 BLINDAGEM EXTRA: se por algum motivo restou vírgula, troca por ponto
-  const n = Number(str.replace(",", "."));
+  const n = Number(str);
   return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
 }
 
@@ -88,9 +89,24 @@ function normalizeRow(row: Record<string, any>) {
   return {
     Código: String(codigo).trim(),
     Marca: findKey(["Marca", "marca", "brand"]) || null,
+
+    // ✅ garante number | null
     "Custo Atual": parseCurrency(findKey(["Custo Atual", "custo atual"])),
     "Custo Antigo": parseCurrency(findKey(["Custo Antigo", "custo antigo"])),
+
     NCM: findKey(["NCM", "ncm"]) || null,
+  };
+}
+
+// =====================================================================
+// 🧱 BLINDAGEM FINAL GLOBAL (ANTI "0,3")
+// Mesmo que algum dado "escape", aqui garantimos que vai virar number.
+// =====================================================================
+function sanitizePayloadRow(row: any) {
+  return {
+    ...row,
+    "Custo Atual": parseCurrency(row["Custo Atual"]),
+    "Custo Antigo": parseCurrency(row["Custo Antigo"]),
   };
 }
 
@@ -103,7 +119,8 @@ async function upsertInBatches(
   batchSize = 300
 ) {
   for (let i = 0; i < rows.length; i += batchSize) {
-    const batch = rows.slice(i, i + batchSize);
+    // ✅ BLINDAGEM FINAL antes de enviar ao Supabase
+    const batch = rows.slice(i, i + batchSize).map(sanitizePayloadRow);
 
     if (tipo === "inclusao") {
       const { error } = await supabase.from("custos").upsert(batch, {
@@ -266,8 +283,9 @@ export async function importFromXlsxOrCsv(
   // 🔍 PREVIEW
   // =====================================================================
   if (previewOnly) {
+    // ✅ também sanitiza no preview, para você já ver números
     return {
-      data: deduped,
+      data: deduped.map(sanitizePayloadRow),
       warnings,
       fileName,
     };
@@ -288,7 +306,7 @@ export async function importFromXlsxOrCsv(
   }
 
   return {
-    data: deduped,
+    data: deduped.map(sanitizePayloadRow),
     warnings,
     fileName,
   };
