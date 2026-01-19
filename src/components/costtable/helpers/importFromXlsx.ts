@@ -10,6 +10,7 @@ type ImportResult = {
 
 // =====================================================================
 // ✅ FUNÇÃO UNIVERSAL PARA CONVERTER QUALQUER FORMATO DE MOEDA EM NUMBER
+// (PT-BR, US/Excel e milhar com ponto: 25.000 -> 25000)
 // =====================================================================
 function parseCurrency(value: any): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -21,12 +22,10 @@ function parseCurrency(value: any): number | null {
 
   // Remove qualquer coisa que não seja número, ponto, vírgula ou sinal
   str = str.replace(/[^\d.,-]/g, "");
-
   if (!str) return null;
 
   // -------------------------------------------------------------
   // CASO 1: só ponto (sem vírgula)
-  // Pode ser:
   // - milhar pt-BR: 25.000 / 1.250.000
   // - decimal US: 126.97
   // -------------------------------------------------------------
@@ -70,6 +69,8 @@ function parseCurrency(value: any): number | null {
 
 // =====================================================================
 // 🔥 FUNÇÃO PRINCIPAL DE IMPORTAÇÃO
+// + ✅ DEDUPE por "Código" para evitar:
+// "ON CONFLICT DO UPDATE command cannot affect row a second time"
 // =====================================================================
 export async function importFromXlsxOrCsv(
   input: File | any[],
@@ -118,13 +119,13 @@ export async function importFromXlsxOrCsv(
   // 📦 INPUT ARRAY
   // =====================================================================
   else if (Array.isArray(input)) {
-    rows = input;
+    rows = input as Record<string, any>[];
   } else {
     throw new Error("Formato de importação inválido.");
   }
 
   // =====================================================================
-  // 🔎 Validação de colunas
+  // 🔎 Validação de colunas (somente quando veio de arquivo)
   // =====================================================================
   if (rows.length > 0 && input instanceof File) {
     const headers = Object.keys(rows[0] || {});
@@ -149,9 +150,7 @@ export async function importFromXlsxOrCsv(
     .map((row) => {
       const findKey = (keys: string[]) => {
         const key = Object.keys(row).find((k) =>
-          keys.some(
-            (p) => k.trim().toLowerCase() === p.trim().toLowerCase()
-          )
+          keys.some((p) => k.trim().toLowerCase() === p.trim().toLowerCase())
         );
         return key ? row[key] : undefined;
       };
@@ -162,9 +161,7 @@ export async function importFromXlsxOrCsv(
       return {
         Código: String(codigo).trim(),
         Marca: findKey(["Marca", "marca", "brand"]) || null,
-        "Custo Atual": parseCurrency(
-          findKey(["Custo Atual", "custo atual"])
-        ),
+        "Custo Atual": parseCurrency(findKey(["Custo Atual", "custo atual"])),
         "Custo Antigo": parseCurrency(
           findKey(["Custo Antigo", "custo antigo"])
         ),
@@ -174,11 +171,35 @@ export async function importFromXlsxOrCsv(
     .filter(Boolean) as any[];
 
   // =====================================================================
+  // 🧹 DEDUPE POR "Código"
+  // Mantém a ÚLTIMA ocorrência do mesmo Código (a última linha da planilha vence)
+  // Evita erro do Postgres no UPSERT quando há códigos duplicados no payload.
+  // =====================================================================
+  const dedupeMap = new Map<string, any>();
+  let duplicatedCount = 0;
+
+  for (const row of normalized) {
+    const key = String(row["Código"] ?? "").trim();
+    if (!key) continue;
+
+    if (dedupeMap.has(key)) duplicatedCount += 1;
+    dedupeMap.set(key, row); // última ocorrência vence
+  }
+
+  const deduped = Array.from(dedupeMap.values());
+
+  if (duplicatedCount > 0) {
+    warnings.push(
+      `Foram encontradas ${duplicatedCount} linhas com "Código" repetido. Mantive a última ocorrência de cada código para evitar erro no upsert.`
+    );
+  }
+
+  // =====================================================================
   // 🔍 PREVIEW
   // =====================================================================
   if (previewOnly) {
     return {
-      data: normalized,
+      data: deduped,
       warnings,
       fileName,
     };
@@ -188,21 +209,17 @@ export async function importFromXlsxOrCsv(
   // 🟩 INCLUSÃO — UPSERT COM IGNORE DUPLICATES
   // =====================================================================
   if (tipo === "inclusao") {
-    const { error } = await supabase
-      .from("custos")
-      .upsert(normalized, {
-        onConflict: "Código",
-        ignoreDuplicates: true,
-      });
+    const { error } = await supabase.from("custos").upsert(deduped, {
+      onConflict: "Código",
+      ignoreDuplicates: true,
+    });
 
     if (error) throw error;
 
-    warnings.push(
-      "Códigos já existentes foram ignorados automaticamente."
-    );
+    warnings.push("Códigos já existentes foram ignorados automaticamente.");
 
     return {
-      data: normalized,
+      data: deduped,
       warnings,
       fileName,
     };
@@ -213,12 +230,12 @@ export async function importFromXlsxOrCsv(
   // =====================================================================
   const { error } = await supabase
     .from("custos")
-    .upsert(normalized, { onConflict: "Código" });
+    .upsert(deduped, { onConflict: "Código" });
 
   if (error) throw error;
 
   return {
-    data: normalized,
+    data: deduped,
     warnings,
     fileName,
   };
