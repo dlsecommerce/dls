@@ -9,8 +9,11 @@ type ImportResult = {
 };
 
 // =====================================================================
-// ✅ FUNÇÃO UNIVERSAL PARA CONVERTER QUALQUER FORMATO DE MOEDA EM NUMBER
-// (PT-BR, US/Excel e milhar com ponto: 25.000 -> 25000)
+// ✅ Converte qualquer formato de custo/moeda em NUMBER
+// Suporta:
+// - PT-BR: 1.234,56 | 25,50 | R$ 1.234,56
+// - US/Excel: 126.97 | 25.50
+// - Milhar com ponto: 25.000 | 1.250.000  -> 25000 / 1250000
 // =====================================================================
 function parseCurrency(value: any): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -24,53 +27,103 @@ function parseCurrency(value: any): number | null {
   str = str.replace(/[^\d.,-]/g, "");
   if (!str) return null;
 
-  // -------------------------------------------------------------
   // CASO 1: só ponto (sem vírgula)
-  // - milhar pt-BR: 25.000 / 1.250.000
-  // - decimal US: 126.97
-  // -------------------------------------------------------------
+  // Pode ser milhar (25.000) ou decimal US (126.97)
   if (str.includes(".") && !str.includes(",")) {
     const parts = str.split(".");
     const last = parts[parts.length - 1];
 
-    // Se termina com 3 dígitos → milhar
+    // termina com 3 dígitos => milhar
     if (/^\d{3}$/.test(last)) {
       const n = Number(str.replace(/\./g, ""));
       return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
     }
 
-    // Senão → decimal
+    // senão => decimal US
     const n = Number(str);
     return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
   }
 
-  // -------------------------------------------------------------
-  // CASO 2: só vírgula → decimal pt-BR (126,97)
-  // -------------------------------------------------------------
+  // CASO 2: só vírgula => decimal BR
   if (str.includes(",") && !str.includes(".")) {
     const n = Number(str.replace(",", "."));
     return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
   }
 
-  // -------------------------------------------------------------
-  // CASO 3: ponto + vírgula → pt-BR milhar + decimal (1.234,56)
-  // -------------------------------------------------------------
+  // CASO 3: ponto + vírgula => milhar BR + decimal BR
   if (str.includes(".") && str.includes(",")) {
     const n = Number(str.replace(/\./g, "").replace(",", "."));
     return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
   }
 
-  // -------------------------------------------------------------
-  // CASO 4: inteiro simples (2500)
-  // -------------------------------------------------------------
+  // CASO 4: inteiro simples
   const n = Number(str);
   return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
 }
 
 // =====================================================================
-// 🔥 FUNÇÃO PRINCIPAL DE IMPORTAÇÃO
-// + ✅ DEDUPE por "Código" para evitar:
-// "ON CONFLICT DO UPDATE command cannot affect row a second time"
+// 🧾 Normaliza e valida 1 linha, buscando chaves com nomes diferentes
+// =====================================================================
+function normalizeRow(row: Record<string, any>) {
+  const findKey = (keys: string[]) => {
+    const key = Object.keys(row).find((k) =>
+      keys.some((p) => k.trim().toLowerCase() === p.trim().toLowerCase())
+    );
+    return key ? row[key] : undefined;
+  };
+
+  const codigo = findKey(["Código", "codigo", "code"]);
+  if (!codigo || String(codigo).trim() === "") return null;
+
+  return {
+    Código: String(codigo).trim(),
+    Marca: findKey(["Marca", "marca", "brand"]) || null,
+    "Custo Atual": parseCurrency(findKey(["Custo Atual", "custo atual"])),
+    "Custo Antigo": parseCurrency(findKey(["Custo Antigo", "custo antigo"])),
+    NCM: findKey(["NCM", "ncm"]) || null,
+  };
+}
+
+// =====================================================================
+// 🚚 UPSERT EM LOTES (evita statement timeout)
+// =====================================================================
+async function upsertInBatches(
+  rows: any[],
+  tipo: "inclusao" | "alteracao",
+  batchSize = 300
+) {
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const batch = rows.slice(i, i + batchSize);
+
+    if (tipo === "inclusao") {
+      const { error } = await supabase.from("custos").upsert(batch, {
+        onConflict: "Código",
+        ignoreDuplicates: true,
+        returning: "minimal",
+      });
+      if (error) throw error;
+    } else {
+      const { error } = await supabase.from("custos").upsert(batch, {
+        onConflict: "Código",
+        returning: "minimal",
+      });
+      if (error) throw error;
+    }
+
+    // dá um respiro para evitar travas e picos
+    // (e reduz chance de timeouts em ambientes mais lentos)
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
+// =====================================================================
+// 🔥 FUNÇÃO PRINCIPAL
+// - Preview
+// - Inclusão
+// - Alteração (atualização)
+// + ✅ DEDUPE por "Código" (evita conflito duplo no mesmo upsert)
+// + ✅ BATCH (evita timeout)
+// + ✅ Avisos com contagens para você entender (6167 vs 5602)
 // =====================================================================
 export async function importFromXlsxOrCsv(
   input: File | any[],
@@ -96,7 +149,7 @@ export async function importFromXlsxOrCsv(
     .toLocaleTimeString("pt-BR")
     .replace(/:/g, "-")}.xlsx`;
 
-  let rows: Record<string, any>[] = [];
+  let rawRows: Record<string, any>[] = [];
 
   // =====================================================================
   // 📁 INPUT FILE
@@ -110,16 +163,15 @@ export async function importFromXlsxOrCsv(
     });
 
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
+    rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
       defval: "",
     });
   }
-
   // =====================================================================
   // 📦 INPUT ARRAY
   // =====================================================================
   else if (Array.isArray(input)) {
-    rows = input as Record<string, any>[];
+    rawRows = input as Record<string, any>[];
   } else {
     throw new Error("Formato de importação inválido.");
   }
@@ -127,8 +179,8 @@ export async function importFromXlsxOrCsv(
   // =====================================================================
   // 🔎 Validação de colunas (somente quando veio de arquivo)
   // =====================================================================
-  if (rows.length > 0 && input instanceof File) {
-    const headers = Object.keys(rows[0] || {});
+  if (rawRows.length > 0 && input instanceof File) {
+    const headers = Object.keys(rawRows[0] || {});
     const missing = requiredColumns.filter(
       (col) =>
         !headers.some(
@@ -144,41 +196,29 @@ export async function importFromXlsxOrCsv(
   }
 
   // =====================================================================
-  // 🔧 NORMALIZAÇÃO
+  // 🔧 NORMALIZAÇÃO (remove linhas sem Código)
   // =====================================================================
-  const normalized = rows
-    .map((row) => {
-      const findKey = (keys: string[]) => {
-        const key = Object.keys(row).find((k) =>
-          keys.some((p) => k.trim().toLowerCase() === p.trim().toLowerCase())
-        );
-        return key ? row[key] : undefined;
-      };
-
-      const codigo = findKey(["Código", "codigo", "code"]);
-      if (!codigo || String(codigo).trim() === "") return null;
-
-      return {
-        Código: String(codigo).trim(),
-        Marca: findKey(["Marca", "marca", "brand"]) || null,
-        "Custo Atual": parseCurrency(findKey(["Custo Atual", "custo atual"])),
-        "Custo Antigo": parseCurrency(
-          findKey(["Custo Antigo", "custo antigo"])
-        ),
-        NCM: findKey(["NCM", "ncm"]) || null,
-      };
-    })
+  const normalizedAll = rawRows
+    .map((r) => normalizeRow(r))
     .filter(Boolean) as any[];
 
+  const totalLidas = rawRows.length;
+  const totalValidas = normalizedAll.length;
+
+  if (totalValidas < totalLidas) {
+    warnings.push(
+      `Foram lidas ${totalLidas} linhas do arquivo, mas apenas ${totalValidas} tinham "Código" válido (linhas sem Código foram ignoradas).`
+    );
+  }
+
   // =====================================================================
-  // 🧹 DEDUPE POR "Código"
-  // Mantém a ÚLTIMA ocorrência do mesmo Código (a última linha da planilha vence)
-  // Evita erro do Postgres no UPSERT quando há códigos duplicados no payload.
+  // 🧹 DEDUPE POR "Código" (mantém a ÚLTIMA ocorrência)
+  // Evita: ON CONFLICT DO UPDATE command cannot affect row a second time
   // =====================================================================
   const dedupeMap = new Map<string, any>();
   let duplicatedCount = 0;
 
-  for (const row of normalized) {
+  for (const row of normalizedAll) {
     const key = String(row["Código"] ?? "").trim();
     if (!key) continue;
 
@@ -190,8 +230,32 @@ export async function importFromXlsxOrCsv(
 
   if (duplicatedCount > 0) {
     warnings.push(
-      `Foram encontradas ${duplicatedCount} linhas com "Código" repetido. Mantive a última ocorrência de cada código para evitar erro no upsert.`
+      `Detectei ${duplicatedCount} linhas com "Código" repetido. Mantive a última ocorrência de cada código (códigos únicos: ${deduped.length}).`
     );
+  } else {
+    warnings.push(`Códigos únicos detectados: ${deduped.length}.`);
+  }
+
+  // (Opcional) lista top duplicados no preview (para você achar no Excel)
+  // Só gera essa lista se houver duplicados
+  if (duplicatedCount > 0) {
+    const counts = new Map<string, number>();
+    for (const r of normalizedAll) {
+      const k = String(r["Código"]).trim();
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    const duplicatedTop = Array.from(counts.entries())
+      .filter(([, n]) => n > 1)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 30);
+
+    if (duplicatedTop.length) {
+      warnings.push(
+        `Códigos repetidos (top 30): ${duplicatedTop
+          .map(([k, n]) => `${k}(${n}x)`)
+          .join(", ")}`
+      );
+    }
   }
 
   // =====================================================================
@@ -206,33 +270,18 @@ export async function importFromXlsxOrCsv(
   }
 
   // =====================================================================
-  // 🟩 INCLUSÃO — UPSERT COM IGNORE DUPLICATES
+  // ✅ IMPORTAÇÃO REAL (em lotes) — evita TIMEOUT
   // =====================================================================
+  // Dica: se ainda tiver timeout, reduza batchSize para 200 ou 150
+  const BATCH_SIZE = 300;
+
+  await upsertInBatches(deduped, tipo, BATCH_SIZE);
+
   if (tipo === "inclusao") {
-    const { error } = await supabase.from("custos").upsert(deduped, {
-      onConflict: "Código",
-      ignoreDuplicates: true,
-    });
-
-    if (error) throw error;
-
-    warnings.push("Códigos já existentes foram ignorados automaticamente.");
-
-    return {
-      data: deduped,
-      warnings,
-      fileName,
-    };
+    warnings.push("Inclusão concluída. Códigos existentes foram ignorados.");
+  } else {
+    warnings.push("Alteração concluída. Registros atualizados por Código.");
   }
-
-  // =====================================================================
-  // 🟨 ALTERAÇÃO — UPSERT
-  // =====================================================================
-  const { error } = await supabase
-    .from("custos")
-    .upsert(deduped, { onConflict: "Código" });
-
-  if (error) throw error;
 
   return {
     data: deduped,
