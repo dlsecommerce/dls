@@ -51,31 +51,46 @@ export default function ModalNewCost({
 
   /* ============================================================
      🔥 SUPER CONVERSOR FINAL — EXCEL (126.97) + PT-BR (126,97)
+     + MILHAR PT-BR (25.000 / 125.000 / 1.250.000)
      ============================================================ */
   const toNumber = (value: any): string => {
-    if (!value) return "0,00";
+    if (value === null || value === undefined) return "0,00";
 
-    let raw = String(value).trim().replace(/[^\d.,-]/g, "");
+    let raw = String(value).trim();
+    if (!raw) return "0,00";
 
-    // CASO 1: Excel exporta como 126.97 → manter decimal
-    if (/^\d+\.\d+$/.test(raw)) {
-      return Number(raw).toFixed(2).replace(".", ",");
+    // Remove moeda e tudo que não seja dígito, ponto, vírgula, sinal
+    raw = raw.replace(/[^\d.,-]/g, "");
+
+    // CASO 1: tem ponto e NÃO tem vírgula -> pode ser decimal (126.97) OU milhar (25.000 / 1.250.000)
+    if (raw.includes(".") && !raw.includes(",")) {
+      const parts = raw.split(".");
+      const last = parts[parts.length - 1];
+
+      // Se termina com 3 dígitos, trata como milhar: 25.000 -> 25000
+      if (/^\d{3}$/.test(last)) {
+        const n = parseFloat(raw.replace(/\./g, ""));
+        return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
+      }
+
+      // Senão, trata como decimal: 126.97 -> 126,97
+      const n = parseFloat(raw);
+      return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
     }
 
-    // CASO 2: Formato brasileiro: 126,97
+    // CASO 2: Formato brasileiro simples: 126,97
     if (raw.includes(",") && !raw.includes(".")) {
       const n = parseFloat(raw.replace(",", "."));
       return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
     }
 
-    // CASO 3: milhar + decimal → 1.234,56
+    // CASO 3: milhar + decimal pt-BR: 1.234,56
     if (raw.includes(".") && raw.includes(",")) {
-      raw = raw.replace(/\./g, "").replace(",", ".");
-      const n = parseFloat(raw);
+      const n = parseFloat(raw.replace(/\./g, "").replace(",", "."));
       return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
     }
 
-    // CASO 4: número inteiro simples → "3100"
+    // CASO 4: número inteiro simples: "3100"
     const n = parseFloat(raw);
     return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
   };
@@ -85,7 +100,7 @@ export default function ModalNewCost({
     if (open && mode === "edit") {
       setOldCodigo(form["Código"]);
     }
-  }, [open, mode]);
+  }, [open, mode, form]);
 
   const handleSave = async () => {
     if (!form["Código"] || !form["Marca"]) {
@@ -105,9 +120,7 @@ export default function ModalNewCost({
       const payload = {
         ["Código"]: form["Código"],
         ["Marca"]: form["Marca"],
-        ["Custo Atual"]: Number(
-          toNumber(form["Custo Atual"]).replace(",", ".")
-        ),
+        ["Custo Atual"]: Number(toNumber(form["Custo Atual"]).replace(",", ".")),
         ["Custo Antigo"]: Number(
           toNumber(form["Custo Antigo"]).replace(",", ".")
         ),
@@ -256,9 +269,7 @@ export default function ModalNewCost({
               <Label className="text-neutral-300">NCM</Label>
               <Input
                 value={form["NCM"]}
-                onChange={(e) =>
-                  setForm({ ...form, ["NCM"]: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, ["NCM"]: e.target.value })}
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
                 placeholder="Ex: 85182100"
               />
