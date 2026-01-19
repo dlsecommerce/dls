@@ -8,15 +8,23 @@ type ImportResult = {
   fileName: string;
 };
 
+const REQUIRED_COLUMNS = ["Código", "Marca", "Custo Atual", "Custo Antigo", "NCM"];
+
 // =====================================================================
 // ✅ Converte qualquer formato de custo/moeda em NUMBER
 // Suporta:
 // - PT-BR: 1.234,56 | 25,50 | R$ 1.234,56
 // - US/Excel: 126.97 | 25.50
 // - Milhar com ponto: 25.000 | 1.250.000  -> 25000 / 1250000
+// + BLINDAGEM: nunca deixa "0,3" chegar no banco (vira 0.30)
 // =====================================================================
 function parseCurrency(value: any): number | null {
   if (value === null || value === undefined || value === "") return null;
+
+  // Se já veio number (excel geralmente vem assim), só normaliza casas
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? Number(value.toFixed(2)) : null;
+  }
 
   let str = String(value).trim();
 
@@ -46,6 +54,7 @@ function parseCurrency(value: any): number | null {
 
   // CASO 2: só vírgula => decimal BR
   if (str.includes(",") && !str.includes(".")) {
+    // 🔥 BLINDAGEM: troca vírgula por ponto antes do Number()
     const n = Number(str.replace(",", "."));
     return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
   }
@@ -57,7 +66,8 @@ function parseCurrency(value: any): number | null {
   }
 
   // CASO 4: inteiro simples
-  const n = Number(str);
+  // 🔥 BLINDAGEM EXTRA: se por algum motivo restou vírgula, troca por ponto
+  const n = Number(str.replace(",", "."));
   return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
 }
 
@@ -130,13 +140,7 @@ export async function importFromXlsxOrCsv(
   previewOnly = false,
   tipo: "inclusao" | "alteracao" = "alteracao"
 ): Promise<ImportResult> {
-  const requiredColumns = [
-    "Código",
-    "Marca",
-    "Custo Atual",
-    "Custo Antigo",
-    "NCM",
-  ];
+  const requiredColumns = REQUIRED_COLUMNS;
 
   const warnings: string[] = [];
 
