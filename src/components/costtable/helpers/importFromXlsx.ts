@@ -1,4 +1,3 @@
-// 📄 src/components/costtable/helpers/importFromXlsxOrCsv.ts
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -93,7 +92,10 @@ function normalizeRow(rowRaw: Record<string, any>) {
 
   const findKey = (keys: string[]) => {
     const key = Object.keys(row).find((k) =>
-      keys.some((p) => cleanHeaderKey(k).toLowerCase() === cleanHeaderKey(p).toLowerCase())
+      keys.some(
+        (p) =>
+          cleanHeaderKey(k).toLowerCase() === cleanHeaderKey(p).toLowerCase()
+      )
     );
     return key ? row[key] : undefined;
   };
@@ -119,17 +121,29 @@ function sanitizePayloadRow(row: any) {
   const custoAtual = parseCurrency(row["Custo Atual"]);
   const custoAntigo = parseCurrency(row["Custo Antigo"]);
 
+  const codigo = String(row["Código"] ?? "").trim();
+  const marca =
+    row["Marca"] === null || row["Marca"] === undefined || row["Marca"] === ""
+      ? null
+      : String(row["Marca"]).trim();
+
+  const ncm =
+    row["NCM"] === null || row["NCM"] === undefined || row["NCM"] === ""
+      ? null
+      : String(row["NCM"]).trim();
+
   return {
-    Código: row["Código"],
-    Marca: row["Marca"] ?? null,
+    Código: codigo,
+    Marca: marca,
     "Custo Atual": typeof custoAtual === "number" ? custoAtual : 0,
     "Custo Antigo": typeof custoAntigo === "number" ? custoAntigo : 0,
-    NCM: row["NCM"] ?? null,
+    NCM: ncm,
   };
 }
 
 // =====================================================================
 // ✅ Checagem forte: numeric NÃO pode ser string (nem NaN)
+// + trava se QUALQUER string com vírgula aparecer no batch (debug)
 // =====================================================================
 function assertNumericOk(batch: any[]) {
   for (let idx = 0; idx < batch.length; idx++) {
@@ -138,16 +152,36 @@ function assertNumericOk(batch: any[]) {
     const ca = r["Custo Atual"];
     const co = r["Custo Antigo"];
 
-    const bad =
+    const badNumeric =
       typeof ca !== "number" ||
       !Number.isFinite(ca) ||
       typeof co !== "number" ||
       !Number.isFinite(co);
 
-    if (bad) {
+    if (badNumeric) {
       console.error("🚨 Linha com numeric inválido (índice no batch):", idx, r);
       throw new Error(
         "Payload inválido: 'Custo Atual'/'Custo Antigo' precisa ser number finito. Verifique o arquivo de origem."
+      );
+    }
+
+    // ✅ debug extra: se alguma string com vírgula escapar (em qualquer campo), para e mostra
+    const badCommaString = Object.entries(r).find(
+      ([, v]) => typeof v === "string" && v.includes(",")
+    );
+    if (badCommaString) {
+      console.error(
+        "🚨 String com vírgula detectada no payload (índice no batch):",
+        idx,
+        "campo:",
+        badCommaString[0],
+        "valor:",
+        badCommaString[1],
+        "linha:",
+        r
+      );
+      throw new Error(
+        `Payload inválido: string com vírgula detectada no campo "${badCommaString[0]}".`
       );
     }
   }
@@ -190,7 +224,11 @@ async function upsertInBatches(
       // @ts-expect-error (shape do supabase)
       console.error("📛 hint:", (error as any).hint);
       console.error("📛 code:", error.code);
+
+      // ✅ batch sample ajuda MUITO a achar o valor que quebrou
       console.error("📦 Batch (amostra):", batch.slice(0, 5));
+      console.error("📦 Batch[0] (primeiro item):", batch[0]);
+
       throw error;
     }
 
@@ -229,7 +267,9 @@ export async function importFromXlsxOrCsv(
     });
 
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: "" });
+    rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
+      defval: "",
+    });
   }
   // 📦 INPUT ARRAY
   else if (Array.isArray(input)) {
@@ -242,7 +282,11 @@ export async function importFromXlsxOrCsv(
   if (rawRows.length > 0 && input instanceof File) {
     const headers = Object.keys(normalizeRowKeys(rawRows[0] || {}));
     const missing = REQUIRED_COLUMNS.filter(
-      (col) => !headers.some((h) => cleanHeaderKey(h).toLowerCase() === cleanHeaderKey(col).toLowerCase())
+      (col) =>
+        !headers.some(
+          (h) =>
+            cleanHeaderKey(h).toLowerCase() === cleanHeaderKey(col).toLowerCase()
+        )
     );
 
     if (missing.length > 0) {
