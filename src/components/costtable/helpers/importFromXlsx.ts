@@ -10,16 +10,30 @@ type ImportResult = {
 
 const REQUIRED_COLUMNS = ["Código", "Marca", "Custo Atual", "Custo Antigo", "NCM"];
 
+/**
+ * Remove espaços invisíveis (NBSP) e normaliza espaços múltiplos
+ */
+function cleanHeaderKey(key: string) {
+  return String(key)
+    .replace(/\u00a0/g, " ") // NBSP -> espaço normal
+    .replace(/\s+/g, " ") // múltiplos espaços
+    .trim();
+}
+
+/**
+ * Normaliza chaves do objeto (headers do XLSX/CSV)
+ * Ex.: "Custo Atual " (com NBSP) vira "Custo Atual"
+ */
+function normalizeRowKeys(row: Record<string, any>) {
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(row)) {
+    out[cleanHeaderKey(k)] = v;
+  }
+  return out;
+}
+
 // =====================================================================
-// ✅ Converte qualquer formato de custo/moeda em NUMBER
-// Suporta:
-// - PT-BR: 1.234,56 | 25,50 | R$ 1.234,56
-// - US/Excel: 126.97 | 25.50
-// - Milhar com ponto: 25.000 | 1.250.000  -> 25000 / 1250000
-//
-// ✅ GARANTIA GLOBAL:
-// - Esta função SEMPRE retorna number | null.
-// - Ela NUNCA retorna string.
+// ✅ Converte qualquer formato de custo/moeda em NUMBER (ou null)
 // =====================================================================
 function parseCurrency(value: any): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -30,73 +44,56 @@ function parseCurrency(value: any): number | null {
 
   let str = String(value).trim();
 
-  // Remove símbolo e espaços
   str = str.replace(/R\$/gi, "").replace(/\s/g, "");
-
-  // Remove qualquer coisa que não seja número, ponto, vírgula ou sinal
   str = str.replace(/[^\d.,-]/g, "");
   if (!str) return null;
 
-  // CASO 1: ponto + vírgula => milhar BR + decimal BR (1.234,56)
   if (str.includes(".") && str.includes(",")) {
     const n = Number(str.replace(/\./g, "").replace(",", "."));
     return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
   }
 
-  // CASO 2: só vírgula => decimal BR (0,3 / 25,50)
   if (str.includes(",") && !str.includes(".")) {
     const n = Number(str.replace(",", "."));
     return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
   }
 
-  // CASO 3: só ponto (sem vírgula)
-  // Pode ser milhar (25.000 / 1.250.000) OU decimal US (126.97)
   if (str.includes(".") && !str.includes(",")) {
     const parts = str.split(".");
     const last = parts[parts.length - 1];
 
-    // termina com 3 dígitos => milhar
     if (/^\d{3}$/.test(last)) {
       const n = Number(str.replace(/\./g, ""));
       return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
     }
 
-    // senão => decimal US
     const n = Number(str);
     return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
   }
 
-  // CASO 4: inteiro simples
   const n = Number(str);
   return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
 }
 
 // =====================================================================
-// ✅ Normaliza NCM
-// - NCM é CÓDIGO (ideal no banco: TEXT/VARCHAR)
-// - Remove qualquer coisa que não seja dígito
-// - Mantém como string (ex: "09011110")
+// ✅ NCM como texto (só dígitos) — sua coluna no banco é TEXT
 // =====================================================================
 function normalizeNcm(value: any): string | null {
   if (value === null || value === undefined || value === "") return null;
-
-  // Excel às vezes traz como number; converte para string sem notação científica
-  // e remove decimais acidentais (ex: 1234.0)
-  let s = String(value).trim();
-
-  // Remove tudo que não for dígito
-  const digits = s.replace(/\D/g, "");
-
+  const digits = String(value).trim().replace(/\D/g, "");
   return digits ? digits : null;
 }
 
 // =====================================================================
 // 🧾 Normaliza e valida 1 linha, buscando chaves com nomes diferentes
 // =====================================================================
-function normalizeRow(row: Record<string, any>) {
+function normalizeRow(rowRaw: Record<string, any>) {
+  // ✅ normaliza headers do XLSX/CSV (remove NBSP etc.)
+  const row = normalizeRowKeys(rowRaw);
+
   const findKey = (keys: string[]) => {
     const key = Object.keys(row).find((k) =>
-      keys.some((p) => k.trim().toLowerCase() === p.trim().toLowerCase())
+      keys.some((p) => cleanHeaderKey(k).toLowerCase() === cleanHeaderKey(p).toLowerCase())
     );
     return key ? row[key] : undefined;
   };
@@ -107,34 +104,24 @@ function normalizeRow(row: Record<string, any>) {
   return {
     Código: String(codigo).trim(),
     Marca: findKey(["Marca", "marca", "brand"]) || null,
-
-    // ✅ garante number | null
     "Custo Atual": parseCurrency(findKey(["Custo Atual", "custo atual"])),
     "Custo Antigo": parseCurrency(findKey(["Custo Antigo", "custo antigo"])),
-
-    // ✅ NCM como TEXTO normalizado
     NCM: normalizeNcm(findKey(["NCM", "ncm"])),
-
-    // Se (e somente se) seu banco estiver com NCM numeric e você não puder mudar agora,
-    // use isto no lugar do NCM acima:
-    // NCM: (() => {
-    //   const digits = normalizeNcm(findKey(["NCM", "ncm"]));
-    //   return digits ? Number(digits) : null;
-    // })(),
   };
 }
 
 // =====================================================================
-// 🧱 BLINDAGEM FINAL (ANTI STRING EM NUMERIC)
-// - Garante que "Custo Atual" e "Custo Antigo" sejam number (ou 0)
-// - NÃO força NCM para number (porque ideal é texto)
+// 🧱 PAYLOAD FINAL (SEM SPREAD)
+// ✅ Só envia colunas reais do banco (evita chaves “quase iguais” escaparem)
+// ✅ numeric vira number garantido
 // =====================================================================
 function sanitizePayloadRow(row: any) {
   const custoAtual = parseCurrency(row["Custo Atual"]);
   const custoAntigo = parseCurrency(row["Custo Antigo"]);
 
   return {
-    ...row,
+    Código: row["Código"],
+    Marca: row["Marca"] ?? null,
     "Custo Atual": typeof custoAtual === "number" ? custoAtual : 0,
     "Custo Antigo": typeof custoAntigo === "number" ? custoAntigo : 0,
     NCM: row["NCM"] ?? null,
@@ -142,38 +129,33 @@ function sanitizePayloadRow(row: any) {
 }
 
 // =====================================================================
-// 🔍 Debug: valida colunas numéricas antes do upsert
-// - Impede que string tipo "0,3" chegue no Postgres
-// - Mostra exatamente a linha problemática
+// ✅ Checagem forte: numeric NÃO pode ser string (nem NaN)
 // =====================================================================
-function assertNoInvalidNumericStrings(
-  rows: any[],
-  numericColumns: string[] = ["Custo Atual", "Custo Antigo"]
-) {
-  const bad = rows.find((r) =>
-    numericColumns.some((col) => {
-      const v = r[col];
-      // numérico deve ser number (ou null/undefined, mas aqui já vira 0)
-      if (typeof v === "string") return true;
-      if (typeof v === "number") return !Number.isFinite(v);
-      if (v === null || v === undefined) return false;
-      // qualquer outro tipo é suspeito
-      return true;
-    })
-  );
+function assertNumericOk(batch: any[]) {
+  for (let idx = 0; idx < batch.length; idx++) {
+    const r = batch[idx];
 
-  if (bad) {
-    console.error("🚨 Linha com tipo inválido em coluna numérica:", bad);
-    throw new Error(
-      "Payload inválido: coluna numérica recebeu valor não-numérico. Verifique os dados do arquivo."
-    );
+    const ca = r["Custo Atual"];
+    const co = r["Custo Antigo"];
+
+    const bad =
+      typeof ca !== "number" ||
+      !Number.isFinite(ca) ||
+      typeof co !== "number" ||
+      !Number.isFinite(co);
+
+    if (bad) {
+      console.error("🚨 Linha com numeric inválido (índice no batch):", idx, r);
+      throw new Error(
+        "Payload inválido: 'Custo Atual'/'Custo Antigo' precisa ser number finito. Verifique o arquivo de origem."
+      );
+    }
   }
 }
 
 // =====================================================================
-// 🚚 UPSERT EM LOTES (evita statement timeout)
-// + ✅ Logs completos do erro do Supabase
-// + ✅ Validação forte das colunas numéricas
+// 🚚 UPSERT EM LOTES
+// + logs completos do erro do Supabase
 // =====================================================================
 async function upsertInBatches(
   rows: any[],
@@ -181,14 +163,10 @@ async function upsertInBatches(
   batchSize = 300
 ) {
   for (let i = 0; i < rows.length; i += batchSize) {
-    // ✅ Sanitiza antes de enviar ao Supabase
     const batch = rows.slice(i, i + batchSize).map(sanitizePayloadRow);
 
-    // ✅ Trava se algo não-numérico escapar para colunas numéricas
-    assertNoInvalidNumericStrings(batch, ["Custo Atual", "Custo Antigo"]);
-
-    // ✅ (Opcional) se você TIVER NCM numeric no banco e quiser validar também:
-    // assertNoInvalidNumericStrings(batch, ["Custo Atual", "Custo Antigo", "NCM"]);
+    // ✅ trava antes de bater no Supabase se algo estiver errado
+    assertNumericOk(batch);
 
     const upsertArgs =
       tipo === "inclusao"
@@ -205,41 +183,29 @@ async function upsertInBatches(
     const { error } = await supabase.from("custos").upsert(batch, upsertArgs);
 
     if (error) {
-      // ✅ ERRO COMPLETO
-      console.error("❌ ERRO SUPABASE (OBJETO COMPLETO):", error);
+      console.error("❌ ERRO SUPABASE (OBJETO):", error);
       console.error("📛 message:", error.message);
-      // @ts-expect-error supabase error shape
+      // @ts-expect-error (shape do supabase)
       console.error("📛 details:", (error as any).details);
-      // @ts-expect-error supabase error shape
+      // @ts-expect-error (shape do supabase)
       console.error("📛 hint:", (error as any).hint);
       console.error("📛 code:", error.code);
-
-      // ✅ Mostra amostra do batch que falhou
-      console.error("📦 BATCH QUE FALHOU (amostra):", batch.slice(0, 5));
-
+      console.error("📦 Batch (amostra):", batch.slice(0, 5));
       throw error;
     }
 
-    // pequeno respiro
     await new Promise((r) => setTimeout(r, 20));
   }
 }
 
 // =====================================================================
 // 🔥 FUNÇÃO PRINCIPAL
-// - Preview
-// - Inclusão
-// - Alteração
-// + ✅ DEDUPE por "Código"
-// + ✅ BATCH (evita timeout)
 // =====================================================================
 export async function importFromXlsxOrCsv(
   input: File | any[],
   previewOnly = false,
   tipo: "inclusao" | "alteracao" = "alteracao"
 ): Promise<ImportResult> {
-  const requiredColumns = REQUIRED_COLUMNS;
-
   const warnings: string[] = [];
 
   const now = new Date();
@@ -253,9 +219,7 @@ export async function importFromXlsxOrCsv(
 
   let rawRows: Record<string, any>[] = [];
 
-  // =====================================================================
   // 📁 INPUT FILE
-  // =====================================================================
   if (input instanceof File) {
     const buffer = await input.arrayBuffer();
     const workbook = XLSX.read(buffer, {
@@ -265,29 +229,20 @@ export async function importFromXlsxOrCsv(
     });
 
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
-      defval: "",
-    });
+    rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: "" });
   }
-  // =====================================================================
   // 📦 INPUT ARRAY
-  // =====================================================================
   else if (Array.isArray(input)) {
     rawRows = input as Record<string, any>[];
   } else {
     throw new Error("Formato de importação inválido.");
   }
 
-  // =====================================================================
   // 🔎 Validação de colunas (somente quando veio de arquivo)
-  // =====================================================================
   if (rawRows.length > 0 && input instanceof File) {
-    const headers = Object.keys(rawRows[0] || {});
-    const missing = requiredColumns.filter(
-      (col) =>
-        !headers.some(
-          (h) => h.trim().toLowerCase() === col.trim().toLowerCase()
-        )
+    const headers = Object.keys(normalizeRowKeys(rawRows[0] || {}));
+    const missing = REQUIRED_COLUMNS.filter(
+      (col) => !headers.some((h) => cleanHeaderKey(h).toLowerCase() === cleanHeaderKey(col).toLowerCase())
     );
 
     if (missing.length > 0) {
@@ -295,9 +250,7 @@ export async function importFromXlsxOrCsv(
     }
   }
 
-  // =====================================================================
-  // 🔧 NORMALIZAÇÃO (remove linhas sem Código)
-  // =====================================================================
+  // 🔧 NORMALIZAÇÃO
   const normalizedAll = rawRows
     .map((r) => normalizeRow(r))
     .filter(Boolean) as any[];
@@ -311,9 +264,7 @@ export async function importFromXlsxOrCsv(
     );
   }
 
-  // =====================================================================
-  // 🧹 DEDUPE POR "Código" (mantém a ÚLTIMA ocorrência)
-  // =====================================================================
+  // 🧹 DEDUPE POR "Código" (mantém a última ocorrência)
   const dedupeMap = new Map<string, any>();
   let duplicatedCount = 0;
 
@@ -335,30 +286,7 @@ export async function importFromXlsxOrCsv(
     warnings.push(`Códigos únicos detectados: ${deduped.length}.`);
   }
 
-  // (Opcional) lista top duplicados no preview
-  if (duplicatedCount > 0) {
-    const counts = new Map<string, number>();
-    for (const r of normalizedAll) {
-      const k = String(r["Código"]).trim();
-      counts.set(k, (counts.get(k) || 0) + 1);
-    }
-    const duplicatedTop = Array.from(counts.entries())
-      .filter(([, n]) => n > 1)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 30);
-
-    if (duplicatedTop.length) {
-      warnings.push(
-        `Códigos repetidos (top 30): ${duplicatedTop
-          .map(([k, n]) => `${k}(${n}x)`)
-          .join(", ")}`
-      );
-    }
-  }
-
-  // =====================================================================
   // 🔍 PREVIEW
-  // =====================================================================
   if (previewOnly) {
     return {
       data: deduped.map(sanitizePayloadRow),
@@ -367,9 +295,7 @@ export async function importFromXlsxOrCsv(
     };
   }
 
-  // =====================================================================
-  // ✅ IMPORTAÇÃO REAL (em lotes)
-  // =====================================================================
+  // ✅ IMPORTAÇÃO REAL
   const BATCH_SIZE = 300;
   await upsertInBatches(deduped, tipo, BATCH_SIZE);
 
