@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import ExcelJS from "exceljs";
-import { saveAs } from "file-saver";
+import type ExcelJSType from "exceljs"; // ✅ mantém tipos, evita quebrar bundler no Next
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -13,6 +12,17 @@ export function useTrayImportExport(
 ) {
   const handleExport = useCallback(
     async (dataToExport?: any[]) => {
+      // ✅ AJUSTE: imports dinâmicos no clique (Next/App Router costuma falhar com import no topo)
+      const excelJSImport = await import("exceljs");
+      const ExcelJS: typeof ExcelJSType =
+        ((excelJSImport as any).default ?? (excelJSImport as any)) as any;
+
+      const fileSaverImport = await import("file-saver");
+      const saveAs: any =
+        (fileSaverImport as any).saveAs ??
+        (fileSaverImport as any).default ??
+        fileSaverImport;
+
       const data = dataToExport ?? rows;
 
       if (!data || data.length === 0) {
@@ -141,7 +151,7 @@ export function useTrayImportExport(
       sheet.mergeCells("S1:T1");
       sheet.getCell("S1").value = "PREÇO";
 
-      const styleTitle = (cell: ExcelJS.Cell, color: string) => {
+      const styleTitle = (cell: any, color: string) => {
         cell.fill = {
           type: "pattern",
           pattern: "solid",
@@ -157,7 +167,7 @@ export function useTrayImportExport(
       styleTitle(sheet.getCell("S1"), colors.verdeEscuro);
 
       const row2 = sheet.getRow(2);
-      row2.eachCell((cell, col) => {
+      row2.eachCell((cell: any, col: number) => {
         let fillColor = colors.azulClaro;
         if (col >= 11 && col <= 17) fillColor = colors.laranjaClaro;
         if (col >= 19) fillColor = colors.verdeClaro;
@@ -173,7 +183,7 @@ export function useTrayImportExport(
         cell.alignment = { horizontal: "center", vertical: "middle" };
       });
 
-      sheet.getRow(1).eachCell((cell) => (cell.border = undefined));
+      sheet.getRow(1).eachCell((cell: any) => (cell.border = undefined));
 
       // -----------------------------
       // Helper parse number (inclui string)
@@ -215,7 +225,7 @@ export function useTrayImportExport(
         const newRow = sheet.addRow(line);
         const rowNumber = newRow.number;
 
-        newRow.eachCell((cell, col) => {
+        newRow.eachCell((cell: any, col: number) => {
           if ([12, 13, 19].includes(col)) {
             cell.numFmt = '_("R$"* #,##0.00_)';
           }
