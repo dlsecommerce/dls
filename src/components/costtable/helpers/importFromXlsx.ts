@@ -19,19 +19,18 @@ const REQUIRED_COLUMNS = ["Código", "Marca", "Custo Atual", "Custo Antigo", "NC
 //
 // ✅ GARANTIA GLOBAL:
 // - Esta função SEMPRE retorna number | null.
-// - Ela NUNCA retorna string (logo "0,3" não deveria chegar no Supabase).
+// - Ela NUNCA retorna string.
 // =====================================================================
 function parseCurrency(value: any): number | null {
   if (value === null || value === undefined || value === "") return null;
 
-  // Se já veio number (Excel geralmente vem assim), só normaliza casas
   if (typeof value === "number") {
     return Number.isFinite(value) ? Number(value.toFixed(2)) : null;
   }
 
   let str = String(value).trim();
 
-  // Remove símbolo de moeda e espaços
+  // Remove símbolo e espaços
   str = str.replace(/R\$/gi, "").replace(/\s/g, "");
 
   // Remove qualquer coisa que não seja número, ponto, vírgula ou sinal
@@ -73,6 +72,25 @@ function parseCurrency(value: any): number | null {
 }
 
 // =====================================================================
+// ✅ Normaliza NCM
+// - NCM é CÓDIGO (ideal no banco: TEXT/VARCHAR)
+// - Remove qualquer coisa que não seja dígito
+// - Mantém como string (ex: "09011110")
+// =====================================================================
+function normalizeNcm(value: any): string | null {
+  if (value === null || value === undefined || value === "") return null;
+
+  // Excel às vezes traz como number; converte para string sem notação científica
+  // e remove decimais acidentais (ex: 1234.0)
+  let s = String(value).trim();
+
+  // Remove tudo que não for dígito
+  const digits = s.replace(/\D/g, "");
+
+  return digits ? digits : null;
+}
+
+// =====================================================================
 // 🧾 Normaliza e valida 1 linha, buscando chaves com nomes diferentes
 // =====================================================================
 function normalizeRow(row: Record<string, any>) {
@@ -94,15 +112,22 @@ function normalizeRow(row: Record<string, any>) {
     "Custo Atual": parseCurrency(findKey(["Custo Atual", "custo atual"])),
     "Custo Antigo": parseCurrency(findKey(["Custo Antigo", "custo antigo"])),
 
-    NCM: findKey(["NCM", "ncm"]) || null,
+    // ✅ NCM como TEXTO normalizado
+    NCM: normalizeNcm(findKey(["NCM", "ncm"])),
+
+    // Se (e somente se) seu banco estiver com NCM numeric e você não puder mudar agora,
+    // use isto no lugar do NCM acima:
+    // NCM: (() => {
+    //   const digits = normalizeNcm(findKey(["NCM", "ncm"]));
+    //   return digits ? Number(digits) : null;
+    // })(),
   };
 }
 
 // =====================================================================
-// 🧱 BLINDAGEM FINAL GLOBAL (ANTI "0,3")
-// ✅ AJUSTE DEFINITIVO: numeric NUNCA vai como null/string pro Supabase
-// - Se não conseguir converter, manda 0.
-// - Assim "0,3" jamais chega ao Postgres como string.
+// 🧱 BLINDAGEM FINAL (ANTI STRING EM NUMERIC)
+// - Garante que "Custo Atual" e "Custo Antigo" sejam number (ou 0)
+// - NÃO força NCM para number (porque ideal é texto)
 // =====================================================================
 function sanitizePayloadRow(row: any) {
   const custoAtual = parseCurrency(row["Custo Atual"]);
@@ -112,12 +137,43 @@ function sanitizePayloadRow(row: any) {
     ...row,
     "Custo Atual": typeof custoAtual === "number" ? custoAtual : 0,
     "Custo Antigo": typeof custoAntigo === "number" ? custoAntigo : 0,
+    NCM: row["NCM"] ?? null,
   };
 }
 
 // =====================================================================
+// 🔍 Debug: valida colunas numéricas antes do upsert
+// - Impede que string tipo "0,3" chegue no Postgres
+// - Mostra exatamente a linha problemática
+// =====================================================================
+function assertNoInvalidNumericStrings(
+  rows: any[],
+  numericColumns: string[] = ["Custo Atual", "Custo Antigo"]
+) {
+  const bad = rows.find((r) =>
+    numericColumns.some((col) => {
+      const v = r[col];
+      // numérico deve ser number (ou null/undefined, mas aqui já vira 0)
+      if (typeof v === "string") return true;
+      if (typeof v === "number") return !Number.isFinite(v);
+      if (v === null || v === undefined) return false;
+      // qualquer outro tipo é suspeito
+      return true;
+    })
+  );
+
+  if (bad) {
+    console.error("🚨 Linha com tipo inválido em coluna numérica:", bad);
+    throw new Error(
+      "Payload inválido: coluna numérica recebeu valor não-numérico. Verifique os dados do arquivo."
+    );
+  }
+}
+
+// =====================================================================
 // 🚚 UPSERT EM LOTES (evita statement timeout)
-// + ✅ CHECAGEM: se alguma string com vírgula escapar, trava e mostra a linha
+// + ✅ Logs completos do erro do Supabase
+// + ✅ Validação forte das colunas numéricas
 // =====================================================================
 async function upsertInBatches(
   rows: any[],
@@ -125,37 +181,46 @@ async function upsertInBatches(
   batchSize = 300
 ) {
   for (let i = 0; i < rows.length; i += batchSize) {
-    // ✅ BLINDAGEM FINAL antes de enviar ao Supabase
+    // ✅ Sanitiza antes de enviar ao Supabase
     const batch = rows.slice(i, i + batchSize).map(sanitizePayloadRow);
 
-    // ✅ Segurança extra: não deixa vírgula como string passar
-    const invalid = batch.find((r) =>
-      Object.entries(r).some(
-        ([, v]) => typeof v === "string" && v.includes(",")
-      )
-    );
-    if (invalid) {
-      console.error("🚨 Payload inválido detectado (string com vírgula):", invalid);
-      throw new Error('Valor inválido detectado: string com vírgula no payload.');
+    // ✅ Trava se algo não-numérico escapar para colunas numéricas
+    assertNoInvalidNumericStrings(batch, ["Custo Atual", "Custo Antigo"]);
+
+    // ✅ (Opcional) se você TIVER NCM numeric no banco e quiser validar também:
+    // assertNoInvalidNumericStrings(batch, ["Custo Atual", "Custo Antigo", "NCM"]);
+
+    const upsertArgs =
+      tipo === "inclusao"
+        ? {
+            onConflict: "Código",
+            ignoreDuplicates: true,
+            returning: "minimal" as const,
+          }
+        : {
+            onConflict: "Código",
+            returning: "minimal" as const,
+          };
+
+    const { error } = await supabase.from("custos").upsert(batch, upsertArgs);
+
+    if (error) {
+      // ✅ ERRO COMPLETO
+      console.error("❌ ERRO SUPABASE (OBJETO COMPLETO):", error);
+      console.error("📛 message:", error.message);
+      // @ts-expect-error supabase error shape
+      console.error("📛 details:", (error as any).details);
+      // @ts-expect-error supabase error shape
+      console.error("📛 hint:", (error as any).hint);
+      console.error("📛 code:", error.code);
+
+      // ✅ Mostra amostra do batch que falhou
+      console.error("📦 BATCH QUE FALHOU (amostra):", batch.slice(0, 5));
+
+      throw error;
     }
 
-    if (tipo === "inclusao") {
-      const { error } = await supabase.from("custos").upsert(batch, {
-        onConflict: "Código",
-        ignoreDuplicates: true,
-        returning: "minimal",
-      });
-      if (error) throw error;
-    } else {
-      const { error } = await supabase.from("custos").upsert(batch, {
-        onConflict: "Código",
-        returning: "minimal",
-      });
-      if (error) throw error;
-    }
-
-    // dá um respiro para evitar travas e picos
-    // (e reduz chance de timeouts em ambientes mais lentos)
+    // pequeno respiro
     await new Promise((r) => setTimeout(r, 20));
   }
 }
@@ -164,10 +229,9 @@ async function upsertInBatches(
 // 🔥 FUNÇÃO PRINCIPAL
 // - Preview
 // - Inclusão
-// - Alteração (atualização)
-// + ✅ DEDUPE por "Código" (evita conflito duplo no mesmo upsert)
+// - Alteração
+// + ✅ DEDUPE por "Código"
 // + ✅ BATCH (evita timeout)
-// + ✅ Avisos com contagens para você entender (6167 vs 5602)
 // =====================================================================
 export async function importFromXlsxOrCsv(
   input: File | any[],
@@ -227,9 +291,7 @@ export async function importFromXlsxOrCsv(
     );
 
     if (missing.length > 0) {
-      warnings.push(
-        `As seguintes colunas estão ausentes: ${missing.join(", ")}.`
-      );
+      warnings.push(`As seguintes colunas estão ausentes: ${missing.join(", ")}.`);
     }
   }
 
@@ -251,7 +313,6 @@ export async function importFromXlsxOrCsv(
 
   // =====================================================================
   // 🧹 DEDUPE POR "Código" (mantém a ÚLTIMA ocorrência)
-  // Evita: ON CONFLICT DO UPDATE command cannot affect row a second time
   // =====================================================================
   const dedupeMap = new Map<string, any>();
   let duplicatedCount = 0;
@@ -261,7 +322,7 @@ export async function importFromXlsxOrCsv(
     if (!key) continue;
 
     if (dedupeMap.has(key)) duplicatedCount += 1;
-    dedupeMap.set(key, row); // última ocorrência vence
+    dedupeMap.set(key, row);
   }
 
   const deduped = Array.from(dedupeMap.values());
@@ -274,8 +335,7 @@ export async function importFromXlsxOrCsv(
     warnings.push(`Códigos únicos detectados: ${deduped.length}.`);
   }
 
-  // (Opcional) lista top duplicados no preview (para você achar no Excel)
-  // Só gera essa lista se houver duplicados
+  // (Opcional) lista top duplicados no preview
   if (duplicatedCount > 0) {
     const counts = new Map<string, number>();
     for (const r of normalizedAll) {
@@ -300,7 +360,6 @@ export async function importFromXlsxOrCsv(
   // 🔍 PREVIEW
   // =====================================================================
   if (previewOnly) {
-    // ✅ também sanitiza no preview, para você já ver números
     return {
       data: deduped.map(sanitizePayloadRow),
       warnings,
@@ -309,11 +368,9 @@ export async function importFromXlsxOrCsv(
   }
 
   // =====================================================================
-  // ✅ IMPORTAÇÃO REAL (em lotes) — evita TIMEOUT
+  // ✅ IMPORTAÇÃO REAL (em lotes)
   // =====================================================================
-  // Dica: se ainda tiver timeout, reduza batchSize para 200 ou 150
   const BATCH_SIZE = 300;
-
   await upsertInBatches(deduped, tipo, BATCH_SIZE);
 
   if (tipo === "inclusao") {
