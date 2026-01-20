@@ -3,19 +3,19 @@
 import React, { useEffect, useState, useCallback, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
-import { useTrayImportExport } from "@/components/marketplaces/tray/hooks/useTrayImportExport";
+import { useTrayImportExport } from "@/components/marketplaces/shopee/hooks/useTrayImportExport";
 import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 import { Table, TableBody, TableHeader } from "@/components/ui/table";
 import { TableControls } from "@/components/announce/AnnounceTable/TableControls";
 import { FloatingEditor } from "./FloatingEditor";
-import TopBarLite from "@/components/marketplaces/tray/TopBar";
-import { TableRows } from "@/components/marketplaces/tray/TableRows";
-import { toBR, parseBR } from "@/components/marketplaces/tray/hooks/helpers";
-import { calcPrecoVenda } from "@/components/marketplaces/tray/hooks/calcPrecoVenda";
-import { Row } from "@/components/marketplaces/tray/hooks/types";
+import TopBarLite from "@/components/marketplaces/shopee/TopBar";
+import { TableRows } from "@/components/marketplaces/shopee/TableRows";
+import { toBR, parseBR } from "@/components/marketplaces/shopee/hooks/helpers";
+import { calcPrecoVenda } from "@/components/marketplaces/shopee/hooks/calcPrecoVenda";
+import { Row } from "@/components/marketplaces/shopee/hooks/types";
 import { Check as CheckIcon, X as XIcon } from "lucide-react";
-import PricingMassEditionModal from "@/components/marketplaces/tray/PricingMassEditionModal";
-import PricingHeaderRow from "@/components/marketplaces/tray/PricingHeaderRow";
+import PricingMassEditionModal from "@/components/marketplaces/shopee/PricingMassEditionModal";
+import PricingHeaderRow from "@/components/marketplaces/shopee/PricingHeaderRow";
 
 export default function PricingTable() {
   const router = useRouter();

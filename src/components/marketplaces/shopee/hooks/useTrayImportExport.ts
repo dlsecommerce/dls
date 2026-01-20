@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import type ExcelJSType from "exceljs"; // ✅ mantém tipos, evita quebrar bundler no Next
+import type ExcelJSType from "exceljs"; // ✅ só tipo (não quebra bundler)
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -12,7 +12,8 @@ export function useTrayImportExport(
 ) {
   const handleExport = useCallback(
     async (dataToExport?: any[]) => {
-      // ✅ AJUSTE: imports dinâmicos no clique (Next/App Router costuma falhar com import no topo)
+      // ✅ AJUSTE MÍNIMO PRA FUNCIONAR NO NEXT:
+      // carregar ExcelJS e file-saver só quando clicar em Exportar
       const excelJSImport = await import("exceljs");
       const ExcelJS: typeof ExcelJSType =
         ((excelJSImport as any).default ?? (excelJSImport as any)) as any;
@@ -151,7 +152,7 @@ export function useTrayImportExport(
       sheet.mergeCells("S1:T1");
       sheet.getCell("S1").value = "PREÇO";
 
-      const styleTitle = (cell: any, color: string) => {
+      const styleTitle = (cell: ExcelJSType.Cell, color: string) => {
         cell.fill = {
           type: "pattern",
           pattern: "solid",
@@ -167,7 +168,7 @@ export function useTrayImportExport(
       styleTitle(sheet.getCell("S1"), colors.verdeEscuro);
 
       const row2 = sheet.getRow(2);
-      row2.eachCell((cell: any, col: number) => {
+      row2.eachCell((cell, col) => {
         let fillColor = colors.azulClaro;
         if (col >= 11 && col <= 17) fillColor = colors.laranjaClaro;
         if (col >= 19) fillColor = colors.verdeClaro;
@@ -183,7 +184,7 @@ export function useTrayImportExport(
         cell.alignment = { horizontal: "center", vertical: "middle" };
       });
 
-      sheet.getRow(1).eachCell((cell: any) => (cell.border = undefined));
+      sheet.getRow(1).eachCell((cell) => (cell.border = undefined));
 
       // -----------------------------
       // Helper parse number (inclui string)
@@ -219,13 +220,13 @@ export function useTrayImportExport(
           row.Marketing ?? 0, // Q
           "", // R
           row.Custo ?? 0, // S
-          null, // T (vamos preencher com fórmula + result abaixo)
+          null, // T
         ];
 
         const newRow = sheet.addRow(line);
         const rowNumber = newRow.number;
 
-        newRow.eachCell((cell: any, col: number) => {
+        newRow.eachCell((cell, col) => {
           if ([12, 13, 19].includes(col)) {
             cell.numFmt = '_("R$"* #,##0.00_)';
           }
@@ -237,11 +238,10 @@ export function useTrayImportExport(
           cell.alignment = { horizontal: "center", vertical: "middle" };
         });
 
-        // ✅ Opção 2: valor inicial vindo do Supabase (se existir)
+        // ✅ valor inicial vindo do Supabase (se existir)
         const precoVendaDB = parseNum(row["Preço de Venda"]);
 
         // ✅ Fórmula SEMPRE (pra recalcular ao editar)
-        // ⚠️ Fórmula precisa estar no formato interno do XLSX (inglês).
         const formulaInvariant = `
           ROUND(
             IF(
