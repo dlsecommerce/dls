@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
-import { useTrayImportExport } from "@/components/marketplaces/shopee/hooks/useTrayImportExport";
+import { useTrayImportExport } from "@/components/marketplaces/tray/hooks/useTrayImportExport";
 import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 import { Table, TableBody, TableHeader } from "@/components/ui/table";
 import { TableControls } from "@/components/announce/AnnounceTable/TableControls";
