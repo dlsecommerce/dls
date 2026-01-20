@@ -19,7 +19,7 @@ const REQUIRED_COLUMNS = ["Código", "Marca", "Custo Atual", "Custo Antigo", "NC
 //
 // ✅ GARANTIA GLOBAL:
 // - Esta função SEMPRE retorna number | null.
-// - Ela NUNCA retorna string (logo "0,3" nunca chega ao Supabase).
+// - Ela NUNCA retorna string (logo "0,3" não deveria chegar no Supabase).
 // =====================================================================
 function parseCurrency(value: any): number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -100,18 +100,24 @@ function normalizeRow(row: Record<string, any>) {
 
 // =====================================================================
 // 🧱 BLINDAGEM FINAL GLOBAL (ANTI "0,3")
-// Mesmo que algum dado "escape", aqui garantimos que vai virar number.
+// ✅ AJUSTE DEFINITIVO: numeric NUNCA vai como null/string pro Supabase
+// - Se não conseguir converter, manda 0.
+// - Assim "0,3" jamais chega ao Postgres como string.
 // =====================================================================
 function sanitizePayloadRow(row: any) {
+  const custoAtual = parseCurrency(row["Custo Atual"]);
+  const custoAntigo = parseCurrency(row["Custo Antigo"]);
+
   return {
     ...row,
-    "Custo Atual": parseCurrency(row["Custo Atual"]),
-    "Custo Antigo": parseCurrency(row["Custo Antigo"]),
+    "Custo Atual": typeof custoAtual === "number" ? custoAtual : 0,
+    "Custo Antigo": typeof custoAntigo === "number" ? custoAntigo : 0,
   };
 }
 
 // =====================================================================
 // 🚚 UPSERT EM LOTES (evita statement timeout)
+// + ✅ CHECAGEM: se alguma string com vírgula escapar, trava e mostra a linha
 // =====================================================================
 async function upsertInBatches(
   rows: any[],
@@ -121,6 +127,17 @@ async function upsertInBatches(
   for (let i = 0; i < rows.length; i += batchSize) {
     // ✅ BLINDAGEM FINAL antes de enviar ao Supabase
     const batch = rows.slice(i, i + batchSize).map(sanitizePayloadRow);
+
+    // ✅ Segurança extra: não deixa vírgula como string passar
+    const invalid = batch.find((r) =>
+      Object.entries(r).some(
+        ([, v]) => typeof v === "string" && v.includes(",")
+      )
+    );
+    if (invalid) {
+      console.error("🚨 Payload inválido detectado (string com vírgula):", invalid);
+      throw new Error('Valor inválido detectado: string com vírgula no payload.');
+    }
 
     if (tipo === "inclusao") {
       const { error } = await supabase.from("custos").upsert(batch, {
