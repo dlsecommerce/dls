@@ -2,10 +2,9 @@ import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import he from "he";
 
-export const runtime = "nodejs"; // ✅ precisa ser node (exceljs + buffers)
-export const dynamic = "force-dynamic"; // ✅ evita cache em deploys
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-/** 🔤 Decodifica HTML e limpa sujeiras */
 function limparTexto(valor: unknown) {
   const texto = he
     .decode(String(valor ?? "").trim())
@@ -22,7 +21,6 @@ function limparTexto(valor: unknown) {
   return texto;
 }
 
-/** Normaliza string (para comparar headers) */
 function normalize(s = "") {
   return String(s)
     .normalize("NFD")
@@ -32,9 +30,7 @@ function normalize(s = "") {
     .trim();
 }
 
-/** Lê CSV ";" em buffer e vira array de objetos
- * ✅ Também salva colunas por índice em "__cols" pra pegar BF (58)
- */
+/** CSV ; -> objetos + __cols (para BF=58) */
 function lerCSVBuffer(buf: Buffer) {
   const texto = buf.toString("utf8").replace(/^\uFEFF/, "");
   const linhas = texto.split(/\r?\n/).filter((l) => l.trim() !== "");
@@ -51,27 +47,23 @@ function lerCSVBuffer(buf: Buffer) {
 
     const obj: any = {};
     headers.forEach((h, i) => (obj[h] = valores[i] ?? ""));
-    obj.__cols = valores; // BF => __cols[57]
+    obj.__cols = valores; // BF -> __cols[57]
     return obj;
   });
 }
 
-/** pick tolerante */
 function pick(obj: any, keyCandidates: string[] = []) {
   const map = new Map(Object.keys(obj || {}).map((k) => [normalize(k), obj[k]]));
   const allKeys = Array.from(map.keys());
 
   for (const cand of keyCandidates) {
-    const normCand = normalize(cand);
-    const v = map.get(normCand);
+    const v = map.get(normalize(cand));
     if (v !== undefined && v !== null && String(v).trim() !== "") return v;
   }
 
   for (const cand of keyCandidates) {
     const normCand = normalize(cand);
-    const keyEncontrada = allKeys.find(
-      (k) => k.includes(normCand) || normCand.includes(k)
-    );
+    const keyEncontrada = allKeys.find((k) => k.includes(normCand) || normCand.includes(k));
     if (keyEncontrada) {
       const v = map.get(keyEncontrada);
       if (v !== undefined && v !== null && String(v).trim() !== "") return v;
@@ -81,7 +73,6 @@ function pick(obj: any, keyCandidates: string[] = []) {
   return "";
 }
 
-/** encontra produto no bling (por id / código / nome) */
 function encontrarProdutoNoBling(
   bling: any[],
   { idProduto, referencia, nomeVinculo }: { idProduto: string; referencia: string; nomeVinculo: string }
@@ -115,7 +106,7 @@ function encontrarProdutoNoBling(
   return prod || null;
 }
 
-/** ✅ Categoria = Bling coluna BF (58ª) */
+/** ✅ Categoria = BF (58ª) */
 function getCategoriaFromBlingBF(blingProd: any) {
   if (!blingProd) return "";
   const cols = blingProd.__cols;
@@ -123,24 +114,17 @@ function getCategoriaFromBlingBF(blingProd: any) {
     const bf = limparTexto(cols[57]);
     if (bf) return bf.replace(/\s*>>\s*/g, " » ").trim();
   }
-  // fallback por nome (se BF não existir no CSV)
   const cat = limparTexto(
-    pick(blingProd, [
-      "Categoria",
-      "Categoria Produto",
-      "Categoria do produto",
-      "Categoria do Produto",
-      "CategoriaProduto",
-    ])
+    pick(blingProd, ["Categoria", "Categoria do produto", "Categoria Produto", "Categoria do Produto"])
   );
   return cat ? cat.replace(/\s*>>\s*/g, " » ").trim() : "";
 }
 
 /**
- * ✅ Parse referência:
- * - separador de itens: "/"
- * - se tiver tokens por "-" com um número (12/6/3/...) antes do último token => qtd = número; codigo = último token
- * - senão => qtd = 1; codigo = item inteiro
+ * ✅ Referência:
+ * - itens separados por "/"
+ * - se houver número em algum token antes do último: qtd = número, codigo = último token
+ * - senão: qtd=1, codigo=item
  */
 function parseReferencia(refRaw: string) {
   const ref = String(refRaw || "").trim();
@@ -148,18 +132,11 @@ function parseReferencia(refRaw: string) {
 
   const limpo = ref.replace(/^\s*(PAI|VAR)\s*-\s*/i, "").trim();
 
-  const items = limpo
-    .split("/")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
+  const items = limpo.split("/").map((s) => s.trim()).filter(Boolean);
   const out: Array<{ codigo: string; qtd: number }> = [];
 
   for (const item of items) {
-    const parts = item
-      .split("-")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const parts = item.split("-").map((s) => s.trim()).filter(Boolean);
 
     if (parts.length >= 2) {
       const last = parts[parts.length - 1];
@@ -184,7 +161,6 @@ function parseReferencia(refRaw: string) {
   return out;
 }
 
-/** build map de headers do modelo (linha 2) */
 function buildHeaderMap(sheet: ExcelJS.Worksheet, headerRow = 2) {
   const map = new Map<string, number>();
   const row = sheet.getRow(headerRow);
@@ -196,7 +172,6 @@ function buildHeaderMap(sheet: ExcelJS.Worksheet, headerRow = 2) {
   return map;
 }
 
-/** pega coluna pelo nome */
 function colOf(headerMap: Map<string, number>, name: string) {
   return headerMap.get(normalize(name));
 }
@@ -205,13 +180,15 @@ export async function POST(req: Request) {
   try {
     const formData = await req.formData();
 
-    const loja = String(formData.get("loja") || "").trim();
+    const lojaRaw = String(formData.get("loja") || "").trim();
+    const lojaNorm = normalize(lojaRaw);
+
+    const isSoba = lojaNorm.includes("sobaquetas");
+    const lojaSigla = isSoba ? "SB" : "PK"; // ✅ regra que você pediu
 
     const modeloFile = formData.get("modelo") as File | null;
     const blingFile = formData.get("bling") as File | null;
     const vinculoFile = formData.get("vinculo") as File | null;
-    // tray pode existir ou não (não é necessário pra essas regras específicas)
-    // const trayFile = formData.get("tray") as File | null;
 
     if (!modeloFile || !blingFile || !vinculoFile) {
       return NextResponse.json(
@@ -227,30 +204,27 @@ export async function POST(req: Request) {
     const bling = lerCSVBuffer(blingBuf);
     const vinculo = lerCSVBuffer(vinculoBuf);
 
-    // carrega modelo excel
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(modeloBuf);
     const sheet = workbook.worksheets[0];
 
-    // headers na linha 2
     const headerMap = buildHeaderMap(sheet, 2);
 
-    // ✅ colunas alvo
+    const colLoja = colOf(headerMap, "Loja");
     const colIdTray = colOf(headerMap, "ID TRAY") ?? colOf(headerMap, "ID Tray");
     const colIdVar = colOf(headerMap, "ID VAR") ?? colOf(headerMap, "ID Var");
     const colReferencia =
-      colOf(headerMap, "Referência") ??
-      colOf(headerMap, "Referencia") ??
-      colOf(headerMap, "REFERÊNCIA");
+      colOf(headerMap, "Referência") ?? colOf(headerMap, "Referencia");
 
+    if (!colLoja) throw new Error("Coluna 'Loja' não encontrada no MODELO.");
     if (!colIdTray) throw new Error("Coluna 'ID TRAY' não encontrada no MODELO.");
     if (!colIdVar) throw new Error("Coluna 'ID VAR' não encontrada no MODELO.");
     if (!colReferencia) throw new Error("Coluna 'Referência' não encontrada no MODELO.");
 
-    // ✅ Categoria é coluna J (10)
+    // Categoria = coluna J
     const colCategoriaModelo = 10;
 
-    // ✅ Código/Quant (1..10)
+    // Código/Quant 1..10
     const codigoCols: number[] = [];
     const quantCols: number[] = [];
     for (let i = 1; i <= 10; i++) {
@@ -275,35 +249,29 @@ export async function POST(req: Request) {
       const nomeVinculo = limparTexto(String(v["Nome"] || "").trim());
       const referencia = String(v["Código"] || "").trim();
 
-      // linha válida se tiver algo
       if (!idProduto && !nomeVinculo && !referencia) continue;
 
-      const blProduto = encontrarProdutoNoBling(bling, {
-        idProduto,
-        referencia,
-        nomeVinculo,
-      });
-
+      const blProduto = encontrarProdutoNoBling(bling, { idProduto, referencia, nomeVinculo });
       const categoria = getCategoriaFromBlingBF(blProduto);
 
       const row = sheet.getRow(linhaAtual);
 
-      // preenche campos que já existem no modelo se você quiser (opcional)
-      // Aqui mantive apenas as regras que você pediu
+      // ✅ Loja SB/PK
+      row.getCell(colLoja).value = lojaSigla;
+
+      // ✅ Categoria (J) = BF
       row.getCell(colCategoriaModelo).value = categoria || "";
 
-      // ✅ regra 1: ID TRAY e ID VAR = "N TRAY"
+      // ✅ ID TRAY e ID VAR = "N TRAY" (texto)
       row.getCell(colIdTray).value = "N TRAY";
       row.getCell(colIdVar).value = "N TRAY";
 
-      // ✅ regra 3: parse referência -> Código/Quant
+      // ✅ Código/Quantidade da referência
       const parsed = parseReferencia(referencia);
-
       for (let i = 0; i < 10; i++) {
         row.getCell(codigoCols[i]).value = null;
         row.getCell(quantCols[i]).value = null;
       }
-
       for (let i = 0; i < Math.min(parsed.length, 10); i++) {
         row.getCell(codigoCols[i]).value = parsed[i].codigo;
         row.getCell(quantCols[i]).value = parsed[i].qtd;
@@ -314,7 +282,7 @@ export async function POST(req: Request) {
     }
 
     const out = await workbook.xlsx.writeBuffer();
-    const fileName = `AUTOMACAO-${(loja || "MODELO").toUpperCase().replace(/\s+/g, "-")}-${Date.now()}.xlsx`;
+    const fileName = `AUTOMACAO-${lojaSigla}-${Date.now()}.xlsx`;
 
     return new NextResponse(Buffer.from(out), {
       status: 200,
@@ -326,7 +294,7 @@ export async function POST(req: Request) {
     });
   } catch (err: any) {
     return NextResponse.json(
-      { error: err?.message || "Erro interno no servidor." },
+      { error: err?.message || "Erro ao processar as planilhas." },
       { status: 500 }
     );
   }
