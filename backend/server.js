@@ -8,23 +8,65 @@ import chalk from "chalk";
 import he from "he"; // ✅ decodificador HTML
 
 const app = express();
-app.use(cors());
+
+/**
+ * ✅ CORS (localhost + produção)
+ * - Em produção, coloque seu domínio em ALLOWED_ORIGINS (ou via env).
+ * - expõe Content-Disposition (ajuda no download)
+ */
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // permite tools/postman sem origin
+      if (!origin) return cb(null, true);
+
+      const isLocal =
+        origin.includes("http://localhost") || origin.includes("http://127.0.0.1");
+
+      // se não configurou env, libera localhost
+      if (ALLOWED_ORIGINS.length === 0 && isLocal) return cb(null, true);
+
+      // se configurou env, valida lista + localhost
+      if (ALLOWED_ORIGINS.includes(origin) || isLocal) return cb(null, true);
+
+      return cb(new Error("CORS bloqueado para: " + origin));
+    },
+    credentials: true,
+    exposedHeaders: ["Content-Disposition"],
+  })
+);
+
+// ✅ mantém uploads em disco (como você já usa)
 const upload = multer({ dest: "uploads/" });
 
-/** 📄 Lê CSV e converte em array de objetos */
+/** 📄 Lê CSV e converte em array de objetos
+ * ✅ Também salva as colunas por índice em "__cols" para você conseguir pegar BF (58ª)
+ */
 function lerCSV(filePath) {
   const texto = fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
   const linhas = texto.split(/\r?\n/).filter((l) => l.trim() !== "");
   if (linhas.length < 2) return [];
+
   const headers = linhas[0]
     .split(";")
     .map((h) => h.replace(/(^"|"$)/g, "").trim());
+
   return linhas.slice(1).map((linha) => {
     const valores = linha
       .split(";")
       .map((v) => v.replace(/(^"|"$)/g, "").trim());
+
     const obj = {};
     headers.forEach((h, i) => (obj[h] = valores[i] ?? ""));
+
+    // ✅ acesso por índice: BF => __cols[57]
+    obj.__cols = valores;
+
     return obj;
   });
 }
@@ -35,6 +77,7 @@ function limparTexto(valor) {
     .decode(String(valor || "").trim())
     .replace(/^&[a-z]+;$/i, "")
     .trim();
+
   if (
     !texto ||
     /^[^a-zA-Z0-9>]+$/.test(texto) ||
@@ -57,10 +100,10 @@ function definirOD(ref) {
 /** 🔤 Normalização */
 function normalize(s = "") {
   return String(s)
-    .normalize("NFD") // separa acentos
-    .replace(/[\u0300-\u036f]/g, "") // remove acentos
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ") // remove símbolos
+    .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
 function normCode(s = "") {
@@ -72,27 +115,26 @@ function pick(obj, keyCandidates = []) {
   const map = new Map(Object.keys(obj || {}).map((k) => [normalize(k), obj[k]]));
   const allKeys = Array.from(map.keys());
 
-  // 1️⃣ Tentativa exata (igual à antiga)
+  // 1) exato
   for (const cand of keyCandidates) {
     const normCand = normalize(cand);
     const v = map.get(normCand);
     if (v !== undefined && v !== null && String(v).trim() !== "") return v;
   }
 
-  // 2️⃣ Tentativa parcial (colunas parecidas)
+  // 2) parcial
   for (const cand of keyCandidates) {
     const normCand = normalize(cand);
-    const keyEncontrada = allKeys.find((k) => k.includes(normCand) || normCand.includes(k));
+    const keyEncontrada = allKeys.find(
+      (k) => k.includes(normCand) || normCand.includes(k)
+    );
     if (keyEncontrada) {
       const v = map.get(keyEncontrada);
-      if (v !== undefined && v !== null && String(v).trim() !== "") {
-        // console.log(`⚙️ Match parcial: "${cand}" ↔ "${keyEncontrada}"`);
-        return v;
-      }
+      if (v !== undefined && v !== null && String(v).trim() !== "") return v;
     }
   }
 
-  // 3️⃣ Tentativa genérica: se a palavra “categoria” aparecer no nome
+  // 3) genérico “categoria”
   if (keyCandidates.some((k) => normalize(k).includes("categoria"))) {
     const chaveCat = allKeys.find((k) => k.includes("categoria"));
     if (chaveCat) {
@@ -167,7 +209,9 @@ function encontrarProdutoNoBling(bling, { idProduto, referencia, nomeVinculo }) 
       const codigo = pick(b, ["Código", "Codigo", "SKU"]) || "";
       const codNorm = normCode(codigo);
       return (
-        (refNorm && codNorm && (refNorm === codNorm || refNorm === codNorm.replace(/^0+/, ""))) ||
+        (refNorm &&
+          codNorm &&
+          (refNorm === codNorm || refNorm === codNorm.replace(/^0+/, ""))) ||
         (refNorm && codNorm.includes(refNorm)) ||
         (refNorm && refNorm.includes(codNorm))
       );
@@ -184,45 +228,132 @@ function encontrarProdutoNoBling(bling, { idProduto, referencia, nomeVinculo }) 
   return prod || null;
 }
 
+/**
+ * ✅ REGRA: Categoria do MODELO (coluna J) = BLING coluna BF (58ª)
+ * BF -> 58 (1-based) => __cols[57] (0-based)
+ */
+function getCategoriaFromBlingBF(blingProd) {
+  if (!blingProd) return "";
+  const cols = blingProd.__cols;
+  if (Array.isArray(cols) && cols.length >= 58) {
+    const bf = limparTexto(cols[57]);
+    if (bf) return bf.replace(/\s*>>\s*/g, " » ").trim();
+  }
+
+  // fallback por nome (caso BF não exista no CSV)
+  let categoria =
+    limparTexto(
+      pick(blingProd, [
+        "Categoria",
+        "Categoria Produto",
+        "Categoria do produto",
+        "Categoria do Produto",
+        "CategoriaProduto",
+      ])
+    ) || "";
+  categoria = categoria.replace(/\s*>>\s*/g, " » ").trim();
+  return categoria;
+}
+
+/**
+ * ✅ PARSE DA REFERÊNCIA PARA CÓDIGO/QUANTIDADE
+ * - separador de itens: "/"
+ * - para cada item:
+ *    - se tiver "-" com número (12/6/3/...) em algum token e um último token => qtd = número, codigo = último token
+ *    - senão => qtd = 1, codigo = item inteiro
+ *
+ * Ex:
+ *  "PAI - liv-12-11766" -> [{codigo:"11766", qtd:12}]
+ *  "VAR - liv-12-11766" -> [{codigo:"11766", qtd:12}]
+ *  "all black/gaita"    -> [{codigo:"all black", qtd:1}, {codigo:"gaita", qtd:1}]
+ */
+function parseReferencia(refRaw) {
+  const ref = String(refRaw || "").trim();
+  if (!ref) return [];
+
+  // remove prefixos "PAI -" e "VAR -"
+  const limpo = ref.replace(/^\s*(PAI|VAR)\s*-\s*/i, "").trim();
+
+  const items = limpo
+    .split("/")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const out = [];
+
+  for (const item of items) {
+    const parts = item
+      .split("-")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (parts.length >= 2) {
+      const last = parts[parts.length - 1];
+      let qtd = 1;
+
+      // procura um token numérico (12 / 6 / 3 etc.) antes do last
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (/^\d+$/.test(parts[i])) {
+          qtd = parseInt(parts[i], 10);
+          break;
+        }
+      }
+
+      // se achou qtd e last existe, usa last como código
+      if (qtd >= 2 && last) {
+        out.push({ codigo: last, qtd });
+        continue;
+      }
+    }
+
+    // fallback: item é o próprio código, qtd 1
+    out.push({ codigo: item, qtd: 1 });
+  }
+
+  return out;
+}
+
+/** acha coluna pelo nome no headerMap (normalizado) */
+function findCol(headerMap, name) {
+  const n = normalize(name);
+  const h = headerMap.find((x) => x.norm === n);
+  return h?.col ?? null;
+}
+
 /** 🚀 Endpoint principal */
 app.post(
   "/atualizar-planilha",
   upload.fields([
     { name: "modelo" },
     { name: "bling" },
-    { name: "tray" }, // ✅ agora pode ser opcional dependendo da loja
+    { name: "tray" }, // pode ser opcional dependendo da loja
     { name: "vinculo" },
   ]),
   async (req, res) => {
+    const filesToCleanup = [];
+
     try {
-      // ✅ Loja recebida do FormData (front manda formData.append("loja", selectedLoja))
+      // Loja recebida do FormData
       const lojaRaw = (req.body?.loja || "").toString().trim();
-      const lojaNorm = normalize(lojaRaw);
 
-      // ✅ Sóbaquetas: tray opcional
-      const isSobaquetas =
-        lojaNorm.includes("sobaquetas") || lojaNorm.includes("sobaquetas"); // normalize remove acento
+      const modeloPath = req.files?.["modelo"]?.[0]?.path;
+      const blingPath = req.files?.["bling"]?.[0]?.path;
+      const trayPath = req.files?.["tray"]?.[0]?.path; // pode ser undefined
+      const vinculoPath = req.files?.["vinculo"]?.[0]?.path;
 
-      const modeloPath = req.files["modelo"]?.[0]?.path;
-      const blingPath = req.files["bling"]?.[0]?.path;
-      const trayPath = req.files["tray"]?.[0]?.path; // pode ser undefined
-      const vinculoPath = req.files["vinculo"]?.[0]?.path;
+      if (modeloPath) filesToCleanup.push(modeloPath);
+      if (blingPath) filesToCleanup.push(blingPath);
+      if (trayPath) filesToCleanup.push(trayPath);
+      if (vinculoPath) filesToCleanup.push(vinculoPath);
 
-      // ✅ Obrigatórios sempre
+      // Obrigatórios sempre
       if (!modeloPath || !blingPath || !vinculoPath) {
         throw new Error("⚠️ Envie Modelo, Bling e Vínculo.");
       }
 
-      // ✅ Tray obrigatório apenas para Pikot (ou qualquer loja que não seja Sóbaquetas)
-      if (!isSobaquetas && !trayPath) {
-        throw new Error("⚠️ Envie também a planilha Tray (obrigatória para Pikot Shop).");
-      }
-
       const bling = lerCSV(blingPath);
-
-      // ✅ Só lê tray se existir (e só vai existir para Pikot, na regra acima)
+      // tray/vinculo mantidos (mesmo se não usar em alguma regra)
       const tray = trayPath ? lerCSV(trayPath) : [];
-
       const vinculo = lerCSV(vinculoPath);
 
       const workbook = new ExcelJS.Workbook();
@@ -230,17 +361,56 @@ app.post(
       const sheet = workbook.worksheets[0];
       aplicarEstiloCabecalho(sheet);
 
+      // monta headerMap pela linha 2
       const headerMap = [];
       sheet.getRow(2).eachCell({ includeEmpty: false }, (cell, colNumber) => {
-        if (colNumber >= 2) {
+        if (colNumber >= 1) {
           const key = String(cell.value || "").trim();
           headerMap.push({ col: colNumber, key, norm: normalize(key) });
         }
       });
 
-      const catHeader = headerMap.find((h) => h.norm === normalize("Categoria"));
-      const colCategoriaModelo = catHeader?.col ?? null;
+      // ✅ Coluna J do modelo (Categoria) = 10
+      const colCategoriaModelo = 10;
 
+      // ✅ achar colunas de destino
+      const colIdTray = findCol(headerMap, "ID Tray") || findCol(headerMap, "ID TRAY");
+      const colIdVar = findCol(headerMap, "ID Var") || findCol(headerMap, "ID VAR");
+
+      if (!colIdTray) throw new Error("Coluna 'ID Tray' não encontrada no MODELO.");
+      if (!colIdVar) throw new Error("Coluna 'ID Var' não encontrada no MODELO.");
+
+      const colReferencia = findCol(headerMap, "Referência") || findCol(headerMap, "Referencia");
+      if (!colReferencia) throw new Error("Coluna 'Referência' não encontrada no MODELO.");
+
+      const codigoCols = [];
+      const quantCols = [];
+      for (let i = 1; i <= 10; i++) {
+        const c = findCol(headerMap, `Código ${i}`) || findCol(headerMap, `Codigo ${i}`);
+        const q = findCol(headerMap, `Quant. ${i}`) || findCol(headerMap, `Quant ${i}`);
+        if (!c || !q) {
+          throw new Error(
+            `Colunas 'Código ${i}' e/ou 'Quant. ${i}' não encontradas no MODELO.`
+          );
+        }
+        codigoCols.push(c);
+        quantCols.push(q);
+      }
+
+      // limpa conteúdo antigo (mantém estilos)
+      sheet.eachRow((row, rowNumber) => {
+        if (rowNumber >= 3) row.eachCell((cell) => (cell.value = null));
+      });
+
+      console.log(
+        chalk.cyanBright(
+          `\n🚀 Iniciando automação... Loja: ${lojaRaw || "NÃO INFORMADA"} | Tray: ${
+            trayPath ? "SIM" : "NÃO"
+          }\n`
+        )
+      );
+
+      // lógica original sua (pai/var por grupo) mantida
       const parentTrayByGroup = new Map();
       for (const v of vinculo) {
         const idLoja = v["ID na Loja"]?.trim() || "";
@@ -256,18 +426,6 @@ app.post(
         }
       }
 
-      sheet.eachRow((row, rowNumber) => {
-        if (rowNumber >= 3) row.eachCell((cell) => (cell.value = null));
-      });
-
-      console.log(
-        chalk.cyanBright(
-          `\n🚀 Iniciando automação de planilhas... Loja: ${
-            lojaRaw || "NÃO INFORMADA"
-          } | Tray: ${trayPath ? "SIM" : "NÃO"}\n`
-        )
-      );
-
       let linhaAtual = 3;
       let processados = 0;
 
@@ -278,106 +436,52 @@ app.post(
         const referencia = (v["Código"] || "").toString().trim();
         const nome = nomeVinculo;
 
-        const blProduto = encontrarProdutoNoBling(bling, { idProduto, referencia, nomeVinculo });
+        const blProduto = encontrarProdutoNoBling(bling, {
+          idProduto,
+          referencia,
+          nomeVinculo,
+        });
 
-        // ✅ Categoria robusta
-        let categoria = "";
-        if (blProduto) {
-          categoria =
-            limparTexto(
-              pick(blProduto, [
-                "Categoria",
-                "Categoria Produto",
-                "Categoria do produto",
-                "Categoria do Produto",
-                "CategoriaProduto",
-                "Categoria (Produto)",
-                "Categoria.produto",
-                "Categ",
-              ])
-            ) || "";
+        // ✅ Categoria = BLING BF
+        const categoria = getCategoriaFromBlingBF(blProduto);
 
-          categoria = categoria.replace(/\s*>>\s*/g, " » ").trim();
-
-          if (!categoria) {
-            const codigoPai = pick(blProduto, [
-              "Código Pai",
-              "Codigo Pai",
-              "Código pai",
-              "codigo pai",
-            ]);
-            if (codigoPai) {
-              const prodPai = bling.find((b) => {
-                const codigo = pick(b, ["Código", "Codigo", "SKU"]);
-                return normCode(codigo) === normCode(codigoPai);
-              });
-              if (prodPai) {
-                categoria =
-                  limparTexto(
-                    pick(prodPai, [
-                      "Categoria",
-                      "Categoria do produto",
-                      "Categoria Produto",
-                      "Categoria do Produto",
-                      "CategoriaProduto",
-                    ])
-                  ) || "";
-                categoria = categoria.replace(/\s*>>\s*/g, " » ").trim();
-              }
-            }
-          }
-
-          if (!categoria) {
-            for (const [chave, valor] of Object.entries(blProduto)) {
-              if (normalize(chave).includes("categoria") && valor) {
-                categoria = limparTexto(valor).replace(/\s*>>\s*/g, " » ").trim();
-                break;
-              }
-            }
-          }
-        }
-
-        const idBling = pick(blProduto || {}, ["ID", "Id", "Id Produto", "ID Produto"]);
-        const marca = limparTexto(pick(blProduto || {}, ["Marca"]));
-        const peso = pick(blProduto || {}, ["Peso líquido (Kg)", "Peso Liquido (Kg)", "Peso líquido", "Peso"]);
-        const largura = pick(blProduto || {}, ["Largura do produto", "Largura"]);
-        const altura = pick(blProduto || {}, ["Altura do Produto", "Altura"]);
-        const comprimento = pick(blProduto || {}, ["Profundidade do produto", "Comprimento", "Profundidade"]);
-
+        // sua lógica OD (mantida)
         let od = definirOD(nome);
         if (od === 3) od = definirOD(referencia);
 
-        let idTray = idLojaOriginal;
+        let idTrayCalc = idLojaOriginal;
         const group = normalize(baseNomeGrupo(nome));
         if (od === 2 && group && parentTrayByGroup.has(group)) {
-          idTray = parentTrayByGroup.get(group) || idLojaOriginal;
+          idTrayCalc = parentTrayByGroup.get(group) || idLojaOriginal;
         }
 
-        let idVar;
-        if (od === 1) idVar = "PAI";
-        else if (od === 2) idVar = idLojaOriginal;
-        else idVar = "SIMPLES";
+        // sua lógica var (mantida)
+        let idVarCalc;
+        if (od === 1) idVarCalc = "PAI";
+        else if (od === 2) idVarCalc = idLojaOriginal;
+        else idVarCalc = "SIMPLES";
 
-        const loja = /\d/.test(idTray) ? "PK" : idTray ? "SB" : "NULL";
-
+        // monta linha (mantida)
         const novaLinha = {
           ID: "",
-          Loja: loja,
-          "ID Bling": idBling,
-          "ID Tray": idTray,
+          Loja: /\d/.test(idTrayCalc) ? "PK" : idTrayCalc ? "SB" : "NULL",
+          "ID Bling": pick(blProduto || {}, ["ID", "Id", "Id Produto", "ID Produto"]),
+          "ID Tray": idTrayCalc, // <- vai ser sobrescrito com "N TRAY" abaixo
           Referência: referencia,
-          "ID Var": idVar,
+          "ID Var": idVarCalc, // <- vai ser sobrescrito com "N TRAY" abaixo
           OD: od,
           Nome: nome,
-          Marca: marca,
+          Marca: limparTexto(pick(blProduto || {}, ["Marca"])),
           Categoria: categoria,
-          Peso: peso,
-          Largura: largura,
-          Altura: altura,
-          Comprimento: comprimento,
+          Peso: pick(blProduto || {}, ["Peso líquido (Kg)", "Peso Liquido (Kg)", "Peso líquido", "Peso"]),
+          Largura: pick(blProduto || {}, ["Largura do produto", "Largura"]),
+          Altura: pick(blProduto || {}, ["Altura do Produto", "Altura"]),
+          Comprimento: pick(blProduto || {}, ["Profundidade do produto", "Comprimento", "Profundidade"]),
         };
 
         const row = sheet.getRow(linhaAtual);
+
+        // escreve o que seu headerMap reconhece
         const novaLinhaNormMap = new Map(
           Object.keys(novaLinha).map((k) => [normalize(k), novaLinha[k]])
         );
@@ -391,7 +495,26 @@ app.post(
           row.getCell(col).value = valor !== undefined ? valor : "";
         }
 
-        if (colCategoriaModelo) row.getCell(colCategoriaModelo).value = categoria || "";
+        // ✅ (2) Coluna J (Categoria) = Bling BF
+        row.getCell(colCategoriaModelo).value = categoria || "";
+
+        // ✅ (1) Colunas ID TRAY e ID VAR = TEXTO "N TRAY" (em TODAS as linhas)
+        row.getCell(colIdTray).value = "N TRAY";
+        row.getCell(colIdVar).value = "N TRAY";
+
+        // ✅ (3) Código/Quantidade a partir da Referência (barra "/" e qtd 12/6/3)
+        const parsed = parseReferencia(referencia);
+
+        // limpa os 10 pares antes de preencher
+        for (let i = 0; i < 10; i++) {
+          row.getCell(codigoCols[i]).value = null;
+          row.getCell(quantCols[i]).value = null;
+        }
+
+        for (let i = 0; i < Math.min(parsed.length, 10); i++) {
+          row.getCell(codigoCols[i]).value = parsed[i].codigo;
+          row.getCell(quantCols[i]).value = parsed[i].qtd;
+        }
 
         row.commit?.();
         linhaAtual++;
@@ -399,21 +522,28 @@ app.post(
 
         console.log(
           categoria
-            ? chalk.greenBright(`✅ [${processados}] ${nome} — Categoria: ${categoria}`)
-            : chalk.yellow(`⚠️ [${processados}] ${nome} — Categoria não encontrada`)
+            ? chalk.greenBright(`✅ [${processados}] ${nome} — Categoria(BF): ${categoria}`)
+            : chalk.yellow(`⚠️ [${processados}] ${nome} — Categoria(BF) vazia`)
         );
       }
 
+      // ✅ gera buffer direto (melhor para produção)
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      // opcional: salvar também no disco
       const outputPath = path.resolve(
         "uploads",
-        `AUTOMAÇÃO - MODELO - ${new Date().toLocaleDateString("pt-BR").replaceAll("/", "-")}.xlsx`
+        `AUTOMACAO-MODELO-${new Date().toLocaleDateString("pt-BR").replaceAll("/", "-")}.xlsx`
       );
+      try {
+        fs.writeFileSync(outputPath, Buffer.from(buffer));
+        console.log(chalk.greenBright(`📁 Arquivo salvo em: ${outputPath}`));
+      } catch (e) {
+        console.log(chalk.yellow("⚠️ Não foi possível salvar no disco (ok em produção)."));
+      }
 
-      await workbook.xlsx.writeFile(outputPath);
-      console.log(chalk.cyanBright(`\n💾 ${processados} linhas gravadas com sucesso.`));
-      console.log(chalk.greenBright(`📁 Arquivo salvo em: ${outputPath}\n`));
+      console.log(chalk.cyanBright(`\n💾 ${processados} linhas gravadas com sucesso.\n`));
 
-      const buffer = fs.readFileSync(outputPath);
       res.setHeader(
         "Content-Type",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -422,14 +552,23 @@ app.post(
         "Content-Disposition",
         `attachment; filename="AUTOMACAO-MODELO-${Date.now()}.xlsx"`
       );
-      res.send(buffer);
+      res.status(200).send(Buffer.from(buffer));
     } catch (err) {
       console.error(chalk.redBright("🛑 Erro crítico:"), err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: err?.message || "Erro interno no servidor." });
+    } finally {
+      // ✅ limpa temporários do multer
+      for (const p of filesToCleanup) {
+        try {
+          fs.unlinkSync(p);
+        } catch {}
+      }
     }
   }
 );
 
 app.listen(5000, () =>
-  console.log(chalk.magentaBright("🚀 Servidor rodando em http://localhost:5000/atualizar-planilha"))
+  console.log(
+    chalk.magentaBright("🚀 Servidor rodando em http://localhost:5000/atualizar-planilha")
+  )
 );

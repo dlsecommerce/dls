@@ -19,6 +19,32 @@ const REQUIRED_BY_LOJA: Record<Loja, (keyof Planilhas)[]> = {
   "Sobaquetas": ["bling", "vinculo", "modelo"], // fallback se vier sem acento
 };
 
+/**
+ * ✅ URL do backend:
+ * - Dev (localhost): usa http://localhost:5000
+ * - Produção: usa NEXT_PUBLIC_AUTOMACAO_API_URL (recomendado)
+ *   Ex: NEXT_PUBLIC_AUTOMACAO_API_URL=https://api.seudominio.com
+ * - Se não tiver env em produção, tenta usar URL relativa (mesmo domínio)
+ */
+function getApiBase() {
+  const env = process.env.NEXT_PUBLIC_AUTOMACAO_API_URL;
+  if (env && env.trim()) return env.replace(/\/+$/, ""); // remove "/" no fim
+
+  if (typeof window !== "undefined") {
+    const isLocal =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
+
+    if (isLocal) return "http://localhost:5000";
+
+    // produção sem env: assume que existe proxy/rewrite no mesmo domínio
+    return "";
+  }
+
+  // SSR fallback
+  return "http://localhost:5000";
+}
+
 /** 🔹 Hook principal de automação de planilhas */
 export function useAutomacaoPlanilhas() {
   const [planilhas, setPlanilhas] = useState<Planilhas>({
@@ -73,14 +99,17 @@ export function useAutomacaoPlanilhas() {
 
       setStatus("processing");
 
-      const response = await fetch("http://localhost:5000/atualizar-planilha", {
+      const API_BASE = getApiBase();
+
+      // ✅ funciona em localhost e em produção (com env ou com proxy/rewrite)
+      const response = await fetch(`${API_BASE}/atualizar-planilha`, {
         method: "POST",
         body: formData,
       });
 
       // ❌ Falha real no servidor
       if (!response.ok) {
-        const text = await response.text();
+        const text = await response.text().catch(() => "");
         throw new Error(text || "Erro ao processar as planilhas.");
       }
 
@@ -93,7 +122,7 @@ export function useAutomacaoPlanilhas() {
         );
 
       if (!isExcel) {
-        const text = await response.text();
+        const text = await response.text().catch(() => "");
         throw new Error("Resposta inválida do servidor: " + text);
       }
 
@@ -104,12 +133,19 @@ export function useAutomacaoPlanilhas() {
         throw new Error("Arquivo retornado é inválido ou vazio.");
       }
 
+      // ✅ Se o backend mandar filename no Content-Disposition, usa ele
+      const dispo = response.headers.get("content-disposition") || "";
+      const match = dispo.match(/filename="(.+?)"/i);
+      const serverFileName = match?.[1];
+
       // 🔽 DOWNLOAD REAL
       const dataHora = new Date()
         .toLocaleString("pt-BR")
         .replace(/[/,:\s]/g, "-");
 
-      const nomeArquivo = `AUTOMAÇÃO - ${loja.toUpperCase()} - ${dataHora}.xlsx`;
+      const nomeArquivo =
+        serverFileName ||
+        `AUTOMAÇÃO - ${loja.toUpperCase()} - ${dataHora}.xlsx`;
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -127,7 +163,9 @@ export function useAutomacaoPlanilhas() {
       alert(
         "A automação falhou.\n\n" +
           "⚠️ Se você usa AdBlock, uBlock, Brave ou antivírus com proteção web,\n" +
-          "desative para localhost e tente novamente."
+          "desative para localhost e tente novamente.\n\n" +
+          "Detalhe: " +
+          (error instanceof Error ? error.message : "erro desconhecido")
       );
       setStatus("error");
     }
