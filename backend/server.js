@@ -31,8 +31,15 @@ function lerCSV(filePath) {
 
 /** 🔤 Decodifica HTML e remove sujeiras (&otilde;, &ccedil;, etc.) */
 function limparTexto(valor) {
-  const texto = he.decode(String(valor || "").trim()).replace(/^&[a-z]+;$/i, "").trim();
-  if (!texto || /^[^a-zA-Z0-9>]+$/.test(texto) || ["undefined", "null"].includes(texto.toLowerCase())) {
+  const texto = he
+    .decode(String(valor || "").trim())
+    .replace(/^&[a-z]+;$/i, "")
+    .trim();
+  if (
+    !texto ||
+    /^[^a-zA-Z0-9>]+$/.test(texto) ||
+    ["undefined", "null"].includes(texto.toLowerCase())
+  ) {
     return "";
   }
   return texto;
@@ -149,7 +156,9 @@ function encontrarProdutoNoBling(bling, { idProduto, referencia, nomeVinculo }) 
 
   let prod =
     bling.find(
-      (b) => String(pick(b, ["ID", "Id", "Id Produto", "ID Produto"])).trim() === String(idProduto).trim()
+      (b) =>
+        String(pick(b, ["ID", "Id", "Id Produto", "ID Produto"])).trim() ===
+        String(idProduto).trim()
     ) || null;
   if (prod) return prod;
 
@@ -181,21 +190,39 @@ app.post(
   upload.fields([
     { name: "modelo" },
     { name: "bling" },
-    { name: "tray" },
+    { name: "tray" }, // ✅ agora pode ser opcional dependendo da loja
     { name: "vinculo" },
   ]),
   async (req, res) => {
     try {
+      // ✅ Loja recebida do FormData (front manda formData.append("loja", selectedLoja))
+      const lojaRaw = (req.body?.loja || "").toString().trim();
+      const lojaNorm = normalize(lojaRaw);
+
+      // ✅ Sóbaquetas: tray opcional
+      const isSobaquetas =
+        lojaNorm.includes("sobaquetas") || lojaNorm.includes("sobaquetas"); // normalize remove acento
+
       const modeloPath = req.files["modelo"]?.[0]?.path;
       const blingPath = req.files["bling"]?.[0]?.path;
-      const trayPath = req.files["tray"]?.[0]?.path;
+      const trayPath = req.files["tray"]?.[0]?.path; // pode ser undefined
       const vinculoPath = req.files["vinculo"]?.[0]?.path;
 
-      if (!modeloPath || !blingPath || !trayPath || !vinculoPath)
-        throw new Error("⚠️ Envie Modelo, Bling, Tray e Vínculo.");
+      // ✅ Obrigatórios sempre
+      if (!modeloPath || !blingPath || !vinculoPath) {
+        throw new Error("⚠️ Envie Modelo, Bling e Vínculo.");
+      }
+
+      // ✅ Tray obrigatório apenas para Pikot (ou qualquer loja que não seja Sóbaquetas)
+      if (!isSobaquetas && !trayPath) {
+        throw new Error("⚠️ Envie também a planilha Tray (obrigatória para Pikot Shop).");
+      }
 
       const bling = lerCSV(blingPath);
-      const tray = lerCSV(trayPath);
+
+      // ✅ Só lê tray se existir (e só vai existir para Pikot, na regra acima)
+      const tray = trayPath ? lerCSV(trayPath) : [];
+
       const vinculo = lerCSV(vinculoPath);
 
       const workbook = new ExcelJS.Workbook();
@@ -233,7 +260,13 @@ app.post(
         if (rowNumber >= 3) row.eachCell((cell) => (cell.value = null));
       });
 
-      console.log(chalk.cyanBright("\n🚀 Iniciando automação de planilhas...\n"));
+      console.log(
+        chalk.cyanBright(
+          `\n🚀 Iniciando automação de planilhas... Loja: ${
+            lojaRaw || "NÃO INFORMADA"
+          } | Tray: ${trayPath ? "SIM" : "NÃO"}\n`
+        )
+      );
 
       let linhaAtual = 3;
       let processados = 0;
@@ -345,7 +378,9 @@ app.post(
         };
 
         const row = sheet.getRow(linhaAtual);
-        const novaLinhaNormMap = new Map(Object.keys(novaLinha).map((k) => [normalize(k), novaLinha[k]]));
+        const novaLinhaNormMap = new Map(
+          Object.keys(novaLinha).map((k) => [normalize(k), novaLinha[k]])
+        );
 
         for (const { col, key, norm } of headerMap) {
           let valor =
@@ -379,7 +414,10 @@ app.post(
       console.log(chalk.greenBright(`📁 Arquivo salvo em: ${outputPath}\n`));
 
       const buffer = fs.readFileSync(outputPath);
-      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="AUTOMACAO-MODELO-${Date.now()}.xlsx"`
@@ -393,5 +431,5 @@ app.post(
 );
 
 app.listen(5000, () =>
-  console.log(chalk.magentaBright("🚀 Servidor rodando em http://localhost:5000\atualizar-planilha"))
+  console.log(chalk.magentaBright("🚀 Servidor rodando em http://localhost:5000/atualizar-planilha"))
 );

@@ -3,12 +3,7 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
-import {
-  Upload,
-  CheckCircle2,
-  FileSpreadsheet,
-  X,
-} from "lucide-react";
+import { Upload, CheckCircle2, FileSpreadsheet, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface FileUploadCardProps {
@@ -17,6 +12,9 @@ interface FileUploadCardProps {
   selectedFile: File | null;
   stepNumber: number;
   icon?: React.ReactNode;
+
+  /** ✅ desliga QUALQUER animação (ex.: Tray do Pikot) */
+  disableEffects?: boolean;
 }
 
 export const FileUploadCard = ({
@@ -25,6 +23,7 @@ export const FileUploadCard = ({
   selectedFile,
   stepNumber,
   icon,
+  disableEffects = false,
 }: FileUploadCardProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -36,14 +35,16 @@ export const FileUploadCard = ({
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragging(true);
+    if (!disableEffects) setIsDragging(true);
   };
 
-  const handleDragLeave = () => setIsDragging(false);
+  const handleDragLeave = () => {
+    if (!disableEffects) setIsDragging(false);
+  };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragging(false);
+    if (!disableEffects) setIsDragging(false);
     const file = e.dataTransfer.files?.[0] || null;
     if (file) onFileSelect(file);
   };
@@ -56,40 +57,54 @@ export const FileUploadCard = ({
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const draggingActive = !disableEffects && isDragging;
+
   return (
     <GlassmorphicCard
-      className={cn(
-        "relative w-full h-full overflow-hidden cursor-pointer transition-all duration-300 group",
-        selectedFile
-          ? // 🔹 Estado selecionado: azul translúcido sem borda
-            "bg-blue-500/10 border-none ring-1 ring-blue-500/40 shadow-[0_0_15px_rgba(30,144,255,0.3)]"
-          : isDragging
-          ? // 🔹 Estado ao arrastar
-            "border-2 border-blue-400 bg-blue-400/10 animate-pulse"
-          : // 🔹 Estado normal
-            "border-2 border-border hover:border-blue-400/50 hover:shadow-lg hover:scale-[1.02]"
-      )}
       onClick={handleClick}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      className={cn(
+        "relative w-full h-full overflow-hidden cursor-pointer",
+
+        // ❌ remove TODA transição quando disableEffects
+        disableEffects ? "" : "transition-all duration-300 group",
+
+        selectedFile
+          ? "bg-blue-500/10 border-none ring-1 ring-blue-500/40"
+          : draggingActive
+          ? "border-2 border-blue-400 bg-blue-400/10"
+          : cn(
+              "border-2 border-border",
+              disableEffects
+                ? ""
+                : "hover:border-blue-400/50 hover:shadow-lg hover:scale-[1.02]"
+            )
+      )}
     >
-      {/* === BADGE AZUL COM NÚMERO FIXO === */}
+      {/* Badge */}
       <div
         className={cn(
-          "absolute top-3 left-3 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md transition-all duration-300 z-10",
+          "absolute top-3 left-3 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md z-10",
           selectedFile ? "bg-blue-500" : "bg-blue-400"
         )}
       >
         {stepNumber}
       </div>
 
-      {/* === BOTÃO DE REMOVER === */}
+      {/* Remover */}
       {selectedFile && (
         <Button
           variant="ghost"
           size="icon"
-          className="absolute top-2 right-2 w-7 h-7 opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-red-500 hover:text-white"
+          className={cn(
+            "absolute top-2 right-2 w-7 h-7 z-10",
+            disableEffects
+              ? "opacity-100"
+              : "opacity-0 group-hover:opacity-100 transition-opacity",
+            "hover:bg-red-500 hover:text-white"
+          )}
           onClick={handleRemove}
         >
           <X className="w-4 h-4" />
@@ -104,15 +119,16 @@ export const FileUploadCard = ({
         className="hidden"
       />
 
-      {/* === CONTEÚDO CENTRAL === */}
+      {/* Conteúdo */}
       <div className="p-6 flex flex-col items-center justify-center min-h-[200px] space-y-3">
-        {/* ÍCONE PRINCIPAL (com check ao selecionar) */}
         <div
           className={cn(
-            "rounded-full p-4 transition-all duration-300",
+            "rounded-full p-4",
             selectedFile
-              ? "bg-blue-500 text-white scale-110"
-              : "bg-blue-500/10 text-blue-400"
+              ? "bg-blue-500 text-white"
+              : "bg-blue-500/10 text-blue-400",
+            // ❌ SEM scale quando disableEffects
+            disableEffects ? "" : selectedFile && "scale-110 transition-transform"
           )}
         >
           {selectedFile ? (
@@ -122,11 +138,10 @@ export const FileUploadCard = ({
           )}
         </div>
 
-        {/* TÍTULO E NOME DO ARQUIVO */}
         <div className="text-center space-y-1 w-full px-2">
           <h3 className="font-semibold text-foreground">{label}</h3>
           {selectedFile ? (
-            <p className="text-xs text-blue-500 font-medium truncate max-w-full">
+            <p className="text-xs text-blue-500 font-medium truncate">
               {selectedFile.name}
             </p>
           ) : (
@@ -136,12 +151,11 @@ export const FileUploadCard = ({
           )}
         </div>
 
-        {/* ÍCONE DE UPLOAD (desaparece ao selecionar) */}
         <Upload
           className={cn(
-            "w-5 h-5 transition-all duration-300",
+            "w-5 h-5",
             selectedFile ? "opacity-0 scale-0" : "opacity-40 scale-100",
-            isDragging && "scale-125 opacity-70"
+            disableEffects ? "" : "transition-all duration-300"
           )}
         />
       </div>

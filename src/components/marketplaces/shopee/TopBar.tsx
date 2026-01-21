@@ -4,7 +4,7 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Search, Download, Layers, Loader } from "lucide-react";
-import FiltroAnunciosPopover from "@/components/marketplaces/tray/FiltroAnunciosPopover";
+import FiltroAnunciosPopover from "@/components/marketplaces/shopee/FiltroAnunciosPopover";
 
 type TopBarProps = {
   search: string;

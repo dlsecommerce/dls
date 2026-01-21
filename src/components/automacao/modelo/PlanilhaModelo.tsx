@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { FileUploadCard } from "@/components/automacao/modelo/FileUploadCard";
 import { ProgressIndicator } from "@/components/automacao/modelo/ProgressIndicator";
@@ -17,25 +17,29 @@ import {
 import FiltroLoja from "@/components/automacao/modelo/FiltroLoja";
 import PreviewPlanilhaModal from "@/components/automacao/modelo/PreviewPlanilhaModal";
 import { useAutomacaoPlanilhas } from "@/components/automacao/hooks/useAutomacaoPlanilhas";
+import { cn } from "@/lib/utils";
+
+type PlanilhaKey = "bling" | "tray" | "vinculo" | "modelo";
+type Loja = "Pikot Shop" | "Sóbaquetas" | "Sobaquetas";
+
+type StepItem = {
+  key: PlanilhaKey;
+  label: string;
+  icon: React.ReactNode;
+};
 
 export default function PlanilhaModelo() {
   const { planilhas, handleFileSelect, iniciarAutomacao, status } =
-    useAutomacaoPlanilhas(); 
+    useAutomacaoPlanilhas();
 
-  const [selectedLoja, setSelectedLoja] = useState("Pikot Shop");
+  const [selectedLoja, setSelectedLoja] = useState<Loja>("Pikot Shop");
   const [buttonStatus, setButtonStatus] = useState<
     "idle" | "processing" | "success" | "error"
   >("idle");
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewFile, setPreviewFile] = useState<File | null>(null);
-  const [pendingKey, setPendingKey] = useState<
-    "bling" | "tray" | "vinculo" | "modelo" | null
-  >(null);
-
-  const allFilesSelected =
-    planilhas.modelo && planilhas.vinculo && planilhas.bling && planilhas.tray;
-  const selectedCount = Object.values(planilhas).filter((f) => f !== null).length;
+  const [pendingKey, setPendingKey] = useState<PlanilhaKey | null>(null);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -44,26 +48,69 @@ export default function PlanilhaModelo() {
     };
   }, []);
 
-  /** 🔹 Limpa todos os arquivos */
-  const handleClearAll = () => {
-    handleFileSelect("bling", null);
-    handleFileSelect("tray", null);
-    handleFileSelect("vinculo", null);
-    handleFileSelect("modelo", null);
+  /** ✅ Define quais cards aparecem por loja */
+  const steps: StepItem[] = useMemo(() => {
+    const common: StepItem[] = [
+      { key: "bling", label: "Bling", icon: <Package className="w-8 h-8" /> },
+      {
+        key: "vinculo",
+        label: "Vínculo Multiloja",
+        icon: <Link2 className="w-8 h-8" />,
+      },
+      { key: "modelo", label: "Modelo", icon: <FileText className="w-8 h-8" /> },
+    ];
+
+    if (selectedLoja === "Pikot Shop") {
+      return [
+        { key: "bling", label: "Bling", icon: <Package className="w-8 h-8" /> },
+        { key: "tray", label: "Tray", icon: <ShoppingCart className="w-8 h-8" /> },
+        {
+          key: "vinculo",
+          label: "Vínculo Multiloja",
+          icon: <Link2 className="w-8 h-8" />,
+        },
+        { key: "modelo", label: "Modelo", icon: <FileText className="w-8 h-8" /> },
+      ];
+    }
+
+    return common; // Sóbaquetas/Sobaquetas => 3 cards
+  }, [selectedLoja]);
+
+  const activeKeys = useMemo(() => steps.map((s) => s.key), [steps]);
+
+  const selectedCount = useMemo(() => {
+    return activeKeys.filter((k) => planilhas[k] !== null).length;
+  }, [activeKeys, planilhas]);
+
+  const allFilesSelected = useMemo(() => {
+    return activeKeys.every((k) => planilhas[k] !== null);
+  }, [activeKeys, planilhas]);
+
+  /** 🔹 Limpa só o que está ativo na loja atual */
+  const handleClearActive = () => {
+    activeKeys.forEach((k) => handleFileSelect(k, null));
     setButtonStatus("idle");
   };
 
-  /** 🔹 Inicia a automação */
+  /** 🔹 Ao trocar loja, limpa tudo para evitar “vazamento” */
+  const handleChangeLoja = (loja: string) => {
+    (["bling", "tray", "vinculo", "modelo"] as PlanilhaKey[]).forEach((k) =>
+      handleFileSelect(k, null)
+    );
+    setButtonStatus("idle");
+    setSelectedLoja(loja as Loja);
+  };
+
+  /** 🔹 Inicia automação */
   const handleStartAutomation = async () => {
-    if (!planilhas.modelo || !planilhas.vinculo || !planilhas.bling || !planilhas.tray) {
-      alert("⚠️ Selecione todas as planilhas: Bling, Tray, Vínculo e Modelo.");
+    if (!allFilesSelected) {
+      alert("⚠️ Selecione todas as planilhas necessárias para essa loja.");
       return;
     }
 
     try {
       setButtonStatus("processing");
-      console.log("🚀 Iniciando automação...");
-      await iniciarAutomacao();
+      await iniciarAutomacao(selectedLoja);
       setButtonStatus("success");
     } catch (err) {
       console.error("Erro ao processar:", err);
@@ -88,9 +135,12 @@ export default function PlanilhaModelo() {
 
   const getDotColor = () => {
     if (selectedCount === 0) return "bg-neutral-500";
-    if (selectedCount < 4) return "bg-neutral-500";
+    if (!allFilesSelected) return "bg-neutral-500";
     return "bg-green-500";
   };
+
+  /** ✅ Centralização do grid quando tiver 3 cards */
+  const isThreeCards = steps.length === 3;
 
   return (
     <div className="min-h-screen w-full flex flex-col items-center justify-start bg-transparent overflow-hidden mt-20">
@@ -100,8 +150,8 @@ export default function PlanilhaModelo() {
           <div className="absolute top-6 right-6 flex items-center gap-3">
             <motion.button
               whileTap={{ scale: 0.9, rotate: -15 }}
-              onClick={handleClearAll}
-              title="Limpar todos os arquivos"
+              onClick={handleClearActive}
+              title="Limpar arquivos da loja"
               className="p-2 hover:bg-white/10 rounded-full transition-all text-red-400 hover:text-red-500"
             >
               <Repeat2 className="w-5 h-5" />
@@ -109,33 +159,36 @@ export default function PlanilhaModelo() {
 
             <FiltroLoja
               selectedLoja={selectedLoja}
-              setSelectedLoja={setSelectedLoja}
+              setSelectedLoja={handleChangeLoja}
             />
           </div>
 
-          {/* 🔹 Indicador de progresso */}
+          {/* 🔹 Indicador de progresso (dinâmico) */}
           <ProgressIndicator
-            totalSteps={4}
+            totalSteps={steps.length}
             completedSteps={selectedCount}
             loading={buttonStatus === "processing"}
           />
 
-          {/* 🔹 Cards de upload */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 px-6">
-            {[
-              { key: "bling", label: "Bling", icon: <Package className="w-8 h-8" /> },
-              { key: "tray", label: "Tray", icon: <ShoppingCart className="w-8 h-8" /> },
-              { key: "vinculo", label: "Vínculo Multiloja", icon: <Link2 className="w-8 h-8" /> },
-              { key: "modelo", label: "Modelo", icon: <FileText className="w-8 h-8" /> },
-            ].map((item, i) => (
+          {/* 🔹 Cards de upload (Sóbaquetas centralizado COMO ESTAVA) */}
+          <div
+            className={cn(
+              "grid gap-8 px-6 w-full",
+              "grid-cols-1 sm:grid-cols-2",
+              isThreeCards ? "lg:grid-cols-3" : "lg:grid-cols-4",
+              isThreeCards ? "max-w-[1050px] mx-auto" : "max-w-none"
+            )}
+          >
+            {steps.map((item, i) => (
               <FileUploadCard
                 key={item.key}
                 label={item.label}
-                selectedFile={planilhas[item.key as keyof typeof planilhas]}
+                selectedFile={planilhas[item.key]}
+                // ✅ Tray agora fica IGUAL aos outros (não passa disableEffects)
                 onFileSelect={(f) => {
                   if (f) {
                     setPreviewFile(f);
-                    setPendingKey(item.key as any);
+                    setPendingKey(item.key);
                     setPreviewOpen(true);
                   }
                 }}
@@ -149,9 +202,9 @@ export default function PlanilhaModelo() {
           {buttonStatus !== "processing" && (
             <div className="flex items-center justify-center gap-2 text-sm">
               <div className={`w-3 h-3 rounded-full ${getDotColor()} animate-pulse`} />
-              {selectedCount < 4 ? (
+              {!allFilesSelected ? (
                 <span className="text-red-500">
-                  {selectedCount}/4 arquivos selecionados
+                  {selectedCount}/{steps.length} arquivos selecionados
                 </span>
               ) : (
                 <span className="text-green-500 font-medium">
