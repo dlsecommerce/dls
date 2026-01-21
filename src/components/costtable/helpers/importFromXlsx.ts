@@ -10,6 +10,16 @@ type ImportResult = {
 const REQUIRED_COLUMNS = ["Código", "Marca", "Custo Atual", "Custo Antigo", "NCM"];
 
 /**
+ * Ajustes para grandes volumes (50k+)
+ * - DEBUG_STRICT_COMMA_CHECK: validação bem pesada (desligada por padrão)
+ * - INITIAL_BATCH_SIZE: tamanho inicial do lote (vai se adaptar pra baixo se der timeout)
+ */
+const DEBUG_STRICT_COMMA_CHECK = false;
+const INITIAL_BATCH_SIZE = 800; // bom ponto de partida para 50k+ (auto reduz se necessário)
+const MIN_BATCH_SIZE = 50;
+const MAX_RETRIES = 6;
+
+/**
  * Remove espaços invisíveis (NBSP) e normaliza espaços múltiplos
  */
 function cleanHeaderKey(key: string) {
@@ -21,7 +31,6 @@ function cleanHeaderKey(key: string) {
 
 /**
  * Normaliza chaves do objeto (headers do XLSX/CSV)
- * Ex.: "Custo Atual " (com NBSP) vira "Custo Atual"
  */
 function normalizeRowKeys(row: Record<string, any>) {
   const out: Record<string, any> = {};
@@ -84,10 +93,10 @@ function normalizeNcm(value: any): string | null {
 }
 
 // =====================================================================
-// 🧾 Normaliza e valida 1 linha, buscando chaves com nomes diferentes
+// ✅ normalizeRow agora já devolve o PAYLOAD FINAL do banco (mais rápido)
+// - evita parse duplicado e map(sanitizePayloadRow) pesado por lote
 // =====================================================================
 function normalizeRow(rowRaw: Record<string, any>) {
-  // ✅ normaliza headers do XLSX/CSV (remove NBSP etc.)
   const row = normalizeRowKeys(rowRaw);
 
   const findKey = (keys: string[]) => {
@@ -103,52 +112,34 @@ function normalizeRow(rowRaw: Record<string, any>) {
   const codigo = findKey(["Código", "codigo", "code"]);
   if (!codigo || String(codigo).trim() === "") return null;
 
+  const marcaRaw = findKey(["Marca", "marca", "brand"]);
+  const custoAtualRaw = findKey(["Custo Atual", "custo atual"]);
+  const custoAntigoRaw = findKey(["Custo Antigo", "custo antigo"]);
+  const ncmRaw = findKey(["NCM", "ncm"]);
+
+  const custoAtual = parseCurrency(custoAtualRaw);
+  const custoAntigo = parseCurrency(custoAntigoRaw);
+
+  const marca =
+    marcaRaw === null || marcaRaw === undefined || marcaRaw === ""
+      ? null
+      : String(marcaRaw).trim();
+
   return {
     Código: String(codigo).trim(),
-    Marca: findKey(["Marca", "marca", "brand"]) || null,
-    "Custo Atual": parseCurrency(findKey(["Custo Atual", "custo atual"])),
-    "Custo Antigo": parseCurrency(findKey(["Custo Antigo", "custo antigo"])),
-    NCM: normalizeNcm(findKey(["NCM", "ncm"])),
-  };
-}
-
-// =====================================================================
-// 🧱 PAYLOAD FINAL (SEM SPREAD)
-// ✅ Só envia colunas reais do banco (evita chaves “quase iguais” escaparem)
-// ✅ numeric vira number garantido
-// =====================================================================
-function sanitizePayloadRow(row: any) {
-  const custoAtual = parseCurrency(row["Custo Atual"]);
-  const custoAntigo = parseCurrency(row["Custo Antigo"]);
-
-  const codigo = String(row["Código"] ?? "").trim();
-  const marca =
-    row["Marca"] === null || row["Marca"] === undefined || row["Marca"] === ""
-      ? null
-      : String(row["Marca"]).trim();
-
-  const ncm =
-    row["NCM"] === null || row["NCM"] === undefined || row["NCM"] === ""
-      ? null
-      : String(row["NCM"]).trim();
-
-  return {
-    Código: codigo,
     Marca: marca,
     "Custo Atual": typeof custoAtual === "number" ? custoAtual : 0,
     "Custo Antigo": typeof custoAntigo === "number" ? custoAntigo : 0,
-    NCM: ncm,
+    NCM: normalizeNcm(ncmRaw),
   };
 }
 
 // =====================================================================
-// ✅ Checagem forte: numeric NÃO pode ser string (nem NaN)
-// + trava se QUALQUER string com vírgula aparecer no batch (debug)
+// ✅ Validação rápida (barata) — boa para 50k+
 // =====================================================================
-function assertNumericOk(batch: any[]) {
+function assertNumericOkFast(batch: any[]) {
   for (let idx = 0; idx < batch.length; idx++) {
     const r = batch[idx];
-
     const ca = r["Custo Atual"];
     const co = r["Custo Antigo"];
 
@@ -164,8 +155,16 @@ function assertNumericOk(batch: any[]) {
         "Payload inválido: 'Custo Atual'/'Custo Antigo' precisa ser number finito. Verifique o arquivo de origem."
       );
     }
+  }
+}
 
-    // ✅ debug extra: se alguma string com vírgula escapar (em qualquer campo), para e mostra
+// =====================================================================
+// 🧪 Validação pesada opcional (debug)
+// - custo alto; não recomendada para 50k+ em produção
+// =====================================================================
+function assertNoCommaStringsStrict(batch: any[]) {
+  for (let idx = 0; idx < batch.length; idx++) {
+    const r = batch[idx];
     const badCommaString = Object.entries(r).find(
       ([, v]) => typeof v === "string" && v.includes(",")
     );
@@ -188,51 +187,119 @@ function assertNumericOk(batch: any[]) {
 }
 
 // =====================================================================
-// 🚚 UPSERT EM LOTES
-// + logs completos do erro do Supabase
+// ✅ Heurística para detectar timeout / 504 / statement_timeout
+// =====================================================================
+function isLikelyTimeout(err: any) {
+  const msg = String(err?.message ?? "").toLowerCase();
+  const code = String(err?.code ?? "").toLowerCase();
+  const status = err?.status ?? err?.statusCode ?? err?.cause?.status;
+
+  return (
+    status === 504 ||
+    msg.includes("timeout") ||
+    msg.includes("time out") ||
+    msg.includes("gateway") ||
+    msg.includes("statement timeout") ||
+    code.includes("57014")
+  );
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+// =====================================================================
+// 🚚 UPSERT EM LOTES (50k+)
+// - retry com backoff
+// - batch adaptativo (se der timeout, corta o lote pela metade)
+// - não perde progresso
 // =====================================================================
 async function upsertInBatches(
   rows: any[],
   tipo: "inclusao" | "alteracao",
-  batchSize = 300
+  options?: {
+    initialBatchSize?: number;
+    minBatchSize?: number;
+    maxRetries?: number;
+    validateNumeric?: boolean;
+    strictCommaCheck?: boolean;
+    pauseMsBetweenBatches?: number;
+  }
 ) {
-  for (let i = 0; i < rows.length; i += batchSize) {
-    const batch = rows.slice(i, i + batchSize).map(sanitizePayloadRow);
+  let batchSize = options?.initialBatchSize ?? INITIAL_BATCH_SIZE;
+  const minBatchSize = options?.minBatchSize ?? MIN_BATCH_SIZE;
+  const maxRetries = options?.maxRetries ?? MAX_RETRIES;
+  const validateNumeric = options?.validateNumeric ?? true;
+  const strictCommaCheck =
+    options?.strictCommaCheck ?? DEBUG_STRICT_COMMA_CHECK;
+  const pauseMsBetweenBatches = options?.pauseMsBetweenBatches ?? 10;
 
-    // ✅ trava antes de bater no Supabase se algo estiver errado
-    assertNumericOk(batch);
+  const upsertArgs =
+    tipo === "inclusao"
+      ? {
+          onConflict: "Código",
+          ignoreDuplicates: true,
+          returning: "minimal" as const,
+        }
+      : {
+          onConflict: "Código",
+          returning: "minimal" as const,
+        };
 
-    const upsertArgs =
-      tipo === "inclusao"
-        ? {
-            onConflict: "Código",
-            ignoreDuplicates: true,
-            returning: "minimal" as const,
-          }
-        : {
-            onConflict: "Código",
-            returning: "minimal" as const,
-          };
+  for (let i = 0; i < rows.length; ) {
+    const batch = rows.slice(i, i + batchSize);
 
-    const { error } = await supabase.from("custos").upsert(batch, upsertArgs);
+    if (validateNumeric) assertNumericOkFast(batch);
+    if (strictCommaCheck) assertNoCommaStringsStrict(batch);
 
-    if (error) {
-      console.error("❌ ERRO SUPABASE (OBJETO):", error);
-      console.error("📛 message:", error.message);
-      // @ts-expect-error (shape do supabase)
-      console.error("📛 details:", (error as any).details);
-      // @ts-expect-error (shape do supabase)
-      console.error("📛 hint:", (error as any).hint);
-      console.error("📛 code:", error.code);
+    let attempt = 0;
 
-      // ✅ batch sample ajuda MUITO a achar o valor que quebrou
+    while (true) {
+      const { error } = await supabase.from("custos").upsert(batch, upsertArgs);
+
+      if (!error) {
+        i += batch.length; // só avança se sucesso
+        break;
+      }
+
+      attempt++;
+
+      console.error("❌ ERRO SUPABASE:", {
+        message: error.message,
+        code: (error as any).code,
+        details: (error as any).details,
+        hint: (error as any).hint,
+        batchSize,
+        attempt,
+        progress: `${i}/${rows.length}`,
+      });
+
+      // Timeout -> reduz batch e tenta novamente
+      if (isLikelyTimeout(error) && batchSize > minBatchSize) {
+        batchSize = Math.max(minBatchSize, Math.floor(batchSize / 2));
+        console.warn(
+          `⏳ Timeout detectado. Reduzindo batch para ${batchSize} e tentando novamente...`
+        );
+        await sleep(250 * attempt);
+        continue;
+      }
+
+      // Retry com backoff para erros de rede/5xx/intermitência
+      if (attempt <= maxRetries) {
+        const backoff = Math.min(8000, 400 * 2 ** (attempt - 1)); // 400, 800, 1600, 3200...
+        await sleep(backoff);
+        continue;
+      }
+
+      // estourou tentativas
       console.error("📦 Batch (amostra):", batch.slice(0, 5));
       console.error("📦 Batch[0] (primeiro item):", batch[0]);
-
       throw error;
     }
 
-    await new Promise((r) => setTimeout(r, 20));
+    if (pauseMsBetweenBatches > 0) {
+      await sleep(pauseMsBetweenBatches);
+    }
   }
 }
 
@@ -290,14 +357,14 @@ export async function importFromXlsxOrCsv(
     );
 
     if (missing.length > 0) {
-      warnings.push(`As seguintes colunas estão ausentes: ${missing.join(", ")}.`);
+      warnings.push(
+        `As seguintes colunas estão ausentes: ${missing.join(", ")}.`
+      );
     }
   }
 
-  // 🔧 NORMALIZAÇÃO
-  const normalizedAll = rawRows
-    .map((r) => normalizeRow(r))
-    .filter(Boolean) as any[];
+  // 🔧 NORMALIZAÇÃO (já no payload final)
+  const normalizedAll = rawRows.map(normalizeRow).filter(Boolean) as any[];
 
   const totalLidas = rawRows.length;
   const totalValidas = normalizedAll.length;
@@ -333,15 +400,21 @@ export async function importFromXlsxOrCsv(
   // 🔍 PREVIEW
   if (previewOnly) {
     return {
-      data: deduped.map(sanitizePayloadRow),
+      data: deduped,
       warnings,
       fileName,
     };
   }
 
-  // ✅ IMPORTAÇÃO REAL
-  const BATCH_SIZE = 300;
-  await upsertInBatches(deduped, tipo, BATCH_SIZE);
+  // ✅ IMPORTAÇÃO REAL (50k+)
+  await upsertInBatches(deduped, tipo, {
+    initialBatchSize: INITIAL_BATCH_SIZE,
+    minBatchSize: MIN_BATCH_SIZE,
+    maxRetries: MAX_RETRIES,
+    validateNumeric: true,
+    strictCommaCheck: DEBUG_STRICT_COMMA_CHECK,
+    pauseMsBetweenBatches: 10,
+  });
 
   if (tipo === "inclusao") {
     warnings.push("Inclusão concluída. Códigos existentes foram ignorados.");
@@ -350,7 +423,7 @@ export async function importFromXlsxOrCsv(
   }
 
   return {
-    data: deduped.map(sanitizePayloadRow),
+    data: deduped,
     warnings,
     fileName,
   };
