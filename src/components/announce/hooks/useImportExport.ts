@@ -49,37 +49,63 @@ export function useImportExport(
   const [openConfirmImport, setOpenConfirmImport] = useState(false);
 
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [importMode, setImportMode] = useState<ImportMode>("alteracao");
+
+  // ✅ Ajuste: modo padrão como "inclusao" (TopBar normalmente é inclusão)
+  const [importMode, setImportMode] = useState<ImportMode>("inclusao");
 
   const [importCount, setImportCount] = useState(0);
   const [previewRows, setPreviewRows] = useState<any[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
+
+  // ✅ (Opcional) para bloquear botão no modal, se você usar errors lá
+  const [errors, setErrors] = useState<string[]>([]);
+
   const [importing, setImporting] = useState(false);
 
   /* =========================
      Preview (antes de importar)
+     ✅ Ajuste: repassa "mode" para o helper (se ele aceitar)
   ========================= */
   const openPreview = async (file: File, mode: ImportMode) => {
-    const { data: previewData, warnings } = await importFromXlsxOrCsv(file, true);
+    // Se seu helper atualizado aceita (file, previewOnly, mode), use assim:
+    // const { data: previewData, warnings, errors } = await importFromXlsxOrCsv(file, true, mode);
+
+    // Se ainda NÃO atualizou o helper, mantenha como estava (sem mode):
+    // const { data: previewData, warnings } = await importFromXlsxOrCsv(file, true);
+
+    // ✅ Melhor (já compatível com o helper ajustado):
+    const result: any = await importFromXlsxOrCsv(file, true, mode);
+    const previewData = result?.data ?? [];
+    const warn = result?.warnings ?? [];
+    const errs = result?.errors ?? [];
 
     setImportMode(mode);
     setImportFile(file);
     setImportCount(previewData.length);
     setPreviewRows(previewData.slice(0, 10));
-    setWarnings(warnings || []);
+    setWarnings(warn);
+    setErrors(errs);
     setOpenConfirmImport(true);
   };
 
   /* =========================
-     Import via TopBar
+     ✅ Import via TopBar
+     Ajuste principal:
+     - TopBar deve ser "inclusao"
+     - handleFileSelect usa o importMode atual (que será setado pelo botão)
   ========================= */
+  const openImportInclusaoFromTopBar = () => {
+    setImportMode("inclusao");
+    fileInputRef.current?.click();
+  };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
 
     try {
-      // TopBar hoje só altera
-      await openPreview(f, "alteracao");
+      // ✅ Antes era fixo "alteracao". Agora usa o modo atual.
+      await openPreview(f, importMode);
     } catch (err) {
       console.error("Erro ao importar arquivo:", err);
       alert("Erro ao ler o arquivo. Verifique se é .xlsx ou .csv.");
@@ -104,6 +130,7 @@ export function useImportExport(
 
   /* =========================
      Confirma Importação
+     ✅ Ajuste: repassa "importMode" para o helper (se ele aceitar)
   ========================= */
   const confirmImport = async () => {
     if (!importFile) return;
@@ -112,7 +139,9 @@ export function useImportExport(
     try {
       console.log(`📦 Importando (${importMode}) →`, importFile.name);
 
-      await importFromXlsxOrCsv(importFile);
+      // Se seu helper atualizado aceita (file, previewOnly, mode), use assim:
+      await importFromXlsxOrCsv(importFile, false, importMode);
+
       await loadAnuncios(currentPage);
     } catch (err) {
       console.error("Erro ao importar:", err);
@@ -140,9 +169,7 @@ export function useImportExport(
   const buildQuery = (countOnly = false) => {
     const table = getTableName();
 
-    let q = supabase
-      .from(table)
-      .select("*", { count: "exact", head: countOnly });
+    let q = supabase.from(table).select("*", { count: "exact", head: countOnly });
 
     if (filters?.search?.trim()) {
       q = q.or(
@@ -181,8 +208,7 @@ export function useImportExport(
   };
 
   const handleExport = async () => {
-    const exportData =
-      selectedRows.length > 0 ? selectedRows : await fetchAllFiltered();
+    const exportData = selectedRows.length > 0 ? selectedRows : await fetchAllFiltered();
 
     if (!exportData.length) {
       alert("Nenhum dado encontrado para exportar.");
@@ -190,9 +216,7 @@ export function useImportExport(
     }
 
     const now = new Date();
-    const filename = `ANUNCIOS-${now
-      .toLocaleString("pt-BR")
-      .replace(/[/: ]/g, "-")}.xlsx`;
+    const filename = `ANUNCIOS-${now.toLocaleString("pt-BR").replace(/[/: ]/g, "-")}.xlsx`;
 
     exportFilteredToXlsx(exportData, filename);
   };
@@ -202,15 +226,21 @@ export function useImportExport(
   ========================= */
   return {
     fileInputRef,
+
+    // ✅ Novo: use isso no TopBar (botão Importar) pra abrir como inclusão
+    openImportInclusaoFromTopBar,
+
     handleFileSelect,
     handleFileDirect,
     confirmImport,
     handleExport,
 
     importMode,
+    setImportMode, // ✅ expõe também (útil pro AnnounceTable/TopBar)
     importCount,
     previewRows,
     warnings,
+    errors, // ✅ para o ConfirmImportModal bloquear quando necessário
     importing,
 
     openMassEdition,

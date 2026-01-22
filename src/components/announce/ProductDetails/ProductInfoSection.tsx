@@ -11,10 +11,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 // 🧩 Modal de confirmação de salvamento
 import ConfirmSaveModal from "@/components/announce/ProductDetails/ConfirmSaveModal";
+
+/** ✅ Normaliza/aceita: "PK", "SB", "Pikot Shop", "Sóbaquetas" (com/sem acento) */
+function normalizeStoreValue(v: any): "PK" | "SB" | "" {
+  const s = String(v ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+
+  if (!s) return "";
+  if (s === "pk") return "PK";
+  if (s === "sb") return "SB";
+  if (s.includes("pikot")) return "PK";
+  if (s.includes("sobaquetas")) return "SB";
+
+  return "";
+}
 
 export const ProductInfoSection = ({
   produto,
@@ -30,6 +47,11 @@ export const ProductInfoSection = ({
   const [isClearing, setIsClearing] = useState(false);
   const [openConfirmSave, setOpenConfirmSave] = useState(false);
 
+  // ✅ Valor "seguro" pro Select: aceita PK/SB e também nomes vindos do banco
+  const lojaSelectValue = useMemo(() => {
+    return normalizeStoreValue(produto?.loja);
+  }, [produto?.loja]);
+
   // 🔹 Detecta automaticamente o tipo de anúncio conforme o id_var
   useEffect(() => {
     if (!isEditing) return;
@@ -41,6 +63,19 @@ export const ProductInfoSection = ({
       setProduto((p: any) => ({ ...p, tipo_anuncio: tipo }));
     }
   }, [produto?.id_var, isEditing, setProduto, produto?.tipo_anuncio]);
+
+  // ✅ Se o produto vier com "Pikot Shop" / "Sóbaquetas" (ou qualquer variação),
+  // normaliza e salva no estado como "PK"/"SB" pra não quebrar em nenhum lugar.
+  useEffect(() => {
+    const normalized = normalizeStoreValue(produto?.loja);
+    if (!normalized) return;
+
+    // só atualiza se estiver diferente do que já está (evita loop)
+    if (produto?.loja !== normalized) {
+      setProduto((p: any) => ({ ...p, loja: normalized }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [produto?.loja]);
 
   // 🔸 Limpar apenas na interface (sem Supabase)
   const handleClearLocal = () => {
@@ -151,8 +186,9 @@ export const ProductInfoSection = ({
             <Label className="text-neutral-400 text-[10px] block mb-1">
               Loja
             </Label>
+
             <Select
-              value={(produto?.loja ?? "").toString()}
+              value={lojaSelectValue}
               onValueChange={(v) =>
                 setProduto((p: any) => ({
                   ...p,
@@ -161,11 +197,12 @@ export const ProductInfoSection = ({
               }
             >
               <SelectTrigger className="bg-white/5 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb]">
-                <SelectValue placeholder="Selecione (PK ou SB)" />
+                <SelectValue placeholder="Selecione" />
               </SelectTrigger>
+
               <SelectContent className="bg-[#0f0f0f] border-white/10 text-white">
-                <SelectItem value="PK">PK (Pikot Shop)</SelectItem>
-                <SelectItem value="SB">SB (Sóbaquetas)</SelectItem>
+                <SelectItem value="PK">PK</SelectItem>
+                <SelectItem value="SB">SB</SelectItem>
               </SelectContent>
             </Select>
           </div>

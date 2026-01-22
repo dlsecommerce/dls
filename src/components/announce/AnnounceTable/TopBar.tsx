@@ -8,6 +8,7 @@ import {
   Upload,
   Download,
   Layers,
+  Loader,
   Trash2 as TrashIcon,
 } from "lucide-react";
 import FiltroAnunciosPopover from "@/components/announce/AnnounceTable/FiltroAnunciosPopover";
@@ -16,6 +17,7 @@ import ConfirmDeleteModal from "@/components/announce/AnnounceTable/ConfirmDelet
 type TopBarProps = {
   search: string;
   setSearch: (v: string) => void;
+
   allBrands: string[];
   allLojas: string[];
   allCategorias: string[];
@@ -30,14 +32,17 @@ type TopBarProps = {
 
   fileInputRef: React.RefObject<HTMLInputElement>;
   onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void> | void;
-  onExport: () => void;
+
+  onExport: () => Promise<void> | void; // ✅ export não muda
+  exporting?: boolean;                  // ✅ loader
+  exportLabel?: string;                 // ✅ texto opcional
 
   selectedCount: number;
-  selectedRows: any[]; // ✅ adicionada
+  selectedRows: any[];
   onDeleteSelected: () => Promise<void> | void;
   onClearSelection: () => void;
+
   onMassEditOpen: () => void;
-  onImportOpen: () => void;
   onNew: () => void;
 };
 
@@ -45,11 +50,14 @@ export default function TopBar(props: TopBarProps) {
   const [openDeleteModal, setOpenDeleteModal] = React.useState(false);
   const [loadingDelete, setLoadingDelete] = React.useState(false);
 
+  const exporting = props.exporting ?? false;
+  const exportLabel = props.exportLabel ?? "Exportar";
+
   const handleConfirmDelete = async () => {
     try {
       setLoadingDelete(true);
-      console.log("🔍 Itens selecionados:", props.selectedRows); // debug
-      await props.onDeleteSelected(); // ✅ agora usa os dados corretos
+      console.log("🔍 Itens selecionados:", props.selectedRows);
+      await props.onDeleteSelected();
       setOpenDeleteModal(false);
     } catch (error) {
       console.error("Erro ao excluir anúncios:", error);
@@ -62,8 +70,8 @@ export default function TopBar(props: TopBarProps) {
   return (
     <>
       <div className="flex flex-wrap justify-between items-center border-b border-neutral-700 p-4 gap-3">
-        {/* 🔍 Campo de busca */}
-        <div className="relative flex-1">
+        {/* 🔍 Busca */}
+        <div className="relative flex-1 min-w-[240px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 w-5 h-5" />
           <Input
             placeholder="Buscar por nome, marca, ID Bling, ID Tray, referência..."
@@ -73,7 +81,7 @@ export default function TopBar(props: TopBarProps) {
           />
         </div>
 
-        {/* 🎛️ Filtros e ações */}
+        {/* 🎛️ Ações */}
         <div className="flex flex-wrap items-center gap-3">
           <FiltroAnunciosPopover
             allBrands={props.allBrands}
@@ -89,7 +97,7 @@ export default function TopBar(props: TopBarProps) {
             onOpenChange={props.setFilterOpen}
           />
 
-          {/* Input oculto para upload */}
+          {/* Input oculto */}
           <input
             ref={props.fileInputRef}
             type="file"
@@ -107,16 +115,31 @@ export default function TopBar(props: TopBarProps) {
             <Upload className="w-4 h-4 mr-2" /> Importar
           </Button>
 
-          {/* 📦 Exportar */}
+          {/* 📦 Exportar (igual ao outro TopBar) */}
           <Button
+            type="button"
             variant="outline"
-            className="border-neutral-700 hover:scale-105 transition-all text-white rounded-xl cursor-pointer"
-            onClick={props.onExport}
+            disabled={exporting}
+            className="border-neutral-700 hover:scale-105 transition-all text-white rounded-xl cursor-pointer disabled:opacity-60 disabled:hover:scale-100"
+            onClick={(e) => {
+              e.preventDefault();
+              props.onExport();
+            }}
           >
-            <Download className="w-4 h-4 mr-2" /> Exportar
+            {exporting ? (
+              <>
+                <Loader className="w-4 h-4 mr-2 animate-spin" />
+                Exportando...
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4 mr-2" />
+                {exportLabel}
+              </>
+            )}
           </Button>
 
-          {/* 🗑️ Ações de seleção */}
+          {/* 🗑️ Seleção */}
           {props.selectedCount > 0 && (
             <>
               <Button
@@ -124,8 +147,10 @@ export default function TopBar(props: TopBarProps) {
                 className="border-neutral-700 hover:scale-105 transition-all text-white rounded-xl cursor-pointer"
                 onClick={() => setOpenDeleteModal(true)}
               >
-                <TrashIcon className="w-4 h-4 mr-2" /> Excluir Selecionados
+                <TrashIcon className="w-4 h-4 mr-2" />
+                Excluir Selecionados
               </Button>
+
               <Button
                 variant="outline"
                 className="border-neutral-700 hover:scale-105 transition-all text-white rounded-xl cursor-pointer"
@@ -141,10 +166,11 @@ export default function TopBar(props: TopBarProps) {
             className="bg-gradient-to-r from-[#1A8CEB] to-[#0d64ab] hover:scale-105 transition-all rounded-xl text-white cursor-pointer"
             onClick={props.onMassEditOpen}
           >
-            <Layers className="w-4 h-4 mr-2" /> Edição em Massa
+            <Layers className="w-4 h-4 mr-2" />
+            Edição em Massa
           </Button>
 
-          {/* ➕ Novo Cadastro */}
+          {/* ➕ Novo */}
           <Button
             className="bg-gradient-to-r from-green-500 to-green-600 hover:scale-105 transition-all rounded-xl text-white cursor-pointer"
             onClick={props.onNew}
@@ -154,7 +180,7 @@ export default function TopBar(props: TopBarProps) {
         </div>
       </div>
 
-      {/* 🧩 Modal de confirmação de exclusão */}
+      {/* 🧩 Modal de confirmação */}
       <ConfirmDeleteModal
         open={openDeleteModal}
         onOpenChange={setOpenDeleteModal}
@@ -162,10 +188,9 @@ export default function TopBar(props: TopBarProps) {
         selectedRows={props.selectedRows.map((r) => ({
           ID: String(r.id ?? r.ID ?? ""),
           Loja: String(r.loja ?? r.Loja ?? ""),
-        }))} // ✅ envia os itens corretos
-        onAfterDelete={async () => {
-          await props.onDeleteSelected();
-        }}
+        }))}
+        onAfterDelete={handleConfirmDelete}
+        loading={loadingDelete}
       />
     </>
   );

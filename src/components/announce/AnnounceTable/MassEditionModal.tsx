@@ -22,8 +22,24 @@ type Props = {
 };
 
 const baixarModeloPlanilha = async (filename?: string) => {
-  const identificacao = ["ID", "Loja", "ID Bling", "ID Tray", "Referência", "ID Var", "OD"];
-  const descricao = ["Nome", "Marca", "Categoria", "Peso", "Altura", "Largura", "Comprimento"];
+  const identificacao = [
+    "ID",
+    "Loja",
+    "ID Bling",
+    "ID Tray",
+    "Referência",
+    "ID Var",
+    "OD",
+  ];
+  const descricao = [
+    "Nome",
+    "Marca",
+    "Categoria",
+    "Peso",
+    "Altura",
+    "Largura",
+    "Comprimento",
+  ];
   const composicao: string[] = [];
   for (let i = 1; i <= 10; i++) composicao.push(`Código ${i}`, `Quantidade ${i}`);
   const header = [...identificacao, ...descricao, ...composicao];
@@ -38,8 +54,14 @@ const baixarModeloPlanilha = async (filename?: string) => {
 
   ws["!merges"] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: identificacao.length - 1 } },
-    { s: { r: 0, c: identificacao.length }, e: { r: 0, c: identificacao.length + descricao.length - 1 } },
-    { s: { r: 0, c: identificacao.length + descricao.length }, e: { r: 0, c: header.length - 1 } },
+    {
+      s: { r: 0, c: identificacao.length },
+      e: { r: 0, c: identificacao.length + descricao.length - 1 },
+    },
+    {
+      s: { r: 0, c: identificacao.length + descricao.length },
+      e: { r: 0, c: header.length - 1 },
+    },
   ];
 
   const azulPrincipal = "1A8CEB";
@@ -51,7 +73,11 @@ const baixarModeloPlanilha = async (filename?: string) => {
   const headerStyle = {
     fill: { type: "pattern", patternType: "solid", fgColor: { rgb: azulPrincipal } },
     font: { bold: true, color: { rgb: "FFFFFF" } },
-    alignment: { horizontal: "center", vertical: "center" as const, wrapText: true },
+    alignment: {
+      horizontal: "center",
+      vertical: "center" as const,
+      wrapText: true,
+    },
   };
 
   [0, identificacao.length, identificacao.length + descricao.length].forEach((c) => {
@@ -82,7 +108,9 @@ const baixarModeloPlanilha = async (filename?: string) => {
 
   const safeFilename =
     filename && filename.trim().length > 0
-      ? (filename.endsWith(".xlsx") ? filename : `${filename}.xlsx`)
+      ? filename.endsWith(".xlsx")
+        ? filename
+        : `${filename}.xlsx`
       : `MODELO - PLANILHA - ${dataHora}.xlsx`;
 
   const wb = XLSX.utils.book_new();
@@ -107,34 +135,91 @@ export default function MassEditionModal({
   ) => {
     const file = e.currentTarget.files?.[0];
     if (!file) return;
+
+    // ✅ Ajuste: garante que o modal "Edição em Massa" feche antes de abrir o ConfirmImport
+    // (evita abrir modal por baixo e parecer que "não acontece nada")
+    onOpenChange(false);
+
     if (tipo === "inclusao") onImportInclusao(file);
     else onImportAlteracao(file);
+
+    // ✅ permite selecionar o mesmo arquivo novamente
     e.currentTarget.value = "";
   };
 
   const columns = [
-    "ID", "Loja", "ID Bling", "ID Tray", "ID Var", "OD",
-    "Referência", "Nome", "Marca", "Categoria", "Peso",
-    "Altura", "Largura", "Comprimento", "Código 1",
-    "Quantidade 1", "Código 2", "Quantidade 2", "Código 3",
-    "Quantidade 3", "Código 4", "Quantidade 4", "Código 5",
-    "Quantidade 5", "Código 6", "Quantidade 6", "Código 7",
-    "Quantidade 7", "Código 8", "Quantidade 8", "Código 9",
-    "Quantidade 9", "Código 10", "Quantidade 10",
+    "ID",
+    "Loja",
+    "ID Bling",
+    "ID Tray",
+    "ID Var",
+    "OD",
+    "Referência",
+    "Nome",
+    "Marca",
+    "Categoria",
+    "Peso",
+    "Altura",
+    "Largura",
+    "Comprimento",
+    "Código 1",
+    "Quantidade 1",
+    "Código 2",
+    "Quantidade 2",
+    "Código 3",
+    "Quantidade 3",
+    "Código 4",
+    "Quantidade 4",
+    "Código 5",
+    "Quantidade 5",
+    "Código 6",
+    "Quantidade 6",
+    "Código 7",
+    "Quantidade 7",
+    "Código 8",
+    "Quantidade 8",
+    "Código 9",
+    "Quantidade 9",
+    "Código 10",
+    "Quantidade 10",
   ];
 
   const previewData = [
     {
-      ID: "1", Loja: "Pikot Shop", "ID Bling": "1234567891011", "ID Tray": "1234567", "ID Var": "1234",
-      OD: "3", "Referência": "Q12 MK2", Nome: "Caixa Ativa 12 Polegadas Q12 MK2 SKP", Marca: "SKP",
-      Categoria: "Áudio & Som", Peso: "12300", Altura: "55", Largura: "35", Comprimento: "30",
-      "Código 1": "Q12 MK2", "Quantidade 1": "1",
+      ID: "1",
+      Loja: "Pikot Shop",
+      "ID Bling": "1234567891011",
+      "ID Tray": "1234567",
+      "ID Var": "1234",
+      OD: "3",
+      "Referência": "Q12 MK2",
+      Nome: "Caixa Ativa 12 Polegadas Q12 MK2 SKP",
+      Marca: "SKP",
+      Categoria: "Áudio & Som",
+      Peso: "12300",
+      Altura: "55",
+      Largura: "35",
+      Comprimento: "30",
+      "Código 1": "Q12 MK2",
+      "Quantidade 1": "1",
     },
     {
-      ID: "2", Loja: "Sóbaquetas", "ID Bling": "1234567891011", "ID Tray": "1234567", "ID Var": "1234",
-      OD: "1", "Referência": "PAI - TN 5AM", Nome: "Baqueta Liverpool Tennessee Marfim Ponta de Madeira", Marca: "Liverpool",
-      Categoria: "Baquetas", Peso: "300", Altura: "13", Largura: "7", Comprimento: "47",
-      "Código 1": "TN 5AM", "Quantidade 1": "1",
+      ID: "2",
+      Loja: "Sóbaquetas",
+      "ID Bling": "1234567891011",
+      "ID Tray": "1234567",
+      "ID Var": "1234",
+      OD: "1",
+      "Referência": "PAI - TN 5AM",
+      Nome: "Baqueta Liverpool Tennessee Marfim Ponta de Madeira",
+      Marca: "Liverpool",
+      Categoria: "Baquetas",
+      Peso: "300",
+      Altura: "13",
+      Largura: "7",
+      Comprimento: "47",
+      "Código 1": "TN 5AM",
+      "Quantidade 1": "1",
     },
   ];
 
@@ -178,12 +263,17 @@ export default function MassEditionModal({
                 onClick={() => alteracaoInputRef.current?.click()}
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: "#2699fe20" }}>
+                  <div
+                    className="w-12 h-12 rounded-xl flex items-center justify-center"
+                    style={{ backgroundColor: "#2699fe20" }}
+                  >
                     <Download className="w-6 h-6" style={{ color: "#2699fe" }} />
                   </div>
                   <div className="flex-1">
                     <h4 className="font-bold mb-1">Alteração em Massa</h4>
-                    <p className="text-sm text-neutral-400">Importe planilha para alterar anúncios</p>
+                    <p className="text-sm text-neutral-400">
+                      Importe planilha para alterar anúncios
+                    </p>
                   </div>
                 </div>
               </div>
@@ -193,12 +283,17 @@ export default function MassEditionModal({
                 onClick={() => inclusaoInputRef.current?.click()}
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: "#10b98120" }}>
+                  <div
+                    className="w-12 h-12 rounded-xl flex items-center justify-center"
+                    style={{ backgroundColor: "#10b98120" }}
+                  >
                     <Plus className="w-6 h-6" style={{ color: "#10b981" }} />
                   </div>
                   <div className="flex-1">
                     <h4 className="font-bold mb-1">Inclusão em Massa</h4>
-                    <p className="text-sm text-neutral-400">Importe planilha para incluir novos anúncios</p>
+                    <p className="text-sm text-neutral-400">
+                      Importe planilha para incluir novos anúncios
+                    </p>
                   </div>
                 </div>
               </div>
@@ -208,12 +303,17 @@ export default function MassEditionModal({
                 onClick={() => baixarModeloPlanilha()}
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: "#f59e0b20" }}>
+                  <div
+                    className="w-12 h-12 rounded-xl flex items-center justify-center"
+                    style={{ backgroundColor: "#f59e0b20" }}
+                  >
                     <FileDown className="w-6 h-6" style={{ color: "#f59e0b" }} />
                   </div>
                   <div className="flex-1">
                     <h4 className="font-bold mb-1">Modelo de Planilha</h4>
-                    <p className="text-sm text-neutral-400">Baixe o modelo base para edição</p>
+                    <p className="text-sm text-neutral-400">
+                      Baixe o modelo base para edição
+                    </p>
                   </div>
                 </div>
               </div>
@@ -233,7 +333,10 @@ export default function MassEditionModal({
                 <thead className="bg-neutral-800/80 text-white sticky top-0">
                   <tr>
                     {columns.map((col) => (
-                      <th key={col} className="p-2 border-b border-neutral-700 text-left font-semibold whitespace-nowrap">
+                      <th
+                        key={col}
+                        className="p-2 border-b border-neutral-700 text-left font-semibold whitespace-nowrap"
+                      >
                         {col}
                       </th>
                     ))}
@@ -243,10 +346,15 @@ export default function MassEditionModal({
                   {previewData.map((row, i) => (
                     <tr
                       key={i}
-                      className={`${i % 2 === 0 ? "bg-neutral-900/40" : "bg-neutral-800/40"} hover:bg-white/10 transition-colors`}
+                      className={`${
+                        i % 2 === 0 ? "bg-neutral-900/40" : "bg-neutral-800/40"
+                      } hover:bg-white/10 transition-colors`}
                     >
                       {columns.map((col) => (
-                        <td key={col} className="p-2 border-b border-neutral-800 whitespace-nowrap">
+                        <td
+                          key={col}
+                          className="p-2 border-b border-neutral-800 whitespace-nowrap"
+                        >
                           {row[col as keyof typeof row] ?? ""}
                         </td>
                       ))}

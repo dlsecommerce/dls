@@ -227,7 +227,7 @@ export default function ModalNewCost({
             <div>
               <Label className="text-neutral-300">Marca</Label>
 
-              {/* ✅ AUTOCOMPLETE DE MARCA (BUSCA NO SUPABASE CONFORME DIGITA) */}
+              {/* ✅ AUTOCOMPLETE DE MARCA (o popover só abre ao digitar) */}
               <MarcaAutocomplete
                 value={form["Marca"]}
                 onChange={(next) => setForm({ ...form, ["Marca"]: next })}

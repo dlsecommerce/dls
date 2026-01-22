@@ -16,14 +16,10 @@ type Props = {
   onOpenChange: (v: boolean) => void;
   count: number;
   onConfirm: () => void;
-  importing: boolean;
-
-  previewRows?: any[];
+  loading: boolean;
+  preview?: any[];
   warnings?: string[];
-
-  // opcional (se você ainda não estiver gerando erros bloqueadores)
   errors?: string[];
-
   tipo: "inclusao" | "alteracao";
 };
 
@@ -32,37 +28,52 @@ export default function ConfirmImportModal({
   onOpenChange,
   count,
   onConfirm,
-  importing,
-  previewRows = [],
+  loading,
+  preview = [],
   warnings = [],
   errors = [],
   tipo,
 }: Props) {
-  const keys = previewRows.length > 0 ? Object.keys(previewRows[0]) : [];
+  const keys = preview.length > 0 ? Object.keys(preview[0]) : [];
 
   const titulo =
     tipo === "inclusao"
-      ? "Confirmar Inclusão de Custos"
-      : "Confirmar Alteração de Custos";
+      ? "Confirmar Inclusão de Anúncios"
+      : "Confirmar Alteração de Anúncios";
 
   const texto =
     tipo === "inclusao"
-      ? "Você está prestes a INCLUIR novos custos na base. Códigos já existentes serão bloqueados."
-      : "Você está prestes a ALTERAR custos existentes. Códigos inexistentes serão bloqueados.";
+      ? "Você está prestes a INCLUIR novos anúncios no sistema."
+      : "Você está prestes a ALTERAR anúncios existentes."
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !importing && onOpenChange(v)}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         onClick={(e) => e.stopPropagation()}
-        className="bg-[#0f0f0f]/95 backdrop-blur-xl border border-neutral-700 rounded-2xl text-white max-w-3xl shadow-2xl"
+        className="
+          bg-[#0f0f0f]/95 backdrop-blur-xl
+          border border-neutral-700
+          rounded-2xl text-white
+          shadow-2xl
+
+          w-[95vw] max-w-3xl
+          max-h-[85vh]
+
+          overflow-hidden
+          min-w-0
+          p-6
+
+          flex flex-col
+        "
       >
-        <DialogHeader>
+        <DialogHeader className="min-w-0 shrink-0">
           <DialogTitle className="text-lg font-semibold text-white">
             {titulo}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 mt-2">
+        {/* ✅ Miolo: ocupa o espaço disponível e rola se precisar */}
+        <div className="mt-3 min-w-0 flex-1 min-h-0 overflow-y-auto pr-1 space-y-4">
           <p className="text-neutral-300 leading-relaxed">{texto}</p>
 
           <p className="text-neutral-300">
@@ -76,10 +87,10 @@ export default function ConfirmImportModal({
             <motion.div
               initial={{ opacity: 0, y: -5 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-red-500/10 border border-red-600/40 rounded-xl p-3 text-sm text-red-400 flex items-start gap-2"
+              className="bg-red-500/10 border border-red-600/40 rounded-xl p-3 text-sm text-red-400 flex items-start gap-2 min-w-0"
             >
               <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-              <div>
+              <div className="min-w-0">
                 <strong className="text-red-400">Erros encontrados:</strong>
                 <ul className="list-disc list-inside mt-1">
                   {errors.map((msg, i) => (
@@ -98,10 +109,10 @@ export default function ConfirmImportModal({
             <motion.div
               initial={{ opacity: 0, y: -5 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 text-sm text-yellow-300 flex items-start gap-2"
+              className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 text-sm text-yellow-300 flex items-start gap-2 min-w-0"
             >
               <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-              <div>
+              <div className="min-w-0">
                 <strong className="text-yellow-400">Avisos:</strong>
                 <ul className="list-disc list-inside mt-1">
                   {warnings.map((msg, i) => (
@@ -112,43 +123,50 @@ export default function ConfirmImportModal({
             </motion.div>
           )}
 
-          {/* 📋 Preview */}
-          {previewRows.length > 0 && (
-            <div className="mt-4 max-h-60 overflow-auto rounded-xl border border-neutral-700">
-              <table className="w-full text-sm text-neutral-300">
-                <thead className="bg-neutral-800 sticky top-0">
-                  <tr>
-                    {keys.map((k) => (
-                      <th
-                        key={k}
-                        className="text-left p-2 font-semibold whitespace-nowrap"
-                      >
-                        {k}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewRows.map((row, i) => (
-                    <tr
-                      key={i}
-                      className="odd:bg-neutral-900 even:bg-neutral-800/50 transition-colors"
-                    >
+          {/* 📋 Preview (quadrado fixo, scroll interno, não vaza) */}
+          {preview.length > 0 && (
+            <div className="mt-2 w-full min-w-0 rounded-xl border border-neutral-700 overflow-hidden">
+              <div className="h-56 w-full min-w-0 overflow-auto">
+                <table className="min-w-max text-sm text-neutral-300">
+                  <thead className="bg-neutral-800 sticky top-0 z-10">
+                    <tr>
                       {keys.map((k) => (
-                        <td key={k} className="p-2">
-                          {row?.[k] ?? "-"}
-                        </td>
+                        <th
+                          key={k}
+                          className="text-left p-2 font-semibold whitespace-nowrap"
+                        >
+                          {k}
+                        </th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+
+                  <tbody>
+                    {preview.map((row, i) => (
+                      <tr
+                        key={i}
+                        className="odd:bg-neutral-900 even:bg-neutral-800/50 transition-colors"
+                      >
+                        {keys.map((k) => (
+                          <td
+                            key={k}
+                            className="p-2 whitespace-nowrap max-w-[240px] overflow-hidden text-ellipsis"
+                            title={String(row?.[k] ?? "-")}
+                          >
+                            {row?.[k] ?? "-"}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Botões */}
-        <DialogFooter className="mt-5 flex justify-end gap-3">
+        {/* ✅ Footer: sempre visível */}
+        <DialogFooter className="mt-5 shrink-0 min-w-0 flex justify-end gap-3">
           <Button
             variant="outline"
             className="border-neutral-700 text-white hover:scale-105 cursor-pointer"
@@ -156,12 +174,11 @@ export default function ConfirmImportModal({
               e.stopPropagation();
               onOpenChange(false);
             }}
-            disabled={importing}
+            disabled={loading}
           >
             Cancelar
           </Button>
 
-          {/* Botão confirmar — DESATIVADO SE HOUVER ERROS */}
           <Button
             className={`
               hover:scale-105 text-white flex items-center gap-2 cursor-pointer
@@ -172,13 +189,13 @@ export default function ConfirmImportModal({
               }
               ${errors.length > 0 ? "opacity-40 cursor-not-allowed" : ""}
             `}
-            disabled={importing || errors.length > 0}
+            disabled={loading || errors.length > 0}
             onClick={(e) => {
               e.stopPropagation();
               if (errors.length === 0) onConfirm();
             }}
           >
-            {importing ? (
+            {loading ? (
               <>
                 <Loader className="animate-spin w-5 h-5" />
                 Importando...

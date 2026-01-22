@@ -5,14 +5,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Loader, Check } from "lucide-react";
 
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Popover, PopoverContent } from "@/components/ui/popover";
 
 import {
   Command,
-  CommandInput,
   CommandList,
   CommandEmpty,
-  CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
 
@@ -40,19 +38,11 @@ type Props = {
   columnName?: string; // default "Marca"
   limit?: number; // default 20
 
-  /**
-   * Com quantos chars começa a buscar
-   * (1 já funciona, mas 2+ costuma reduzir ruído)
-   */
   minChars?: number; // default 1
-
-  /**
-   * debounce em ms
-   */
   debounceMs?: number; // default 250
 };
 
-export default function MarcaAutocomplete({
+export default function BrandAutoComplete({
   value,
   onChange,
   placeholder = "Ex: Liverpool",
@@ -64,26 +54,47 @@ export default function MarcaAutocomplete({
   debounceMs = 250,
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
 
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [options, setOptions] = useState<string[]>([]);
+  const [contentWidth, setContentWidth] = useState<number>(0);
 
-  // abre/fecha baseado no texto
+  // ✅ abre SOMENTE quando usuário digitou
   const shouldOpen = useMemo(() => {
     return !disabled && normText(value).length >= minChars;
   }, [disabled, value, minChars]);
 
-  // mantém estado open sincronizado com shouldOpen
+  // mede a largura do input (âncora)
+  const measure = () => {
+    const w = anchorRef.current?.offsetWidth ?? 0;
+    if (w) setContentWidth(w);
+  };
+
   useEffect(() => {
-    if (!shouldOpen) setOpen(false);
-    else setOpen(true);
+    measure();
+    // atualiza ao resize
+    const onResize = () => measure();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // sincroniza abrir/fechar pelo texto
+  useEffect(() => {
+    if (!shouldOpen) {
+      setOpen(false);
+      return;
+    }
+    // só abre se tiver texto (digitando)
+    setOpen(true);
+    // garante largura certa quando abre
+    requestAnimationFrame(measure);
   }, [shouldOpen]);
 
-  // busca conforme digita (com debounce)
+  // busca conforme digita (debounce)
   useEffect(() => {
     const qRaw = value ?? "";
-    const q = normText(qRaw);
 
     if (!shouldOpen) {
       setOptions([]);
@@ -96,8 +107,6 @@ export default function MarcaAutocomplete({
       try {
         setLoading(true);
 
-        // usa o texto original (sem normalizar) no ilike
-        // mas escapa wildcards
         const safe = escapeLike(qRaw.trim());
         const pattern = `%${safe}%`;
 
@@ -105,22 +114,16 @@ export default function MarcaAutocomplete({
           .from(tableName)
           // @ts-ignore
           .select(columnName)
-          // não nulo e não vazio
           // @ts-ignore
           .not(columnName, "is", null)
           // @ts-ignore
           .neq(columnName, "")
-          // busca parcial case-insensitive
           // @ts-ignore
           .ilike(columnName, pattern)
-          // importante: escape do LIKE (Postgres)
-          // supabase-js aceita via options? nem sempre.
-          // se seu backend não respeitar, ainda funciona sem o escape.
           .limit(500);
 
         if (error) throw error;
 
-        // dedup + ordena + corta
         const set = new Set<string>();
         (data || []).forEach((r: any) => {
           const v = String(r?.[columnName] ?? "").trim();
@@ -153,50 +156,54 @@ export default function MarcaAutocomplete({
   };
 
   return (
-    <Popover open={open} onOpenChange={(v) => !disabled && setOpen(v)}>
-      <PopoverTrigger asChild>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        // ✅ permite fechar (clique fora / ESC)
+        // ✅ bloqueia abrir por clique/foco
+        if (next === false) setOpen(false);
+      }}
+    >
+      {/* ✅ âncora manual (sem PopoverTrigger, então clicar NÃO abre) */}
+      <div ref={anchorRef}>
         <Input
           ref={inputRef}
           value={value}
           onChange={(e) => {
             onChange(e.target.value);
-            // não força open aqui; o useEffect decide baseado no texto
+            // open é controlado por shouldOpen
           }}
           onFocus={() => {
-            // se já tem texto suficiente, abre ao focar
-            if (shouldOpen) setOpen(true);
+            // ✅ não abre ao clicar/focar
+            if (!shouldOpen) setOpen(false);
+          }}
+          onClick={() => {
+            // ✅ não abre ao clicar
+            if (!shouldOpen) setOpen(false);
           }}
           onKeyDown={(e) => {
             if (e.key === "Escape") setOpen(false);
           }}
-          placeholder={placeholder}
+          placeholder={placeholder} // ✅ Ex: Liverpool (igual os outros)
           disabled={disabled}
           autoComplete="off"
           className="bg-white/5 border-neutral-700 text-white rounded-xl"
         />
-      </PopoverTrigger>
+      </div>
 
       <PopoverContent
         align="start"
         sideOffset={6}
-        className="p-0 w-[var(--radix-popover-trigger-width)] bg-[#0f0f0f] border border-neutral-700 text-white"
+        style={{ width: contentWidth ? `${contentWidth}px` : undefined }}
+        className="p-0 bg-[#0f0f0f] border border-neutral-700 text-white"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <Command className="bg-transparent text-white">
-          {/* opcional: dá pra ocultar esse CommandInput se você não quiser 2 inputs.
-              Se quiser remover, me fala que eu adapto pra filtrar só pelo Input principal. */}
-          <CommandInput
-            placeholder="Buscar marca..."
-            value={value}
-            onValueChange={(v) => onChange(v)}
-            className="text-white"
-          />
-
           <CommandList className="max-h-56 overflow-auto">
             {loading ? (
               <div className="p-3 text-sm text-neutral-400 flex items-center gap-2">
                 <Loader className="w-4 h-4 animate-spin" />
-                Buscando marcas...
+                Carregando marcas...
               </div>
             ) : (
               <>
@@ -204,22 +211,21 @@ export default function MarcaAutocomplete({
                   Nenhuma marca encontrada.
                 </CommandEmpty>
 
-                <CommandGroup heading="Marcas" className="text-neutral-300">
-                  {options.map((m) => {
-                    const selected = normText(m) === normText(value);
-                    return (
-                      <CommandItem
-                        key={m}
-                        value={m}
-                        onSelect={() => pick(m)}
-                        className="cursor-pointer aria-selected:bg-white/10"
-                      >
-                        <span className="flex-1">{m}</span>
-                        {selected ? <Check className="w-4 h-4 opacity-80" /> : null}
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
+                {/* ✅ sem título "Marcas" */}
+                {options.map((m) => {
+                  const selected = normText(m) === normText(value);
+                  return (
+                    <CommandItem
+                      key={m}
+                      value={m}
+                      onSelect={() => pick(m)}
+                      className="cursor-pointer aria-selected:bg-white/10"
+                    >
+                      <span className="flex-1">{m}</span>
+                      {selected ? <Check className="w-4 h-4 opacity-80" /> : null}
+                    </CommandItem>
+                  );
+                })}
               </>
             )}
           </CommandList>

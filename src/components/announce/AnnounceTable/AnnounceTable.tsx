@@ -74,6 +74,14 @@ export default function AnnounceTable() {
               data.setOpenDelete(false);
               impExp.setOpenMassEdition(true);
             }}
+            // ✅ IMPORTAR (TopBar) deve abrir como INCLUSÃO
+            onImportOpen={() => {
+              // garante modo inclusão antes de abrir seletor
+              if (typeof (impExp as any).setImportMode === "function") {
+                (impExp as any).setImportMode("inclusao");
+              }
+              impExp.fileInputRef.current?.click();
+            }}
             onNew={() => router.push("/dashboard/anuncios/edit")}
           />
 
@@ -174,10 +182,12 @@ export default function AnnounceTable() {
         open={impExp.openConfirmImport}
         onOpenChange={impExp.setOpenConfirmImport}
         count={impExp.importCount}
-        previewRows={impExp.previewRows}
+        // ✅ props corretas do modal que você enviou (preview/loading/errors)
+        preview={impExp.previewRows}
         warnings={impExp.warnings}
+        errors={(impExp as any).errors ?? []}
         onConfirm={impExp.confirmImport}
-        importing={impExp.importing}
+        loading={impExp.importing}
         tipo={impExp.importMode}
       />
     </div>

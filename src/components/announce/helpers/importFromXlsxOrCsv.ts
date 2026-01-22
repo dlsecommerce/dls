@@ -40,9 +40,12 @@ export interface RowShape {
   "Quantidade 10"?: string;
 }
 
+type ImportMode = "inclusao" | "alteracao";
+
 type ImportResult = {
   data: RowShape[];
   warnings: string[];
+  errors: string[]; // ✅ NOVO: erros bloqueadores para o modal
 };
 
 /** Normaliza string pra chave (dedupe / comparação) */
@@ -50,11 +53,29 @@ function norm(v: any) {
   return String(v ?? "").trim().toLowerCase();
 }
 
+function normalizeStore(s: any) {
+  return String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+}
+
+function toStoreCode(s: any): "PK" | "SB" | null {
+  const v = normalizeStore(s);
+  if (v === "pk") return "PK";
+  if (v === "sb") return "SB";
+  if (v.includes("pikot")) return "PK";
+  if (v.includes("sobaquetas")) return "SB";
+  return null;
+}
+
 function isPlaceholderBling(v: any) {
   const s = norm(v);
   if (!s) return true;
   // placeholders comuns que quebram UNIQUE / causam duplicação
-  if (s === "n bling" || s.includes("n bling") || s.includes("nº bling")) return true;
+  if (s === "n bling" || s.includes("n bling") || s.includes("nº bling"))
+    return true;
   if (s === "n/bling" || s === "na" || s === "n/a") return true;
   return false;
 }
@@ -69,7 +90,9 @@ function dedupeRows(rows: RowShape[]) {
     // 2) OD
     // 3) ID Tray
     // 4) Referência + Loja
-    const idBlingKey = !isPlaceholderBling(r["ID Bling"]) ? norm(r["ID Bling"]) : "";
+    const idBlingKey = !isPlaceholderBling(r["ID Bling"])
+      ? norm(r["ID Bling"])
+      : "";
     const odKey = norm(r.OD);
     const trayKey = norm(r["ID Tray"]);
     const refLojaKey = `${norm(r.Loja)}|${norm(r["Referência"])}`;
@@ -88,17 +111,23 @@ function dedupeRows(rows: RowShape[]) {
   return [...map.values()];
 }
 
-/** Divide por loja do mesmo jeito que você já fazia */
+/** ✅ AJUSTE: agora reconhece Loja PK/SB e também nomes (Pikot/Sóbaquetas) e padroniza */
 function splitByStore(rows: RowShape[]) {
-  const pikotRows = rows.filter(
-    (r) =>
-      norm(r.Loja).includes("pikot") ||
-      norm(r.Loja).includes("pikot shop")
-  );
+  const pikotRows: RowShape[] = [];
+  const sobaquetasRows: RowShape[] = [];
+  const outrosRows: RowShape[] = [];
 
-  const sobaquetasRows = rows.filter((r) => norm(r.Loja).includes("sobaquetas"));
+  for (const r of rows) {
+    const code = toStoreCode(r.Loja);
 
-  const outrosRows = rows.filter((r) => !pikotRows.includes(r) && !sobaquetasRows.includes(r));
+    if (code === "PK") {
+      pikotRows.push({ ...r, Loja: "PK" }); // ✅ padroniza
+    } else if (code === "SB") {
+      sobaquetasRows.push({ ...r, Loja: "SB" }); // ✅ padroniza
+    } else {
+      outrosRows.push(r);
+    }
+  }
 
   return { pikotRows, sobaquetasRows, outrosRows };
 }
@@ -117,7 +146,8 @@ async function preencherIdsAutomaticos(tabela: string, rows: RowShape[]) {
     .limit(1)
     .maybeSingle();
 
-  if (error) throw new Error(`Erro ao buscar último ID em ${tabela}: ${error.message}`);
+  if (error)
+    throw new Error(`Erro ao buscar último ID em ${tabela}: ${error.message}`);
 
   let proximoId = ultimo?.ID ? parseInt(String(ultimo.ID), 10) + 1 : 1;
 
@@ -146,7 +176,9 @@ async function upsertWithFallback(
   // sempre filtra id bling placeholders antes de usar conflito por ID Bling
   const cleanedRows = rows.map((r) => ({
     ...r,
-    "ID Bling": isPlaceholderBling(r["ID Bling"]) ? "" : String(r["ID Bling"] ?? "").trim(),
+    "ID Bling": isPlaceholderBling(r["ID Bling"])
+      ? ""
+      : String(r["ID Bling"] ?? "").trim(),
   }));
 
   // tenta primeiro
@@ -159,7 +191,10 @@ async function upsertWithFallback(
 
     // cai pro fallback
     // (isso pega casos tipo: constraint unique não existe no PK ainda)
-    console.warn(`[${table}] upsert primary falhou, usando fallback.`, error.message);
+    console.warn(
+      `[${table}] upsert primary falhou, usando fallback.`,
+      error.message
+    );
   }
 
   if (!fallbackOnConflict) {
@@ -181,11 +216,92 @@ async function upsertWithFallback(
   if (error2) throw new Error(`Erro ao importar ${table}: ${error2.message}`);
 }
 
+/* =========================
+   Validações por MODO
+   - inclusao: bloqueia se já existe (por chave)
+   - alteracao: bloqueia se não existe (por chave)
+========================= */
+async function fetchExistingKeysByStore(
+  pikotRows: RowShape[],
+  sobaquetasRows: RowShape[]
+) {
+  // chaves que vamos considerar para existência:
+  // 1) ID Bling (se válido)
+  // 2) OD
+  // 3) ID Tray
+  // 4) Referência + Loja
+  const keysPkBling = Array.from(
+    new Set(
+      pikotRows
+        .map((r) => norm(r["ID Bling"]))
+        .filter((v) => v && !isPlaceholderBling(v))
+    )
+  );
+  const keysSbBling = Array.from(
+    new Set(
+      sobaquetasRows
+        .map((r) => norm(r["ID Bling"]))
+        .filter((v) => v && !isPlaceholderBling(v))
+    )
+  );
+
+  // como sua base do SB depende de ID Bling, priorizamos ele
+  // Para PK, também tentamos ID Bling (quando existir), mas pode não ter UNIQUE ainda; aqui é só validação.
+  const [pkExisting, sbExisting] = await Promise.all([
+    (async () => {
+      if (keysPkBling.length === 0) return new Set<string>();
+      const { data, error } = await supabase
+        .from("anuncios_pk")
+        .select('"ID Bling"')
+        .in('"ID Bling"', keysPkBling);
+      if (error) throw error;
+      return new Set((data ?? []).map((x: any) => norm(x["ID Bling"])));
+    })(),
+    (async () => {
+      if (keysSbBling.length === 0) return new Set<string>();
+      const { data, error } = await supabase
+        .from("anuncios_sb")
+        .select('"ID Bling"')
+        .in('"ID Bling"', keysSbBling);
+      if (error) throw error;
+      return new Set((data ?? []).map((x: any) => norm(x["ID Bling"])));
+    })(),
+  ]);
+
+  return { pkExisting, sbExisting };
+}
+
+function computeRowKeyForValidation(r: RowShape) {
+  const idBlingKey = !isPlaceholderBling(r["ID Bling"])
+    ? norm(r["ID Bling"])
+    : "";
+  // Se tiver ID Bling válido, usamos ele como chave principal de validação
+  if (idBlingKey) return { kind: "bling" as const, key: idBlingKey };
+  // Caso contrário, tentamos outros campos (menos confiáveis)
+  const odKey = norm(r.OD);
+  if (odKey) return { kind: "od" as const, key: odKey };
+  const trayKey = norm(r["ID Tray"]);
+  if (trayKey) return { kind: "tray" as const, key: trayKey };
+  const loja = norm(r.Loja);
+  const ref = norm(r["Referência"]);
+  if (loja && ref) return { kind: "refloja" as const, key: `${loja}|${ref}` };
+  return { kind: "none" as const, key: "" };
+}
+
+/**
+ * ✅ Ajuste principal:
+ * Agora recebe o "mode" e gera "errors" bloqueadores para o ConfirmImportModal.
+ *
+ * - inclusao: bloqueia linhas que já existem (por ID Bling quando disponível)
+ * - alteracao: bloqueia linhas que NÃO existem (por ID Bling quando disponível)
+ */
 export async function importFromXlsxOrCsv(
   file: File,
-  previewOnly = false
+  previewOnly = false,
+  mode: ImportMode = "alteracao"
 ): Promise<ImportResult> {
   const warnings: string[] = [];
+  const errors: string[] = [];
 
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: "array" });
@@ -193,7 +309,7 @@ export async function importFromXlsxOrCsv(
 
   if (!sheet) {
     warnings.push("Não foi possível ler a planilha. Verifique o formato do arquivo.");
-    return { data: [], warnings };
+    return { data: [], warnings, errors };
   }
 
   // ⚙️ Pula apenas a primeira linha de grupos
@@ -205,7 +321,7 @@ export async function importFromXlsxOrCsv(
 
   if (json.length === 0) {
     warnings.push("Nenhum dado encontrado após o cabeçalho.");
-    return { data: [], warnings };
+    return { data: [], warnings, errors };
   }
 
   const normalized: RowShape[] = json.map((row) => {
@@ -259,13 +375,19 @@ export async function importFromXlsxOrCsv(
     );
   }
 
-  if (previewOnly) return { data: deduped, warnings };
-
   // --- Separar registros por loja ---
   const { pikotRows, sobaquetasRows, outrosRows } = splitByStore(deduped);
 
-  // --- Filtrar linhas sem ID Bling válido (pra evitar UNIQUE quebrar no SB) ---
-  const sobaquetasValidas = sobaquetasRows.filter((r) => !isPlaceholderBling(r["ID Bling"]));
+  if (outrosRows.length > 0) {
+    warnings.push(
+      `${outrosRows.length} registro(s) ignorado(s): sem loja identificada (use PK/SB ou Pikot/Sóbaquetas).`
+    );
+  }
+
+  // --- Filtrar linhas sem ID Bling válido (SB bloqueia, PK avisa) ---
+  const sobaquetasValidas = sobaquetasRows.filter(
+    (r) => !isPlaceholderBling(r["ID Bling"])
+  );
   const sobaquetasInvalidas = sobaquetasRows.length - sobaquetasValidas.length;
 
   if (sobaquetasInvalidas > 0) {
@@ -274,19 +396,82 @@ export async function importFromXlsxOrCsv(
     );
   }
 
-  // No PK você disse que vai mexer nos dados, então NÃO vamos bloquear import por falta de ID Bling.
-  // Mas a gente avisa.
-  const pikotSemBling = pikotRows.filter((r) => isPlaceholderBling(r["ID Bling"])).length;
+  const pikotSemBling = pikotRows.filter((r) => isPlaceholderBling(r["ID Bling"]))
+    .length;
   if (pikotSemBling > 0) {
     warnings.push(
       `${pikotSemBling} registro(s) do Pikot estão sem "ID Bling" válido. Sem UNIQUE no PK, isso pode facilitar duplicação.`
     );
   }
 
+  // =========================
+  // ✅ Preview com validação (gera errors)
+  // =========================
+  if (pikotRows.length || sobaquetasValidas.length) {
+    const { pkExisting, sbExisting } = await fetchExistingKeysByStore(
+      pikotRows,
+      sobaquetasValidas
+    );
+
+    const blocked: string[] = [];
+
+    for (const r of [...pikotRows, ...sobaquetasValidas]) {
+      const lojaCode = toStoreCode(r.Loja);
+      const keyInfo = computeRowKeyForValidation(r);
+
+      // se não tem chave confiável, não bloqueia (mas avisa)
+      if (keyInfo.kind === "none") continue;
+
+      const exists =
+        lojaCode === "SB"
+          ? keyInfo.kind === "bling"
+            ? sbExisting.has(keyInfo.key)
+            : false
+          : keyInfo.kind === "bling"
+          ? pkExisting.has(keyInfo.key)
+          : false;
+
+      if (mode === "inclusao") {
+        // inclusão: não pode existir
+        if (exists) {
+          blocked.push(
+            `[${lojaCode ?? "?"}] Registro já existe (${keyInfo.kind}: ${keyInfo.key})`
+          );
+        }
+      } else {
+        // alteração: precisa existir
+        if (!exists && keyInfo.kind === "bling") {
+          blocked.push(
+            `[${lojaCode ?? "?"}] Registro NÃO encontrado para alterar (ID Bling: ${keyInfo.key})`
+          );
+        }
+      }
+    }
+
+    if (blocked.length > 0) {
+      errors.push(...blocked.slice(0, 50));
+      if (blocked.length > 50) {
+        errors.push(`...e mais ${blocked.length - 50} ocorrência(s).`);
+      }
+    }
+  }
+
+  // ✅ Se for apenas preview, já devolve (com errors para bloquear o botão)
+  if (previewOnly) {
+    return { data: deduped, warnings, errors };
+  }
+
+  // ✅ Se for import real e tiver erros, bloqueia também (segurança)
+  if (errors.length > 0) {
+    throw new Error(
+      "Importação bloqueada: existem erros no arquivo (veja a pré-visualização)."
+    );
+  }
+
   // --- Inserção/Upsert no Supabase ---
   const inserts: Promise<void>[] = [];
 
-  // ✅ anuncios_sb: você já tem UNIQUE em "ID Bling" → usar onConflict por ele sempre
+  // ✅ anuncios_sb: UNIQUE em "ID Bling" → usar onConflict por ele sempre
   if (sobaquetasValidas.length > 0) {
     inserts.push(
       (async () => {
@@ -304,9 +489,7 @@ export async function importFromXlsxOrCsv(
     );
   }
 
-  // ⚠️ anuncios_pk: como você ainda vai mexer nos dados, talvez não tenha UNIQUE em "ID Bling" ainda.
-  // Então: tenta "ID Bling" primeiro (se você já tiver criado o UNIQUE mais pra frente),
-  // e se falhar, cai pra "ID" (e aí preenche ID automático quando faltar).
+  // ⚠️ anuncios_pk: tenta "ID Bling" (quando tiver UNIQUE), senão cai pra "ID"
   if (pikotRows.length > 0) {
     inserts.push(
       (async () => {
@@ -324,13 +507,7 @@ export async function importFromXlsxOrCsv(
     );
   }
 
-  if (outrosRows.length > 0) {
-    warnings.push(
-      `${outrosRows.length} registro(s) ignorado(s): sem loja identificada (Pikot Shop ou Sóbaquetas).`
-    );
-  }
-
   await Promise.all(inserts);
 
-  return { data: deduped, warnings };
+  return { data: deduped, warnings, errors };
 }
