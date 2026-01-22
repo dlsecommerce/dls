@@ -3,7 +3,32 @@
 import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRouter } from "next/navigation";
-import { parseValorBR, inferirOD } from "@/components/announce/hooks/useAnuncioEditor";
+import {
+  parseValorBR,
+  inferirOD,
+  lojaNomeToCodigo,
+} from "@/components/announce/hooks/useAnuncioEditor";
+
+/**
+ * ✅ CONTRATO:
+ * - Front/UI trabalha com produto.loja = "PK" | "SB"
+ * - Ainda aceitamos "Pikot Shop" / "Sóbaquetas" (caso algum estado antigo vaze)
+ * - Supabase:
+ *   - tabela: anuncios_pk / anuncios_sb
+ *   - coluna "Loja": "PK" | "SB"
+ */
+
+type LojaCodigo = "PK" | "SB";
+
+function lojaAnyToCodigo(v: any): LojaCodigo | null {
+  if (v === "PK" || v === "SB") return v;
+  if (typeof v === "string") return lojaNomeToCodigo(v) as LojaCodigo | null;
+  return null;
+}
+
+function tabelaFromCodigo(c: LojaCodigo): "anuncios_pk" | "anuncios_sb" {
+  return c === "PK" ? "anuncios_pk" : "anuncios_sb";
+}
 
 export function useAnuncioActions() {
   const [saving, setSaving] = useState(false);
@@ -15,39 +40,38 @@ export function useAnuncioActions() {
   // ===========================================================
   const handleSave = useCallback(
     async (produto: any, composicao: any[], onAfterSave?: () => void) => {
-      if (!produto?.loja) {
-        alert("Selecione uma loja antes de salvar (Pikot Shop ou Sóbaquetas).");
+      const lojaCodigo = lojaAnyToCodigo(produto?.loja);
+
+      if (!lojaCodigo) {
+        alert('Selecione uma loja antes de salvar ("PK" ou "SB").');
         return;
       }
 
       setSaving(true);
 
       try {
-        const tabela =
-          produto.loja === "Pikot Shop"
-            ? "anuncios_pk"
-            : produto.loja === "Sóbaquetas"
-            ? "anuncios_sb"
-            : null;
-
-        const lojaCodigo = produto.loja === "Pikot Shop" ? "PK" : "SB";
-
-        if (!tabela) throw new Error("Loja inválida. Selecione Pikot Shop ou Sóbaquetas.");
+        const tabela = tabelaFromCodigo(lojaCodigo);
 
         // =====================================================
-        // 🔹 Monta composição (Código 1, Quantidade 1, etc.)
+        // 🔹 Monta composição (Código 1..10, Quantidade 1..10)
+        // ✅ limpa antes para não sobrar lixo antigo quando reduzir itens
         // =====================================================
         const camposComposicao: Record<string, any> = {};
-        composicao.forEach((c: any, i: number) => {
+        for (let i = 1; i <= 10; i++) {
+          camposComposicao[`Código ${i}`] = null;
+          camposComposicao[`Quantidade ${i}`] = null;
+        }
+
+        composicao?.slice?.(0, 10)?.forEach?.((c: any, i: number) => {
           const idx = i + 1;
-          const qtd = parseValorBR(c.quantidade);
-          camposComposicao[`Código ${idx}`] = c.codigo || null;
+          const qtd = parseValorBR(c?.quantidade);
+          camposComposicao[`Código ${idx}`] = c?.codigo ? String(c.codigo).trim() : null;
           camposComposicao[`Quantidade ${idx}`] = isNaN(qtd) ? null : qtd;
         });
 
-        const od = inferirOD(produto.referencia);
+        const od = inferirOD(produto?.referencia);
 
-        let novoId = produto.id ? Number(produto.id) : null;
+        let novoId = produto?.id ? Number(produto.id) : null;
 
         // =====================================================
         // 🔹 Se não há ID → novo cadastro
@@ -68,18 +92,18 @@ export function useAnuncioActions() {
 
         const payload = {
           ID: String(novoId).trim(),
-          Loja: lojaCodigo,
-          "ID Bling": produto.id_bling || null,
-          "ID Tray": produto.id_tray || null,
-          "ID Var": produto.id_var || null,
-          Referência: produto.referencia || null,
-          Nome: produto.nome || null,
-          Marca: produto.marca || null,
-          Categoria: produto.categoria || null,
-          Peso: produto.peso || null,
-          Altura: produto.altura || null,
-          Largura: produto.largura || null,
-          Comprimento: produto.comprimento || null,
+          Loja: lojaCodigo, // ✅ "PK" | "SB" (coluna Loja)
+          "ID Bling": produto?.id_bling || null,
+          "ID Tray": produto?.id_tray || null,
+          "ID Var": produto?.id_var || null,
+          Referência: produto?.referencia || null,
+          Nome: produto?.nome || null,
+          Marca: produto?.marca || null,
+          Categoria: produto?.categoria || null,
+          Peso: produto?.peso ?? null,
+          Altura: produto?.altura ?? null,
+          Largura: produto?.largura ?? null,
+          Comprimento: produto?.comprimento ?? null,
           OD: od || null,
           ...camposComposicao,
         };
@@ -96,7 +120,7 @@ export function useAnuncioActions() {
 
         if (erroBusca) throw erroBusca;
 
-        let erroOperacao;
+        let erroOperacao: any;
         if (existente) {
           const { error } = await supabase
             .from(tabela)
@@ -127,7 +151,10 @@ export function useAnuncioActions() {
   // ===========================================================
   const handleDelete = useCallback(
     async (produto: any, onAfterDelete?: () => void) => {
-      if (!produto?.id || !produto?.loja) {
+      const idProduto = String(produto?.id ?? produto?.ID ?? "").trim();
+      const lojaCodigo = lojaAnyToCodigo(produto?.loja);
+
+      if (!idProduto || !lojaCodigo) {
         alert("Produto ou loja inválida para exclusão.");
         return;
       }
@@ -135,21 +162,12 @@ export function useAnuncioActions() {
       setDeleting(true);
 
       try {
-        const tabela =
-          produto.loja === "Pikot Shop"
-            ? "anuncios_pk"
-            : produto.loja === "Sóbaquetas"
-            ? "anuncios_sb"
-            : null;
-
-        const lojaCodigo = produto.loja === "Pikot Shop" ? "PK" : "SB";
-
-        if (!tabela) throw new Error("Loja inválida para exclusão.");
+        const tabela = tabelaFromCodigo(lojaCodigo);
 
         const { error } = await supabase
           .from(tabela)
           .delete()
-          .eq("ID", String(produto.id).trim())
+          .eq("ID", idProduto)
           .eq("Loja", lojaCodigo);
 
         if (error) throw error;
@@ -180,16 +198,12 @@ export function useAnuncioActions() {
       try {
         // 🔹 Agrupa por tabela para deletar em lote
         const grouped = selectedRows.reduce<Record<string, string[]>>((acc, row) => {
-          const loja = (row.loja || row.Loja || "").toString().toLowerCase();
-          let tabela = "";
+          const lojaCodigo = lojaAnyToCodigo(row?.loja ?? row?.Loja);
+          if (!lojaCodigo) return acc;
 
-          if (loja.includes("pikot") || loja === "pk") tabela = "anuncios_pk";
-          else if (loja.includes("sobaquetas") || loja.includes("sóbaquetas") || loja === "sb")
-            tabela = "anuncios_sb";
-          if (!tabela) return acc;
-
+          const tabela = tabelaFromCodigo(lojaCodigo);
           acc[tabela] = acc[tabela] || [];
-          acc[tabela].push(String(row.id || row.ID).trim());
+          acc[tabela].push(String(row?.id ?? row?.ID).trim());
           return acc;
         }, {});
 
@@ -200,7 +214,7 @@ export function useAnuncioActions() {
 
         await Promise.all(promises);
 
-        if (onAfterDelete) onAfterDelete(); // atualiza tabela e fecha modal
+        if (onAfterDelete) onAfterDelete();
       } catch (err: any) {
         alert("Erro ao excluir anúncios: " + (err.message || err));
       } finally {

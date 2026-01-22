@@ -1,39 +1,74 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
-import { parseValorBR, inferirOD } from "@/components/announce/hooks/useAnuncioEditor";
+import {
+  parseValorBR,
+  inferirOD,
+  lojaNomeToCodigo,
+} from "@/components/announce/hooks/useAnuncioEditor";
 
-export function useNewListing() {
+/**
+ * ✅ Contrato deste hook (igual ao editor):
+ * - produto.loja SEMPRE "PK" | "SB" (UI mostra PK/SB)
+ * - URL (?loja=...) pode vir como "PK", "SB", "Pikot Shop", "Sóbaquetas" etc
+ * - Banco:
+ *   - tabela = anuncios_pk / anuncios_sb
+ *   - coluna "Loja" = "PK" | "SB"
+ *   - demais colunas com nomes: "ID Bling", "ID Tray", "Referência", etc.
+ */
+
+type LojaCodigo = "PK" | "SB";
+
+function lojaAnyToCodigo(v: any): LojaCodigo | null {
+  // Reaproveita o normalizador central (aceita nomes e códigos)
+  if (typeof v === "string") return lojaNomeToCodigo(v);
+  if (v === "PK" || v === "SB") return v;
+  return null;
+}
+
+function tabelaFromCodigo(codigo: LojaCodigo): "anuncios_pk" | "anuncios_sb" {
+  return codigo === "PK" ? "anuncios_pk" : "anuncios_sb";
+}
+
+export function useNewListing(lojaInicial?: LojaCodigo) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const id = searchParams.get("id");
+  const idParam = searchParams.get("id");
   const lojaParam = searchParams.get("loja");
+
+  // ✅ decide loja inicial:
+  // 1) parâmetro lojaInicial (vindo do ProductDetails)
+  // 2) querystring (?loja=...)
+  // 3) fallback "PK"
+  const lojaCodigoInicial = useMemo<LojaCodigo>(() => {
+    return lojaInicial ?? lojaNomeToCodigo(lojaParam) ?? "PK";
+  }, [lojaInicial, lojaParam]);
 
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // ===========================================================
-  // 🧠 Estados principais
+  // 🧠 Estado principal (contrato do front)
   // ===========================================================
   const [produto, setProduto] = useState<any>({
-    ID: "",
-    Loja: "Pikot Shop",
-    "ID Bling": "",
-    "ID Tray": "",
-    "ID Var": "",
-    Referência: "",
-    Nome: "",
-    Marca: "",
-    Categoria: "",
-    Peso: "",
-    Altura: "",
-    Largura: "",
-    Comprimento: "",
-    OD: "",
+    id: "",
+    loja: lojaCodigoInicial, // ✅ "PK" | "SB"
+    id_bling: "",
+    id_tray: "",
+    id_var: "",
+    referencia: "",
+    nome: "",
+    marca: "",
+    categoria: "",
+    peso: "",
+    altura: "",
+    largura: "",
+    comprimento: "",
+    od: "",
   });
 
   const [composicao, setComposicao] = useState<any[]>([]);
@@ -44,19 +79,32 @@ export function useNewListing() {
   // ===========================================================
   useEffect(() => {
     const total = composicao.reduce((acc, item) => {
-      const qtd = parseFloat(item.quantidade) || 0;
-      const custo = parseFloat(String(item.custo).replace(",", ".")) || 0;
+      const qtd = parseValorBR(item.quantidade);
+      const custo = Number(item.custo) || 0;
       return acc + qtd * custo;
     }, 0);
     setCustoTotal(total);
   }, [composicao]);
 
   // ===========================================================
-  // 🆕 Criar novo produto
+  // 🔁 Se URL/prop mudar a loja, mantém produto.loja consistente
   // ===========================================================
-  const handleCreate = useCallback(async (loja: "Pikot Shop" | "Sóbaquetas") => {
+  useEffect(() => {
+    setProduto((p: any) => ({
+      ...p,
+      loja: lojaCodigoInicial,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lojaCodigoInicial]);
+
+  // ===========================================================
+  // 🆕 Criar novo produto (gera próximo ID na tabela certa)
+  // Aceita "PK"/"SB" e também nomes ("Pikot Shop"/"Sóbaquetas")
+  // ===========================================================
+  const handleCreate = useCallback(async (loja: any) => {
     try {
-      const tabela = loja === "Pikot Shop" ? "anuncios_pk" : "anuncios_sb";
+      const codigo = lojaAnyToCodigo(loja) ?? "PK";
+      const tabela = tabelaFromCodigo(codigo);
 
       const { data: ultimo, error } = await supabase
         .from(tabela)
@@ -67,24 +115,24 @@ export function useNewListing() {
 
       if (error) throw error;
 
-      const ultimoId = ultimo?.ID ? parseInt(ultimo.ID) : 0;
+      const ultimoId = ultimo?.ID ? parseInt(String(ultimo.ID), 10) : 0;
       const novoId = ultimoId + 1;
 
       const novoProduto = {
-        ID: novoId,
-        Loja: loja,
-        "ID Bling": "",
-        "ID Tray": "",
-        "ID Var": "",
-        Referência: "",
-        Nome: "",
-        Marca: "",
-        Categoria: "",
-        Peso: "",
-        Altura: "",
-        Largura: "",
-        Comprimento: "",
-        OD: "",
+        id: novoId,
+        loja: codigo,
+        id_bling: "",
+        id_tray: "",
+        id_var: "",
+        referencia: "",
+        nome: "",
+        marca: "",
+        categoria: "",
+        peso: "",
+        altura: "",
+        largura: "",
+        comprimento: "",
+        od: "",
       };
 
       setProduto(novoProduto);
@@ -100,56 +148,73 @@ export function useNewListing() {
 
   // ===========================================================
   // 💾 Salvar produto
+  // ✅ Agora aceita produto.loja vindo como:
+  // - "PK"/"SB" (UI)
+  // - "Pikot Shop"/"Sóbaquetas" (caso algum estado antigo vaze)
+  // e sempre salva com coluna Loja = "PK"/"SB"
   // ===========================================================
   const handleSave = useCallback(
     async (produto: any, composicao: any[], onAfterSave?: () => void) => {
       try {
         setSaving(true);
 
-        const lojaCodigo = produto.loja === "Pikot Shop" ? "PK" : "SB";
-        const tabela = produto.loja === "Pikot Shop" ? "anuncios_pk" : "anuncios_sb";
-
-        if (!tabela) {
-          alert("Loja inválida.");
+        const lojaCodigo = lojaAnyToCodigo(produto?.loja);
+        if (!lojaCodigo) {
+          alert('Loja inválida. Selecione "PK" ou "SB".');
           return;
         }
 
+        const tabela = tabelaFromCodigo(lojaCodigo);
+
         const camposComposicao: Record<string, any> = {};
-        composicao.forEach((c: any, i: number) => {
+        // limpa todos campos até 10 para evitar "sobras" antigas
+        for (let i = 1; i <= 10; i++) {
+          camposComposicao[`Código ${i}`] = null;
+          camposComposicao[`Quantidade ${i}`] = null;
+        }
+
+        composicao.slice(0, 10).forEach((c: any, i: number) => {
           const idx = i + 1;
           const qtd = parseValorBR(c.quantidade);
-          camposComposicao[`Código ${idx}`] = c.codigo || null;
+          camposComposicao[`Código ${idx}`] = c.codigo ? String(c.codigo).trim() : null;
           camposComposicao[`Quantidade ${idx}`] = isNaN(qtd) ? null : qtd;
         });
 
-        const od = inferirOD(produto.referencia);
+        const od = inferirOD(produto?.referencia);
 
         const payload = {
-          ID: String(produto.id || produto.ID),
-          Loja: lojaCodigo,
-          "ID Bling": produto.id_bling || null,
-          "ID Tray": produto.id_tray || null,
-          "ID Var": produto.id_var || null,
-          Referência: produto.referencia || null,
-          Nome: produto.nome || null,
-          Marca: produto.marca || null,
-          Categoria: produto.categoria || null,
-          Peso: produto.peso || null,
-          Altura: produto.altura || null,
-          Largura: produto.largura || null,
-          Comprimento: produto.comprimento || null,
+          ID: String(produto?.id ?? produto?.ID ?? "").trim(),
+          Loja: lojaCodigo, // ✅ "PK" | "SB"
+          "ID Bling": produto?.id_bling || null,
+          "ID Tray": produto?.id_tray || null,
+          "ID Var": produto?.id_var || null,
+          Referência: produto?.referencia || null,
+          Nome: produto?.nome || null,
+          Marca: produto?.marca || null,
+          Categoria: produto?.categoria || null,
+          Peso: produto?.peso ?? null,
+          Altura: produto?.altura ?? null,
+          Largura: produto?.largura ?? null,
+          Comprimento: produto?.comprimento ?? null,
           OD: od || null,
           ...camposComposicao,
         };
 
-        const { data: existente } = await supabase
+        if (!payload.ID) {
+          alert("ID inválido para salvar.");
+          return;
+        }
+
+        const { data: existente, error: errSel } = await supabase
           .from(tabela)
           .select("ID")
           .eq("ID", payload.ID)
           .eq("Loja", lojaCodigo)
           .maybeSingle();
 
-        let erroOperacao = null;
+        if (errSel) throw errSel;
+
+        let erroOperacao: any = null;
 
         if (existente) {
           const { error } = await supabase
@@ -182,7 +247,8 @@ export function useNewListing() {
   // ===========================================================
   const handleDelete = useCallback(
     async (produto: any) => {
-      if (!produto?.ID && !produto?.id) {
+      const idProduto = String(produto?.id ?? produto?.ID ?? "").trim();
+      if (!idProduto) {
         alert("Produto inválido para exclusão.");
         return;
       }
@@ -190,9 +256,13 @@ export function useNewListing() {
       try {
         setDeleting(true);
 
-        const lojaCodigo = produto.loja === "Pikot Shop" ? "PK" : "SB";
-        const tabela = produto.loja === "Pikot Shop" ? "anuncios_pk" : "anuncios_sb";
-        const idProduto = String(produto.ID || produto.id).trim();
+        const lojaCodigo = lojaAnyToCodigo(produto?.loja);
+        if (!lojaCodigo) {
+          alert('Loja inválida. Selecione "PK" ou "SB".');
+          return;
+        }
+
+        const tabela = tabelaFromCodigo(lojaCodigo);
 
         const { error } = await supabase
           .from(tabela)
@@ -214,33 +284,61 @@ export function useNewListing() {
   );
 
   // ===========================================================
-  // 🧭 Carrega produto existente (edição)
+  // 🧭 Carrega produto existente (se vier id na URL)
   // ===========================================================
   useEffect(() => {
     const fetchProduto = async () => {
-      if (!id || !lojaParam) return;
+      if (!idParam) return;
+
+      const lojaCodigo = lojaNomeToCodigo(lojaParam) ?? lojaCodigoInicial;
+      const tabela = tabelaFromCodigo(lojaCodigo);
+
       setLoading(true);
 
       try {
-        const loja = lojaParam.toLowerCase();
-        const tabela =
-          loja.includes("pikot") ? "anuncios_pk" :
-          loja.includes("sobaquetas") ? "anuncios_sb" :
-          null;
-
-        if (!tabela) {
-          alert("Loja inválida.");
-          return;
-        }
-
         const { data, error } = await supabase
           .from(tabela)
           .select("*")
-          .eq("ID", id)
+          .eq("ID", String(idParam).trim())
+          .eq("Loja", lojaCodigo)
           .maybeSingle();
 
         if (error) throw error;
-        if (data) setProduto(data);
+
+        if (!data) return;
+
+        // Mapeia row do Supabase -> contrato do front
+        setProduto({
+          id: data["ID"],
+          loja: lojaCodigo,
+          id_bling: data["ID Bling"] ?? "",
+          id_tray: data["ID Tray"] ?? "",
+          id_var: data["ID Var"] ?? "",
+          referencia: data["Referência"] ?? "",
+          nome: data["Nome"] ?? "",
+          marca: data["Marca"] ?? "",
+          categoria: data["Categoria"] ?? "",
+          peso: data["Peso"] ?? "",
+          altura: data["Altura"] ?? "",
+          largura: data["Largura"] ?? "",
+          comprimento: data["Comprimento"] ?? "",
+          od: data["OD"] ?? inferirOD(data["Referência"]),
+        });
+
+        // monta composição a partir de Código/Quantidade 1..10
+        const comp: any[] = [];
+        for (let i = 1; i <= 10; i++) {
+          const codigo = data[`Código ${i}`];
+          const quantidade = data[`Quantidade ${i}`];
+          if (codigo) {
+            comp.push({
+              codigo: String(codigo).trim(),
+              quantidade: quantidade == null ? "1" : String(quantidade).replace(".", ","),
+              custo: 0,
+            });
+          }
+        }
+        setComposicao(comp);
       } catch (err: any) {
         alert("Erro ao carregar anúncio: " + (err.message || err));
       } finally {
@@ -249,10 +347,11 @@ export function useNewListing() {
     };
 
     fetchProduto();
-  }, [id, lojaParam]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idParam, lojaParam]);
 
   // ===========================================================
-  // ✅ Retorno completo
+  // ✅ Retorno completo (compatível com ProductDetails)
   // ===========================================================
   return {
     produto,

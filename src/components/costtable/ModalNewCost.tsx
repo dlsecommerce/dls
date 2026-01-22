@@ -1,5 +1,6 @@
 "use client";
-import React, { useState, useEffect } from "react";
+
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,11 +11,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { HelpCircle, DollarSign, Loader } from "lucide-react";
+import { DollarSign, Loader } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-
-// ✅ IMPORTA O AUTOCOMPLETE DE MARCA
-import MarcaAutocomplete from "@/components/costtable/BrandAutoComplete";
 
 export type Custo = {
   ["Código"]: string;
@@ -31,6 +29,68 @@ type Props = {
   form: Custo;
   setForm: (v: Custo) => void;
   onSave: () => void;
+};
+
+type SugestaoMarca = { marca: string };
+
+function normalize(s: string) {
+  return (s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+/* Dropdown estilo "na unha" */
+type BrandDropdownProps = {
+  isActive: boolean;
+  sugestoes: SugestaoMarca[];
+  listaRef: React.RefObject<HTMLDivElement>;
+  indiceSelecionado: number;
+  onSelect: (marca: string) => void;
+  emptyText?: string;
+};
+
+const BrandDropdown: React.FC<BrandDropdownProps> = ({
+  isActive,
+  sugestoes,
+  listaRef,
+  indiceSelecionado,
+  onSelect,
+  emptyText = "Nenhuma marca encontrada",
+}) => {
+  if (!isActive) return null;
+
+  return (
+    <div
+      ref={listaRef}
+      className="absolute z-50 mt-1 bg-[#0f0f0f] border border-white/10 rounded-md shadow-lg w-full max-h-40 overflow-y-auto"
+    >
+      {!sugestoes.length ? (
+        <div className="px-2 py-2 text-xs text-neutral-300">{emptyText}</div>
+      ) : (
+        sugestoes.map((s, i) => (
+          <div
+            key={`${s.marca}-${i}`}
+            className={`px-2 py-2 text-xs text-white cursor-pointer flex justify-between items-center ${
+              i === indiceSelecionado
+                ? "bg-[#1a8ceb]/30"
+                : "hover:bg-[#1a8ceb]/20"
+            }`}
+            onMouseDown={(e) => {
+              // onMouseDown pra não perder foco antes de selecionar
+              e.preventDefault();
+              onSelect(s.marca);
+            }}
+          >
+            <span className="truncate">{s.marca}</span>
+            {i < 9 && (
+              <span className="text-[#1a8ceb] ml-3 shrink-0">{i + 1}</span>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
 };
 
 export default function ModalNewCost({
@@ -62,38 +122,31 @@ export default function ModalNewCost({
     let raw = String(value).trim();
     if (!raw) return "0,00";
 
-    // Remove moeda e tudo que não seja dígito, ponto, vírgula, sinal
     raw = raw.replace(/[^\d.,-]/g, "");
 
-    // CASO 1: tem ponto e NÃO tem vírgula -> pode ser decimal (126.97) OU milhar (25.000 / 1.250.000)
     if (raw.includes(".") && !raw.includes(",")) {
       const parts = raw.split(".");
       const last = parts[parts.length - 1];
 
-      // Se termina com 3 dígitos, trata como milhar: 25.000 -> 25000
       if (/^\d{3}$/.test(last)) {
         const n = parseFloat(raw.replace(/\./g, ""));
         return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
       }
 
-      // Senão, trata como decimal: 126.97 -> 126,97
       const n = parseFloat(raw);
       return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
     }
 
-    // CASO 2: Formato brasileiro simples: 126,97
     if (raw.includes(",") && !raw.includes(".")) {
       const n = parseFloat(raw.replace(",", "."));
       return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
     }
 
-    // CASO 3: milhar + decimal pt-BR: 1.234,56
     if (raw.includes(".") && raw.includes(",")) {
       const n = parseFloat(raw.replace(/\./g, "").replace(",", "."));
       return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
     }
 
-    // CASO 4: número inteiro simples: "3100"
     const n = parseFloat(raw);
     return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
   };
@@ -104,6 +157,154 @@ export default function ModalNewCost({
       setOldCodigo(form["Código"]);
     }
   }, [open, mode, form]);
+
+  /* ============================================================
+     ✅ AUTOCOMPLETE DE MARCAS
+     ============================================================ */
+  const marcaWrapRef = useRef<HTMLDivElement>(null);
+  const listaRef = useRef<HTMLDivElement>(null);
+
+  const [marcas, setMarcas] = useState<string[]>([]);
+  const [marcaFocus, setMarcaFocus] = useState(false);
+  const [indiceSelecionado, setIndiceSelecionado] = useState(0);
+
+  // carrega marcas 1x ao abrir o modal
+  useEffect(() => {
+    if (!open) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { data, error } = await supabase.from("custos").select("Marca");
+        if (error) throw error;
+
+        const uniq = Array.from(
+          new Set(
+            (data ?? [])
+              .map((r: any) => String(r?.Marca ?? "").trim())
+              .filter(Boolean)
+          )
+        ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+        if (!cancelled) setMarcas(uniq);
+      } catch (e) {
+        console.error("Erro ao carregar marcas:", e);
+        if (!cancelled) setMarcas([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  const sugestoesMarca: SugestaoMarca[] = useMemo(() => {
+    const q = normalize(form["Marca"]);
+
+    // se vazio: mostra as primeiras (se houver)
+    if (!q) return marcas.slice(0, 9).map((m) => ({ marca: m }));
+
+    return marcas
+      .filter((m) => normalize(m).includes(q))
+      .slice(0, 9)
+      .map((m) => ({ marca: m }));
+  }, [form, marcas]);
+
+  // ✅ Agora o dropdown abre mesmo sem sugestões
+  const isDropdownActive = marcaFocus;
+
+  // garante índice válido quando sugestões mudam
+  useEffect(() => {
+    if (!isDropdownActive) return;
+    setIndiceSelecionado((prev) => {
+      if (prev < 0) return 0;
+      if (prev > sugestoesMarca.length - 1) return 0;
+      return prev;
+    });
+  }, [isDropdownActive, sugestoesMarca.length]);
+
+  const selectMarca = useCallback(
+    (marca: string) => {
+      setForm({ ...form, ["Marca"]: marca });
+      setMarcaFocus(false);
+      setIndiceSelecionado(0);
+    },
+    [form, setForm]
+  );
+
+  // clicar fora fecha dropdown
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!marcaWrapRef.current) return;
+      if (!marcaWrapRef.current.contains(e.target as Node)) {
+        setMarcaFocus(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  const onMarcaKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setMarcaFocus(false);
+      return;
+    }
+
+    // Quando não tem sugestões, Enter só "confirma" o texto (deixa como está)
+    if (!sugestoesMarca.length) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        setMarcaFocus(false);
+        return;
+      }
+      // Tab deixa seguir normal
+      return;
+    }
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setIndiceSelecionado((i) => Math.min(i + 1, sugestoesMarca.length - 1));
+      return;
+    }
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setIndiceSelecionado((i) => Math.max(i - 1, 0));
+      return;
+    }
+
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const item = sugestoesMarca[indiceSelecionado] || sugestoesMarca[0];
+      if (item) selectMarca(item.marca);
+      return;
+    }
+
+    if (e.key === "Tab") {
+      // Seleciona o 1º item se existir e segue pro próximo campo
+      const item = sugestoesMarca[0];
+      if (item) selectMarca(item.marca);
+      return;
+    }
+
+    if (
+      e.key >= "1" &&
+      e.key <= "9" &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !e.metaKey
+    ) {
+      const idx = Number(e.key) - 1;
+      const item = sugestoesMarca[idx];
+      if (item) {
+        e.preventDefault();
+        selectMarca(item.marca);
+      }
+      return;
+    }
+  };
 
   const handleSave = async () => {
     if (!form["Código"] || !form["Marca"]) {
@@ -117,9 +318,6 @@ export default function ModalNewCost({
     try {
       setSaving(true);
 
-      /* ================================
-            PAYLOAD COM CONVERSÃO
-         ================================ */
       const payload = {
         ["Código"]: form["Código"],
         ["Marca"]: form["Marca"],
@@ -139,12 +337,10 @@ export default function ModalNewCost({
         error = insertError;
       } else {
         const codigoParaBuscar = oldCodigo || form["Código"];
-
         const { error: updateError } = await supabase
           .from("custos")
           .update(payload)
           .eq("Código", codigoParaBuscar);
-
         error = updateError;
       }
 
@@ -195,17 +391,7 @@ export default function ModalNewCost({
                 {mode === "create" ? "Novo Custo" : "Editar Custo"}
               </DialogTitle>
 
-              <div className="relative group cursor-default">
-                <HelpCircle className="w-4 h-4 text-neutral-400 ml-1" />
-                <div
-                  className="absolute left-6 top-0 w-56 bg-transparent text-neutral-400 
-                             text-xs opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                >
-                  {mode === "create"
-                    ? "Preencha os campos e clique em Incluir."
-                    : "Edite os campos e clique em Salvar."}
-                </div>
-              </div>
+              {/* ✅ REMOVIDO: tooltip/dica embaixo do ícone */}
             </div>
           </DialogHeader>
 
@@ -218,26 +404,36 @@ export default function ModalNewCost({
                 onChange={(e) =>
                   setForm({ ...form, ["Código"]: e.target.value })
                 }
-                disabled={mode === "edit"} // ✅ ÚNICA ALTERAÇÃO
+                disabled={mode === "edit"}
                 className="bg-white/5 border-neutral-700 text-white rounded-xl"
                 placeholder="Ex: 5535"
               />
             </div>
 
-            <div>
+            {/* Marca com dropdown absoluto */}
+            <div ref={marcaWrapRef} className="relative">
               <Label className="text-neutral-300">Marca</Label>
-
-              {/* ✅ AUTOCOMPLETE DE MARCA (o popover só abre ao digitar) */}
-              <MarcaAutocomplete
+              <Input
                 value={form["Marca"]}
-                onChange={(next) => setForm({ ...form, ["Marca"]: next })}
+                onChange={(e) => {
+                  setForm({ ...form, ["Marca"]: e.target.value });
+                  setIndiceSelecionado(0);
+                  setMarcaFocus(true);
+                }}
+                onFocus={() => setMarcaFocus(true)}
+                onKeyDown={onMarcaKeyDown}
+                className="bg-white/5 border-neutral-700 text-white rounded-xl"
                 placeholder="Ex: Liverpool"
-                disabled={saving}
-                tableName="custos"
-                columnName="Marca"
-                limit={20}
-                minChars={1}
-                debounceMs={250}
+                autoComplete="off"
+              />
+
+              <BrandDropdown
+                isActive={isDropdownActive}
+                sugestoes={sugestoesMarca}
+                listaRef={listaRef}
+                indiceSelecionado={indiceSelecionado}
+                onSelect={(marca) => selectMarca(marca)}
+                emptyText="Nenhuma marca cadastrada ainda"
               />
             </div>
 

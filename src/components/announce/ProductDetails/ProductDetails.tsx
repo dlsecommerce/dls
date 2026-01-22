@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 
 import { AnimatedNumber } from "@/components/announce/ProductDetails/AnimatedNumber";
 import { HelpTooltip } from "@/components/announce/ProductDetails/HelpTooltip";
@@ -16,36 +16,65 @@ import ConfirmExitModal from "@/components/announce/ProductDetails/ConfirmExitMo
 
 import { useSugestoes } from "@/components/announce/hooks/useSugestoes";
 import { useKeyboardShortcuts } from "@/components/announce/hooks/useKeyboardShortcuts";
-import { useAnuncioEditor } from "@/components/announce/hooks/useAnuncioEditor";
+import {
+  useAnuncioEditor,
+  lojaNomeToCodigo,
+} from "@/components/announce/hooks/useAnuncioEditor";
 import { useNewListing } from "@/components/announce/hooks/useNewListing";
 import { useAnuncioActions } from "@/components/announce/hooks/useAnuncioActions";
 
 export default function ProductDetails() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
   const id = searchParams.get("id") || undefined;
-  const lojaParam =
-    (searchParams.get("loja") as "Pikot Shop" | "Sóbaquetas") || "Pikot Shop";
+
+  /**
+   * ✅ Loja normalizada:
+   * Aceita ?loja=PK, ?loja=SB, ?loja=Pikot Shop, ?loja=Sóbaquetas (com/sem acento)
+   * e mantém o contrato do app: produto.loja = "PK" | "SB"
+   */
+  const lojaCodigo = useMemo(() => {
+    return lojaNomeToCodigo(searchParams.get("loja")) ?? "PK";
+  }, [searchParams]);
+
   const loadingBarRef = useRef<any>(null);
 
   // ===========================================================
   // 🧠 Hooks principais (modo edição OU novo cadastro)
   // ===========================================================
   const isEditing = Boolean(id);
-  const editor = isEditing ? useAnuncioEditor(id) : useNewListing();
 
-  // ✅ correção aplicada aqui
+  /**
+   * ✅ useNewListing agora aceita lojaInicial opcional (PK/SB)
+   * para iniciar o formulário já no padrão correto.
+   */
+  const editor = isEditing ? useAnuncioEditor(id) : useNewListing(lojaCodigo);
+
   const {
     produto,
     setProduto,
-    composicao = [], // <=== se vier undefined, vira []
+    composicao = [],
     setComposicao,
     custoTotal,
     setCustoTotal,
     loading,
     toInternal,
     toDisplay,
-  } = editor;
+  } = editor as any;
+
+  /**
+   * ✅ Garante que o estado permaneça alinhado com a URL.
+   * (principalmente em "novo cadastro" quando o usuário abre direto com ?loja=...)
+   */
+  useEffect(() => {
+    if (!produto) return;
+
+    if (!produto.loja || produto.loja !== lojaCodigo) {
+      setProduto((p: any) => ({ ...p, loja: lojaCodigo }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lojaCodigo]);
 
   const { handleSave, handleDelete, saving, deleting } = useAnuncioActions();
 

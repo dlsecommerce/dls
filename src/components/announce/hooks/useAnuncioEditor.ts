@@ -7,8 +7,14 @@ import { useSearchParams } from "next/navigation";
 
 export interface Anuncio {
   id: number;
-  // ✅ agora alinhado com ProductInfoSection (PK/SB)
+
+  /**
+   * ✅ CONTRATO DO FRONT:
+   * - UI e estado React trabalham com "PK" | "SB"
+   * - Na hora de salvar (em outro arquivo), converta para "Pikot Shop" | "Sóbaquetas"
+   */
   loja: "PK" | "SB";
+
   id_bling: string | null;
   id_tray: string | null;
   referencia: string | null;
@@ -46,16 +52,13 @@ export const parseValorBR = (v: string | number | null | undefined): number => {
   const temPonto = str.includes(".");
 
   if (temVirgula && temPonto) {
-    // se a última vírgula vem depois do último ponto, assume formato BR (milhar '.' e decimal ',')
     if (str.lastIndexOf(",") > str.lastIndexOf(".")) {
       str = str.replace(/\./g, "");
       str = str.replace(",", ".");
     } else {
-      // assume formato US (milhar ',' e decimal '.')
       str = str.replace(/,/g, "");
     }
   } else if (temVirgula) {
-    // formato BR simples: "981,73"
     str = str.replace(/\./g, "");
     str = str.replace(",", ".");
   }
@@ -85,7 +88,9 @@ export const inferirOD = (referencia?: string | null): number => {
 // =========================
 // ler e adicionar custos
 // =========================
-async function fetchOrAddCustos(codigos: string[]): Promise<Record<string, number>> {
+async function fetchOrAddCustos(
+  codigos: string[]
+): Promise<Record<string, number>> {
   if (codigos.length === 0) return {};
 
   // 🔹 Busca custos existentes
@@ -139,14 +144,15 @@ async function fetchOrAddCustos(codigos: string[]): Promise<Record<string, numbe
 }
 
 // ===========================================================
-// 🔹 normalizar lojaParam -> "PK" | "SB"
-// Aceita: "PK"/"SB" OU "Pikot Shop"/"Sóbaquetas"/"Sobaquetas"
+// ✅ NORMALIZAÇÃO DE LOJA (CENTRALIZADA)
+// - Aceita: "PK"/"SB" OU "Pikot Shop"/"Sóbaquetas"/"Sobaquetas" (com/sem acento)
+// - Retorna: "PK" | "SB" | null
 // ===========================================================
-function lojaParamToCodigo(lojaParam: string | null): "PK" | "SB" | null {
-  if (!lojaParam) return null;
+export function lojaNomeToCodigo(value: string | null | undefined): "PK" | "SB" | null {
+  if (!value) return null;
 
-  const raw = lojaParam.trim();
-  const norm = raw
+  const norm = String(value)
+    .trim()
     .toLowerCase()
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "");
@@ -157,9 +163,25 @@ function lojaParamToCodigo(lojaParam: string | null): "PK" | "SB" | null {
   return null;
 }
 
+// ===========================================================
+// ✅ CONVERSÃO PARA O NOME (o que seu backend/validação costuma exigir)
+// - Recebe: "PK" | "SB"
+// - Retorna: "Pikot Shop" | "Sóbaquetas" | null
+// ===========================================================
+export function lojaCodigoToNome(
+  codigo: "PK" | "SB" | null | undefined
+): "Pikot Shop" | "Sóbaquetas" | null {
+  if (codigo === "PK") return "Pikot Shop";
+  if (codigo === "SB") return "Sóbaquetas";
+  return null;
+}
+
 /**
  * 🔧 Hook responsável por carregar e editar anúncios conforme a loja.
- * Agora com suporte para adicionar custos automaticamente.
+ * Agora:
+ * - Aceita lojaParam em vários formatos (?loja=PK, ?loja=Pikot%20Shop, etc.)
+ * - Mantém produto.loja sempre como "PK" | "SB" (consistente com a UI)
+ * - Exporta helpers para o handleSave converter para nome e não dar "Loja inválida"
  */
 export function useAnuncioEditor(id?: string) {
   const [produto, setProduto] = useState<Anuncio | null>(null);
@@ -179,7 +201,7 @@ export function useAnuncioEditor(id?: string) {
     setLoading(true);
 
     try {
-      const lojaCodigo = lojaParamToCodigo(lojaParam);
+      const lojaCodigo = lojaNomeToCodigo(lojaParam);
       if (!lojaCodigo) return;
 
       const tabela = lojaCodigo === "PK" ? "anuncios_pk" : "anuncios_sb";
@@ -198,12 +220,7 @@ export function useAnuncioEditor(id?: string) {
       }
 
       if (!data || data.length === 0) {
-        console.warn(
-          "⚠️ Nenhum dado encontrado para ID:",
-          id,
-          "Loja:",
-          lojaCodigo
-        );
+        console.warn("⚠️ Nenhum dado encontrado para ID:", id, "Loja:", lojaCodigo);
         setProduto(null);
         return;
       }
@@ -213,7 +230,7 @@ export function useAnuncioEditor(id?: string) {
 
       setProduto({
         id: row["ID"],
-        loja: lojaCodigo, // ✅ agora PK/SB
+        loja: lojaCodigo, // ✅ sempre PK/SB no estado
         od: odInferido,
         id_bling: row["ID Bling"] ?? null,
         id_tray: row["ID Tray"] ?? null,
@@ -246,7 +263,7 @@ export function useAnuncioEditor(id?: string) {
               !quantidade || quantidade === ""
                 ? "1"
                 : String(quantidade).replace(".", ","),
-            custo: 0, // ✅ number puro (sem formatar BR aqui)
+            custo: 0,
           });
         }
       }
@@ -257,13 +274,13 @@ export function useAnuncioEditor(id?: string) {
 
       const compFinal = compTmp.map((c) => ({
         ...c,
-        custo: custosMap[c.codigo] ?? 0, // ✅ number puro
+        custo: custosMap[c.codigo] ?? 0,
       }));
 
       setComposicao(compFinal as any);
       setAcrescimos((prev) => ({ ...prev, acrescimo: 0 }));
 
-      // 🔹 Calcula custo total (quantidade pode vir BR, custo já é number)
+      // 🔹 Calcula custo total
       const total = compFinal.reduce(
         (sum, item) => sum + parseValorBR(item.quantidade) * Number(item.custo),
         0
@@ -294,5 +311,13 @@ export function useAnuncioEditor(id?: string) {
     custoTotal,
     loading,
     carregarAnuncio,
+
+    /**
+     * ✅ ÚTIL NO handleSave:
+     * const lojaNome = lojaCodigoToNome(produto?.loja);
+     * -> "Pikot Shop" | "Sóbaquetas"
+     */
+    lojaCodigoToNome,
+    lojaNomeToCodigo,
   };
 }
