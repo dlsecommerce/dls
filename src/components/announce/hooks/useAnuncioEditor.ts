@@ -7,7 +7,8 @@ import { useSearchParams } from "next/navigation";
 
 export interface Anuncio {
   id: number;
-  loja: "Pikot Shop" | "Sóbaquetas";
+  // ✅ agora alinhado com ProductInfoSection (PK/SB)
+  loja: "PK" | "SB";
   id_bling: string | null;
   id_tray: string | null;
   referencia: string | null;
@@ -84,9 +85,7 @@ export const inferirOD = (referencia?: string | null): number => {
 // =========================
 // ler e adicionar custos
 // =========================
-async function fetchOrAddCustos(
-  codigos: string[]
-): Promise<Record<string, number>> {
+async function fetchOrAddCustos(codigos: string[]): Promise<Record<string, number>> {
   if (codigos.length === 0) return {};
 
   // 🔹 Busca custos existentes
@@ -139,6 +138,25 @@ async function fetchOrAddCustos(
   return map;
 }
 
+// ===========================================================
+// 🔹 normalizar lojaParam -> "PK" | "SB"
+// Aceita: "PK"/"SB" OU "Pikot Shop"/"Sóbaquetas"/"Sobaquetas"
+// ===========================================================
+function lojaParamToCodigo(lojaParam: string | null): "PK" | "SB" | null {
+  if (!lojaParam) return null;
+
+  const raw = lojaParam.trim();
+  const norm = raw
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+
+  if (norm === "pk" || norm.includes("pikot")) return "PK";
+  if (norm === "sb" || norm.includes("sobaquetas")) return "SB";
+
+  return null;
+}
+
 /**
  * 🔧 Hook responsável por carregar e editar anúncios conforme a loja.
  * Agora com suporte para adicionar custos automaticamente.
@@ -146,6 +164,7 @@ async function fetchOrAddCustos(
 export function useAnuncioEditor(id?: string) {
   const [produto, setProduto] = useState<Anuncio | null>(null);
   const [loading, setLoading] = useState(false);
+
   const params = useSearchParams();
   const lojaParam = params.get("loja");
 
@@ -160,17 +179,10 @@ export function useAnuncioEditor(id?: string) {
     setLoading(true);
 
     try {
-      const loja =
-        lojaParam === "Pikot Shop"
-          ? "Pikot Shop"
-          : lojaParam === "Sóbaquetas" || lojaParam === "Sobaquetas"
-          ? "Sóbaquetas"
-          : null;
+      const lojaCodigo = lojaParamToCodigo(lojaParam);
+      if (!lojaCodigo) return;
 
-      if (!loja) return;
-
-      const tabela = loja === "Pikot Shop" ? "anuncios_pk" : "anuncios_sb";
-      const lojaCodigo = loja === "Pikot Shop" ? "PK" : "SB";
+      const tabela = lojaCodigo === "PK" ? "anuncios_pk" : "anuncios_sb";
 
       // 🔹 Busca o anúncio
       const { data, error } = await supabase
@@ -201,7 +213,7 @@ export function useAnuncioEditor(id?: string) {
 
       setProduto({
         id: row["ID"],
-        loja,
+        loja: lojaCodigo, // ✅ agora PK/SB
         od: odInferido,
         id_bling: row["ID Bling"] ?? null,
         id_tray: row["ID Tray"] ?? null,

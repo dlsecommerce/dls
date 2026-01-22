@@ -63,9 +63,17 @@ export default function AnnounceTable() {
             onExport={() => impExp.handleExport()}
             selectedCount={data.selectedRows.length}
             selectedRows={data.selectedRows}
-            onDeleteSelected={data.deleteSelected}
+            onDeleteSelected={() => {
+              // abre confirmação (não executa delete direto)
+              if (data.selectedRows.length === 0) return;
+              data.setOpenDelete(true);
+            }}
             onClearSelection={() => data.setSelectedRows([])}
-            onMassEditOpen={() => impExp.setOpenMassEdition(true)}
+            onMassEditOpen={() => {
+              // garante que não vai "vazar" modal de delete por cima
+              data.setOpenDelete(false);
+              impExp.setOpenMassEdition(true);
+            }}
             onNew={() => router.push("/dashboard/anuncios/edit")}
           />
 
@@ -98,9 +106,10 @@ export default function AnnounceTable() {
                     )}`
                   )
                 }
-                onDelete={async (row) => {
+                onDelete={(row) => {
+                  // abre confirmação (não executa delete direto)
                   data.setSelectedRows([row]);
-                  await data.deleteSelected();
+                  data.setOpenDelete(true);
                 }}
               />
             </TableBody>
@@ -144,9 +153,20 @@ export default function AnnounceTable() {
       {/* Mass Edition */}
       <MassEditionModal
         open={impExp.openMassEdition}
-        onOpenChange={impExp.setOpenMassEdition}
-        onImportInclusao={impExp.handleFileDirect}
-        onImportAlteracao={impExp.handleFileDirect}
+        onOpenChange={(v) => {
+          // se fechar, ok; se abrir, garante que delete esteja fechado
+          if (v) data.setOpenDelete(false);
+          impExp.setOpenMassEdition(v);
+        }}
+        onImportInclusao={(file) => {
+          // garantia extra: nunca deixar delete por cima do confirm import
+          data.setOpenDelete(false);
+          impExp.handleFileDirect(file, "inclusao");
+        }}
+        onImportAlteracao={(file) => {
+          data.setOpenDelete(false);
+          impExp.handleFileDirect(file, "alteracao");
+        }}
       />
 
       {/* Modal de confirmação da importação */}
@@ -158,6 +178,7 @@ export default function AnnounceTable() {
         warnings={impExp.warnings}
         onConfirm={impExp.confirmImport}
         importing={impExp.importing}
+        tipo={impExp.importMode}
       />
     </div>
   );

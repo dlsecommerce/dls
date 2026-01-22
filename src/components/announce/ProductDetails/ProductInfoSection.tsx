@@ -35,8 +35,7 @@ export const ProductInfoSection = ({
     if (!isEditing) return;
 
     const idVar = produto?.id_var?.trim()?.toLowerCase() || "";
-    const tipo =
-      idVar === "simples" || idVar === "" ? "simples" : "variacoes";
+    const tipo = idVar === "simples" || idVar === "" ? "simples" : "variacoes";
 
     if (produto.tipo_anuncio !== tipo) {
       setProduto((p: any) => ({ ...p, tipo_anuncio: tipo }));
@@ -147,8 +146,32 @@ export const ProductInfoSection = ({
 
         {/* 🔸 Campos de formulário */}
         <div className="grid md:grid-cols-2 gap-2">
+          {/* ✅ Loja como Select (PK / SB) */}
+          <div>
+            <Label className="text-neutral-400 text-[10px] block mb-1">
+              Loja
+            </Label>
+            <Select
+              value={(produto?.loja ?? "").toString()}
+              onValueChange={(v) =>
+                setProduto((p: any) => ({
+                  ...p,
+                  loja: v as "PK" | "SB",
+                }))
+              }
+            >
+              <SelectTrigger className="bg-white/5 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb]">
+                <SelectValue placeholder="Selecione (PK ou SB)" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#0f0f0f] border-white/10 text-white">
+                <SelectItem value="PK">PK (Pikot Shop)</SelectItem>
+                <SelectItem value="SB">SB (Sóbaquetas)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Inputs restantes (sem Loja) */}
           {[
-            { label: "Loja", key: "loja" },
             { label: "ID Bling", key: "id_bling" },
             { label: "Referência", key: "referencia" },
             { label: "ID Tray", key: "id_tray" },

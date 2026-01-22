@@ -13,6 +13,9 @@ import { Button } from "@/components/ui/button";
 import { HelpCircle, DollarSign, Loader } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
+// ✅ IMPORTA O AUTOCOMPLETE DE MARCA
+import MarcaAutocomplete from "@/components/costtable/BrandAutoComplete";
+
 export type Custo = {
   ["Código"]: string;
   ["Marca"]: string;
@@ -223,13 +226,18 @@ export default function ModalNewCost({
 
             <div>
               <Label className="text-neutral-300">Marca</Label>
-              <Input
+
+              {/* ✅ AUTOCOMPLETE DE MARCA (BUSCA NO SUPABASE CONFORME DIGITA) */}
+              <MarcaAutocomplete
                 value={form["Marca"]}
-                onChange={(e) =>
-                  setForm({ ...form, ["Marca"]: e.target.value })
-                }
-                className="bg-white/5 border-neutral-700 text-white rounded-xl"
+                onChange={(next) => setForm({ ...form, ["Marca"]: next })}
                 placeholder="Ex: Liverpool"
+                disabled={saving}
+                tableName="custos"
+                columnName="Marca"
+                limit={20}
+                minChars={1}
+                debounceMs={250}
               />
             </div>
 
