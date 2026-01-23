@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import {
   Dialog,
   DialogContent,
@@ -11,103 +11,22 @@ import {
 import { Button } from "@/components/ui/button";
 import { Loader, AlertTriangle } from "lucide-react";
 import { motion } from "framer-motion";
-import { supabase } from "@/integrations/supabase/client";
-
-type RowShape = {
-  ID: number | string;
-  Loja?: string;
-};
 
 type Props = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   count: number;
-  selectedRows: RowShape[];
-  onAfterDelete: () => void;
+  loading?: boolean;
+  onConfirm: () => Promise<void> | void;
 };
 
 export default function ConfirmDeleteModal({
   open,
   onOpenChange,
   count,
-  selectedRows,
-  onAfterDelete,
+  loading = false,
+  onConfirm,
 }: Props) {
-  const [loading, setLoading] = useState(false);
-
-  // normaliza texto para comparação sem acento
-  const normalize = (s: string) =>
-    s
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/\p{Diacritic}/gu, "");
-
-  const handleConfirmDelete = async () => {
-    if (!selectedRows?.length) {
-      alert("Nenhum item selecionado para exclusão.");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      console.log("🔍 selectedRows recebidos:", selectedRows);
-
-      const grouped = selectedRows.reduce<Record<string, string[]>>((acc, row) => {
-        const lojaRaw = String(row.Loja || "").trim();
-        const lojaz = normalize(lojaRaw);
-
-        let tabela = "";
-        let lojaCodigo: "PK" | "SB" | "" = "";
-
-        if (lojaz.includes("pikot") || lojaz === "pk") {
-          tabela = "anuncios_pk";
-          lojaCodigo = "PK";
-        } else if (lojaz.includes("sobaquetas") || lojaz.includes("sóbaquetas") || lojaz === "sb") {
-          tabela = "anuncios_sb";
-          lojaCodigo = "SB";
-        } else {
-          console.warn("❌ Loja não reconhecida:", lojaRaw);
-          return acc;
-        }
-
-        const id = String(row.ID ?? "").trim();
-        if (!id) return acc;
-
-        const key = `${tabela}|${lojaCodigo}`;
-        (acc[key] ||= []).push(id);
-        return acc;
-      }, {});
-
-      const entries = Object.entries(grouped);
-      if (entries.length === 0) {
-        alert("Nenhum anúncio válido para exclusão (verifique loja/ID).");
-        return;
-      }
-
-      // 🔥 Exclusão em paralelo por tabela
-      const promises = entries.map(async ([key, ids]) => {
-        const [tabela, lojaCodigo] = key.split("|");
-        console.log(`🗑️ Excluindo da ${tabela}`, ids);
-        const { error } = await supabase
-          .from(tabela)
-          .delete()
-          .in("ID", ids)
-          .eq("Loja", lojaCodigo);
-        if (error) throw error;
-      });
-
-      await Promise.all(promises);
-      onAfterDelete();
-      onOpenChange(false);
-    } catch (err: any) {
-      console.error("Erro ao excluir:", err);
-      alert("Erro ao excluir anúncios: " + (err.message || err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <Dialog open={open} onOpenChange={(v) => !loading && onOpenChange(v)}>
       <DialogContent className="bg-[#0f0f0f]/95 backdrop-blur-xl border border-neutral-700 rounded-2xl text-white max-w-md shadow-2xl">
@@ -147,9 +66,10 @@ export default function ConfirmDeleteModal({
           >
             Cancelar
           </Button>
+
           <Button
             className="bg-gradient-to-r from-[#ef4444] to-[#dc2626] hover:scale-105 text-white flex items-center gap-2 cursor-pointer"
-            onClick={handleConfirmDelete}
+            onClick={onConfirm}
             disabled={loading}
           >
             {loading ? <Loader className="animate-spin w-5 h-5" /> : "Excluir"}
