@@ -73,8 +73,8 @@ const BrandDropdown: React.FC<BrandDropdownProps> = ({
             key={`${s.marca}-${i}`}
             className={`px-2 py-2 text-xs text-white cursor-pointer flex justify-between items-center ${
               i === indiceSelecionado
-                ? "bg-[#1a8ceb]/30"
-                : "hover:bg-[#1a8ceb]/20"
+                ? "bg-[#22c55e]/30"
+                : "hover:bg-[#22c55e]/20"
             }`}
             onMouseDown={(e) => {
               // onMouseDown pra não perder foco antes de selecionar
@@ -84,7 +84,7 @@ const BrandDropdown: React.FC<BrandDropdownProps> = ({
           >
             <span className="truncate">{s.marca}</span>
             {i < 9 && (
-              <span className="text-[#1a8ceb] ml-3 shrink-0">{i + 1}</span>
+              <span className="text-[#22c55e] ml-3 shrink-0">{i + 1}</span>
             )}
           </div>
         ))
