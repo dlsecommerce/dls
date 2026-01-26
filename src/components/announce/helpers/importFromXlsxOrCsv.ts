@@ -48,7 +48,7 @@ type ImportResult = {
   errors: string[]; // ✅ NOVO: erros bloqueadores para o modal
 };
 
-/** Normaliza string pra chave (dedupe / comparação) */ 
+/** Normaliza string pra chave (dedupe / comparação) */
 function norm(v: any) {
   return String(v ?? "").trim().toLowerCase();
 }

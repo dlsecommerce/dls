@@ -21,7 +21,7 @@ export default function ChatSettings({ notificationsEnabled, setNotificationsEna
                 <Bell className="w-5 h-5 text-[#2699fe]" />
                 <div>
                   <p className="font-medium text-white">Notificações</p>
-                  <p className="text-xs text-gray-400">Receber notificações de novas mensagens</p>
+                  <p className="text-xs text-neutral-400">Receber notificações de novas mensagens</p>
                 </div>
               </div>
               <Switch
@@ -37,7 +37,7 @@ export default function ChatSettings({ notificationsEnabled, setNotificationsEna
                 <Volume2 className="w-5 h-5 text-[#2699fe]" />
                 <div>
                   <p className="font-medium text-white">Sons</p>
-                  <p className="text-xs text-gray-400">Reproduzir som ao receber mensagens</p>
+                  <p className="text-xs text-neutral-400">Reproduzir som ao receber mensagens</p>
                 </div>
               </div>
               <Switch
@@ -53,7 +53,7 @@ export default function ChatSettings({ notificationsEnabled, setNotificationsEna
                 <Moon className="w-5 h-5 text-[#2699fe]" />
                 <div>
                   <p className="font-medium text-white">Tema Escuro</p>
-                  <p className="text-xs text-gray-400">Sempre ativo</p>
+                  <p className="text-xs text-neutral-400">Sempre ativo</p>
                 </div>
               </div>
               <Switch checked={true} disabled />

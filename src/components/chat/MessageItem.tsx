@@ -59,7 +59,7 @@ export default function MessageItem({ message, currentUser, onReply, onEdit, onD
       
       <div className={`max-w-[70%] ${isMine ? 'items-end' : 'items-start'} flex flex-col relative`}>
         {!isMine && (
-          <span className="text-xs text-gray-400 mb-1">{message.remetente_nome}</span>
+          <span className="text-xs text-neutral-400 mb-1">{message.remetente_nome}</span>
         )}
         
         <div className="relative">
@@ -134,7 +134,7 @@ export default function MessageItem({ message, currentUser, onReply, onEdit, onD
         </div>
 
         <div className="flex items-center gap-2 mt-1">
-          <span className="text-[10px] text-gray-500">
+          <span className="text-[10px] text-neutral-500">
             {format(new Date(message.created_date), 'HH:mm')}
           </span>
           
@@ -150,7 +150,7 @@ export default function MessageItem({ message, currentUser, onReply, onEdit, onD
                 size="sm" 
                 className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
               >
-                <MoreVertical className="w-3 h-3 text-gray-400" />
+                <MoreVertical className="w-3 h-3 text-neutral-400" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="bg-[#1a1a1a] border-white/10">

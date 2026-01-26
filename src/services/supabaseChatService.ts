@@ -39,16 +39,12 @@ export const supabaseChatService = {
   // ======================================================
   async uploadFile(file: File) {
     const ext = file.name.split(".").pop() || "bin";
-    const path = `uploads/${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2)}.${ext}`;
+    const path = `uploads/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
-    const { error } = await supabase.storage
-      .from("chat-uploads")
-      .upload(path, file, {
-        cacheControl: "3600",
-        upsert: false,
-      });
+    const { error } = await supabase.storage.from("chat-uploads").upload(path, file, {
+      cacheControl: "3600",
+      upsert: false,
+    });
     if (error) throw error;
 
     const { data } = supabase.storage.from("chat-uploads").getPublicUrl(path);
@@ -56,13 +52,9 @@ export const supabaseChatService = {
   },
 
   // ======================================================
-  // STATUS / PRESENÇA
+  // STATUS / PRESENÇA (opcional - você está usando profiles no ChatBubble)
   // ======================================================
-  async upsertStatus(
-    usuario_id: string,
-    usuario_nome: string,
-    status: UserStatusRow["status"]
-  ) {
+  async upsertStatus(usuario_id: string, usuario_nome: string, status: UserStatusRow["status"]) {
     await supabase.from("status_usuario").upsert({
       usuario_id,
       usuario_nome,
@@ -75,13 +67,9 @@ export const supabaseChatService = {
   subscribeStatuses(onRow: (row: UserStatusRow) => void) {
     const channel = supabase
       .channel("status_usuario_realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "status_usuario" },
-        (payload) => {
-          if (payload.new) onRow(payload.new as UserStatusRow);
-        }
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "status_usuario" }, (payload) => {
+        if (payload.new) onRow(payload.new as UserStatusRow);
+      })
       .subscribe();
 
     return () => supabase.removeChannel(channel);
@@ -89,6 +77,7 @@ export const supabaseChatService = {
 
   // ======================================================
   // TYPING (Digitando...)
+  // ✅ Corrigido para NÃO perder o "nome"
   // ======================================================
   createTypingChannel(conversaKey: string, currentUserId: string, payload: { nome: string }) {
     const channel = supabase.channel(`typing:${conversaKey}`, {
@@ -99,9 +88,15 @@ export const supabaseChatService = {
 
     channel.subscribe(async (status) => {
       if (status === "SUBSCRIBED") {
+        // registra presença com nome sempre
+        // @ts-ignore
         await channel.track({ ...payload, typing: false });
       }
     });
+
+    // guarda o payload no próprio channel (pra startTyping reutilizar)
+    // @ts-ignore
+    channel.__typingPayload = payload;
 
     return channel;
   },
@@ -109,11 +104,18 @@ export const supabaseChatService = {
   async startTyping(channel: ReturnType<typeof supabase.channel>) {
     try {
       // @ts-ignore
-      await channel.track({ typing: true });
+      const base = channel.__typingPayload || {};
+      // @ts-ignore
+      await channel.track({ ...base, typing: true });
+
       setTimeout(async () => {
-        // @ts-ignore
-        await channel.track({ typing: false });
-      }, 1500);
+        try {
+          // @ts-ignore
+          const base2 = channel.__typingPayload || base || {};
+          // @ts-ignore
+          await channel.track({ ...base2, typing: false });
+        } catch {}
+      }, 1200);
     } catch {}
   },
 
@@ -122,7 +124,7 @@ export const supabaseChatService = {
       // @ts-ignore
       const state = channel.presenceState();
       const users = Object.values(state).flat() as any[];
-      const typingNow = users.filter((u) => u.typing);
+      const typingNow = users.filter((u) => u?.typing);
       onTypingUsers(typingNow);
     });
   },
@@ -139,7 +141,7 @@ export const supabaseChatService = {
       .limit(limit);
 
     if (error) throw error;
-    return data?.map((m) => ({ ...m, created_date: m.created_at })) || [];
+    return data?.map((m: any) => ({ ...m, created_date: m.created_at })) || [];
   },
 
   subscribeMessages(conversaKey: string, onMessage: (m: ChatMessage) => void) {
@@ -173,7 +175,7 @@ export const supabaseChatService = {
   },
 
   // ======================================================
-  // ENVIAR MENSAGEM TEXTO
+  // ENVIAR MENSAGENS
   // ======================================================
   async sendText(params: {
     conversaKey: string;
@@ -196,9 +198,6 @@ export const supabaseChatService = {
     if (error) throw error;
   },
 
-  // ======================================================
-  // ENVIAR ARQUIVO / IMAGEM
-  // ======================================================
   async sendFile(params: {
     conversaKey: string;
     remetente_id: string;
@@ -221,13 +220,10 @@ export const supabaseChatService = {
   },
 
   // ======================================================
-  // EDITAR / DELETAR MENSAGEM
+  // EDITAR / DELETAR
   // ======================================================
   async editMessage(messageId: string, novoTexto: string) {
-    const { error } = await supabase
-      .from("mensagens")
-      .update({ mensagem: novoTexto, editado: true })
-      .eq("id", messageId);
+    const { error } = await supabase.from("mensagens").update({ mensagem: novoTexto, editado: true }).eq("id", messageId);
     if (error) throw error;
   },
 
@@ -245,11 +241,12 @@ export const supabaseChatService = {
       .update({ lida: true })
       .eq("conversa_id", conversaKey)
       .neq("remetente_id", currentUserId);
+
     if (error) throw error;
   },
 
   // ======================================================
-  // REAÇÕES (EMOJIS)
+  // REAÇÕES
   // ======================================================
   async addReaction(messageId: string, usuario_id: string, emoji: string) {
     const { error } = await supabase.from("reacoes").upsert({
@@ -267,6 +264,7 @@ export const supabaseChatService = {
       .eq("mensagem_id", messageId)
       .eq("usuario_id", usuario_id)
       .eq("emoji", emoji);
+
     if (error) throw error;
   },
 
@@ -289,7 +287,7 @@ export const supabaseChatService = {
   },
 
   // ======================================================
-  // CONVERSA DIRETA (determinística)
+  // CONVERSA DIRETA
   // ======================================================
   conversationKeyDirect(a: string, b: string) {
     return deterministicDirectConversa(a, b);

@@ -56,7 +56,7 @@ export default function FileUploadArea({ onFileSelect, onClose }) {
           <h3 className="text-xl font-bold text-white mb-2">
             Enviar Arquivo
           </h3>
-          <p className="text-gray-400 mb-6">
+          <p className="text-neutral-400 mb-6">
             Arraste e solte ou clique para selecionar
           </p>
           <input
