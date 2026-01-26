@@ -31,9 +31,6 @@ import { useProfile } from "@/context/ProfileContext";
 import { supabaseChatService, ChatMessage } from "@/services/supabaseChatService";
 import { supabase } from "@/integrations/supabase/client";
 
-// Opcional: canal global "geral" + 1:1
-type Mode = "global" | "direct";
-
 interface MiniUser {
   usuario_id: string;
   usuario_nome: string;
@@ -43,11 +40,12 @@ interface MiniUser {
 
 export default function ChatBubble() {
   const { profile } = useProfile();
+
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const [mode, setMode] = useState<Mode>("global");
+  // ✅ Sem "Geral": só conversa direta
   const [selectedUser, setSelectedUser] = useState<MiniUser | null>(null);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -74,104 +72,120 @@ export default function ChatBubble() {
   const myId = profile?.id || "";
   const myName = profile?.name || "User";
 
-  // ==== Conversa Key
+  // ==== Conversa Key (somente direta)
   const conversaKey = useMemo(() => {
-    if (mode === "global") return "global";
-    if (selectedUser?.usuario_id && myId) {
-      return supabaseChatService.conversationKeyDirect(myId, selectedUser.usuario_id);
-    }
-    return "global";
-  }, [mode, selectedUser?.usuario_id, myId]);
+    if (!selectedUser?.usuario_id || !myId) return "";
+    // evita abrir conversa com você mesmo
+    if (selectedUser.usuario_id === myId) return "";
+    return supabaseChatService.conversationKeyDirect(myId, selectedUser.usuario_id);
+  }, [selectedUser?.usuario_id, myId]);
 
   // ==== Helpers UI
   const getStatusColor = (status: MiniUser["status"]) => {
     switch (status) {
-      case "online": return "#10b981";
-      case "ausente": return "#f59e0b";
-      case "ocupado": return "#ef4444";
-      case "invisivel": return "#6b7280";
-      default: return "#6b7280";
+      case "online":
+        return "#10b981";
+      case "ausente":
+        return "#f59e0b";
+      case "ocupado":
+        return "#ef4444";
+      case "invisivel":
+        return "#6b7280";
+      default:
+        return "#6b7280";
     }
   };
 
   const getStatusText = (status: MiniUser["status"]) => {
     switch (status) {
-      case "online": return "Disponível";
-      case "ausente": return "Ausente";
-      case "ocupado": return "Ocupado";
-      case "invisivel": return "Invisível";
-      default: return "Offline";
+      case "online":
+        return "Disponível";
+      case "ausente":
+        return "Ausente";
+      case "ocupado":
+        return "Ocupado";
+      case "invisivel":
+        return "Invisível";
+      default:
+        return "Offline";
     }
   };
 
   const getInitials = (name?: string) =>
-    name?.split(" ").map((n) => n[0]).join("").substring(0, 2).toUpperCase() || "??";
+    name?.split(" ")
+      .map((n) => n[0])
+      .join("")
+      .substring(0, 2)
+      .toUpperCase() || "??";
 
-  const showNotification = useCallback((title: string, body: string) => {
-    if (!notificationsEnabled || isOpen) return;
-    if ("Notification" in window && Notification.permission === "granted") {
-      new Notification(title, { body, icon: "/favicon.ico", badge: "/favicon.ico" });
-    }
-  }, [notificationsEnabled, isOpen]);
+  const showNotification = useCallback(
+    (title: string, body: string) => {
+      if (!notificationsEnabled || isOpen) return;
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(title, { body, icon: "/favicon.ico", badge: "/favicon.ico" });
+      }
+    },
+    [notificationsEnabled, isOpen]
+  );
 
   const playSound = useCallback(() => {
     if (!soundEnabled) return;
-    const audio = new Audio("data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSmH0fPTgjMGHm7A7+OZRQ0PVqvl8LJeGAg+ltryxnIsBS59zvLaizsIGGS57OihUBELTKXh8LhlHAU2kdXzzn0pBSh+zPLZjT0HHnK/7eObRw4OWKzl8A==");
+    const audio = new Audio(
+      "data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSmH0fPTgjMGHm7A7+OZRQ0PVqvl8LJeGAg+ltryxnIsBS59zvLaizsIGGS57OihUBELTKXh8LhlHAU2kdXzzn0pBSh+zPLZjT0HHnK/7eObRw4OWKzl8A=="
+    );
     audio.play().catch(() => {});
   }, [soundEnabled]);
 
-  // ==== Carregar usuários do Supabase Profiles ====
+  // ✅ Mostrar TODOS os usuários cadastrados (pela tabela profiles)
+  // Importante: para "aparecer todos", garanta que TODO usuário do auth tem linha em profiles (trigger no Supabase).
   useEffect(() => {
     const fetchProfiles = async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, name, avatar_url, status");
+      const { data, error } = await supabase.from("profiles").select("id, name, avatar_url, status");
 
       if (!error && data) {
         setUsers(
-          data
-            .filter((u) => u.id !== myId)
-            .map((u) => ({
-              usuario_id: u.id,
-              usuario_nome: (u as any).name || "Usuário",
-              avatar_url: (u as any).avatar_url,
-              status: ((u as any).status as MiniUser["status"]) || "offline",
-            }))
+          data.map((u: any) => ({
+            usuario_id: u.id,
+            usuario_nome: u.name || "Usuário",
+            avatar_url: u.avatar_url,
+            status: (u.status as MiniUser["status"]) || "offline",
+          }))
         );
       }
     };
+
     fetchProfiles();
 
     const channel = supabase
       .channel("profiles-realtime")
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "profiles" },
-        (payload) => {
-          setUsers((prev) =>
-            prev.map((u) =>
-              u.usuario_id === (payload.new as any).id
-                ? {
-                    ...u,
-                    status: ((payload.new as any).status as MiniUser["status"]) || u.status,
-                    avatar_url: (payload.new as any).avatar_url ?? u.avatar_url,
-                    usuario_nome: (payload.new as any).name ?? u.usuario_nome,
-                  }
-                : u
-            )
-          );
-        }
-      )
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, (payload) => {
+        setUsers((prev) =>
+          prev.map((u) =>
+            u.usuario_id === (payload.new as any).id
+              ? {
+                  ...u,
+                  status: ((payload.new as any).status as MiniUser["status"]) || u.status,
+                  avatar_url: (payload.new as any).avatar_url ?? u.avatar_url,
+                  usuario_nome: (payload.new as any).name ?? u.usuario_nome,
+                }
+              : u
+          )
+        );
+      })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [myId]);
+  }, []);
 
   // ==== Load Messages + Realtime for current conversaKey
   const initMessagesRealtime = useCallback(async () => {
-    if (!conversaKey) return;
+    if (!conversaKey) {
+      setMessages([]);
+      return;
+    }
+
     messagesChannelCleanup.current?.();
 
     const list = await supabaseChatService.listMessages(conversaKey, 200);
@@ -180,10 +194,12 @@ export default function ChatBubble() {
     const unsub = supabaseChatService.subscribeMessages(conversaKey, (m) => {
       setMessages((prev) => {
         if (prev.some((x) => x.id === m.id)) return prev;
+
         if (m.remetente_id !== myId) {
           showNotification(m.remetente_nome, m.mensagem);
           playSound();
         }
+
         const merged = [...prev, m];
         return merged.sort((a, b) => a.created_at.localeCompare(b.created_at));
       });
@@ -191,11 +207,7 @@ export default function ChatBubble() {
     messagesChannelCleanup.current = unsub;
 
     typingChannelRef.current?.unsubscribe();
-    typingChannelRef.current = supabaseChatService.createTypingChannel(
-      conversaKey,
-      myId,
-      { nome: myName }
-    );
+    typingChannelRef.current = supabaseChatService.createTypingChannel(conversaKey, myId, { nome: myName });
     supabaseChatService.onTyping(typingChannelRef.current, setTypingUsers);
 
     if (isOpen) {
@@ -206,7 +218,9 @@ export default function ChatBubble() {
 
   useEffect(() => {
     if (!myId) return;
+
     initMessagesRealtime();
+
     return () => {
       messagesChannelCleanup.current?.();
       const ch = typingChannelRef.current;
@@ -236,36 +250,38 @@ export default function ChatBubble() {
 
   const handleSend = useCallback(async () => {
     if (!newMessage.trim() || !myId) return;
-
-    const destinatario_id = mode === "direct" ? (selectedUser?.usuario_id ?? null) : null;
+    if (!selectedUser?.usuario_id || !conversaKey) return;
 
     await supabaseChatService.sendText({
       conversaKey,
       remetente_id: myId,
       remetente_nome: myName,
-      destinatario_id,
+      destinatario_id: selectedUser.usuario_id,
       mensagem: newMessage.trim(),
       reply_to: replyingTo?.id ?? null,
     });
 
     setNewMessage("");
     setReplyingTo(null);
-  }, [newMessage, myId, myName, mode, selectedUser?.usuario_id, conversaKey, replyingTo]);
+  }, [newMessage, myId, myName, selectedUser?.usuario_id, conversaKey, replyingTo]);
 
-  const handleFileSelect = useCallback(async (file: File) => {
-    if (!myId) return;
-    const destinatario_id = mode === "direct" ? (selectedUser?.usuario_id ?? null) : null;
+  const handleFileSelect = useCallback(
+    async (file: File) => {
+      if (!myId) return;
+      if (!selectedUser?.usuario_id || !conversaKey) return;
 
-    await supabaseChatService.sendFile({
-      conversaKey,
-      remetente_id: myId,
-      remetente_nome: myName,
-      destinatario_id,
-      file,
-    });
+      await supabaseChatService.sendFile({
+        conversaKey,
+        remetente_id: myId,
+        remetente_nome: myName,
+        destinatario_id: selectedUser.usuario_id,
+        file,
+      });
 
-    setUploadOverlay(false);
-  }, [myId, myName, mode, selectedUser?.usuario_id, conversaKey]);
+      setUploadOverlay(false);
+    },
+    [myId, myName, selectedUser?.usuario_id, conversaKey]
+  );
 
   const handleEdit = useCallback(async (messageId: string, novoTexto: string) => {
     await supabaseChatService.editMessage(messageId, novoTexto);
@@ -286,15 +302,14 @@ export default function ChatBubble() {
     return bySearch;
   }, [messages, searchTerm]);
 
-  // Quantos usuários online (status === "online")
-  const onlineCount = useMemo(
-    () => users.filter((u) => u.status === "online").length,
-    [users]
-  );
+  // Quantos usuários online (status === "online") — contando todos, inclusive você
+  const onlineCount = useMemo(() => users.filter((u) => u.status === "online").length, [users]);
 
   // ==== UI sizes
   const chatWidth = isFullscreen ? "w-full h-full" : "w-96 max-h-[600px]";
   const chatPosition = isFullscreen ? "inset-0" : "bottom-6 right-6";
+
+  const hasConversationSelected = Boolean(conversaKey && selectedUser?.usuario_id);
 
   return (
     <>
@@ -360,17 +375,19 @@ export default function ChatBubble() {
                 </div>
                 <div>
                   <h3 className="font-bold text-white">
-                    {mode === "global" ? "Chat da Equipe" : selectedUser?.usuario_nome || "Conversa direta"}
+                    {selectedUser?.usuario_nome ? selectedUser.usuario_nome : "Selecione um usuário"}
                   </h3>
-                  <p className="text-xs text-white/80">
-                    {onlineCount} online
-                  </p>
+                  <p className="text-xs text-white/80">{onlineCount} online</p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
                 {showSearch ? (
-                  <motion.div initial={{ width: 0, opacity: 0 }} animate={{ width: 200, opacity: 1 }} className="relative">
+                  <motion.div
+                    initial={{ width: 0, opacity: 0 }}
+                    animate={{ width: 200, opacity: 1 }}
+                    className="relative"
+                  >
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/60" />
                     <Input
                       value={searchTerm}
@@ -444,62 +461,60 @@ export default function ChatBubble() {
                     {/* Users Sidebar */}
                     <div className="w-24 bg-[#0a0a0a] border-r border-white/10 p-3 overflow-y-auto">
                       <p className="text-xs text-gray-500 font-semibold mb-3 uppercase">Equipe</p>
-                      <div className="space-y-3">
-                        <motion.button
-                          key="global"
-                          onClick={() => { setMode("global"); setSelectedUser(null); }}
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          className={`relative group w-full rounded-lg overflow-hidden ${mode === "global" ? "ring-2 ring-[#2699fe]" : ""}`}
-                        >
-                          <Avatar className="w-12 h-12">
-                            <AvatarFallback className="bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] text-white font-bold text-xs">
-                              GL
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <span className="text-[8px] text-white font-medium">Geral</span>
-                          </div>
-                        </motion.button>
 
-                        {users.map((u, idx) => (
-                          <motion.button
-                            key={u.usuario_id}
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: idx * 0.03 }}
-                            onClick={() => { setMode("direct"); setSelectedUser(u); }}
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            className={`relative group w-full ${
-                              selectedUser?.usuario_id === u.usuario_id && mode === "direct" ? "ring-2 ring-[#2699fe]" : ""
-                            } rounded-lg overflow-hidden`}
-                          >
-                            <Avatar className="w-12 h-12">
-                              {u.avatar_url ? (
-                                <AvatarImage src={u.avatar_url} alt={u.usuario_nome} />
-                              ) : (
-                                <AvatarFallback className="bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] text-white font-bold text-xs">
-                                  {getInitials(u.usuario_nome)}
-                                </AvatarFallback>
-                              )}
-                            </Avatar>
-                            <div
-                              className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#0a0a0a]"
-                              style={{ backgroundColor: getStatusColor(u.status) }}
-                            />
-                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <span className="text-[8px] text-white font-medium">{u.usuario_nome.split(" ")[0]}</span>
-                            </div>
-                          </motion.button>
-                        ))}
+                      <div className="space-y-3">
+                        {users.map((u, idx) => {
+                          const isMe = u.usuario_id === myId;
+                          const isSelected = selectedUser?.usuario_id === u.usuario_id;
+
+                          return (
+                            <motion.button
+                              key={u.usuario_id}
+                              initial={{ opacity: 0, x: -20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: idx * 0.03 }}
+                              onClick={() => {
+                                if (isMe) return;
+                                setSelectedUser(u);
+                              }}
+                              disabled={isMe}
+                              whileHover={{ scale: isMe ? 1 : 1.05 }}
+                              whileTap={{ scale: isMe ? 1 : 0.95 }}
+                              className={`relative group w-full ${
+                                isSelected ? "ring-2 ring-[#2699fe]" : ""
+                              } rounded-lg overflow-hidden ${isMe ? "opacity-80 cursor-not-allowed" : ""}`}
+                              title={isMe ? "Você" : u.usuario_nome}
+                            >
+                              <Avatar className="w-12 h-12">
+                                {u.avatar_url ? (
+                                  <AvatarImage src={u.avatar_url} alt={u.usuario_nome} />
+                                ) : (
+                                  <AvatarFallback className="bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] text-white font-bold text-xs">
+                                    {getInitials(u.usuario_nome)}
+                                  </AvatarFallback>
+                                )}
+                              </Avatar>
+
+                              <div
+                                className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#0a0a0a]"
+                                style={{ backgroundColor: getStatusColor(u.status) }}
+                              />
+
+                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <span className="text-[8px] text-white font-medium">
+                                  {isMe ? "Você" : u.usuario_nome.split(" ")[0]}
+                                </span>
+                              </div>
+                            </motion.button>
+                          );
+                        })}
                       </div>
                     </div>
 
                     {/* Messages Area */}
                     <div className="flex-1 flex flex-col">
                       {/* Selected User Info */}
-                      {mode === "direct" && selectedUser && (
+                      {selectedUser && selectedUser.usuario_id !== myId && (
                         <div className="p-3 border-b border-white/10 bg-[#0a0a0a]/50">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
@@ -520,6 +535,7 @@ export default function ChatBubble() {
                                 </div>
                               </div>
                             </div>
+
                             <div className="flex gap-1">
                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
                                 <Phone className="w-4 h-4 text-gray-400" />
@@ -537,29 +553,44 @@ export default function ChatBubble() {
 
                       {/* Messages */}
                       <ScrollArea className="flex-1 p-4">
-                        <div className="space-y-4">
-                          {filteredMessages.map((msg, idx) => (
-                            <MessageItem
-                              key={msg.id}
-                              message={msg as any}
-                              currentUser={{ id: myId, full_name: myName } as any}
-                              onReply={setReplyingTo as any}
-                              onEdit={handleEdit as any}
-                              onDelete={handleDelete as any}
-                              onReaction={() => {}}
-                              delay={idx * 0.03}
-                            />
-                          ))}
-                          <div ref={messagesEndRef} />
-                        </div>
+                        {!hasConversationSelected ? (
+                          <div className="h-full w-full flex items-center justify-center">
+                            <div className="text-center">
+                              <p className="text-white font-medium">Selecione um usuário para conversar</p>
+                              <p className="text-xs text-gray-400 mt-1">A lista mostra todos do seu “profiles”.</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            {filteredMessages.map((msg, idx) => (
+                              <MessageItem
+                                key={msg.id}
+                                message={msg as any}
+                                currentUser={{ id: myId, full_name: myName } as any}
+                                onReply={setReplyingTo as any}
+                                onEdit={handleEdit as any}
+                                onDelete={handleDelete as any}
+                                onReaction={() => {}}
+                                delay={idx * 0.03}
+                              />
+                            ))}
+                            <div ref={messagesEndRef} />
+                          </div>
+                        )}
                       </ScrollArea>
 
                       {/* Typing indicator */}
-                      {typingUsers.length > 0 && <TypingIndicator users={typingUsers.map((t) => ({ nome: t.nome }))} />}
+                      {typingUsers.length > 0 && hasConversationSelected && (
+                        <TypingIndicator users={typingUsers.map((t) => ({ nome: t.nome }))} />
+                      )}
 
                       {/* Reply Preview */}
-                      {replyingTo && (
-                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="px-4 py-2 border-t border-white/10 bg-white/5">
+                      {replyingTo && hasConversationSelected && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="px-4 py-2 border-t border-white/10 bg-white/5"
+                        >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <div className="w-1 h-10 bg-[#2699fe] rounded" />
@@ -581,8 +612,14 @@ export default function ChatBubble() {
                           <div className="flex-1 relative">
                             <Input
                               value={newMessage}
-                              onChange={(e) => { setNewMessage(e.target.value); handleTyping(); }}
+                              disabled={!hasConversationSelected}
+                              onChange={(e) => {
+                                setNewMessage(e.target.value);
+                                handleTyping();
+                              }}
                               onKeyDown={async (e) => {
+                                if (!hasConversationSelected) return;
+
                                 if (e.key === "Enter" && !e.shiftKey) {
                                   e.preventDefault();
                                   await handleSend();
@@ -590,31 +627,48 @@ export default function ChatBubble() {
                                   handleTyping();
                                 }
                               }}
-                              placeholder="Digite sua mensagem..."
-                              className="bg-white/5 border-white/10 text-white rounded-xl pr-24 h-11 resize-none"
+                              placeholder={hasConversationSelected ? "Digite sua mensagem..." : "Selecione um usuário..."}
+                              className="bg-white/5 border-white/10 text-white rounded-xl pr-24 h-11 resize-none disabled:opacity-60"
                             />
+
                             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
                               <input
                                 ref={fileInputRef}
                                 type="file"
                                 className="hidden"
                                 onChange={(e) => {
+                                  if (!hasConversationSelected) return;
                                   if (e.target.files?.[0]) setUploadOverlay(true);
                                 }}
                               />
-                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => fileInputRef.current?.click()}>
+
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                disabled={!hasConversationSelected}
+                                onClick={() => fileInputRef.current?.click()}
+                              >
                                 <Paperclip className="w-4 h-4 text-gray-400" />
                               </Button>
-                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setShowEmojiPicker((s) => !s)}>
+
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                disabled={!hasConversationSelected}
+                                onClick={() => setShowEmojiPicker((s) => !s)}
+                              >
                                 <Smile className="w-4 h-4 text-gray-400" />
                               </Button>
                             </div>
                           </div>
+
                           <motion.button
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
+                            whileHover={{ scale: hasConversationSelected ? 1.05 : 1 }}
+                            whileTap={{ scale: hasConversationSelected ? 0.95 : 1 }}
                             onClick={handleSend}
-                            disabled={!newMessage.trim()}
+                            disabled={!hasConversationSelected || !newMessage.trim()}
                             className="h-11 w-11 bg-gradient-to-r from-[#2699fe] to-[#1a7dd9] rounded-xl flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#2699fe]/30"
                           >
                             <Send className="w-5 h-5 text-white" />
@@ -623,7 +677,7 @@ export default function ChatBubble() {
 
                         {/* Emoji Picker */}
                         <AnimatePresence>
-                          {showEmojiPicker && (
+                          {showEmojiPicker && hasConversationSelected && (
                             <EmojiPicker
                               onSelect={(emoji: string) => {
                                 setNewMessage((prev) => prev + emoji);
@@ -642,7 +696,7 @@ export default function ChatBubble() {
 
             {/* Upload overlay */}
             <AnimatePresence>
-              {uploadOverlay && (
+              {uploadOverlay && hasConversationSelected && (
                 <FileUploadArea
                   onFileSelect={async (file) => {
                     await handleFileSelect(file);
