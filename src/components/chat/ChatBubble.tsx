@@ -35,6 +35,7 @@ interface MiniUser {
   usuario_id: string;
   usuario_nome: string;
   avatar_url?: string | null;
+  // status salvo no banco (manual)
   status: "online" | "ausente" | "ocupado" | "invisivel" | "offline";
 }
 
@@ -45,7 +46,7 @@ export default function ChatBubble() {
   const [isMinimized, setIsMinimized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // ✅ Sem "Geral": só conversa direta
+  // ✅ Sem “Geral”: só DM
   const [selectedUser, setSelectedUser] = useState<MiniUser | null>(null);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -64,10 +65,15 @@ export default function ChatBubble() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
+  // ✅ Presence: quem está online agora (navegando)
+  const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const messagesChannelCleanup = useRef<null | (() => void)>(null);
+  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const myId = profile?.id || "";
   const myName = profile?.name || "User";
@@ -75,10 +81,11 @@ export default function ChatBubble() {
   // ==== Conversa Key (somente direta)
   const conversaKey = useMemo(() => {
     if (!selectedUser?.usuario_id || !myId) return "";
-    // evita abrir conversa com você mesmo
     if (selectedUser.usuario_id === myId) return "";
     return supabaseChatService.conversationKeyDirect(myId, selectedUser.usuario_id);
   }, [selectedUser?.usuario_id, myId]);
+
+  const hasConversationSelected = Boolean(conversaKey && selectedUser?.usuario_id);
 
   // ==== Helpers UI
   const getStatusColor = (status: MiniUser["status"]) => {
@@ -118,6 +125,17 @@ export default function ChatBubble() {
       .substring(0, 2)
       .toUpperCase() || "??";
 
+  // ✅ Status “efetivo” pra UI:
+  // - se está presente agora => online
+  // - senão => status do banco (ausente/ocupado/invisivel/offline)
+  const getEffectiveStatus = useCallback(
+    (u: MiniUser): MiniUser["status"] => {
+      if (onlineIds.has(u.usuario_id)) return "online";
+      return u.status || "offline";
+    },
+    [onlineIds]
+  );
+
   const showNotification = useCallback(
     (title: string, body: string) => {
       if (!notificationsEnabled || isOpen) return;
@@ -136,15 +154,21 @@ export default function ChatBubble() {
     audio.play().catch(() => {});
   }, [soundEnabled]);
 
-  // ✅ Mostrar TODOS os usuários cadastrados (pela tabela profiles)
-  // Importante: para "aparecer todos", garanta que TODO usuário do auth tem linha em profiles (trigger no Supabase).
+  // ✅ Carregar TODOS os usuários do profiles
   useEffect(() => {
     const fetchProfiles = async () => {
-      const { data, error } = await supabase.from("profiles").select("id, name, avatar_url, status");
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, name, avatar_url, status");
 
-      if (!error && data) {
+      if (error) {
+        console.error("[profiles] select error:", error);
+        return;
+      }
+
+      if (data) {
         setUsers(
-          data.map((u: any) => ({
+          (data as any[]).map((u) => ({
             usuario_id: u.id,
             usuario_nome: u.name || "Usuário",
             avatar_url: u.avatar_url,
@@ -156,21 +180,28 @@ export default function ChatBubble() {
 
     fetchProfiles();
 
+    // ✅ Realtime: se mudar status/nome/foto no profiles, reflete aqui
     const channel = supabase
       .channel("profiles-realtime")
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, (payload) => {
-        setUsers((prev) =>
-          prev.map((u) =>
-            u.usuario_id === (payload.new as any).id
-              ? {
-                  ...u,
-                  status: ((payload.new as any).status as MiniUser["status"]) || u.status,
-                  avatar_url: (payload.new as any).avatar_url ?? u.avatar_url,
-                  usuario_nome: (payload.new as any).name ?? u.usuario_nome,
-                }
-              : u
-          )
-        );
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, (payload) => {
+        const newRow: any = payload.new;
+
+        if (!newRow?.id) return;
+
+        setUsers((prev) => {
+          const exists = prev.some((u) => u.usuario_id === newRow.id);
+
+          const mapped: MiniUser = {
+            usuario_id: newRow.id,
+            usuario_nome: newRow.name || "Usuário",
+            avatar_url: newRow.avatar_url,
+            status: (newRow.status as MiniUser["status"]) || "offline",
+          };
+
+          if (!exists) return [mapped, ...prev];
+
+          return prev.map((u) => (u.usuario_id === newRow.id ? { ...u, ...mapped } : u));
+        });
       })
       .subscribe();
 
@@ -179,17 +210,74 @@ export default function ChatBubble() {
     };
   }, []);
 
+  // ✅ Presence (online/offline automático enquanto navega)
+  useEffect(() => {
+    if (!myId) return;
+
+    // canal global de presença
+    const presence = supabase.channel("presence:site", {
+      config: {
+        presence: { key: myId },
+      },
+    });
+
+    presence
+      .on("presence", { event: "sync" }, () => {
+        const state = presence.presenceState();
+        const ids = new Set<string>();
+
+        // state: { [key: string]: Array<payload> }
+        Object.keys(state).forEach((k) => {
+          // k costuma ser a key do presence (myId etc.)
+          ids.add(k);
+        });
+
+        setOnlineIds(ids);
+      })
+      .on("presence", { event: "join" }, ({ key }) => {
+        setOnlineIds((prev) => new Set([...prev, String(key)]));
+      })
+      .on("presence", { event: "leave" }, ({ key }) => {
+        setOnlineIds((prev) => {
+          const next = new Set(prev);
+          next.delete(String(key));
+          return next;
+        });
+      });
+
+    presence.subscribe(async (status) => {
+      if (status !== "SUBSCRIBED") return;
+      // “marca presença” com qualquer payload (opcional)
+      await presence.track({ nome: myName, at: new Date().toISOString() });
+    });
+
+    presenceChannelRef.current = presence;
+
+    return () => {
+      if (presenceChannelRef.current) {
+        supabase.removeChannel(presenceChannelRef.current);
+        presenceChannelRef.current = null;
+      }
+    };
+  }, [myId, myName]);
+
   // ==== Load Messages + Realtime for current conversaKey
   const initMessagesRealtime = useCallback(async () => {
     if (!conversaKey) {
       setMessages([]);
+      messagesChannelCleanup.current?.();
+      typingChannelRef.current?.unsubscribe?.();
       return;
     }
 
     messagesChannelCleanup.current?.();
 
-    const list = await supabaseChatService.listMessages(conversaKey, 200);
-    setMessages(list.sort((a, b) => a.created_at.localeCompare(b.created_at)));
+    try {
+      const list = await supabaseChatService.listMessages(conversaKey, 200);
+      setMessages(list.sort((a, b) => a.created_at.localeCompare(b.created_at)));
+    } catch (e) {
+      console.error("[chat] listMessages error:", e);
+    }
 
     const unsub = supabaseChatService.subscribeMessages(conversaKey, (m) => {
       setMessages((prev) => {
@@ -228,7 +316,7 @@ export default function ChatBubble() {
     };
   }, [initMessagesRealtime, myId]);
 
-  // ==== Unread counter (sem alterar layout)
+  // ==== Unread counter
   useEffect(() => {
     if (!isOpen) {
       const count = messages.filter((m) => !m.lida && m.remetente_id !== myId).length;
@@ -238,7 +326,7 @@ export default function ChatBubble() {
     }
   }, [isOpen, messages, myId]);
 
-  // ==== Scroll to bottom on new messages
+  // ==== Scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
@@ -252,17 +340,22 @@ export default function ChatBubble() {
     if (!newMessage.trim() || !myId) return;
     if (!selectedUser?.usuario_id || !conversaKey) return;
 
-    await supabaseChatService.sendText({
-      conversaKey,
-      remetente_id: myId,
-      remetente_nome: myName,
-      destinatario_id: selectedUser.usuario_id,
-      mensagem: newMessage.trim(),
-      reply_to: replyingTo?.id ?? null,
-    });
+    try {
+      await supabaseChatService.sendText({
+        conversaKey,
+        remetente_id: myId,
+        remetente_nome: myName,
+        destinatario_id: selectedUser.usuario_id,
+        mensagem: newMessage.trim(),
+        reply_to: replyingTo?.id ?? null,
+      });
 
-    setNewMessage("");
-    setReplyingTo(null);
+      setNewMessage("");
+      setReplyingTo(null);
+    } catch (e) {
+      console.error("[chat] sendText error:", e);
+      alert("Não foi possível enviar a mensagem. Veja o console (F12) para o erro.");
+    }
   }, [newMessage, myId, myName, selectedUser?.usuario_id, conversaKey, replyingTo]);
 
   const handleFileSelect = useCallback(
@@ -270,46 +363,77 @@ export default function ChatBubble() {
       if (!myId) return;
       if (!selectedUser?.usuario_id || !conversaKey) return;
 
-      await supabaseChatService.sendFile({
-        conversaKey,
-        remetente_id: myId,
-        remetente_nome: myName,
-        destinatario_id: selectedUser.usuario_id,
-        file,
-      });
+      try {
+        await supabaseChatService.sendFile({
+          conversaKey,
+          remetente_id: myId,
+          remetente_nome: myName,
+          destinatario_id: selectedUser.usuario_id,
+          file,
+        });
 
-      setUploadOverlay(false);
+        setUploadOverlay(false);
+      } catch (e) {
+        console.error("[chat] sendFile error:", e);
+        alert("Não foi possível enviar o arquivo. Veja o console (F12) para o erro.");
+      }
     },
     [myId, myName, selectedUser?.usuario_id, conversaKey]
   );
 
   const handleEdit = useCallback(async (messageId: string, novoTexto: string) => {
-    await supabaseChatService.editMessage(messageId, novoTexto);
-  }, []);
-
-  const handleDelete = useCallback(async (messageId: string) => {
-    if (window.confirm("Deletar esta mensagem?")) {
-      await supabaseChatService.deleteMessage(messageId);
+    try {
+      await supabaseChatService.editMessage(messageId, novoTexto);
+    } catch (e) {
+      console.error("[chat] editMessage error:", e);
     }
   }, []);
 
-  // ==== Filtros / Busca (mantendo layout)
+  const handleDelete = useCallback(async (messageId: string) => {
+    if (!window.confirm("Deletar esta mensagem?")) return;
+    try {
+      await supabaseChatService.deleteMessage(messageId);
+    } catch (e) {
+      console.error("[chat] deleteMessage error:", e);
+    }
+  }, []);
+
+  // ==== Filtros / Busca
   const filteredMessages = useMemo(() => {
     const base = messages;
-    const bySearch = searchTerm
+    return searchTerm
       ? base.filter((m) => (m.mensagem || "").toLowerCase().includes(searchTerm.toLowerCase()))
       : base;
-    return bySearch;
   }, [messages, searchTerm]);
 
-  // Quantos usuários online (status === "online") — contando todos, inclusive você
-  const onlineCount = useMemo(() => users.filter((u) => u.status === "online").length, [users]);
+  // ✅ Online count via presença (não via profiles.status)
+  const onlineCount = useMemo(() => onlineIds.size, [onlineIds]);
 
   // ==== UI sizes
   const chatWidth = isFullscreen ? "w-full h-full" : "w-96 max-h-[600px]";
   const chatPosition = isFullscreen ? "inset-0" : "bottom-6 right-6";
 
-  const hasConversationSelected = Boolean(conversaKey && selectedUser?.usuario_id);
+  // ✅ Lista com “Você” no topo
+  const usersOrdered = useMemo(() => {
+    const me = users.find((u) => u.usuario_id === myId) || null;
+    const others = users
+      .filter((u) => u.usuario_id !== myId)
+      .sort((a, b) => {
+        // online primeiro (pela presença)
+        const ra = onlineIds.has(a.usuario_id) ? 0 : 1;
+        const rb = onlineIds.has(b.usuario_id) ? 0 : 1;
+        if (ra !== rb) return ra - rb;
+        return (a.usuario_nome || "").localeCompare(b.usuario_nome || "");
+      });
+
+    return me ? [me, ...others] : others;
+  }, [users, myId, onlineIds]);
+
+  // ✅ status efetivo do usuário selecionado (pra header)
+  const selectedEffectiveStatus = useMemo(() => {
+    if (!selectedUser) return "offline" as MiniUser["status"];
+    return getEffectiveStatus(selectedUser);
+  }, [selectedUser, getEffectiveStatus]);
 
   return (
     <>
@@ -327,6 +451,7 @@ export default function ChatBubble() {
             style={{ boxShadow: "0 8px 32px rgba(38, 153, 254, 0.4)" }}
           >
             <MessageCircle className="w-7 h-7 text-white" />
+
             {unreadCount > 0 && (
               <motion.div
                 initial={{ scale: 0 }}
@@ -336,6 +461,7 @@ export default function ChatBubble() {
                 <span className="text-white text-xs font-bold">{unreadCount}</span>
               </motion.div>
             )}
+
             <motion.div
               className="absolute inset-0 rounded-full bg-[#2699fe]"
               animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0, 0.5] }}
@@ -383,11 +509,7 @@ export default function ChatBubble() {
 
               <div className="flex items-center gap-2">
                 {showSearch ? (
-                  <motion.div
-                    initial={{ width: 0, opacity: 0 }}
-                    animate={{ width: 200, opacity: 1 }}
-                    className="relative"
-                  >
+                  <motion.div initial={{ width: 0, opacity: 0 }} animate={{ width: 200, opacity: 1 }} className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/60" />
                     <Input
                       value={searchTerm}
@@ -463,9 +585,11 @@ export default function ChatBubble() {
                       <p className="text-xs text-gray-500 font-semibold mb-3 uppercase">Equipe</p>
 
                       <div className="space-y-3">
-                        {users.map((u, idx) => {
+                        {usersOrdered.map((u, idx) => {
                           const isMe = u.usuario_id === myId;
                           const isSelected = selectedUser?.usuario_id === u.usuario_id;
+
+                          const effStatus = getEffectiveStatus(u);
 
                           return (
                             <motion.button
@@ -480,9 +604,9 @@ export default function ChatBubble() {
                               disabled={isMe}
                               whileHover={{ scale: isMe ? 1 : 1.05 }}
                               whileTap={{ scale: isMe ? 1 : 0.95 }}
-                              className={`relative group w-full ${
-                                isSelected ? "ring-2 ring-[#2699fe]" : ""
-                              } rounded-lg overflow-hidden ${isMe ? "opacity-80 cursor-not-allowed" : ""}`}
+                              className={`relative group w-full ${isSelected ? "ring-2 ring-[#2699fe]" : ""} rounded-lg overflow-hidden ${
+                                isMe ? "opacity-90 cursor-not-allowed" : ""
+                              }`}
                               title={isMe ? "Você" : u.usuario_nome}
                             >
                               <Avatar className="w-12 h-12">
@@ -497,7 +621,7 @@ export default function ChatBubble() {
 
                               <div
                                 className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#0a0a0a]"
-                                style={{ backgroundColor: getStatusColor(u.status) }}
+                                style={{ backgroundColor: getStatusColor(effStatus) }}
                               />
 
                               <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -505,6 +629,12 @@ export default function ChatBubble() {
                                   {isMe ? "Você" : u.usuario_nome.split(" ")[0]}
                                 </span>
                               </div>
+
+                              {isMe && (
+                                <div className="absolute -top-1 -left-1 bg-white/15 backdrop-blur px-1.5 py-0.5 rounded-md">
+                                  <span className="text-[8px] text-white/90 font-semibold">VOCÊ</span>
+                                </div>
+                              )}
                             </motion.button>
                           );
                         })}
@@ -530,8 +660,8 @@ export default function ChatBubble() {
                               <div>
                                 <p className="text-sm font-medium text-white">{selectedUser.usuario_nome}</p>
                                 <div className="flex items-center gap-1.5">
-                                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(selectedUser.status) }} />
-                                  <span className="text-xs text-gray-400">{getStatusText(selectedUser.status)}</span>
+                                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(selectedEffectiveStatus) }} />
+                                  <span className="text-xs text-gray-400">{getStatusText(selectedEffectiveStatus)}</span>
                                 </div>
                               </div>
                             </div>
@@ -557,7 +687,9 @@ export default function ChatBubble() {
                           <div className="h-full w-full flex items-center justify-center">
                             <div className="text-center">
                               <p className="text-white font-medium">Selecione um usuário para conversar</p>
-                              <p className="text-xs text-gray-400 mt-1">A lista mostra todos do seu “profiles”.</p>
+                              <p className="text-xs text-gray-400 mt-1">
+                                Online aparece automaticamente quando a pessoa estiver com o site aberto.
+                              </p>
                             </div>
                           </div>
                         ) : (
@@ -586,11 +718,7 @@ export default function ChatBubble() {
 
                       {/* Reply Preview */}
                       {replyingTo && hasConversationSelected && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="px-4 py-2 border-t border-white/10 bg-white/5"
-                        >
+                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="px-4 py-2 border-t border-white/10 bg-white/5">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <div className="w-1 h-10 bg-[#2699fe] rounded" />
