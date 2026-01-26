@@ -102,16 +102,22 @@ export default function PricingTable() {
 
     // ✅ AJUSTE: busca SERVER-SIDE (funciona mesmo fora da página atual)
     // Busca por: ID + ID Bling + Referência + Marca
+    //
+    // 🔥 IMPORTANTÍSSIMO:
+    // - "ID Bling" tem espaço -> precisa de aspas no .or()
+    // - "Referência" tem acento -> precisa de aspas no .or()
+    // - "Marca" em alguns schemas é case-sensitive -> aspas evitam erro
     if (debouncedSearch) {
       const term = debouncedSearch.replace(/[%_]/g, "").trim();
-      const pattern = `%${term}%`;
+      const safe = term.replace(/"/g, ""); // evita quebrar se usuário digitar aspas
+      const pattern = `%${safe}%`;
 
       query = query.or(
         [
           `ID.ilike.${pattern}`,
           `"ID Bling".ilike.${pattern}`,
-          `Referência.ilike.${pattern}`,
-          `Marca.ilike.${pattern}`,
+          `"Referência".ilike.${pattern}`,
+          `"Marca".ilike.${pattern}`,
         ].join(",")
       );
     }
@@ -133,7 +139,7 @@ export default function PricingTable() {
     const { data, error, count } = await query.range(start, end);
 
     if (error) {
-      console.error("❌ Supabase error:", error);
+      console.error("❌ Supabase error:", error.message, error.details, error.hint);
       setLoading(false);
       return;
     }
@@ -324,18 +330,20 @@ export default function PricingTable() {
           .range(page * pageSize, (page + 1) * pageSize - 1);
 
         if (selectedLoja.length) exportQuery = exportQuery.in("Loja", selectedLoja);
-        if (selectedBrands.length) exportQuery = exportQuery.in("Marca", selectedBrands);
+        if (selectedBrands.length)
+          exportQuery = exportQuery.in("Marca", selectedBrands);
 
         // ✅ AJUSTE: export respeita a busca também (opcional, mas faz sentido)
         if (debouncedSearch) {
           const term = debouncedSearch.replace(/[%_]/g, "").trim();
-          const pattern = `%${term}%`;
+          const safe = term.replace(/"/g, "");
+          const pattern = `%${safe}%`;
           exportQuery = exportQuery.or(
             [
               `ID.ilike.${pattern}`,
               `"ID Bling".ilike.${pattern}`,
-              `Referência.ilike.${pattern}`,
-              `Marca.ilike.${pattern}`,
+              `"Referência".ilike.${pattern}`,
+              `"Marca".ilike.${pattern}`,
             ].join(",")
           );
         }

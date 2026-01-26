@@ -100,18 +100,18 @@ export default function PricingTable() {
     if (selectedLoja.length) query = query.in("Loja", selectedLoja);
     if (selectedBrands.length) query = query.in("Marca", selectedBrands);
 
-    // ✅ AJUSTE: busca SERVER-SIDE (funciona mesmo fora da página atual)
-    // Busca por: ID + ID Bling + Referência + Marca
+    // ✅ AJUSTE: busca SERVER-SIDE (ID, Marca, Referência, ID Bling)
     if (debouncedSearch) {
       const term = debouncedSearch.replace(/[%_]/g, "").trim();
-      const pattern = `%${term}%`;
+      const safe = term.replace(/"/g, "");
+      const pattern = `%${safe}%`;
 
       query = query.or(
         [
           `ID.ilike.${pattern}`,
+          `"Marca".ilike.${pattern}`,
+          `"Referência".ilike.${pattern}`,
           `"ID Bling".ilike.${pattern}`,
-          `Referência.ilike.${pattern}`,
-          `Marca.ilike.${pattern}`,
         ].join(",")
       );
     }
@@ -133,7 +133,12 @@ export default function PricingTable() {
     const { data, error, count } = await query.range(start, end);
 
     if (error) {
-      console.error("❌ Supabase error:", error);
+      console.error(
+        "❌ Supabase error:",
+        error.message,
+        error.details,
+        error.hint
+      );
       setLoading(false);
       return;
     }
@@ -190,6 +195,56 @@ export default function PricingTable() {
     }
   };
 
+  // ❌ REMOVIDO (ou você pode comentar):
+  // Esse filtro client-side só filtra os 50 itens da página atual e causava "não acha nada".
+  // Agora a busca já é server-side dentro do loadData.
+  //
+  // useEffect(() => {
+  //   if (!rows.length) return;
+  //
+  //   const termo = debouncedSearch.toLowerCase();
+  //   const isNumeric = /^\d+$/.test(termo);
+  //
+  //   const normalize = (v: any) =>
+  //     String(v || "")
+  //       .normalize("NFD")
+  //       .replace(/[\u0300-\u036f]/g, "")
+  //       .toLowerCase();
+  //
+  //   startTransition(() => {
+  //     const result = rows.filter((r) => {
+  //       const lojaOk =
+  //         selectedLoja.length === 0 || selectedLoja.includes(r.Loja);
+  //       const marcaOk =
+  //         selectedBrands.length === 0 || selectedBrands.includes(r.Marca);
+  //
+  //       if (!lojaOk || !marcaOk) return false;
+  //
+  //       const campos = [
+  //         normalize(r.ID),
+  //         normalize(r["ID Tray"]),
+  //         normalize(r["ID Var"]),
+  //         normalize(r.Marca),
+  //         normalize(r.Referência),
+  //         normalize(r.Categoria),
+  //         normalize(r.Nome),
+  //       ];
+  //
+  //       if (termo === "") return true;
+  //
+  //       if (isNumeric)
+  //         return (
+  //           campos[0].includes(termo) ||
+  //           campos[1].includes(termo) ||
+  //           campos[2].includes(termo)
+  //         );
+  //
+  //       return campos.some((c) => c.includes(termo));
+  //     });
+  //
+  //     setFilteredRows(result);
+  //   });
+  // }, [debouncedSearch, rows, selectedLoja, selectedBrands]);
 
   const handleCopy = useCallback((text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -334,13 +389,14 @@ export default function PricingTable() {
         // ✅ AJUSTE: export respeita a busca também (opcional)
         if (debouncedSearch) {
           const term = debouncedSearch.replace(/[%_]/g, "").trim();
-          const pattern = `%${term}%`;
+          const safe = term.replace(/"/g, "");
+          const pattern = `%${safe}%`;
           exportQuery = exportQuery.or(
             [
               `ID.ilike.${pattern}`,
+              `"Marca".ilike.${pattern}`,
+              `"Referência".ilike.${pattern}`,
               `"ID Bling".ilike.${pattern}`,
-              `Referência.ilike.${pattern}`,
-              `Marca.ilike.${pattern}`,
             ].join(",")
           );
         }
