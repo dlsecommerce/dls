@@ -12,13 +12,19 @@ export interface ChatMessage {
   remetente_id: string;
   remetente_nome: string;
   destinatario_id: string | null;
+
+  // ✅ A UI usa "mensagem" (mesmo que o banco use conteudo)
   mensagem: string;
+
   tipo: MessageType;
   lida: boolean;
   reply_to?: string | null;
   created_at: string;
   created_date?: string;
   editado?: boolean;
+
+  // ✅ opcional: manter também caso venha do banco
+  conteudo?: string;
 }
 
 export interface UserStatusRow {
@@ -33,18 +39,37 @@ function deterministicDirectConversa(a: string, b: string) {
   return [a, b].sort().join(":");
 }
 
+/**
+ * ✅ Normaliza qualquer linha do banco para o formato esperado pela UI
+ * - Banco pode ter "conteudo" como coluna principal
+ * - UI precisa de "mensagem"
+ */
+function mapDbMessage(row: any): ChatMessage {
+  return {
+    ...row,
+    mensagem: row?.mensagem ?? row?.conteudo ?? "",
+    conteudo: row?.conteudo ?? row?.mensagem ?? undefined,
+    created_date: row?.created_at,
+  };
+}
+
 export const supabaseChatService = {
   // ======================================================
   // UPLOAD DE ARQUIVOS
   // ======================================================
   async uploadFile(file: File) {
     const ext = file.name.split(".").pop() || "bin";
-    const path = `uploads/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const path = `uploads/${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}.${ext}`;
 
-    const { error } = await supabase.storage.from("chat-uploads").upload(path, file, {
-      cacheControl: "3600",
-      upsert: false,
-    });
+    const { error } = await supabase.storage
+      .from("chat-uploads")
+      .upload(path, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+
     if (error) throw error;
 
     const { data } = supabase.storage.from("chat-uploads").getPublicUrl(path);
@@ -52,9 +77,14 @@ export const supabaseChatService = {
   },
 
   // ======================================================
-  // STATUS / PRESENÇA (opcional - você está usando profiles no ChatBubble)
+  // STATUS / PRESENÇA
+  // (mantido para compatibilidade - mas você vai usar profiles na opção 1)
   // ======================================================
-  async upsertStatus(usuario_id: string, usuario_nome: string, status: UserStatusRow["status"]) {
+  async upsertStatus(
+    usuario_id: string,
+    usuario_nome: string,
+    status: UserStatusRow["status"]
+  ) {
     await supabase.from("status_usuario").upsert({
       usuario_id,
       usuario_nome,
@@ -67,9 +97,13 @@ export const supabaseChatService = {
   subscribeStatuses(onRow: (row: UserStatusRow) => void) {
     const channel = supabase
       .channel("status_usuario_realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "status_usuario" }, (payload) => {
-        if (payload.new) onRow(payload.new as UserStatusRow);
-      })
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "status_usuario" },
+        (payload) => {
+          if (payload.new) onRow(payload.new as UserStatusRow);
+        }
+      )
       .subscribe();
 
     return () => supabase.removeChannel(channel);
@@ -77,26 +111,29 @@ export const supabaseChatService = {
 
   // ======================================================
   // TYPING (Digitando...)
-  // ✅ Corrigido para NÃO perder o "nome"
+  // ✅ Corrigido: não perde o "nome" (evita undefined)
   // ======================================================
-  createTypingChannel(conversaKey: string, currentUserId: string, payload: { nome: string }) {
+  createTypingChannel(
+    conversaKey: string,
+    currentUserId: string,
+    payload: { nome: string }
+  ) {
     const channel = supabase.channel(`typing:${conversaKey}`, {
       config: { presence: { key: currentUserId } },
     });
+
+    // guarda o payload no próprio channel pra reuse no startTyping
+    // @ts-ignore
+    channel.__typingPayload = payload;
 
     channel.on("presence", { event: "sync" }, () => {});
 
     channel.subscribe(async (status) => {
       if (status === "SUBSCRIBED") {
-        // registra presença com nome sempre
         // @ts-ignore
         await channel.track({ ...payload, typing: false });
       }
     });
-
-    // guarda o payload no próprio channel (pra startTyping reutilizar)
-    // @ts-ignore
-    channel.__typingPayload = payload;
 
     return channel;
   },
@@ -115,11 +152,14 @@ export const supabaseChatService = {
           // @ts-ignore
           await channel.track({ ...base2, typing: false });
         } catch {}
-      }, 1200);
+      }, 1500);
     } catch {}
   },
 
-  onTyping(channel: ReturnType<typeof supabase.channel>, onTypingUsers: (list: any[]) => void) {
+  onTyping(
+    channel: ReturnType<typeof supabase.channel>,
+    onTypingUsers: (list: any[]) => void
+  ) {
     channel.on("presence", { event: "sync" }, () => {
       // @ts-ignore
       const state = channel.presenceState();
@@ -141,7 +181,8 @@ export const supabaseChatService = {
       .limit(limit);
 
     if (error) throw error;
-    return data?.map((m: any) => ({ ...m, created_date: m.created_at })) || [];
+
+    return (data || []).map(mapDbMessage);
   },
 
   subscribeMessages(conversaKey: string, onMessage: (m: ChatMessage) => void) {
@@ -157,15 +198,17 @@ export const supabaseChatService = {
         },
         (payload) => {
           if (payload.eventType === "DELETE") {
-            onMessage({ ...(payload.old as any), tipo: "sistema", mensagem: "Mensagem excluída" });
+            onMessage({
+              ...(payload.old as any),
+              tipo: "sistema",
+              mensagem: "Mensagem excluída",
+              created_date: (payload.old as any)?.created_at,
+            });
             return;
           }
 
           if (payload.new) {
-            onMessage({
-              ...(payload.new as any),
-              created_date: (payload.new as any).created_at,
-            });
+            onMessage(mapDbMessage(payload.new));
           }
         }
       )
@@ -175,7 +218,8 @@ export const supabaseChatService = {
   },
 
   // ======================================================
-  // ENVIAR MENSAGENS
+  // ENVIAR MENSAGEM TEXTO
+  // ✅ FIX: gravar em "conteudo" para evitar PGRST204 no "mensagem"
   // ======================================================
   async sendText(params: {
     conversaKey: string;
@@ -190,14 +234,22 @@ export const supabaseChatService = {
       remetente_id: params.remetente_id,
       remetente_nome: params.remetente_nome,
       destinatario_id: params.destinatario_id,
-      mensagem: params.mensagem,
+
+      // ✅ coluna confiável no seu schema
+      conteudo: params.mensagem,
+
       lida: false,
       tipo: "texto",
       reply_to: params.reply_to ?? null,
     });
+
     if (error) throw error;
   },
 
+  // ======================================================
+  // ENVIAR ARQUIVO / IMAGEM
+  // ✅ FIX: gravar em "conteudo"
+  // ======================================================
   async sendFile(params: {
     conversaKey: string;
     remetente_id: string;
@@ -207,28 +259,42 @@ export const supabaseChatService = {
   }) {
     const { url } = await this.uploadFile(params.file);
     const isImage = params.file.type?.startsWith("image/");
+
     const { error } = await supabase.from("mensagens").insert({
       conversa_id: params.conversaKey,
       remetente_id: params.remetente_id,
       remetente_nome: params.remetente_nome,
       destinatario_id: params.destinatario_id,
-      mensagem: url,
+
+      // ✅ coluna confiável
+      conteudo: url,
+
       lida: false,
       tipo: isImage ? "imagem" : "arquivo",
     });
+
     if (error) throw error;
   },
 
   // ======================================================
-  // EDITAR / DELETAR
+  // EDITAR / DELETAR MENSAGEM
+  // ✅ FIX: editar "conteudo" (não "mensagem")
   // ======================================================
   async editMessage(messageId: string, novoTexto: string) {
-    const { error } = await supabase.from("mensagens").update({ mensagem: novoTexto, editado: true }).eq("id", messageId);
+    const { error } = await supabase
+      .from("mensagens")
+      .update({ conteudo: novoTexto, editado: true })
+      .eq("id", messageId);
+
     if (error) throw error;
   },
 
   async deleteMessage(messageId: string) {
-    const { error } = await supabase.from("mensagens").delete().eq("id", messageId);
+    const { error } = await supabase
+      .from("mensagens")
+      .delete()
+      .eq("id", messageId);
+
     if (error) throw error;
   },
 
@@ -246,7 +312,8 @@ export const supabaseChatService = {
   },
 
   // ======================================================
-  // REAÇÕES
+  // REAÇÕES (EMOJIS)
+  // (mantido como estava)
   // ======================================================
   async addReaction(messageId: string, usuario_id: string, emoji: string) {
     const { error } = await supabase.from("reacoes").upsert({
@@ -264,7 +331,6 @@ export const supabaseChatService = {
       .eq("mensagem_id", messageId)
       .eq("usuario_id", usuario_id)
       .eq("emoji", emoji);
-
     if (error) throw error;
   },
 
@@ -287,7 +353,7 @@ export const supabaseChatService = {
   },
 
   // ======================================================
-  // CONVERSA DIRETA
+  // CONVERSA DIRETA (determinística)
   // ======================================================
   conversationKeyDirect(a: string, b: string) {
     return deterministicDirectConversa(a, b);

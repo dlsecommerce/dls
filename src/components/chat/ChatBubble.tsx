@@ -35,8 +35,30 @@ interface MiniUser {
   usuario_id: string;
   usuario_nome: string;
   avatar_url?: string | null;
-  status: "online" | "ausente" | "ocupado" | "invisivel" | "offline";
+
+  // ✅ aceita o valor do banco ("disponivel") + os do chat
+  status: "online" | "disponivel" | "ausente" | "ocupado" | "invisivel" | "offline";
 }
+
+// ✅ status final que a UI usa
+type UiStatus = "online" | "ausente" | "ocupado" | "invisivel" | "offline";
+
+// ✅ mapeia banco -> UI
+const normalizeStatus = (s: MiniUser["status"] | null | undefined): UiStatus => {
+  switch (s) {
+    case "disponivel":
+    case "online":
+      return "online";
+    case "ausente":
+      return "ausente";
+    case "ocupado":
+      return "ocupado";
+    case "invisivel":
+      return "invisivel";
+    default:
+      return "offline";
+  }
+};
 
 export default function ChatBubble() {
   const { profile } = useProfile();
@@ -78,8 +100,6 @@ export default function ChatBubble() {
   const myName = profile?.name || "User";
 
   // ✅ conversa_id (no seu banco é conversa_id).
-  // Aqui mantemos o valor gerado pelo helper (determinístico A<->B).
-  // No service você deve inserir isso na coluna conversa_id (não conversa_key).
   const conversaId = useMemo(() => {
     if (!selectedUser?.usuario_id || !myId) return "";
     if (selectedUser.usuario_id === myId) return "";
@@ -89,7 +109,7 @@ export default function ChatBubble() {
   const hasConversationSelected = Boolean(conversaId && selectedUser?.usuario_id);
 
   // ===== Helpers UI
-  const getStatusColor = (status: MiniUser["status"]) => {
+  const getStatusColor = (status: UiStatus) => {
     switch (status) {
       case "online":
         return "#10b981";
@@ -104,7 +124,7 @@ export default function ChatBubble() {
     }
   };
 
-  const getStatusText = (status: MiniUser["status"]) => {
+  const getStatusText = (status: UiStatus) => {
     switch (status) {
       case "online":
         return "Disponível";
@@ -126,11 +146,18 @@ export default function ChatBubble() {
       .substring(0, 2)
       .toUpperCase() || "??";
 
-  // ✅ Status efetivo: presença => online; senão => status do banco
+  // ✅ Status efetivo:
+  // - se marcou invisível => invisível (mesmo com o site aberto)
+  // - senão, presença => online
+  // - senão, status do banco (normalizado)
   const getEffectiveStatus = useCallback(
-    (u: MiniUser): MiniUser["status"] => {
+    (u: MiniUser): UiStatus => {
+      const normalized = normalizeStatus(u.status);
+
+      if (normalized === "invisivel") return "invisivel";
       if (onlineIds.has(u.usuario_id)) return "online";
-      return u.status || "offline";
+
+      return normalized;
     },
     [onlineIds]
   );
@@ -169,6 +196,7 @@ export default function ChatBubble() {
             usuario_id: u.id,
             usuario_nome: u.name || "Usuário",
             avatar_url: u.avatar_url,
+            // ✅ aqui pode vir "disponivel", e agora o tipo aceita
             status: (u.status as MiniUser["status"]) || "offline",
           }))
         );
@@ -332,13 +360,10 @@ export default function ChatBubble() {
     if (!selectedUser?.usuario_id || !conversaId) return;
 
     try {
-      // ⚠️ Seu service provavelmente ainda recebe "conversaKey".
-      // Passamos conversaId como argumento principal, e também enviamos conversa_id no payload
-      // (se seu service repassar o payload pro insert).
       await supabaseChatService.sendText({
         conversaKey: conversaId,
         conversa_id: conversaId,
-        conversa_id_: conversaId, // (não atrapalha; ignora se não usar)
+        conversa_id_: conversaId,
         remetente_id: myId,
         remetente_nome: myName,
         destinatario_id: selectedUser.usuario_id,
@@ -425,8 +450,8 @@ export default function ChatBubble() {
     return me ? [me, ...others] : others;
   }, [users, myId, onlineIds]);
 
-  const selectedEffectiveStatus = useMemo(() => {
-    if (!selectedUser) return "offline" as MiniUser["status"];
+  const selectedEffectiveStatus = useMemo((): UiStatus => {
+    if (!selectedUser) return "offline";
     return getEffectiveStatus(selectedUser);
   }, [selectedUser, getEffectiveStatus]);
 
@@ -606,7 +631,6 @@ export default function ChatBubble() {
                               disabled={isMe}
                               whileHover={{ scale: isMe ? 1 : 1.05 }}
                               whileTap={{ scale: isMe ? 1 : 0.95 }}
-                              // ✅ sem borda azul de seleção + ✅ sem quadrado (redondo)
                               className={[
                                 "relative group w-12 h-12 flex items-center justify-center rounded-full",
                                 isMe ? "opacity-90 cursor-not-allowed" : "",
@@ -629,7 +653,7 @@ export default function ChatBubble() {
                                 style={{ backgroundColor: getStatusColor(effStatus) }}
                               />
 
-                              {/* overlay redondo no hover (sem “Você”) */}
+                              {/* overlay redondo no hover */}
                               <div className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                 <span className="text-[8px] text-white font-medium">
                                   {isMe ? "" : u.usuario_nome.split(" ")[0]}
@@ -660,7 +684,10 @@ export default function ChatBubble() {
                               <div>
                                 <p className="text-sm font-medium text-white">{selectedUser.usuario_nome}</p>
                                 <div className="flex items-center gap-1.5">
-                                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(selectedEffectiveStatus) }} />
+                                  <div
+                                    className="w-2 h-2 rounded-full"
+                                    style={{ backgroundColor: getStatusColor(selectedEffectiveStatus) }}
+                                  />
                                   <span className="text-xs text-gray-400">{getStatusText(selectedEffectiveStatus)}</span>
                                 </div>
                               </div>
