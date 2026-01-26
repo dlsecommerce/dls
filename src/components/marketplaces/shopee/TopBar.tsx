@@ -50,7 +50,7 @@ export default function TopBarLite({
       <div className="relative flex-1 min-w-[240px]">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 w-5 h-5" />
         <Input
-          placeholder="Buscar por ID, ID Tray, ID Var, Marca ou Referência..."
+          placeholder="Buscar por ID, ID Bling, Marca ou Referência..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-10 bg-white/5 border-neutral-700 text-white rounded-xl focus-visible:ring-0 focus-visible:border-green-500"

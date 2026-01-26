@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -36,6 +36,9 @@ const sources = [
   { code: "SB", displayName: "Sóbaquetas" },
 ];
 
+// Tipagem do retorno do RPC
+type BrandRow = { marca: string | null };
+
 export default function FiltroAnunciosPopover({
   selectedLoja,
   setSelectedLoja,
@@ -48,57 +51,68 @@ export default function FiltroAnunciosPopover({
   const [allBrands, setAllBrands] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Cache por combinação de lojas (evita refetch desnecessário)
+  const brandsCache = useRef<Map<string, string[]>>(new Map());
+
   // Lojas mostradas no UI
   useEffect(() => {
     setAllLojas(sources.map((s) => s.displayName));
   }, []);
 
-  // ✅ AJUSTE: Carrega TODAS as marcas com paginação (evita limite do Supabase)
-  // ✅ E quando selectedLoja estiver selecionada, filtra no banco com .in("Loja", selectedLoja)
+  // Chave do cache (combinação de lojas selecionadas)
+  const cacheKey = useMemo(() => {
+    const key = selectedLoja.slice().sort().join("|");
+    return key || "ALL";
+  }, [selectedLoja]);
+
+  // ✅ AJUSTE: Carrega as marcas via RPC (DISTINCT no banco)
+  // ✅ Só carrega quando o popover estiver aberto (open === true)
+  // ✅ Cache por combinação de lojas
   useEffect(() => {
+    if (!open) return;
+
+    const cached = brandsCache.current.get(cacheKey);
+    if (cached) {
+      setAllBrands(cached);
+      return;
+    }
+
+    let cancelled = false;
+
     const loadBrands = async () => {
       setLoading(true);
       try {
-        const pageSize = 1000;
-        let from = 0;
+        const { data, error } = await supabase.rpc("get_distinct_brands_tray", {
+          lojas: selectedLoja.length ? selectedLoja : null,
+        });
 
-        const setBrands = new Set<string>();
-
-        while (true) {
-          const to = from + pageSize - 1;
-
-          let q = supabase
-            .from("marketplace_tray_all")
-            .select("Loja, Marca")
-            .range(from, to);
-
-          if (selectedLoja.length) {
-            q = q.in("Loja", selectedLoja);
-          }
-
-          const { data, error } = await q;
-
-          if (error) {
-            console.error("Erro ao buscar marcas:", error.message);
-            break;
-          }
-
-          (data || []).forEach((r: any) => {
-            if (r?.Marca) setBrands.add(String(r.Marca).trim());
-          });
-
-          if (!data || data.length < pageSize) break;
-          from += pageSize;
+        if (error) {
+          console.error("Erro ao buscar marcas (Tray RPC):", error.message);
+          if (!cancelled) setAllBrands([]);
+          return;
         }
 
-        setAllBrands(Array.from(setBrands).sort((a, b) => a.localeCompare(b)));
+        const brands =
+          (data as BrandRow[] | null | undefined)
+            ?.map((r) => (r?.marca ?? "").trim())
+            .filter(Boolean) ?? [];
+
+        // Já vem ordenado no SQL, mas garantimos estabilidade
+        const sorted = brands.sort((a, b) => a.localeCompare(b));
+
+        brandsCache.current.set(cacheKey, sorted);
+        if (!cancelled) setAllBrands(sorted);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     loadBrands();
-  }, [selectedLoja]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, cacheKey, selectedLoja]);
 
   // 🔥 Toggle corrigido — sempre salva PK / SB no estado principal
   const toggleLoja = (lojaDisplay: string) => {

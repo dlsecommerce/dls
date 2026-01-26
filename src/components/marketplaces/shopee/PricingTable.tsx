@@ -57,6 +57,11 @@ export default function PricingTable() {
     return () => clearTimeout(timeout);
   }, [search]);
 
+  // ✅ AJUSTE: quando buscar (ou mudar filtros), volta pra página 1
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, selectedLoja, selectedBrands]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
 
@@ -94,6 +99,22 @@ export default function PricingTable() {
 
     if (selectedLoja.length) query = query.in("Loja", selectedLoja);
     if (selectedBrands.length) query = query.in("Marca", selectedBrands);
+
+    // ✅ AJUSTE: busca SERVER-SIDE (funciona mesmo fora da página atual)
+    // Busca por: ID + ID Bling + Referência + Marca
+    if (debouncedSearch) {
+      const term = debouncedSearch.replace(/[%_]/g, "").trim();
+      const pattern = `%${term}%`;
+
+      query = query.or(
+        [
+          `ID.ilike.${pattern}`,
+          `"ID Bling".ilike.${pattern}`,
+          `Referência.ilike.${pattern}`,
+          `Marca.ilike.${pattern}`,
+        ].join(",")
+      );
+    }
 
     if (sortColumn) {
       query = query
@@ -142,7 +163,7 @@ export default function PricingTable() {
 
     startTransition(() => {
       setRows(normalized);
-      setFilteredRows(normalized);
+      setFilteredRows(normalized); // ✅ agora já vem filtrado do banco
       setTotalItems(count || 0);
       setLoading(false);
     });
@@ -153,6 +174,7 @@ export default function PricingTable() {
     sortDirection,
     selectedLoja,
     selectedBrands,
+    debouncedSearch, // ✅ AJUSTE: dependência da busca
   ]);
 
   useEffect(() => {
@@ -168,51 +190,6 @@ export default function PricingTable() {
     }
   };
 
-  useEffect(() => {
-    if (!rows.length) return;
-
-    const termo = debouncedSearch.toLowerCase();
-    const isNumeric = /^\d+$/.test(termo);
-
-    const normalize = (v: any) =>
-      String(v || "")
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase();
-
-    startTransition(() => {
-      const result = rows.filter((r) => {
-        const lojaOk = selectedLoja.length === 0 || selectedLoja.includes(r.Loja);
-        const marcaOk =
-          selectedBrands.length === 0 || selectedBrands.includes(r.Marca);
-
-        if (!lojaOk || !marcaOk) return false;
-
-        const campos = [
-          normalize(r.ID),
-          normalize(r["ID Tray"]),
-          normalize(r["ID Var"]),
-          normalize(r.Marca),
-          normalize(r.Referência),
-          normalize(r.Categoria),
-          normalize(r.Nome),
-        ];
-
-        if (termo === "") return true;
-
-        if (isNumeric)
-          return (
-            campos[0].includes(termo) ||
-            campos[1].includes(termo) ||
-            campos[2].includes(termo)
-          );
-
-        return campos.some((c) => c.includes(termo));
-      });
-
-      setFilteredRows(result);
-    });
-  }, [debouncedSearch, rows, selectedLoja, selectedBrands]);
 
   const handleCopy = useCallback((text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -255,10 +232,12 @@ export default function PricingTable() {
     });
 
     setRows(updatedRows);
+    setFilteredRows(updatedRows); // ✅ mantém consistência visual
 
     const rowUpdated = updatedRows.find((r) => r.id === dbId);
 
-    const table = loja === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
+    const table =
+      loja === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
 
     const { error } = await supabase
       .from(table)
@@ -283,7 +262,9 @@ export default function PricingTable() {
 
       if (!id || !loja) continue;
 
-      const table = loja === "PK" ? "marketplace_tray_pk" : "marketplace_tray_sb";
+      // ✅ CORREÇÃO: aqui era tray_pk/sb no seu arquivo; para shopee é shopee_pk/sb
+      const table =
+        loja === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
 
       const { error } = await supabase
         .from(table)
@@ -347,7 +328,22 @@ export default function PricingTable() {
           .range(page * pageSize, (page + 1) * pageSize - 1);
 
         if (selectedLoja.length) exportQuery = exportQuery.in("Loja", selectedLoja);
-        if (selectedBrands.length) exportQuery = exportQuery.in("Marca", selectedBrands);
+        if (selectedBrands.length)
+          exportQuery = exportQuery.in("Marca", selectedBrands);
+
+        // ✅ AJUSTE: export respeita a busca também (opcional)
+        if (debouncedSearch) {
+          const term = debouncedSearch.replace(/[%_]/g, "").trim();
+          const pattern = `%${term}%`;
+          exportQuery = exportQuery.or(
+            [
+              `ID.ilike.${pattern}`,
+              `"ID Bling".ilike.${pattern}`,
+              `Referência.ilike.${pattern}`,
+              `Marca.ilike.${pattern}`,
+            ].join(",")
+          );
+        }
 
         const { data, error } = await exportQuery;
 
@@ -367,7 +363,7 @@ export default function PricingTable() {
     } finally {
       setExporting(false);
     }
-  }, [selectedLoja, selectedBrands, impExp]);
+  }, [selectedLoja, selectedBrands, debouncedSearch, impExp]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-8">

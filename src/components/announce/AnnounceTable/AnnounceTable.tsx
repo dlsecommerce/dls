@@ -36,6 +36,8 @@ export default function AnnounceTable() {
     {
       search: data.search,
       selectedStores: safeSelectedLoja,
+      selectedBrands: safeSelectedBrands,
+      selectedCategorias: safeSelectedCategoria,
     },
     data.selectedRows as any
   );
@@ -73,22 +75,25 @@ export default function AnnounceTable() {
 
     try {
       // agrupa por tabela|lojaCodigo
-      const grouped = data.selectedRows.reduce<Record<string, string[]>>((acc, row: any) => {
-        const lojaRaw = String(row.loja ?? row.Loja ?? "").trim();
-        const { tabela, lojaCodigo } = resolveTabelaELojaCodigo(lojaRaw);
+      const grouped = data.selectedRows.reduce<Record<string, string[]>>(
+        (acc, row: any) => {
+          const lojaRaw = String(row.loja ?? row.Loja ?? "").trim();
+          const { tabela, lojaCodigo } = resolveTabelaELojaCodigo(lojaRaw);
 
-        if (!tabela || !lojaCodigo) {
-          console.warn("❌ Loja não reconhecida:", lojaRaw, row);
+          if (!tabela || !lojaCodigo) {
+            console.warn("❌ Loja não reconhecida:", lojaRaw, row);
+            return acc;
+          }
+
+          const id = String(row.id ?? row.ID ?? "").trim();
+          if (!id) return acc;
+
+          const key = `${tabela}|${lojaCodigo}`;
+          (acc[key] ||= []).push(id);
           return acc;
-        }
-
-        const id = String(row.id ?? row.ID ?? "").trim();
-        if (!id) return acc;
-
-        const key = `${tabela}|${lojaCodigo}`;
-        (acc[key] ||= []).push(id);
-        return acc;
-      }, {});
+        },
+        {}
+      );
 
       const entries = Object.entries(grouped);
 
@@ -104,7 +109,7 @@ export default function AnnounceTable() {
           const { error } = await supabase
             .from(tabela)
             .delete()
-            .in("ID", ids)        // ⚠️ se no seu banco a coluna for "id", troque aqui
+            .in("ID", ids) // ⚠️ se no seu banco a coluna for "id", troque aqui
             .eq("Loja", lojaCodigo);
 
           if (error) throw error;
@@ -146,26 +151,22 @@ export default function AnnounceTable() {
             onFileSelect={impExp.handleFileSelect}
             onExport={() => impExp.handleExport()}
             selectedCount={data.selectedRows.length}
-
             // ✅ agora só abre modal (não deleta)
             onDeleteSelected={() => {
               if (data.selectedRows.length === 0) return;
               data.setOpenDelete(true);
             }}
-
             onClearSelection={() => data.setSelectedRows([])}
             onMassEditOpen={() => {
               data.setOpenDelete(false);
               impExp.setOpenMassEdition(true);
             }}
-
             onImportOpen={() => {
               if (typeof (impExp as any).setImportMode === "function") {
                 (impExp as any).setImportMode("inclusao");
               }
               impExp.fileInputRef.current?.click();
             }}
-
             onNew={() => router.push("/dashboard/anuncios/edit")}
           />
 
@@ -190,11 +191,14 @@ export default function AnnounceTable() {
                 onEdit={(id, loja) =>
                   router.push(
                     `/dashboard/anuncios/edit?id=${id}&loja=${encodeURIComponent(
-                      loja === "PK" ? "Pikot Shop" : loja === "SB" ? "Sóbaquetas" : loja
+                      loja === "PK"
+                        ? "Pikot Shop"
+                        : loja === "SB"
+                        ? "Sóbaquetas"
+                        : loja
                     )}`
                   )
                 }
-
                 // ✅ ícone: seleciona 1 e abre o mesmo modal
                 onDelete={(row) => {
                   data.setSelectedRows([row as any]);
