@@ -7,7 +7,15 @@ type ImportResult = {
   fileName: string;
 };
 
-const REQUIRED_COLUMNS = ["Código", "Marca", "Custo Atual", "Custo Antigo", "NCM"];
+// ✅ NOVO: inclui "Produto" como obrigatório no arquivo
+const REQUIRED_COLUMNS = [
+  "Código",
+  "Marca",
+  "Produto",
+  "Custo Atual",
+  "Custo Antigo",
+  "NCM",
+];
 
 /**
  * Ajustes para grandes volumes (50k+)
@@ -93,8 +101,16 @@ function normalizeNcm(value: any): string | null {
 }
 
 // =====================================================================
+// ✅ Produto como texto (trim) — sua coluna no banco é TEXT
+// =====================================================================
+function normalizeProduto(value: any): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  const s = String(value).trim();
+  return s ? s : null;
+}
+
+// =====================================================================
 // ✅ normalizeRow agora já devolve o PAYLOAD FINAL do banco (mais rápido)
-// - evita parse duplicado e map(sanitizePayloadRow) pesado por lote
 // =====================================================================
 function normalizeRow(rowRaw: Record<string, any>) {
   const row = normalizeRowKeys(rowRaw);
@@ -113,6 +129,7 @@ function normalizeRow(rowRaw: Record<string, any>) {
   if (!codigo || String(codigo).trim() === "") return null;
 
   const marcaRaw = findKey(["Marca", "marca", "brand"]);
+  const produtoRaw = findKey(["Produto", "produto", "product"]); // ✅ NOVO
   const custoAtualRaw = findKey(["Custo Atual", "custo atual"]);
   const custoAntigoRaw = findKey(["Custo Antigo", "custo antigo"]);
   const ncmRaw = findKey(["NCM", "ncm"]);
@@ -128,6 +145,7 @@ function normalizeRow(rowRaw: Record<string, any>) {
   return {
     Código: String(codigo).trim(),
     Marca: marca,
+    Produto: normalizeProduto(produtoRaw), // ✅ NOVO
     "Custo Atual": typeof custoAtual === "number" ? custoAtual : 0,
     "Custo Antigo": typeof custoAntigo === "number" ? custoAntigo : 0,
     NCM: normalizeNcm(ncmRaw),
@@ -160,7 +178,6 @@ function assertNumericOkFast(batch: any[]) {
 
 // =====================================================================
 // 🧪 Validação pesada opcional (debug)
-// - custo alto; não recomendada para 50k+ em produção
 // =====================================================================
 function assertNoCommaStringsStrict(batch: any[]) {
   for (let idx = 0; idx < batch.length; idx++) {
@@ -210,9 +227,6 @@ function sleep(ms: number) {
 
 // =====================================================================
 // 🚚 UPSERT EM LOTES (50k+)
-// - retry com backoff
-// - batch adaptativo (se der timeout, corta o lote pela metade)
-// - não perde progresso
 // =====================================================================
 async function upsertInBatches(
   rows: any[],

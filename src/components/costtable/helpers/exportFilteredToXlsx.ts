@@ -8,6 +8,7 @@ import { saveAs } from "file-saver";
 export type CustoRow = {
   ["Código"]: string;
   ["Marca"]: string;
+  ["Produto"]?: string; // ✅ NOVO
   ["Custo Atual"]: number | string;
   ["Custo Antigo"]: number | string;
   ["NCM"]: string;
@@ -84,13 +85,21 @@ export async function exportFilteredToXlsx(rows: CustoRow[], filename: string) {
     return;
   }
 
-  // 🧱 Cabeçalhos fixos
-  const header = ["Código", "Marca", "Custo Atual", "Custo Antigo", "NCM"];
+  // 🧱 Cabeçalhos fixos (✅ NOVO: Produto)
+  const header = [
+    "Código",
+    "Marca",
+    "Produto",
+    "Custo Atual",
+    "Custo Antigo",
+    "NCM",
+  ];
 
   // 🔄 Normaliza os dados (IMPORTANTE: custos viram number “de verdade”)
   const normalized = rows.map((r) => ({
     "Código": r["Código"] ?? "",
     "Marca": r["Marca"] ?? "",
+    "Produto": r["Produto"] ?? "", // ✅ NOVO
     "Custo Atual": parseCostToNumber(r["Custo Atual"]),
     "Custo Antigo": parseCostToNumber(r["Custo Antigo"]),
     "NCM": r["NCM"] ?? "",
@@ -118,6 +127,7 @@ export async function exportFilteredToXlsx(rows: CustoRow[], filename: string) {
           ...normalized.map((o) => [
             o["Código"],
             o["Marca"],
+            o["Produto"], // ✅ NOVO
             o["Custo Atual"],
             o["Custo Antigo"],
             o["NCM"],
@@ -132,25 +142,26 @@ export async function exportFilteredToXlsx(rows: CustoRow[], filename: string) {
           if ((ws as any)[cellRef]) (ws as any)[cellRef].s = headerStyle;
         });
 
-        // Aplica formatação numérica nas colunas de custo (C e D)
-        // Linhas: começam em 1 (pois 0 é header) até normalized.length
+        // Aplica formatação numérica nas colunas de custo
+        // Agora: Custo Atual = coluna D (index 3), Custo Antigo = coluna E (index 4)
         for (let r = 1; r <= normalized.length; r++) {
-          // Coluna C (index 2) -> Custo Atual
-          const cAtualRef = XLSX.utils.encode_cell({ r, c: 2 });
+          // Coluna D (index 3) -> Custo Atual
+          const cAtualRef = XLSX.utils.encode_cell({ r, c: 3 });
           if ((ws as any)[cAtualRef]) (ws as any)[cAtualRef].s = moneyCellStyle;
 
-          // Coluna D (index 3) -> Custo Antigo
-          const cAntigoRef = XLSX.utils.encode_cell({ r, c: 3 });
+          // Coluna E (index 4) -> Custo Antigo
+          const cAntigoRef = XLSX.utils.encode_cell({ r, c: 4 });
           if ((ws as any)[cAntigoRef]) (ws as any)[cAntigoRef].s = moneyCellStyle;
         }
 
-        // Define largura das colunas
+        // Define largura das colunas (✅ NOVO: Produto)
         (ws as any)["!cols"] = [
-          { wch: 16 },
-          { wch: 20 },
-          { wch: 14 },
-          { wch: 14 },
-          { wch: 14 },
+          { wch: 16 }, // Código
+          { wch: 20 }, // Marca
+          { wch: 34 }, // Produto
+          { wch: 14 }, // Custo Atual
+          { wch: 14 }, // Custo Antigo
+          { wch: 14 }, // NCM
         ];
 
         const wb = XLSX.utils.book_new();

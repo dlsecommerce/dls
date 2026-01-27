@@ -17,6 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 export type Custo = {
   ["Código"]: string;
   ["Marca"]: string;
+  ["Produto"]: string; // ✅ NOVO
   ["Custo Atual"]: string;
   ["Custo Antigo"]: string;
   ["NCM"]: string;
@@ -321,6 +322,7 @@ export default function ModalNewCost({
       const payload = {
         ["Código"]: form["Código"],
         ["Marca"]: form["Marca"],
+        ["Produto"]: form["Produto"] || null, // ✅ NOVO
         ["Custo Atual"]: Number(toNumber(form["Custo Atual"]).replace(",", ".")),
         ["Custo Antigo"]: Number(
           toNumber(form["Custo Antigo"]).replace(",", ".")
@@ -390,8 +392,6 @@ export default function ModalNewCost({
               <DialogTitle className="text-white text-lg">
                 {mode === "create" ? "Novo Custo" : "Editar Custo"}
               </DialogTitle>
-
-              {/* ✅ REMOVIDO: tooltip/dica embaixo do ícone */}
             </div>
           </DialogHeader>
 
@@ -434,6 +434,19 @@ export default function ModalNewCost({
                 indiceSelecionado={indiceSelecionado}
                 onSelect={(marca) => selectMarca(marca)}
                 emptyText="Nenhuma marca cadastrada ainda"
+              />
+            </div>
+
+            {/* ✅ NOVO: Produto grande (igual NCM), logo abaixo de Código e Marca */}
+            <div className="md:col-span-2">
+              <Label className="text-neutral-300">Produto</Label>
+              <Input
+                value={form["Produto"] || ""}
+                onChange={(e) =>
+                  setForm({ ...form, ["Produto"]: e.target.value })
+                }
+                className="bg-white/5 border-neutral-700 text-white rounded-xl"
+                placeholder="Ex: Baqueta 7A Liverpool Luminous Series"
               />
             </div>
 

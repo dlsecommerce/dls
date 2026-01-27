@@ -38,7 +38,8 @@ import ConfirmImportModal from "@/components/costtable/ConfirmImportModal";
 import { exportFilteredToXlsx } from "@/components/costtable/helpers/exportFilteredToXlsx";
 import { importFromXlsxOrCsv } from "@/components/costtable/helpers/importFromXlsx";
 
-type Custo = CustoType;
+// ✅ Ajuste: garante que "Produto" exista no tipo mesmo que o Modal ainda não tenha sido atualizado
+type Custo = CustoType & { ["Produto"]?: string };
 
 export default function CostTable() {
   /* ================= ESTADOS ================= */
@@ -55,14 +56,14 @@ export default function CostTable() {
   const [filterOpen, setFilterOpen] = useState(false);
 
   const [sortColumn, setSortColumn] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] =
-    useState<"asc" | "desc">("asc");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
   const [openNew, setOpenNew] = useState(false);
   const [mode, setMode] = useState<"create" | "edit">("create");
   const [form, setForm] = useState<Custo>({
     ["Código"]: "",
     ["Marca"]: "",
+    ["Produto"]: "", // ✅ NOVO
     ["Custo Atual"]: "",
     ["Custo Antigo"]: "",
     ["NCM"]: "",
@@ -76,8 +77,9 @@ export default function CostTable() {
   const [parsedRows, setParsedRows] = useState<any[]>([]);
   const [importing, setImporting] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [importTipo, setImportTipo] =
-    useState<"inclusao" | "alteracao">("inclusao");
+  const [importTipo, setImportTipo] = useState<"inclusao" | "alteracao">(
+    "inclusao"
+  );
 
   const [selectedRows, setSelectedRows] = useState<Custo[]>([]);
   const [openDelete, setOpenDelete] = useState(false);
@@ -148,8 +150,9 @@ export default function CostTable() {
       .select("*", { count: "exact", head: countOnly });
 
     if (search) {
+      // ✅ NOVO: inclui Produto na busca
       q = q.or(
-        `Código.ilike.%${search}%,Marca.ilike.%${search}%,NCM.ilike.%${search}%`
+        `Código.ilike.%${search}%,Marca.ilike.%${search}%,Produto.ilike.%${search}%,NCM.ilike.%${search}%`
       );
     }
 
@@ -275,6 +278,7 @@ export default function CostTable() {
     setForm({
       ["Código"]: "",
       ["Marca"]: "",
+      ["Produto"]: "", // ✅ NOVO
       ["Custo Atual"]: "",
       ["Custo Antigo"]: "",
       ["NCM"]: "",
@@ -378,7 +382,7 @@ export default function CostTable() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 w-5 h-5" />
               <Input
-                placeholder="Buscar por código, marca ou NCM..."
+                placeholder="Buscar por código, marca, produto ou NCM..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-10 bg-white/5 border-neutral-700 text-white rounded-xl"
@@ -467,29 +471,35 @@ export default function CostTable() {
                     />
                   </TableHead>
 
-                  {["Código", "Marca", "Custo Atual", "Custo Antigo", "NCM"].map(
-                    (col) => (
-                      <TableHead
-                        key={col}
-                        onClick={() => handleSort(col)}
-                        className={`font-semibold cursor-pointer transition-colors select-none 
+                  {/* ✅ NOVO: Produto ao lado de Marca */}
+                  {[
+                    "Código",
+                    "Marca",
+                    "Produto",
+                    "Custo Atual",
+                    "Custo Antigo",
+                    "NCM",
+                  ].map((col) => (
+                    <TableHead
+                      key={col}
+                      onClick={() => handleSort(col)}
+                      className={`font-semibold cursor-pointer transition-colors select-none 
                       hover:text-white ${
                         sortColumn === col ? "text-white" : "text-neutral-400"
                       }`}
-                      >
-                        <div className="flex items-center gap-1">
-                          {col}
-                          <ArrowUpDown
-                            className={`h-3 w-3 transition-colors ${
-                              sortColumn === col
-                                ? "text-white"
-                                : "text-neutral-500"
-                            }`}
-                          />
-                        </div>
-                      </TableHead>
-                    )
-                  )}
+                    >
+                      <div className="flex items-center gap-1">
+                        {col}
+                        <ArrowUpDown
+                          className={`h-3 w-3 transition-colors ${
+                            sortColumn === col
+                              ? "text-white"
+                              : "text-neutral-500"
+                          }`}
+                        />
+                      </div>
+                    </TableHead>
+                  ))}
 
                   <TableHead className="w-[120px] text-neutral-400 font-semibold text-center">
                     Ações
@@ -500,7 +510,8 @@ export default function CostTable() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7}>
+                    {/* ✅ ColSpan ajustado (agora são 8 colunas) */}
+                    <TableCell colSpan={8}>
                       <div className="flex justify-center items-center py-16">
                         <Loader className="animate-spin h-8 w-8 text-neutral-400" />
                       </div>
@@ -508,8 +519,9 @@ export default function CostTable() {
                   </TableRow>
                 ) : rows.length === 0 ? (
                   <TableRow>
+                    {/* ✅ ColSpan ajustado (agora são 8 colunas) */}
                     <TableCell
-                      colSpan={7}
+                      colSpan={8}
                       className="text-center text-neutral-400 py-8"
                     >
                       Nenhum registro encontrado
@@ -571,6 +583,11 @@ export default function CostTable() {
 
                         <TableCell className="text-neutral-300">
                           {c["Marca"]}
+                        </TableCell>
+
+                        {/* ✅ NOVO: Produto ao lado de Marca */}
+                        <TableCell className="text-neutral-300">
+                          {c["Produto"]}
                         </TableCell>
 
                         {/* ✅ AJUSTE: exibição pt-BR (milhar + vírgula) + copiar no mesmo formato */}

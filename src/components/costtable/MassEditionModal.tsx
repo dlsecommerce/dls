@@ -32,7 +32,8 @@ export default function MassEditionModal({
 
   /* === MODELO DE INCLUSÃO === */
   const baixarModeloInclusao = () => {
-    const headers = ["Código", "Marca", "Custo Atual", "Custo Antigo", "NCM"];
+    // ✅ NOVO: inclui Produto
+    const headers = ["Código", "Marca", "Produto", "Custo Atual", "Custo Antigo", "NCM"];
     const ws = XLSX.utils.aoa_to_sheet([headers]);
 
     const style = {
@@ -43,21 +44,26 @@ export default function MassEditionModal({
 
     headers.forEach((_, idx) => {
       const cell = XLSX.utils.encode_cell({ r: 0, c: idx });
-      ws[cell] = ws[cell] || {};
-      ws[cell].s = style;
+      (ws as any)[cell] = (ws as any)[cell] || {};
+      (ws as any)[cell].s = style;
     });
 
-    ws["!cols"] = [
-      { wch: 15 },
-      { wch: 20 },
-      { wch: 15 },
-      { wch: 15 },
-      { wch: 12 },
+    // ✅ NOVO: largura do Produto maior
+    (ws as any)["!cols"] = [
+      { wch: 15 }, // Código
+      { wch: 20 }, // Marca
+      { wch: 34 }, // Produto
+      { wch: 15 }, // Custo Atual
+      { wch: 15 }, // Custo Antigo
+      { wch: 12 }, // NCM
     ];
 
-    XLSX.utils.sheet_add_aoa(ws, [
-      ["12345", "Liverpool", "250.00", "240.00", "851821"],
-    ], { origin: -1 });
+    // ✅ NOVO: exemplo inclui Produto
+    XLSX.utils.sheet_add_aoa(
+      ws,
+      [["12345", "Liverpool", "Baqueta 7A Liverpool", "250.00", "240.00", "851821"]],
+      { origin: -1 }
+    );
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Inclusão");
@@ -88,6 +94,7 @@ export default function MassEditionModal({
     {
       Código: "12345",
       Marca: "Liverpool",
+      Produto: "Baqueta 7A Liverpool",
       "Custo Atual": "250.00",
       "Custo Antigo": "240.00",
       NCM: "851821",
@@ -95,21 +102,22 @@ export default function MassEditionModal({
     {
       Código: "67890",
       Marca: "SKP",
+      Produto: "Caixa Ativa 15”",
       "Custo Atual": "310.00",
       "Custo Antigo": "299.00",
       NCM: "852729",
     },
   ];
 
-  const columns = ["Código", "Marca", "Custo Atual", "Custo Antigo", "NCM"];
+  // ✅ NOVO: inclui Produto no preview
+  const columns = ["Código", "Marca", "Produto", "Custo Atual", "Custo Antigo", "NCM"];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        onClick={(e) => e.stopPropagation()}  // 🔥 Impede click bubbling
+        onClick={(e) => e.stopPropagation()} // 🔥 Impede click bubbling
         className="bg-[#0f0f0f]/95 backdrop-blur-xl border border-neutral-700 rounded-2xl shadow-2xl text-white max-w-2xl p-6"
       >
-        
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold text-white flex items-center gap-2">
             Edição em Massa
@@ -139,13 +147,12 @@ export default function MassEditionModal({
           className="space-y-6"
         >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-
             {/* === CARD INCLUSÃO === */}
             <div>
               <div
                 className="p-6 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-all duration-300"
                 onClick={(e) => {
-                  e.stopPropagation();   // 🔥 impede disparo acidental
+                  e.stopPropagation(); // 🔥 impede disparo acidental
                   baixarModeloInclusao();
                 }}
               >
@@ -192,7 +199,10 @@ export default function MassEditionModal({
                     className="w-12 h-12 rounded-xl flex items-center justify-center"
                     style={{ backgroundColor: "#f59e0b20" }}
                   >
-                    <FileSpreadsheet className="w-6 h-6" style={{ color: "#f59e0b" }} />
+                    <FileSpreadsheet
+                      className="w-6 h-6"
+                      style={{ color: "#f59e0b" }}
+                    />
                   </div>
 
                   <div className="flex-1">
@@ -214,7 +224,6 @@ export default function MassEditionModal({
                 <Upload className="w-4 h-4 mr-2" /> Importar Alteração
               </Button>
             </div>
-
           </div>
 
           {/* PREVIEW TABELA */}
@@ -223,14 +232,17 @@ export default function MassEditionModal({
               <thead className="bg-neutral-800 text-white">
                 <tr>
                   {columns.map((col) => (
-                    <th key={col} className="p-2 border-b border-neutral-700 text-left font-semibold">
+                    <th
+                      key={col}
+                      className="p-2 border-b border-neutral-700 text-left font-semibold"
+                    >
                       {col}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {previewData.map((row, i) => (
+                {previewData.map((row: any, i) => (
                   <tr
                     key={i}
                     className={`${
@@ -239,7 +251,7 @@ export default function MassEditionModal({
                   >
                     {columns.map((col) => (
                       <td key={col} className="p-2 border-b border-neutral-800">
-                        {row[col]}
+                        {row[col] ?? "-"}
                       </td>
                     ))}
                   </tr>
@@ -247,7 +259,6 @@ export default function MassEditionModal({
               </tbody>
             </table>
           </div>
-
         </motion.div>
 
         <DialogFooter className="mt-6">
@@ -255,14 +266,13 @@ export default function MassEditionModal({
             variant="outline"
             className="border-neutral-700 text-white"
             onClick={(e) => {
-              e.stopPropagation(); 
+              e.stopPropagation();
               onOpenChange(false);
             }}
           >
             Fechar
           </Button>
         </DialogFooter>
-
       </DialogContent>
     </Dialog>
   );
