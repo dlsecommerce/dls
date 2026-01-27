@@ -108,6 +108,28 @@ export default function ChatBubble() {
 
   const hasConversationSelected = Boolean(conversaId && selectedUser?.usuario_id);
 
+  // ======================================================
+  // 🔐 GARANTE PARTICIPANTES (RLS SAFE) - AJUSTE NECESSÁRIO
+  // ======================================================
+  const ensureConversationParticipants = useCallback(async () => {
+    if (!conversaId || !myId || !selectedUser?.usuario_id) return;
+
+    const { error } = await supabase
+      .from("conversa_participantes")
+      .upsert(
+        [
+          { conversa_id: conversaId, usuario_id: myId },
+          { conversa_id: conversaId, usuario_id: selectedUser.usuario_id },
+        ],
+        { onConflict: "conversa_id,usuario_id" }
+      );
+
+    if (error) {
+      console.error("[chat] ensureConversationParticipants error:", error);
+      throw error;
+    }
+  }, [conversaId, myId, selectedUser?.usuario_id]);
+
   // ===== Helpers UI
   const getStatusColor = (status: UiStatus) => {
     switch (status) {
@@ -179,7 +201,6 @@ export default function ChatBubble() {
     );
     audio.play().catch(() => {});
   }, [soundEnabled]);
-
   // ✅ Carregar TODOS os usuários do profiles
   useEffect(() => {
     const fetchProfiles = async () => {
@@ -360,6 +381,9 @@ export default function ChatBubble() {
     if (!selectedUser?.usuario_id || !conversaId) return;
 
     try {
+      // ✅ AJUSTE: garante participantes antes de enviar (RLS)
+      await ensureConversationParticipants();
+
       await supabaseChatService.sendText({
         conversaKey: conversaId,
         conversa_id: conversaId,
@@ -377,7 +401,7 @@ export default function ChatBubble() {
       console.error("[chat] sendText error:", e);
       alert("Não foi possível enviar a mensagem. Veja o console (F12) para o erro.");
     }
-  }, [newMessage, myId, myName, selectedUser?.usuario_id, conversaId, replyingTo]);
+  }, [newMessage, myId, myName, selectedUser?.usuario_id, conversaId, replyingTo, ensureConversationParticipants]);
 
   const handleFileSelect = useCallback(
     async (file: File) => {
@@ -385,6 +409,9 @@ export default function ChatBubble() {
       if (!selectedUser?.usuario_id || !conversaId) return;
 
       try {
+        // ✅ AJUSTE: garante participantes antes de enviar (RLS)
+        await ensureConversationParticipants();
+
         await supabaseChatService.sendFile({
           conversaKey: conversaId,
           conversa_id: conversaId,
@@ -400,7 +427,7 @@ export default function ChatBubble() {
         alert("Não foi possível enviar o arquivo. Veja o console (F12) para o erro.");
       }
     },
-    [myId, myName, selectedUser?.usuario_id, conversaId]
+    [myId, myName, selectedUser?.usuario_id, conversaId, ensureConversationParticipants]
   );
 
   const handleEdit = useCallback(async (messageId: string, novoTexto: string) => {
@@ -463,7 +490,6 @@ export default function ChatBubble() {
       }))
       .filter((x: any) => x.nome);
   }, [typingUsers]);
-
   return (
     <>
       {/* FAB */}
