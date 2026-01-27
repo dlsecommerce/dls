@@ -109,23 +109,19 @@ export default function ChatBubble() {
   const hasConversationSelected = Boolean(conversaId && selectedUser?.usuario_id);
 
   // ======================================================
-  // 🔐 GARANTE PARTICIPANTES (RLS SAFE) - AJUSTE NECESSÁRIO
+  // 🔐 GARANTE PARTICIPANTES (RLS SAFE) - ✅ AJUSTADO p/ RPC
   // ======================================================
   const ensureConversationParticipants = useCallback(async () => {
     if (!conversaId || !myId || !selectedUser?.usuario_id) return;
 
-    const { error } = await supabase
-      .from("conversa_participantes")
-      .upsert(
-        [
-          { conversa_id: conversaId, usuario_id: myId },
-          { conversa_id: conversaId, usuario_id: selectedUser.usuario_id },
-        ],
-        { onConflict: "conversa_id,usuario_id" }
-      );
+    // ✅ Chama a função no banco (SECURITY DEFINER) que garante os 2 participantes
+    const { error } = await supabase.rpc("ensure_dm_participants", {
+      p_conversa_id: conversaId,
+      p_other_user: selectedUser.usuario_id,
+    });
 
     if (error) {
-      console.error("[chat] ensureConversationParticipants error:", error);
+      console.error("[chat] ensure_dm_participants error:", error);
       throw error;
     }
   }, [conversaId, myId, selectedUser?.usuario_id]);
@@ -201,6 +197,7 @@ export default function ChatBubble() {
     );
     audio.play().catch(() => {});
   }, [soundEnabled]);
+
   // ✅ Carregar TODOS os usuários do profiles
   useEffect(() => {
     const fetchProfiles = async () => {
@@ -381,7 +378,7 @@ export default function ChatBubble() {
     if (!selectedUser?.usuario_id || !conversaId) return;
 
     try {
-      // ✅ AJUSTE: garante participantes antes de enviar (RLS)
+      // ✅ garante participantes antes de enviar (RLS)
       await ensureConversationParticipants();
 
       await supabaseChatService.sendText({
@@ -409,7 +406,7 @@ export default function ChatBubble() {
       if (!selectedUser?.usuario_id || !conversaId) return;
 
       try {
-        // ✅ AJUSTE: garante participantes antes de enviar (RLS)
+        // ✅ garante participantes antes de enviar (RLS)
         await ensureConversationParticipants();
 
         await supabaseChatService.sendFile({
@@ -490,6 +487,7 @@ export default function ChatBubble() {
       }))
       .filter((x: any) => x.nome);
   }, [typingUsers]);
+
   return (
     <>
       {/* FAB */}
@@ -710,10 +708,7 @@ export default function ChatBubble() {
                               <div>
                                 <p className="text-sm font-medium text-white">{selectedUser.usuario_nome}</p>
                                 <div className="flex items-center gap-1.5">
-                                  <div
-                                    className="w-2 h-2 rounded-full"
-                                    style={{ backgroundColor: getStatusColor(selectedEffectiveStatus) }}
-                                  />
+                                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(selectedEffectiveStatus) }} />
                                   <span className="text-xs text-gray-400">{getStatusText(selectedEffectiveStatus)}</span>
                                 </div>
                               </div>
@@ -819,9 +814,14 @@ export default function ChatBubble() {
                                 ref={fileInputRef}
                                 type="file"
                                 className="hidden"
-                                onChange={(e) => {
+                                onChange={async (e) => {
                                   if (!hasConversationSelected) return;
-                                  if (e.target.files?.[0]) setUploadOverlay(true);
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+
+                                  // ✅ (opcional) envia direto ao selecionar
+                                  await handleFileSelect(file);
+                                  e.target.value = "";
                                 }}
                               />
 
@@ -877,7 +877,7 @@ export default function ChatBubble() {
               </>
             )}
 
-            {/* Upload overlay */}
+            {/* Upload overlay (fica, mas com envio direto acima pode nem ser usado) */}
             <AnimatePresence>
               {uploadOverlay && hasConversationSelected && (
                 <FileUploadArea
