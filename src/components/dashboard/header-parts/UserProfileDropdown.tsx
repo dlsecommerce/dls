@@ -39,6 +39,9 @@ export function UserProfileDropdown() {
   const [saving, setSaving] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // ✅ AJUSTE: controla loading do clique de status (opcional, mas ajuda a não clicar várias vezes)
+  const [changingStatus, setChangingStatus] = useState(false);
+
   // Atualiza o campo de mensagem quando o perfil muda
   useEffect(() => {
     if (profile?.status_message) setMessage(profile.status_message);
@@ -92,6 +95,35 @@ export function UserProfileDropdown() {
     } finally {
       setSaving(false);
       setEditMessage(false);
+    }
+  };
+
+  // ✅ AJUSTE NECESSÁRIO:
+  // Sempre que mudar o status no dropdown, atualiza:
+  // 1) profiles.status (via setStatus do context)
+  // 2) status_usuario (via supabaseChatService.upsertStatus) -> compat/uso externo
+  const handleChangeStatus = async (nextStatus: string) => {
+    if (!profile?.id) return;
+    if (profile.status === nextStatus) return;
+
+    setChangingStatus(true);
+    try {
+      // 1) isso já faz UPDATE em profiles
+      await setStatus(nextStatus);
+
+      // 2) mantém status_usuario em sync (se você ainda usa essa tabela)
+      await supabaseChatService.upsertStatus(
+        profile.id,
+        profile.name || "Usuário",
+        nextStatus as any
+      );
+
+      // opcional: fecha o menu ao selecionar
+      setMenuOpen(false);
+    } catch (e) {
+      console.error("[status] erro ao alterar status:", e);
+    } finally {
+      setChangingStatus(false);
     }
   };
 
@@ -198,7 +230,10 @@ export function UserProfileDropdown() {
         {statusOptions.map((opt) => (
           <DropdownMenuItem
             key={opt.key}
-            onClick={() => setStatus(opt.key)}
+            // ✅ AJUSTE: usa handler que sincroniza com o chat
+            onClick={() => handleChangeStatus(opt.key)}
+            // ✅ opcional: bloqueia clique enquanto está mudando
+            disabled={changingStatus}
             className="flex items-center justify-between cursor-pointer hover:bg-white/5 rounded-md"
           >
             <div className="flex items-center gap-2">

@@ -73,7 +73,6 @@ export default function ChatBubble() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [users, setUsers] = useState<MiniUser[]>([]);
   const [newMessage, setNewMessage] = useState("");
-  const [unreadCount, setUnreadCount] = useState(0);
   const [typingUsers, setTypingUsers] = useState<any[]>([]);
 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -89,12 +88,21 @@ export default function ChatBubble() {
   // ✅ Presence: quem está online agora (navegando)
   const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
 
+  // ✅ NOVO: destaques por usuário (contador interno, mas UI mostra só pontinho)
+  const [unreadByUser, setUnreadByUser] = useState<Record<string, number>>({});
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const messagesChannelCleanup = useRef<null | (() => void)>(null);
   const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  // ✅ NOVO: canal global (inbox)
+  const inboxChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  // ✅ conversa aberta "no momento" (ref para usar dentro do listener global sem stale state)
+  const conversaIdRef = useRef<string>("");
 
   const myId = profile?.id || "";
   const myName = profile?.name || "User";
@@ -107,6 +115,14 @@ export default function ChatBubble() {
   }, [selectedUser?.usuario_id, myId]);
 
   const hasConversationSelected = Boolean(conversaId && selectedUser?.usuario_id);
+
+  // mantém o ref atualizado
+  useEffect(() => {
+    conversaIdRef.current = conversaId || "";
+  }, [conversaId]);
+
+  // ✅ NOVO: total (para pontinho no FAB)
+  const hasAnyUnread = useMemo(() => Object.values(unreadByUser).some((n) => n > 0), [unreadByUser]);
 
   // ======================================================
   // 🔐 GARANTE PARTICIPANTES (RLS SAFE) - ✅ AJUSTADO p/ RPC
@@ -180,14 +196,26 @@ export default function ChatBubble() {
     [onlineIds]
   );
 
+  // ✅ NOVO: pedir permissão (opcional, mas útil se você usa Notification)
+  useEffect(() => {
+    if (!("Notification" in window)) return;
+    if (Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  // ✅ Notificação do sistema (bloqueia se estiver vendo a conversa e NÃO minimizado)
   const showNotification = useCallback(
     (title: string, body: string) => {
-      if (!notificationsEnabled || isOpen) return;
+      if (!notificationsEnabled) return;
+      // se estiver aberto e não minimizado, não faz notificação do sistema
+      if (isOpen && !isMinimized) return;
+
       if ("Notification" in window && Notification.permission === "granted") {
         new Notification(title, { body, icon: "/favicon.ico", badge: "/favicon.ico" });
       }
     },
-    [notificationsEnabled, isOpen]
+    [notificationsEnabled, isOpen, isMinimized]
   );
 
   const playSound = useCallback(() => {
@@ -292,10 +320,76 @@ export default function ChatBubble() {
     };
   }, [myId, myName]);
 
+  // ✅ NOVO: listener global (inbox) na tabela "mensagens"
+  // - marca pontinho no usuário que mandou quando NÃO estamos naquela conversa aberta
+  // - mantém o pontinho fora (FAB) se existir qualquer não lida
+  useEffect(() => {
+    if (!myId) return;
+
+    // remove anterior
+    if (inboxChannelRef.current) {
+      supabase.removeChannel(inboxChannelRef.current);
+      inboxChannelRef.current = null;
+    }
+
+    const ch = supabase
+      .channel(`inbox:${myId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "mensagens",
+          filter: `destinatario_id=eq.${myId}`,
+        },
+        async (payload) => {
+          const m: any = payload.new;
+          if (!m) return;
+
+          // ignora se for minha
+          if (m.remetente_id === myId) return;
+
+          const currentOpenConversation = conversaIdRef.current || "";
+          const isThisConversationOpen = Boolean(currentOpenConversation) && m.conversa_id === currentOpenConversation;
+
+          // ✅ REGRA DO DESTAQUE:
+          // se NÃO estou exatamente nessa conversa aberta -> marca o usuário (pontinho)
+          const shouldHighlightUser = !isThisConversationOpen;
+
+          if (shouldHighlightUser) {
+            setUnreadByUser((prev) => ({
+              ...prev,
+              [m.remetente_id]: (prev[m.remetente_id] ?? 0) + 1,
+            }));
+
+            // (opcional) som/notificação do sistema
+            // se você NÃO quiser som/notificação, é só comentar as 2 linhas abaixo:
+            showNotification(m.remetente_nome ?? "Mensagem", m.mensagem ?? "");
+            playSound();
+          } else {
+            // se estou vendo essa conversa agora, pode marcar como lida (opcional)
+            try {
+              await supabaseChatService.markAllRead(m.conversa_id, myId);
+            } catch {}
+          }
+        }
+      )
+      .subscribe();
+
+    inboxChannelRef.current = ch;
+
+    return () => {
+      if (inboxChannelRef.current) {
+        supabase.removeChannel(inboxChannelRef.current);
+        inboxChannelRef.current = null;
+      }
+    };
+  }, [myId, showNotification, playSound]);
+
   // ===== Sort seguro (não trava se created_at não existir)
   const safeSortMessages = useCallback((list: ChatMessage[]) => {
     const getTime = (m: any) =>
-      String(m?.created_at ?? m?.createdAt ?? m?.created_on ?? m?.createdOn ?? m?.data ?? "");
+      String(m?.created_at ?? m?.createdAt ?? m?.created_on ?? m?.createdOn ?? m?.data ?? m?.criado_em ?? "");
     return [...list].sort((a: any, b: any) => getTime(a).localeCompare(getTime(b)));
   }, []);
 
@@ -320,12 +414,6 @@ export default function ChatBubble() {
     const unsub = supabaseChatService.subscribeMessages(conversaId, (m) => {
       setMessages((prev) => {
         if (prev.some((x) => x.id === m.id)) return prev;
-
-        if ((m as any).remetente_id !== myId) {
-          showNotification((m as any).remetente_nome ?? "Mensagem", (m as any).mensagem ?? "");
-          playSound();
-        }
-
         return safeSortMessages([...prev, m]);
       });
     });
@@ -335,11 +423,21 @@ export default function ChatBubble() {
     typingChannelRef.current = supabaseChatService.createTypingChannel(conversaId, myId, { nome: myName });
     supabaseChatService.onTyping(typingChannelRef.current, setTypingUsers);
 
-    if (isOpen) {
-      await supabaseChatService.markAllRead(conversaId, myId);
-      setUnreadCount(0);
+    // ✅ ao abrir uma conversa, limpa o pontinho daquele usuário
+    if (selectedUser?.usuario_id && selectedUser.usuario_id !== myId) {
+      setUnreadByUser((prev) => {
+        if (!prev[selectedUser.usuario_id]) return prev;
+        const next = { ...prev };
+        delete next[selectedUser.usuario_id];
+        return next;
+      });
+
+      // (opcional) marca como lida no banco
+      try {
+        await supabaseChatService.markAllRead(conversaId, myId);
+      } catch {}
     }
-  }, [conversaId, isOpen, myId, myName, showNotification, playSound, safeSortMessages]);
+  }, [conversaId, myId, myName, safeSortMessages, selectedUser?.usuario_id]);
 
   useEffect(() => {
     if (!myId) return;
@@ -352,16 +450,6 @@ export default function ChatBubble() {
       if (ch) supabase.removeChannel(ch);
     };
   }, [initMessagesRealtime, myId]);
-
-  // ===== Unread counter
-  useEffect(() => {
-    if (!isOpen) {
-      const count = messages.filter((m: any) => !m.lida && m.remetente_id !== myId).length;
-      setUnreadCount(count);
-    } else {
-      setUnreadCount(0);
-    }
-  }, [isOpen, messages, myId]);
 
   // ===== Scroll
   useEffect(() => {
@@ -462,17 +550,24 @@ export default function ChatBubble() {
   // ✅ Você no topo (sem badge “VOCÊ”)
   const usersOrdered = useMemo(() => {
     const me = users.find((u) => u.usuario_id === myId) || null;
+
     const others = users
       .filter((u) => u.usuario_id !== myId)
       .sort((a, b) => {
+        // ✅ opcional: quem tem pontinho vem primeiro
+        const haA = (unreadByUser[a.usuario_id] ?? 0) > 0 ? 0 : 1;
+        const haB = (unreadByUser[b.usuario_id] ?? 0) > 0 ? 0 : 1;
+        if (haA !== haB) return haA - haB;
+
         const ra = onlineIds.has(a.usuario_id) ? 0 : 1;
         const rb = onlineIds.has(b.usuario_id) ? 0 : 1;
         if (ra !== rb) return ra - rb;
+
         return (a.usuario_nome || "").localeCompare(b.usuario_nome || "");
       });
 
     return me ? [me, ...others] : others;
-  }, [users, myId, onlineIds]);
+  }, [users, myId, onlineIds, unreadByUser]);
 
   const selectedEffectiveStatus = useMemo((): UiStatus => {
     if (!selectedUser) return "offline";
@@ -505,14 +600,13 @@ export default function ChatBubble() {
           >
             <MessageCircle className="w-7 h-7 text-white" />
 
-            {unreadCount > 0 && (
+            {/* ✅ PONTINHO VERMELHO (fora do chat) */}
+            {hasAnyUnread && (
               <motion.div
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
-                className="absolute -top-2 -right-2 w-7 h-7 bg-red-500 rounded-full flex items-center justify-center"
-              >
-                <span className="text-white text-xs font-bold">{unreadCount}</span>
-              </motion.div>
+                className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full border-2 border-[#0a0a0a]"
+              />
             )}
 
             <motion.div
@@ -597,7 +691,11 @@ export default function ChatBubble() {
                   onClick={() => setIsFullscreen((f) => !f)}
                   className="p-2 hover:bg-white/10 rounded-lg transition-colors"
                 >
-                  {isFullscreen ? <Minimize2 className="w-4 h-4 text-white" /> : <Maximize2 className="w-4 h-4 text-white" />}
+                  {isFullscreen ? (
+                    <Minimize2 className="w-4 h-4 text-white" />
+                  ) : (
+                    <Maximize2 className="w-4 h-4 text-white" />
+                  )}
                 </motion.button>
 
                 <motion.button
@@ -642,15 +740,32 @@ export default function ChatBubble() {
                           const isMe = u.usuario_id === myId;
                           const effStatus = getEffectiveStatus(u);
 
+                          const hasDot = (unreadByUser[u.usuario_id] ?? 0) > 0;
+
                           return (
                             <motion.button
                               key={u.usuario_id}
                               initial={{ opacity: 0, x: -20 }}
                               animate={{ opacity: 1, x: 0 }}
                               transition={{ delay: idx * 0.03 }}
-                              onClick={() => {
+                              onClick={async () => {
                                 if (isMe) return;
+
                                 setSelectedUser(u);
+
+                                // ✅ limpa o pontinho desse usuário quando abrir a conversa
+                                setUnreadByUser((prev) => {
+                                  if (!prev[u.usuario_id]) return prev;
+                                  const next = { ...prev };
+                                  delete next[u.usuario_id];
+                                  return next;
+                                });
+
+                                // (opcional) marca como lida no banco assim que abrir
+                                try {
+                                  const key = supabaseChatService.conversationKeyDirect(myId, u.usuario_id);
+                                  await supabaseChatService.markAllRead(key, myId);
+                                } catch {}
                               }}
                               disabled={isMe}
                               whileHover={{ scale: isMe ? 1 : 1.05 }}
@@ -671,6 +786,11 @@ export default function ChatBubble() {
                                 )}
                               </Avatar>
 
+                              {/* ✅ pontinho vermelho (mensagem nova desse usuário) */}
+                              {!isMe && hasDot && (
+                                <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-[#0a0a0a]" />
+                              )}
+
                               {/* bolinha de status */}
                               <div
                                 className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#0a0a0a]"
@@ -679,9 +799,7 @@ export default function ChatBubble() {
 
                               {/* overlay redondo no hover */}
                               <div className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <span className="text-[8px] text-white font-medium">
-                                  {isMe ? "" : u.usuario_nome.split(" ")[0]}
-                                </span>
+                                <span className="text-[8px] text-white font-medium">{isMe ? "" : u.usuario_nome.split(" ")[0]}</span>
                               </div>
                             </motion.button>
                           );
@@ -708,7 +826,10 @@ export default function ChatBubble() {
                               <div>
                                 <p className="text-sm font-medium text-white">{selectedUser.usuario_nome}</p>
                                 <div className="flex items-center gap-1.5">
-                                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getStatusColor(selectedEffectiveStatus) }} />
+                                  <div
+                                    className="w-2 h-2 rounded-full"
+                                    style={{ backgroundColor: getStatusColor(selectedEffectiveStatus) }}
+                                  />
                                   <span className="text-xs text-gray-400">{getStatusText(selectedEffectiveStatus)}</span>
                                 </div>
                               </div>
