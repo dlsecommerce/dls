@@ -78,20 +78,26 @@ export const supabaseChatService = {
 
   // ======================================================
   // STATUS / PRESENÇA
-  // (mantido para compatibilidade - mas você vai usar profiles na opção 1)
+  // ✅ Ajuste: loga erro mas não derruba o chat
+  // ✅ Requer FK de status_usuario.usuario_id -> profiles.id
   // ======================================================
   async upsertStatus(
     usuario_id: string,
     usuario_nome: string,
     status: UserStatusRow["status"]
   ) {
-    await supabase.from("status_usuario").upsert({
+    const { error } = await supabase.from("status_usuario").upsert({
       usuario_id,
       usuario_nome,
       status,
       ultima_atividade: new Date().toISOString(),
       atualizado_em: new Date().toISOString(),
     });
+
+    if (error) {
+      // não trava o chat caso RLS/FK esteja errado temporariamente
+      console.warn("[status_usuario] upsertStatus error:", error);
+    }
   },
 
   subscribeStatuses(onRow: (row: UserStatusRow) => void) {
@@ -218,8 +224,8 @@ export const supabaseChatService = {
   },
 
   // ======================================================
-  // ENVIAR MENSAGEM TEXTO
-  // ✅ FIX: gravar em "conteudo" para evitar PGRST204 no "mensagem"
+  // ENVIAR MENSAGENS
+  // ✅ grava em "conteudo" para evitar PGRST204
   // ======================================================
   async sendText(params: {
     conversaKey: string;
@@ -234,10 +240,7 @@ export const supabaseChatService = {
       remetente_id: params.remetente_id,
       remetente_nome: params.remetente_nome,
       destinatario_id: params.destinatario_id,
-
-      // ✅ coluna confiável no seu schema
       conteudo: params.mensagem,
-
       lida: false,
       tipo: "texto",
       reply_to: params.reply_to ?? null,
@@ -246,10 +249,6 @@ export const supabaseChatService = {
     if (error) throw error;
   },
 
-  // ======================================================
-  // ENVIAR ARQUIVO / IMAGEM
-  // ✅ FIX: gravar em "conteudo"
-  // ======================================================
   async sendFile(params: {
     conversaKey: string;
     remetente_id: string;
@@ -265,10 +264,7 @@ export const supabaseChatService = {
       remetente_id: params.remetente_id,
       remetente_nome: params.remetente_nome,
       destinatario_id: params.destinatario_id,
-
-      // ✅ coluna confiável
       conteudo: url,
-
       lida: false,
       tipo: isImage ? "imagem" : "arquivo",
     });
@@ -277,8 +273,7 @@ export const supabaseChatService = {
   },
 
   // ======================================================
-  // EDITAR / DELETAR MENSAGEM
-  // ✅ FIX: editar "conteudo" (não "mensagem")
+  // EDITAR / DELETAR
   // ======================================================
   async editMessage(messageId: string, novoTexto: string) {
     const { error } = await supabase
@@ -290,11 +285,7 @@ export const supabaseChatService = {
   },
 
   async deleteMessage(messageId: string) {
-    const { error } = await supabase
-      .from("mensagens")
-      .delete()
-      .eq("id", messageId);
-
+    const { error } = await supabase.from("mensagens").delete().eq("id", messageId);
     if (error) throw error;
   },
 
@@ -313,7 +304,8 @@ export const supabaseChatService = {
 
   // ======================================================
   // REAÇÕES (EMOJIS)
-  // (mantido como estava)
+  // ✅ Ajuste: loga erro mas não derruba o chat
+  // ✅ Requer FK de reacoes.usuario_id -> profiles.id
   // ======================================================
   async addReaction(messageId: string, usuario_id: string, emoji: string) {
     const { error } = await supabase.from("reacoes").upsert({
@@ -321,7 +313,10 @@ export const supabaseChatService = {
       usuario_id,
       emoji,
     });
-    if (error) throw error;
+
+    if (error) {
+      console.warn("[reacoes] addReaction error:", error);
+    }
   },
 
   async removeReaction(messageId: string, usuario_id: string, emoji: string) {
@@ -331,7 +326,10 @@ export const supabaseChatService = {
       .eq("mensagem_id", messageId)
       .eq("usuario_id", usuario_id)
       .eq("emoji", emoji);
-    if (error) throw error;
+
+    if (error) {
+      console.warn("[reacoes] removeReaction error:", error);
+    }
   },
 
   subscribeReactions(messageId: string, onReaction: (data: any) => void) {
