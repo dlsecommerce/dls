@@ -22,7 +22,7 @@ type LojaCodigo = "PK" | "SB";
 
 function lojaAnyToCodigo(v: any): LojaCodigo | null {
   if (v === "PK" || v === "SB") return v;
-  if (typeof v === "string") return lojaNomeToCodigo(v) as LojaCodigo | null;
+  if (typeof v === "string") return (lojaNomeToCodigo(v) as LojaCodigo) ?? null;
   return null;
 }
 
@@ -65,13 +65,20 @@ export function useAnuncioActions() {
         composicao?.slice?.(0, 10)?.forEach?.((c: any, i: number) => {
           const idx = i + 1;
           const qtd = parseValorBR(c?.quantidade);
-          camposComposicao[`Código ${idx}`] = c?.codigo ? String(c.codigo).trim() : null;
+          camposComposicao[`Código ${idx}`] = c?.codigo
+            ? String(c.codigo).trim()
+            : null;
           camposComposicao[`Quantidade ${idx}`] = isNaN(qtd) ? null : qtd;
         });
 
         const od = inferirOD(produto?.referencia);
 
-        let novoId = produto?.id ? Number(produto.id) : null;
+        // =====================================================
+        // ✅ FIX: considerar ID vindo como "id" OU "ID"
+        // (suas tabelas usam coluna "ID", então em edição pode vir como produto.ID)
+        // =====================================================
+        const idAtualStr = String(produto?.id ?? produto?.ID ?? "").trim();
+        let novoId = idAtualStr ? Number(idAtualStr) : null;
 
         // =====================================================
         // 🔹 Se não há ID → novo cadastro
@@ -93,23 +100,23 @@ export function useAnuncioActions() {
         const payload = {
           ID: String(novoId).trim(),
           Loja: lojaCodigo, // ✅ "PK" | "SB" (coluna Loja)
-          "ID Bling": produto?.id_bling || null,
-          "ID Tray": produto?.id_tray || null,
-          "ID Var": produto?.id_var || null,
-          Referência: produto?.referencia || null,
-          Nome: produto?.nome || null,
-          Marca: produto?.marca || null,
-          Categoria: produto?.categoria || null,
-          Peso: produto?.peso ?? null,
-          Altura: produto?.altura ?? null,
-          Largura: produto?.largura ?? null,
-          Comprimento: produto?.comprimento ?? null,
-          OD: od || null,
+          "ID Bling": produto?.id_bling || produto?.["ID Bling"] || null,
+          "ID Tray": produto?.id_tray || produto?.["ID Tray"] || null,
+          "ID Var": produto?.id_var || produto?.["ID Var"] || null,
+          Referência: produto?.referencia || produto?.["Referência"] || null,
+          Nome: produto?.nome || produto?.["Nome"] || null,
+          Marca: produto?.marca || produto?.["Marca"] || null,
+          Categoria: produto?.categoria || produto?.["Categoria"] || null,
+          Peso: produto?.peso ?? produto?.["Peso"] ?? null,
+          Altura: produto?.altura ?? produto?.["Altura"] ?? null,
+          Largura: produto?.largura ?? produto?.["Largura"] ?? null,
+          Comprimento: produto?.comprimento ?? produto?.["Comprimento"] ?? null,
+          OD: od || produto?.["OD"] || null,
           ...camposComposicao,
         };
 
         // =====================================================
-        // 🔹 Verifica se o ID já existe
+        // 🔹 Verifica se o ID já existe (mesma loja)
         // =====================================================
         const { data: existente, error: erroBusca } = await supabase
           .from(tabela)
@@ -152,7 +159,7 @@ export function useAnuncioActions() {
   const handleDelete = useCallback(
     async (produto: any, onAfterDelete?: () => void) => {
       const idProduto = String(produto?.id ?? produto?.ID ?? "").trim();
-      const lojaCodigo = lojaAnyToCodigo(produto?.loja);
+      const lojaCodigo = lojaAnyToCodigo(produto?.loja ?? produto?.Loja);
 
       if (!idProduto || !lojaCodigo) {
         alert("Produto ou loja inválida para exclusão.");
@@ -197,15 +204,18 @@ export function useAnuncioActions() {
 
       try {
         // 🔹 Agrupa por tabela para deletar em lote
-        const grouped = selectedRows.reduce<Record<string, string[]>>((acc, row) => {
-          const lojaCodigo = lojaAnyToCodigo(row?.loja ?? row?.Loja);
-          if (!lojaCodigo) return acc;
+        const grouped = selectedRows.reduce<Record<string, string[]>>(
+          (acc, row) => {
+            const lojaCodigo = lojaAnyToCodigo(row?.loja ?? row?.Loja);
+            if (!lojaCodigo) return acc;
 
-          const tabela = tabelaFromCodigo(lojaCodigo);
-          acc[tabela] = acc[tabela] || [];
-          acc[tabela].push(String(row?.id ?? row?.ID).trim());
-          return acc;
-        }, {});
+            const tabela = tabelaFromCodigo(lojaCodigo);
+            acc[tabela] = acc[tabela] || [];
+            acc[tabela].push(String(row?.id ?? row?.ID ?? "").trim());
+            return acc;
+          },
+          {}
+        );
 
         const promises = Object.entries(grouped).map(async ([tabela, ids]) => {
           const { error } = await supabase.from(tabela).delete().in("ID", ids);

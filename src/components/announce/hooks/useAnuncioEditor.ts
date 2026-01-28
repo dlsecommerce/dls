@@ -6,12 +6,15 @@ import { usePrecificacao } from "@/hooks/usePrecificacao";
 import { useSearchParams } from "next/navigation";
 
 export interface Anuncio {
-  id: number;
+  /**
+   * ✅ ID do anúncio no banco (coluna "ID").
+   * Mantemos como string para evitar NaN / inconsistências (IDs às vezes vêm como texto).
+   */
+  id: string;
 
   /**
    * ✅ CONTRATO DO FRONT:
    * - UI e estado React trabalham com "PK" | "SB"
-   * - Na hora de salvar (em outro arquivo), converta para "Pikot Shop" | "Sóbaquetas"
    */
   loja: "PK" | "SB";
 
@@ -133,8 +136,12 @@ async function fetchOrAddCustos(
 
     // 🔹 Insere novos custos no Supabase
     const { error: insertError } = await supabase.from("custos").insert(novos);
-    if (insertError) console.warn("⚠️ Erro ao inserir novos custos:", insertError);
-    else console.info(`✅ Custos criados para códigos: ${novosCodigos.join(", ")}`);
+    if (insertError)
+      console.warn("⚠️ Erro ao inserir novos custos:", insertError);
+    else
+      console.info(
+        `✅ Custos criados para códigos: ${novosCodigos.join(", ")}`
+      );
 
     // Adiciona os novos ao map (com custo 0)
     novosCodigos.forEach((c) => (map[c] = 0));
@@ -148,7 +155,9 @@ async function fetchOrAddCustos(
 // - Aceita: "PK"/"SB" OU "Pikot Shop"/"Sóbaquetas"/"Sobaquetas" (com/sem acento)
 // - Retorna: "PK" | "SB" | null
 // ===========================================================
-export function lojaNomeToCodigo(value: string | null | undefined): "PK" | "SB" | null {
+export function lojaNomeToCodigo(
+  value: string | null | undefined
+): "PK" | "SB" | null {
   if (!value) return null;
 
   const norm = String(value)
@@ -164,7 +173,7 @@ export function lojaNomeToCodigo(value: string | null | undefined): "PK" | "SB" 
 }
 
 // ===========================================================
-// ✅ CONVERSÃO PARA O NOME (o que seu backend/validação costuma exigir)
+// ✅ CONVERSÃO PARA O NOME (apenas se algum ponto do app precisar exibir)
 // - Recebe: "PK" | "SB"
 // - Retorna: "Pikot Shop" | "Sóbaquetas" | null
 // ===========================================================
@@ -178,10 +187,8 @@ export function lojaCodigoToNome(
 
 /**
  * 🔧 Hook responsável por carregar e editar anúncios conforme a loja.
- * Agora:
  * - Aceita lojaParam em vários formatos (?loja=PK, ?loja=Pikot%20Shop, etc.)
  * - Mantém produto.loja sempre como "PK" | "SB" (consistente com a UI)
- * - Exporta helpers para o handleSave converter para nome e não dar "Loja inválida"
  */
 export function useAnuncioEditor(id?: string) {
   const [produto, setProduto] = useState<Anuncio | null>(null);
@@ -220,7 +227,12 @@ export function useAnuncioEditor(id?: string) {
       }
 
       if (!data || data.length === 0) {
-        console.warn("⚠️ Nenhum dado encontrado para ID:", id, "Loja:", lojaCodigo);
+        console.warn(
+          "⚠️ Nenhum dado encontrado para ID:",
+          id,
+          "Loja:",
+          lojaCodigo
+        );
         setProduto(null);
         return;
       }
@@ -229,7 +241,8 @@ export function useAnuncioEditor(id?: string) {
       const odInferido = inferirOD(row["Referência"]);
 
       setProduto({
-        id: row["ID"],
+        // ✅ FIX: sempre string (coluna "ID" no banco)
+        id: String(row["ID"] ?? "").trim(),
         loja: lojaCodigo, // ✅ sempre PK/SB no estado
         od: odInferido,
         id_bling: row["ID Bling"] ?? null,
@@ -311,12 +324,6 @@ export function useAnuncioEditor(id?: string) {
     custoTotal,
     loading,
     carregarAnuncio,
-
-    /**
-     * ✅ ÚTIL NO handleSave:
-     * const lojaNome = lojaCodigoToNome(produto?.loja);
-     * -> "Pikot Shop" | "Sóbaquetas"
-     */
     lojaCodigoToNome,
     lojaNomeToCodigo,
   };
