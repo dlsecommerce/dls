@@ -122,11 +122,11 @@ export default function PricingTable() {
           ascending: sortDirection === "asc",
           nullsFirst: true,
         })
-        .order("Atualizado em", { ascending: false })
+        .order("Sincronizado em", { ascending: false })
         .order("id", { ascending: false });
     } else {
       query = query
-        .order("Atualizado em", { ascending: false })
+        .order("Sincronizado em", { ascending: false })
         .order("id", { ascending: false });
     }
 
@@ -194,57 +194,6 @@ export default function PricingTable() {
       setSortDirection("asc");
     }
   };
-
-  // ❌ REMOVIDO (ou você pode comentar):
-  // Esse filtro client-side só filtra os 50 itens da página atual e causava "não acha nada".
-  // Agora a busca já é server-side dentro do loadData.
-  //
-  // useEffect(() => {
-  //   if (!rows.length) return;
-  //
-  //   const termo = debouncedSearch.toLowerCase();
-  //   const isNumeric = /^\d+$/.test(termo);
-  //
-  //   const normalize = (v: any) =>
-  //     String(v || "")
-  //       .normalize("NFD")
-  //       .replace(/[\u0300-\u036f]/g, "")
-  //       .toLowerCase();
-  //
-  //   startTransition(() => {
-  //     const result = rows.filter((r) => {
-  //       const lojaOk =
-  //         selectedLoja.length === 0 || selectedLoja.includes(r.Loja);
-  //       const marcaOk =
-  //         selectedBrands.length === 0 || selectedBrands.includes(r.Marca);
-  //
-  //       if (!lojaOk || !marcaOk) return false;
-  //
-  //       const campos = [
-  //         normalize(r.ID),
-  //         normalize(r["ID Tray"]),
-  //         normalize(r["ID Var"]),
-  //         normalize(r.Marca),
-  //         normalize(r.Referência),
-  //         normalize(r.Categoria),
-  //         normalize(r.Nome),
-  //       ];
-  //
-  //       if (termo === "") return true;
-  //
-  //       if (isNumeric)
-  //         return (
-  //           campos[0].includes(termo) ||
-  //           campos[1].includes(termo) ||
-  //           campos[2].includes(termo)
-  //         );
-  //
-  //       return campos.some((c) => c.includes(termo));
-  //     });
-  //
-  //     setFilteredRows(result);
-  //   });
-  // }, [debouncedSearch, rows, selectedLoja, selectedBrands]);
 
   const handleCopy = useCallback((text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -378,7 +327,7 @@ export default function PricingTable() {
           "Preço de Venda"
         `
           )
-          .order("Atualizado em", { ascending: false })
+          .order("Sicronizado em", { ascending: false })
           .order("id", { ascending: false })
           .range(page * pageSize, (page + 1) * pageSize - 1);
 

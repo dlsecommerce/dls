@@ -128,11 +128,11 @@ export default function PricingTable() {
           ascending: sortDirection === "asc",
           nullsFirst: true,
         })
-        .order("Atualizado em", { ascending: false })
+        .order("Sicronizado em", { ascending: false })
         .order("id", { ascending: false });
     } else {
       query = query
-        .order("Atualizado em", { ascending: false })
+        .order("Sicronizado em", { ascending: false })
         .order("id", { ascending: false });
     }
 
@@ -325,7 +325,7 @@ export default function PricingTable() {
           "Preço de Venda"
         `
           )
-          .order("Atualizado em", { ascending: false })
+          .order("Sincronizado em", { ascending: false })
           .order("id", { ascending: false })
           .range(page * pageSize, (page + 1) * pageSize - 1);
 

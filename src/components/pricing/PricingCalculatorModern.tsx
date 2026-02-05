@@ -84,14 +84,15 @@ export default function PricingCalculatorModern() {
     embalagem: "2.5",
   });
 
+  // ✅ Shopee já inicia alinhada à regra base (até 79,99)
   const [calculoShopee, setCalculoShopee] = useState<Calculo>({
     desconto: "",
     imposto: "12",
     margem: "15",
-    frete: "",
+    frete: "4",
     comissao: "20",
-    marketing: "2",
-    embalagem: "6.5",
+    marketing: "3",
+    embalagem: "2.5",
   });
 
   const [calculoMarketplaceClassico, setCalculoMarketplaceClassico] =
@@ -171,8 +172,7 @@ export default function PricingCalculatorModern() {
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
-    return () =>
-      document.removeEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [campoAtivo, sugestoes]);
 
   // Rolagem automática
@@ -225,7 +225,7 @@ export default function PricingCalculatorModern() {
       .ilike('"Código"', `${raw}%`)
       .limit(5);
 
-    if (ultimaBusca !== raw) return;  
+    if (ultimaBusca !== raw) return;
 
     if (starts.data && starts.data.length > 0) {
       setCampoAtivo(idx);
@@ -245,8 +245,8 @@ export default function PricingCalculatorModern() {
       .select('"Código", "Custo Atual"')
       .ilike('"Código"', `%${raw}%`)
       .limit(5);
-      
-    if (ultimaBusca !== raw) return;    
+
+    if (ultimaBusca !== raw) return;
 
     setCampoAtivo(idx);
     setSugestoes(
@@ -258,9 +258,8 @@ export default function PricingCalculatorModern() {
     setIndiceSelecionado(0);
   };
 
-  const buscarSugestoesDebounced = useRef(
-    debounce(buscarSugestoes, 120)
-  ).current;
+  const buscarSugestoesDebounced = useRef(debounce(buscarSugestoes, 120))
+    .current;
 
   const confirmarSugestaoPrimeira = (
     idx: number,
@@ -344,6 +343,7 @@ export default function PricingCalculatorModern() {
       goPrev();
     }
   };
+
   const handleLinearNav = (
     e: React.KeyboardEvent<HTMLInputElement>,
     index: number,
@@ -400,14 +400,15 @@ export default function PricingCalculatorModern() {
     setCalculoMarketplacePremium((p) => ({ ...p, embalagem: v }));
   };
 
+  // ✅ Shopee: default alinhado com suas regras (2,50)
   const handleEmbalagemChangeShopee = (raw: string) => {
     const v = toInternal(raw);
     setCalculoShopee((p) => ({ ...p, embalagem: v }));
   };
 
   const handleEmbalagemBlurShopee = (raw: string) => {
-    const internal = toInternal(raw || "6.5");
-    const v = internal || "6.5";
+    const internal = toInternal(raw || "2.5");
+    const v = internal || "2.5";
     setCalculoShopee((p) => ({ ...p, embalagem: v }));
   };
 
@@ -443,28 +444,60 @@ export default function PricingCalculatorModern() {
   const precoMLPremium = calcularPreco(calculoMarketplacePremium);
 
   // =====================
-  // REGRA SHOPEE (500+/500-) EDITÁVEL
+  // ✅ REGRA SHOPEE POR FAIXA DE PREÇO (AUTOMÁTICA)
   // =====================
   useEffect(() => {
-    const desiredComissao = precoShopee > 500 ? "0" : "20";
-    const desiredFrete = precoShopee > 500 ? "100" : "0";
+    // Defaults: até 79,99
+    let regras = {
+      embalagem: "2.5",
+      frete: "4",
+      imposto: "12",
+      comissao: "20",
+      margem: "15",
+      marketing: "3",
+    };
 
-    setCalculoShopee((prev) => {
-      const newComissao = userEditedShopeeComissao
-        ? prev.comissao
-        : desiredComissao;
-      const newFrete = userEditedShopeeFrete ? prev.frete : desiredFrete;
-
-      if (newComissao === prev.comissao && newFrete === prev.frete) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        comissao: newComissao,
-        frete: newFrete,
+    if (precoShopee >= 80 && precoShopee <= 99.99) {
+      regras = {
+        embalagem: "2.5",
+        frete: "16",
+        imposto: "12",
+        comissao: "14",
+        margem: "15",
+        marketing: "3",
       };
-    });
+    } else if (precoShopee >= 100 && precoShopee <= 199.99) {
+      regras = {
+        embalagem: "2.5",
+        frete: "20",
+        imposto: "12",
+        comissao: "14",
+        margem: "15",
+        marketing: "3",
+      };
+    } else if (precoShopee >= 200) {
+      regras = {
+        embalagem: "2.5",
+        frete: "26",
+        imposto: "12",
+        comissao: "14",
+        margem: "15",
+        marketing: "3",
+      };
+    }
+
+    setCalculoShopee((prev) => ({
+      ...prev,
+      // estes sempre seguem regra (você não pediu edição manual)
+      embalagem: regras.embalagem,
+      imposto: regras.imposto,
+      margem: regras.margem,
+      marketing: regras.marketing,
+
+      // estes respeitam edição manual do usuário
+      comissao: userEditedShopeeComissao ? prev.comissao : regras.comissao,
+      frete: userEditedShopeeFrete ? prev.frete : regras.frete,
+    }));
   }, [precoShopee, userEditedShopeeComissao, userEditedShopeeFrete]);
 
   // =============================
@@ -507,18 +540,19 @@ export default function PricingCalculatorModern() {
           margem: "15",
           frete: "",
           comissao: "6",
-          marketing: "2",
+          marketing: "3",
           embalagem: "2.5",
         });
 
+        // ✅ Shopee reset já alinhado com a regra base (até 79,99)
         setCalculoShopee({
           desconto: "",
           imposto: "12",
           margem: "15",
-          frete: "",
+          frete: "4",
           comissao: "20",
-          marketing: "2",
-          embalagem: "6.5",
+          marketing: "3",
+          embalagem: "2.5",
         });
 
         setCalculoMarketplaceClassico({
@@ -527,7 +561,7 @@ export default function PricingCalculatorModern() {
           margem: "15",
           frete: "",
           comissao: "11",
-          marketing: "2",
+          marketing: "3",
           embalagem: "2.5",
         });
 
@@ -537,7 +571,7 @@ export default function PricingCalculatorModern() {
           margem: "15",
           frete: "",
           comissao: "16",
-          marketing: "2",
+          marketing: "3",
           embalagem: "2.5",
         });
 
