@@ -193,10 +193,27 @@ export function useTrayImportExport(
         if (v === null || v === undefined || v === "") return null;
         if (typeof v === "number") return Number.isFinite(v) ? v : null;
 
-        // aceita "12,34" ou "12.34"
-        const s = String(v).trim().replace(/\./g, "").replace(",", ".");
+        // aceita "12,34" ou "12.34" ou "1.234,56"
+        const s = String(v)
+          .trim()
+          .replace(/\./g, "")
+          .replace(",", ".");
         const n = Number(s);
         return Number.isFinite(n) ? n : null;
+      };
+
+      // -----------------------------
+      // Helper: seta fórmula + result (se vier do DB) ou só fórmula
+      // -----------------------------
+      const setFormula = (
+        addr: string,
+        formula: string,
+        result?: number | null
+      ) => {
+        sheet.getCell(addr).value = {
+          formula,
+          ...(result !== null && result !== undefined ? { result } : {}),
+        };
       };
 
       data.forEach((row) => {
@@ -212,12 +229,12 @@ export function useTrayImportExport(
           row.Marca || "",
           row.Categoria || "",
           row.Desconto ?? 0, // K
-          row.Embalagem ?? 2.5, // L
-          row.Frete ?? 0, // M
-          row.Comissão ?? 0, // N
-          row.Imposto ?? 0, // O
-          row["Margem de Lucro"] ?? 0, // P
-          row.Marketing ?? 0, // Q
+          row.Embalagem ?? 2.5, // L (vai ser sobrescrito por fórmula se não vier do DB)
+          row.Frete ?? 0, // M (idem)
+          row.Comissão ?? 0, // N (idem)
+          row.Imposto ?? 0, // O (idem)
+          row["Margem de Lucro"] ?? 0, // P (idem)
+          row.Marketing ?? 0, // Q (idem)
           "", // R
           row.Custo ?? 0, // S
           null, // T
@@ -227,7 +244,7 @@ export function useTrayImportExport(
         const rowNumber = newRow.number;
 
         newRow.eachCell((cell, col) => {
-          if ([12, 13, 19].includes(col)) {
+          if ([12, 13, 19, 20].includes(col)) {
             cell.numFmt = '_("R$"* #,##0.00_)';
           }
 
@@ -238,29 +255,95 @@ export function useTrayImportExport(
           cell.alignment = { horizontal: "center", vertical: "middle" };
         });
 
-        // ✅ valor inicial vindo do Supabase (se existir)
+        // -----------------------------
+        // Valores iniciais vindos do Supabase (se existirem)
+        // -----------------------------
         const precoVendaDB = parseNum(row["Preço de Venda"]);
 
-        // ✅ Fórmula SEMPRE (pra recalcular ao editar)
-        const formulaInvariant = `
-          ROUND(
-            IF(
-              (S${rowNumber}*(1-K${rowNumber}/100)+L${rowNumber}+M${rowNumber})>500,
-              (S${rowNumber}*(1-K${rowNumber}/100)+L${rowNumber}+100)/
-                (1-((O${rowNumber}+P${rowNumber}+Q${rowNumber})/100)),
-              (S${rowNumber}*(1-K${rowNumber}/100)+L${rowNumber}+M${rowNumber})/
-                (1-((N${rowNumber}+O${rowNumber}+P${rowNumber}+Q${rowNumber})/100))
-            ),
-            2
-          )
-        `.replace(/\s+/g, "");
+        const embDB = parseNum(row["Embalagem"]);
+        const freteDB = parseNum(row["Frete"]);
+        const comDB = parseNum(row["Comissão"]);
+        const impDB = parseNum(row["Imposto"]);
+        const lucroDB = parseNum(row["Margem de Lucro"]);
+        const mktDB = parseNum(row["Marketing"]);
 
-        sheet.getCell(`T${rowNumber}`).value = {
-          formula: formulaInvariant,
-          ...(precoVendaDB !== null ? { result: precoVendaDB } : {}),
-        };
+        // ============================================================
+        // ✅ REGRAS POR FAIXA (SEM CIRCULARIDADE)
+        //
+        // Calcula PV "hipotético" por faixa com constantes:
+        // Faixa 1: Frete 4 / Comissão 20
+        // Faixa 2: Frete 16 / Comissão 14
+        // Faixa 3: Frete 20 / Comissão 14
+        // Faixa 4: Frete 26 / Comissão 14
+        //
+        // Fórmula PV: (S*(1-K/100) + 2.5 + Frete) / (1 - ((Com+12+15+3)/100))
+        // Depois escolhe a faixa cujo PV calculado cai no intervalo:
+        // <=79.99, <=99.99, <=199.99, senão faixa 4
+        // ============================================================
 
+        const PV1 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+4)/(1-((20+12+15+3)/100)))`;
+        const PV2 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+16)/(1-((14+12+15+3)/100)))`;
+        const PV3 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+20)/(1-((14+12+15+3)/100)))`;
+        const PV4 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+26)/(1-((14+12+15+3)/100)))`;
+
+        // ✅ Preço de Venda (T) — escolhe o PV correto conforme a faixa
+        const formulaPrecoVenda = `ROUND(IF(${PV1}<=79.99,${PV1},IF(${PV2}<=99.99,${PV2},IF(${PV3}<=199.99,${PV3},${PV4}))),2)`;
+
+        setFormula(`T${rowNumber}`, formulaPrecoVenda, precoVendaDB);
+
+        // ✅ Embalagem (L) — sempre 2.50 (se não vier do DB)
+        if (embDB !== null) {
+          sheet.getCell(`L${rowNumber}`).value = embDB;
+        } else {
+          sheet.getCell(`L${rowNumber}`).value = 2.5;
+        }
+
+        // ✅ Imposto (O) — sempre 12% (se não vier do DB)
+        if (impDB !== null) {
+          sheet.getCell(`O${rowNumber}`).value = impDB;
+        } else {
+          sheet.getCell(`O${rowNumber}`).value = 12;
+        }
+
+        // ✅ Margem de Lucro (P) — sempre 15% (se não vier do DB)
+        if (lucroDB !== null) {
+          sheet.getCell(`P${rowNumber}`).value = lucroDB;
+        } else {
+          sheet.getCell(`P${rowNumber}`).value = 15;
+        }
+
+        // ✅ Marketing (Q) — sempre 3% (se não vier do DB)
+        if (mktDB !== null) {
+          sheet.getCell(`Q${rowNumber}`).value = mktDB;
+        } else {
+          sheet.getCell(`Q${rowNumber}`).value = 3;
+        }
+
+        // ✅ Frete (M) — por faixa (se não vier do DB)
+        if (freteDB !== null) {
+          sheet.getCell(`M${rowNumber}`).value = freteDB;
+        } else {
+          const formulaFrete = `IF(${PV1}<=79.99,4,IF(${PV2}<=99.99,16,IF(${PV3}<=199.99,20,26)))`;
+          setFormula(`M${rowNumber}`, formulaFrete, null);
+        }
+
+        // ✅ Comissão (N) — por faixa (se não vier do DB)
+        if (comDB !== null) {
+          sheet.getCell(`N${rowNumber}`).value = comDB;
+        } else {
+          const formulaComissao = `IF(${PV1}<=79.99,20,14)`;
+          setFormula(`N${rowNumber}`, formulaComissao, null);
+        }
+
+        // formatos (garantia)
+        sheet.getCell(`L${rowNumber}`).numFmt = '_("R$"* #,##0.00_)';
+        sheet.getCell(`M${rowNumber}`).numFmt = '_("R$"* #,##0.00_)';
         sheet.getCell(`T${rowNumber}`).numFmt = '_("R$"* #,##0.00_)';
+
+        sheet.getCell(`N${rowNumber}`).numFmt = '0.00 " %"';
+        sheet.getCell(`O${rowNumber}`).numFmt = '0.00 " %"';
+        sheet.getCell(`P${rowNumber}`).numFmt = '0.00 " %"';
+        sheet.getCell(`Q${rowNumber}`).numFmt = '0.00 " %"';
       });
 
       sheet.getRow(1).height = 25;
