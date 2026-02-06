@@ -57,13 +57,24 @@ export default function PricingTable() {
     return () => clearTimeout(timeout);
   }, [search]);
 
-  // ✅ AJUSTE: quando buscar (ou mudar filtros), volta pra página 1
+  // ✅ quando buscar (ou mudar filtros), volta pra página 1
   useEffect(() => {
     setCurrentPage(1);
   }, [debouncedSearch, selectedLoja, selectedBrands]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
+
+    // ✅ GARANTE AUTH: sem sessão, não busca (RLS vai retornar vazio)
+    const { data: sess } = await supabase.auth.getSession();
+    if (!sess.session) {
+      console.log("🔒 Sem sessão (anon) — aguardando autenticação para carregar anúncios.");
+      setRows([]);
+      setFilteredRows([]);
+      setTotalItems(0);
+      setLoading(false);
+      return;
+    }
 
     const start = (currentPage - 1) * itemsPerPage;
     const end = start + itemsPerPage - 1;
@@ -100,16 +111,11 @@ export default function PricingTable() {
     if (selectedLoja.length) query = query.in("Loja", selectedLoja);
     if (selectedBrands.length) query = query.in("Marca", selectedBrands);
 
-    // ✅ AJUSTE: busca SERVER-SIDE (funciona mesmo fora da página atual)
+    // ✅ busca SERVER-SIDE (funciona mesmo fora da página atual)
     // Busca por: ID + ID Bling + Referência + Marca
-    //
-    // 🔥 IMPORTANTÍSSIMO:
-    // - "ID Bling" tem espaço -> precisa de aspas no .or()
-    // - "Referência" tem acento -> precisa de aspas no .or()
-    // - "Marca" em alguns schemas é case-sensitive -> aspas evitam erro
     if (debouncedSearch) {
       const term = debouncedSearch.replace(/[%_]/g, "").trim();
-      const safe = term.replace(/"/g, ""); // evita quebrar se usuário digitar aspas
+      const safe = term.replace(/"/g, "");
       const pattern = `%${safe}%`;
 
       query = query.or(
@@ -122,24 +128,28 @@ export default function PricingTable() {
       );
     }
 
+    // ✅ ORDENAÇÃO: padronizar em "Atualizado em"
     if (sortColumn) {
       query = query
         .order(sortColumn, {
           ascending: sortDirection === "asc",
           nullsFirst: true,
         })
-        .order("Sicronizado em", { ascending: false })
+        .order("Atualizado em", { ascending: false })
         .order("id", { ascending: false });
     } else {
-      query = query
-        .order("Sicronizado em", { ascending: false })
-        .order("id", { ascending: false });
+      query = query.order("Atualizado em", { ascending: false }).order("id", {
+        ascending: false,
+      });
     }
 
     const { data, error, count } = await query.range(start, end);
 
     if (error) {
       console.error("❌ Supabase error:", error.message, error.details, error.hint);
+      setRows([]);
+      setFilteredRows([]);
+      setTotalItems(0);
       setLoading(false);
       return;
     }
@@ -169,7 +179,7 @@ export default function PricingTable() {
 
     startTransition(() => {
       setRows(normalized);
-      setFilteredRows(normalized); // ✅ agora já vem filtrado do banco
+      setFilteredRows(normalized);
       setTotalItems(count || 0);
       setLoading(false);
     });
@@ -180,11 +190,32 @@ export default function PricingTable() {
     sortDirection,
     selectedLoja,
     selectedBrands,
-    debouncedSearch, // ✅ AJUSTE: dependência da busca
+    debouncedSearch,
   ]);
 
+  // ✅ IMPORTANTE: ao montar, espera sessão e também recarrega quando auth ficar pronta
   useEffect(() => {
-    loadData();
+    let cancelled = false;
+
+    async function run() {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
+      if (!cancelled) loadData();
+    }
+
+    run();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) loadData();
+    });
+
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
   }, [loadData]);
 
   const handleSort = (col: string) => {
@@ -237,7 +268,7 @@ export default function PricingTable() {
     });
 
     setRows(updatedRows);
-    setFilteredRows(updatedRows); // ✅ mantém consistência visual
+    setFilteredRows(updatedRows);
 
     const rowUpdated = updatedRows.find((r) => r.id === dbId);
 
@@ -258,7 +289,6 @@ export default function PricingTable() {
 
   const cancelEdit = () => setEditing(null);
 
-  // ✅ AJUSTE IMPORTAÇÃO: atualizar por (ID + Loja), NÃO por UUID
   const handlePricingImport = async (data: any[]) => {
     for (const row of data) {
       const loja = String(row.Loja || "").trim().toUpperCase(); // PK/SB
@@ -294,6 +324,13 @@ export default function PricingTable() {
   const handleExportAll = useCallback(async () => {
     setExporting(true);
     try {
+      // ✅ GARANTE AUTH antes do export também
+      const { data: sess } = await supabase.auth.getSession();
+      if (!sess.session) {
+        alert("Você precisa estar logado para exportar.");
+        return;
+      }
+
       const pageSize = 1000;
       let page = 0;
       let all: any[] = [];
@@ -303,37 +340,36 @@ export default function PricingTable() {
           .from("marketplace_tray_all")
           .select(
             `
-          id,
-          anuncio_id,
-          ID,
-          Loja,
-          "ID Tray",
-          "ID Var",
-          "ID Bling",
-          Nome,
-          Marca,
-          Referência,
-          Categoria,
-          Desconto,
-          Embalagem,
-          Frete,
-          Comissão,
-          Imposto,
-          Marketing,
-          "Margem de Lucro",
-          Custo,
-          "Preço de Venda"
-        `
+            id,
+            anuncio_id,
+            ID,
+            Loja,
+            "ID Tray",
+            "ID Var",
+            "ID Bling",
+            Nome,
+            Marca,
+            Referência,
+            Categoria,
+            Desconto,
+            Embalagem,
+            Frete,
+            Comissão,
+            Imposto,
+            Marketing,
+            "Margem de Lucro",
+            Custo,
+            "Preço de Venda",
+            "Atualizado em"
+          `
           )
-          .order("Sincronizado em", { ascending: false })
+          .order("Atualizado em", { ascending: false })
           .order("id", { ascending: false })
           .range(page * pageSize, (page + 1) * pageSize - 1);
 
         if (selectedLoja.length) exportQuery = exportQuery.in("Loja", selectedLoja);
-        if (selectedBrands.length)
-          exportQuery = exportQuery.in("Marca", selectedBrands);
+        if (selectedBrands.length) exportQuery = exportQuery.in("Marca", selectedBrands);
 
-        // ✅ AJUSTE: export respeita a busca também (opcional, mas faz sentido)
         if (debouncedSearch) {
           const term = debouncedSearch.replace(/[%_]/g, "").trim();
           const safe = term.replace(/"/g, "");
