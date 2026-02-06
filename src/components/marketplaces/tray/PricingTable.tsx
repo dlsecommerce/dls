@@ -27,7 +27,7 @@ import PricingHeaderRow from "@/components/marketplaces/tray/PricingHeaderRow";
 /**
  * ✅ Cache simples em memória (sem libs)
  * - Evita refetch ao sair/voltar da tela
- * - TTL: 60s (ajuste como quiser)
+ * - TTL: 10min
  * - Cache por "chave" (página, filtros, busca, sort, etc.)
  *
  * ✅ AJUSTE IMPORTANTE:
@@ -41,7 +41,7 @@ type CacheEntry = {
 };
 
 const CACHE_TTL_MS = 10 * 60_000; // 10 minutos
-const CACHE_MAX_KEYS = 25; // evita crescer infinito
+const CACHE_MAX_KEYS = 25;
 const TRAY_CACHE = new Map<string, CacheEntry>();
 
 function makeCacheKey(params: {
@@ -161,10 +161,7 @@ export default function PricingTable() {
     ]
   );
 
-  /**
-   * ✅ HIDRATAÇÃO IMEDIATA DO CACHE
-   * Quando você volta para a tela, ela não fica “carregando” se existir cache válido.
-   */
+  // ✅ hidrata cache ao voltar pra tela
   useEffect(() => {
     const cached = getCache(cacheKey);
     if (cached) {
@@ -196,7 +193,6 @@ export default function PricingTable() {
     // ✅ GARANTE AUTH: sem sessão, não busca (RLS retorna vazio)
     const { data: sess } = await supabase.auth.getSession();
     if (!sess.session) {
-      console.log("🔒 Sem sessão (anon) — aguardando autenticação para carregar anúncios.");
       if (myReqId !== reqIdRef.current) return;
       setRows([]);
       setFilteredRows([]);
@@ -240,20 +236,32 @@ export default function PricingTable() {
     if (selectedLoja.length) query = query.in("Loja", selectedLoja);
     if (selectedBrands.length) query = query.in("Marca", selectedBrands);
 
-    // ✅ busca SERVER-SIDE (ID + ID Bling + Referência + Marca)
+    // ✅ BUSCA SERVER-SIDE CORRIGIDA (ID / ID Tray / ID Bling numéricos -> cast pra text)
     if (debouncedSearch) {
       const term = debouncedSearch.replace(/[%_]/g, "").trim();
       const safe = term.replace(/"/g, "");
       const pattern = `%${safe}%`;
+      const onlyDigits = /^[0-9]+$/.test(safe);
 
-      query = query.or(
-        [
-          `ID.ilike.${pattern}`,
-          `"ID Bling".ilike.${pattern}`,
-          `"Referência".ilike.${pattern}`,
-          `"Marca".ilike.${pattern}`,
-        ].join(",")
-      );
+      const orParts: string[] = [
+        // ilike por texto (funciona mesmo se for número no banco)
+        `ID::text.ilike.${pattern}`,
+        `"ID Tray"::text.ilike.${pattern}`,
+        `"ID Bling"::text.ilike.${pattern}`,
+
+        // texto normal
+        `"Marca".ilike.${pattern}`,
+        `"Referência".ilike.${pattern}`,
+      ];
+
+      // se for só número, tenta match exato também
+      if (onlyDigits) {
+        orParts.unshift(`ID.eq.${safe}`);
+        orParts.unshift(`"ID Tray".eq.${safe}`);
+        orParts.unshift(`"ID Bling".eq.${safe}`);
+      }
+
+      query = query.or(orParts.join(","));
     }
 
     // ✅ ORDENAÇÃO: "Atualizado em"
@@ -331,7 +339,6 @@ export default function PricingTable() {
     debouncedSearch,
   ]);
 
-  // ✅ ao montar, espera sessão e recarrega quando auth ficar pronta
   useEffect(() => {
     let cancelled = false;
 
@@ -424,7 +431,6 @@ export default function PricingTable() {
       return;
     }
 
-    // ✅ dados mudaram -> invalida cache e recarrega
     clearTrayCache();
     setEditing(null);
     loadData();
@@ -461,7 +467,6 @@ export default function PricingTable() {
     }
 
     setOpenPricingModal(false);
-
     clearTrayCache();
     loadData();
   };
@@ -518,14 +523,23 @@ export default function PricingTable() {
           const term = debouncedSearch.replace(/[%_]/g, "").trim();
           const safe = term.replace(/"/g, "");
           const pattern = `%${safe}%`;
-          exportQuery = exportQuery.or(
-            [
-              `ID.ilike.${pattern}`,
-              `"ID Bling".ilike.${pattern}`,
-              `"Referência".ilike.${pattern}`,
-              `"Marca".ilike.${pattern}`,
-            ].join(",")
-          );
+          const onlyDigits = /^[0-9]+$/.test(safe);
+
+          const orParts: string[] = [
+            `ID::text.ilike.${pattern}`,
+            `"ID Tray"::text.ilike.${pattern}`,
+            `"ID Bling"::text.ilike.${pattern}`,
+            `"Marca".ilike.${pattern}`,
+            `"Referência".ilike.${pattern}`,
+          ];
+
+          if (onlyDigits) {
+            orParts.unshift(`ID.eq.${safe}`);
+            orParts.unshift(`"ID Tray".eq.${safe}`);
+            orParts.unshift(`"ID Bling".eq.${safe}`);
+          }
+
+          exportQuery = exportQuery.or(orParts.join(","));
         }
 
         const { data, error } = await exportQuery;
@@ -615,7 +629,7 @@ export default function PricingTable() {
         />
 
         {editing && (
-          <FloatingEditor anchorRect={editing.anchorRect} onClose={cancelEdit}>
+          <FloatingEditor anchorRect={editing.anchorRect} onClose={() => setEditing(null)}>
             <div className="relative flex items-center rounded-md border border-neutral-700 bg-black/30 px-2 py-1.5">
               <span className="text-xs px-1 py-0.5 rounded bg-black/60 border border-neutral-700 mr-1">
                 {editing.isMoney ? "R$" : "%"}
@@ -627,25 +641,18 @@ export default function PricingTable() {
                 className="flex-1 bg-transparent outline-none text-sm text-white pr-10"
                 value={editing.value}
                 onChange={(e) =>
-                  setEditing((p: any) =>
-                    p
-                      ? {
-                          ...p,
-                          value: e.target.value,
-                        }
-                      : p
-                  )
+                  setEditing((p: any) => (p ? { ...p, value: e.target.value } : p))
                 }
                 onKeyDown={(e) => {
                   if (e.key === "Enter") confirmEdit();
-                  if (e.key === "Escape") cancelEdit();
+                  if (e.key === "Escape") setEditing(null);
                 }}
               />
 
               <div className="absolute right-1 flex items-center gap-1">
                 <button
                   title="Cancelar"
-                  onClick={cancelEdit}
+                  onClick={() => setEditing(null)}
                   className="text-red-400 hover:text-red-300"
                 >
                   <XIcon className="w-4 h-4" />

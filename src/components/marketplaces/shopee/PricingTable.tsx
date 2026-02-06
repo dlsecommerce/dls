@@ -26,12 +26,6 @@ import PricingHeaderRow from "@/components/marketplaces/shopee/PricingHeaderRow"
 
 /**
  * ✅ Cache simples em memória (sem libs)
- * - Evita refetch ao sair/voltar da tela
- * - TTL: 60s (ajuste como quiser)
- * - Cache por "chave" (página, filtros, busca, sort, etc.)
- *
- * ✅ BONUS: "hidrata" do cache ANTES de mostrar loading
- * - ao voltar de outra aba, não fica piscando "carregando"
  */
 type CacheEntry = {
   rows: Row[];
@@ -40,7 +34,7 @@ type CacheEntry = {
 };
 
 const CACHE_TTL_MS = 10 * 60_000; // 10 minutos
-const CACHE_MAX_KEYS = 25; // evita crescer infinito
+const CACHE_MAX_KEYS = 25;
 const SHOPEE_CACHE = new Map<string, CacheEntry>();
 
 function makeCacheKey(params: {
@@ -126,7 +120,6 @@ export default function PricingTable() {
 
   const impExp = useTrayImportExport(filteredRows, selectedLoja, selectedBrands);
 
-  // evita "setState" de um request antigo sobrescrever o novo
   const reqIdRef = useRef(0);
 
   useEffect(() => {
@@ -160,10 +153,7 @@ export default function PricingTable() {
     ]
   );
 
-  /**
-   * ✅ HIDRATA IMEDIATO do cache (antes do loadData)
-   * Isso elimina o "fica carregando" ao voltar de outra aba/rota.
-   */
+  // ✅ hidrata cache ao voltar pra tela
   useEffect(() => {
     const cached = getCache(cacheKey);
     if (cached) {
@@ -177,7 +167,6 @@ export default function PricingTable() {
   const loadData = useCallback(async () => {
     const myReqId = ++reqIdRef.current;
 
-    // ✅ 1) cache primeiro (não liga loading se tiver cache)
     const cached = getCache(cacheKey);
     if (cached) {
       startTransition(() => {
@@ -189,13 +178,10 @@ export default function PricingTable() {
       return;
     }
 
-    // ✅ 2) agora sim liga loading porque vai ao banco
     setLoading(true);
 
-    // ✅ GARANTE AUTH
     const { data: sess } = await supabase.auth.getSession();
     if (!sess.session) {
-      console.log("🔒 Sem sessão (anon) — aguardando autenticação para carregar anúncios.");
       if (myReqId !== reqIdRef.current) return;
       setRows([]);
       setFilteredRows([]);
@@ -239,27 +225,38 @@ export default function PricingTable() {
     if (selectedLoja.length) query = query.in("Loja", selectedLoja);
     if (selectedBrands.length) query = query.in("Marca", selectedBrands);
 
+    // ✅ BUSCA SERVER-SIDE CORRIGIDA (ID / ID Tray numéricos -> cast pra text)
     if (debouncedSearch) {
       const term = debouncedSearch.replace(/[%_]/g, "").trim();
       const safe = term.replace(/"/g, "");
       const pattern = `%${safe}%`;
 
-      query = query.or(
-        [
-          `ID.ilike.${pattern}`,
-          `"Marca".ilike.${pattern}`,
-          `"Referência".ilike.${pattern}`,
-          `"ID Bling".ilike.${pattern}`,
-        ].join(",")
-      );
+      const onlyDigits = /^[0-9]+$/.test(safe);
+
+      const orParts: string[] = [
+        // ilike por texto (funciona mesmo se for número no banco)
+        `ID::text.ilike.${pattern}`,
+        `"ID Tray"::text.ilike.${pattern}`,
+        `"ID Bling"::text.ilike.${pattern}`,
+
+        // texto normal
+        `"Marca".ilike.${pattern}`,
+        `"Referência".ilike.${pattern}`,
+      ];
+
+      // se for só número, também tenta match exato (mais certeiro)
+      if (onlyDigits) {
+        orParts.unshift(`ID.eq.${safe}`);
+        orParts.unshift(`"ID Tray".eq.${safe}`);
+        orParts.unshift(`"ID Bling".eq.${safe}`);
+      }
+
+      query = query.or(orParts.join(","));
     }
 
     if (sortColumn) {
       query = query
-        .order(sortColumn, {
-          ascending: sortDirection === "asc",
-          nullsFirst: true,
-        })
+        .order(sortColumn, { ascending: sortDirection === "asc", nullsFirst: true })
         .order("Atualizado em", { ascending: false })
         .order("id", { ascending: false });
     } else {
@@ -304,11 +301,7 @@ export default function PricingTable() {
       };
     });
 
-    setCache(cacheKey, {
-      rows: normalized,
-      totalItems: count || 0,
-      savedAt: Date.now(),
-    });
+    setCache(cacheKey, { rows: normalized, totalItems: count || 0, savedAt: Date.now() });
 
     startTransition(() => {
       setRows(normalized);
@@ -352,9 +345,8 @@ export default function PricingTable() {
   }, [loadData]);
 
   const handleSort = (col: string) => {
-    if (sortColumn === col) {
-      setSortDirection((p) => (p === "asc" ? "desc" : "asc"));
-    } else {
+    if (sortColumn === col) setSortDirection((p) => (p === "asc" ? "desc" : "asc"));
+    else {
       setSortColumn(col);
       setSortDirection("asc");
     }
@@ -369,7 +361,6 @@ export default function PricingTable() {
   const openEditor = useCallback(
     (row: Row, field: keyof Row, isMoney: boolean, e: React.MouseEvent) => {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-
       const rawValue = parseBR(row[field]);
       const formatted = toBR(rawValue);
 
@@ -385,16 +376,20 @@ export default function PricingTable() {
     []
   );
 
+  // ✅ NÃO refetch ao salvar: atualiza UI + cache e só salva no Supabase
   const confirmEdit = useCallback(async () => {
     if (!editing) return;
 
     const { dbId, loja, field, value } = editing;
     const newVal = parseBR(value);
 
+    let newRowUpdated: Row | undefined;
+
     const updatedRows = rows.map((r) => {
       if (r.id === dbId) {
         const updated: Row = { ...r, [field]: newVal };
         updated["Preço de Venda"] = calcPrecoVenda(updated);
+        newRowUpdated = updated;
         return updated;
       }
       return r;
@@ -402,29 +397,32 @@ export default function PricingTable() {
 
     setRows(updatedRows);
     setFilteredRows(updatedRows);
+    setEditing(null);
 
-    const rowUpdated = updatedRows.find((r) => r.id === dbId);
+    // atualiza cache da página atual
+    const cached = getCache(cacheKey);
+    if (cached && newRowUpdated) {
+      setCache(cacheKey, {
+        ...cached,
+        rows: cached.rows.map((r) => (r.id === dbId ? newRowUpdated! : r)),
+        savedAt: Date.now(),
+      });
+    }
 
-    const table =
-      loja === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
+    const table = loja === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
 
     const { error } = await supabase
       .from(table)
       .update({
         [String(field)]: newVal,
-        "Preço de Venda": rowUpdated?.["Preço de Venda"],
+        "Preço de Venda": newRowUpdated?.["Preço de Venda"],
       })
       .eq("id", dbId);
 
     if (error) {
       console.error("❌ Erro ao salvar:", error);
-      return;
     }
-
-    clearShopeeCache();
-    setEditing(null);
-    loadData();
-  }, [editing, rows, loadData]);
+  }, [editing, rows, cacheKey]);
 
   const cancelEdit = () => setEditing(null);
 
@@ -435,8 +433,7 @@ export default function PricingTable() {
 
       if (!id || !loja) continue;
 
-      const table =
-        loja === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
+      const table = loja === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
 
       const { error } = await supabase
         .from(table)
@@ -508,25 +505,31 @@ export default function PricingTable() {
           .range(page * pageSize, (page + 1) * pageSize - 1);
 
         if (selectedLoja.length) exportQuery = exportQuery.in("Loja", selectedLoja);
-        if (selectedBrands.length)
-          exportQuery = exportQuery.in("Marca", selectedBrands);
+        if (selectedBrands.length) exportQuery = exportQuery.in("Marca", selectedBrands);
 
         if (debouncedSearch) {
           const term = debouncedSearch.replace(/[%_]/g, "").trim();
           const safe = term.replace(/"/g, "");
           const pattern = `%${safe}%`;
-          exportQuery = exportQuery.or(
-            [
-              `ID.ilike.${pattern}`,
-              `"Marca".ilike.${pattern}`,
-              `"Referência".ilike.${pattern}`,
-              `"ID Bling".ilike.${pattern}`,
-            ].join(",")
-          );
+
+          const onlyDigits = /^[0-9]+$/.test(safe);
+          const orParts: string[] = [
+            `ID::text.ilike.${pattern}`,
+            `"ID Tray"::text.ilike.${pattern}`,
+            `"ID Bling"::text.ilike.${pattern}`,
+            `"Marca".ilike.${pattern}`,
+            `"Referência".ilike.${pattern}`,
+          ];
+          if (onlyDigits) {
+            orParts.unshift(`ID.eq.${safe}`);
+            orParts.unshift(`"ID Tray".eq.${safe}`);
+            orParts.unshift(`"ID Bling".eq.${safe}`);
+          }
+
+          exportQuery = exportQuery.or(orParts.join(","));
         }
 
         const { data, error } = await exportQuery;
-
         if (error) throw error;
         if (!data?.length) break;
 
@@ -625,12 +628,7 @@ export default function PricingTable() {
                 value={editing.value}
                 onChange={(e) =>
                   setEditing((p: any) =>
-                    p
-                      ? {
-                          ...p,
-                          value: e.target.value,
-                        }
-                      : p
+                    p ? { ...p, value: e.target.value } : p
                   )
                 }
                 onKeyDown={(e) => {
