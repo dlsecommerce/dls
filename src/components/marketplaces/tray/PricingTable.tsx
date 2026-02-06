@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useTransition } from "react";
+import React, { useEffect, useState, useCallback, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
 import { useTrayImportExport } from "@/components/marketplaces/tray/hooks/useTrayImportExport";
@@ -16,6 +16,76 @@ import { Row } from "@/components/marketplaces/tray/hooks/types";
 import { Check as CheckIcon, X as XIcon } from "lucide-react";
 import PricingMassEditionModal from "@/components/marketplaces/tray/PricingMassEditionModal";
 import PricingHeaderRow from "@/components/marketplaces/tray/PricingHeaderRow";
+
+/**
+ * ✅ Cache simples em memória (sem libs)
+ * - Evita refetch ao sair/voltar da tela
+ * - TTL: 60s (ajuste como quiser)
+ * - Cache por "chave" (página, filtros, busca, sort, etc.)
+ */
+type CacheEntry = {
+  rows: Row[];
+  totalItems: number;
+  savedAt: number;
+};
+
+const CACHE_TTL_MS = 60_000; // 1 minuto
+const CACHE_MAX_KEYS = 25; // evita crescer infinito
+const TRAY_CACHE = new Map<string, CacheEntry>();
+
+function makeCacheKey(params: {
+  currentPage: number;
+  itemsPerPage: number;
+  selectedLoja: string[];
+  selectedBrands: string[];
+  debouncedSearch: string;
+  sortColumn: string | null;
+  sortDirection: "asc" | "desc";
+}) {
+  const loja = [...params.selectedLoja].sort().join("|");
+  const brands = [...params.selectedBrands].sort().join("|");
+  return [
+    "tray",
+    `p=${params.currentPage}`,
+    `pp=${params.itemsPerPage}`,
+    `loja=${loja}`,
+    `brands=${brands}`,
+    `q=${params.debouncedSearch}`,
+    `sort=${params.sortColumn ?? ""}`,
+    `dir=${params.sortDirection}`,
+  ].join("&");
+}
+
+function setCache(key: string, entry: CacheEntry) {
+  // mantém tamanho do cache controlado
+  if (TRAY_CACHE.size >= CACHE_MAX_KEYS) {
+    // remove o mais antigo
+    let oldestKey: string | null = null;
+    let oldestAt = Infinity;
+    for (const [k, v] of TRAY_CACHE.entries()) {
+      if (v.savedAt < oldestAt) {
+        oldestAt = v.savedAt;
+        oldestKey = k;
+      }
+    }
+    if (oldestKey) TRAY_CACHE.delete(oldestKey);
+  }
+  TRAY_CACHE.set(key, entry);
+}
+
+function getCache(key: string) {
+  const entry = TRAY_CACHE.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.savedAt > CACHE_TTL_MS) {
+    TRAY_CACHE.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+function clearTrayCache() {
+  TRAY_CACHE.clear();
+}
 
 export default function PricingTable() {
   const router = useRouter();
@@ -62,6 +132,28 @@ export default function PricingTable() {
     setCurrentPage(1);
   }, [debouncedSearch, selectedLoja, selectedBrands]);
 
+  const cacheKey = useMemo(
+    () =>
+      makeCacheKey({
+        currentPage,
+        itemsPerPage,
+        selectedLoja,
+        selectedBrands,
+        debouncedSearch,
+        sortColumn,
+        sortDirection,
+      }),
+    [
+      currentPage,
+      itemsPerPage,
+      selectedLoja,
+      selectedBrands,
+      debouncedSearch,
+      sortColumn,
+      sortDirection,
+    ]
+  );
+
   const loadData = useCallback(async () => {
     setLoading(true);
 
@@ -73,6 +165,18 @@ export default function PricingTable() {
       setFilteredRows([]);
       setTotalItems(0);
       setLoading(false);
+      return;
+    }
+
+    // ✅ CACHE HIT
+    const cached = getCache(cacheKey);
+    if (cached) {
+      startTransition(() => {
+        setRows(cached.rows);
+        setFilteredRows(cached.rows);
+        setTotalItems(cached.totalItems);
+        setLoading(false);
+      });
       return;
     }
 
@@ -177,6 +281,13 @@ export default function PricingTable() {
       };
     });
 
+    // ✅ SALVA NO CACHE
+    setCache(cacheKey, {
+      rows: normalized,
+      totalItems: count || 0,
+      savedAt: Date.now(),
+    });
+
     startTransition(() => {
       setRows(normalized);
       setFilteredRows(normalized);
@@ -184,6 +295,7 @@ export default function PricingTable() {
       setLoading(false);
     });
   }, [
+    cacheKey,
     currentPage,
     itemsPerPage,
     sortColumn,
@@ -191,6 +303,7 @@ export default function PricingTable() {
     selectedLoja,
     selectedBrands,
     debouncedSearch,
+    startTransition,
   ]);
 
   // ✅ IMPORTANTE: ao montar, espera sessão e também recarrega quando auth ficar pronta
@@ -284,8 +397,11 @@ export default function PricingTable() {
 
     if (error) console.error("❌ Erro ao salvar:", error);
 
+    // ✅ Dados mudaram -> invalida cache e recarrega a página atual
+    clearTrayCache();
     setEditing(null);
-  }, [editing, rows]);
+    loadData();
+  }, [editing, rows, loadData]);
 
   const cancelEdit = () => setEditing(null);
 
@@ -318,6 +434,9 @@ export default function PricingTable() {
     }
 
     setOpenPricingModal(false);
+
+    // ✅ invalida cache e recarrega
+    clearTrayCache();
     loadData();
   };
 
