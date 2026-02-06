@@ -80,7 +80,7 @@ export default function PricingCalculatorModern() {
     margem: "15",
     frete: "",
     comissao: "6",
-    marketing: "2",
+    marketing: "3",
     embalagem: "2.5",
   });
 
@@ -102,7 +102,7 @@ export default function PricingCalculatorModern() {
       margem: "15",
       frete: "",
       comissao: "11",
-      marketing: "2",
+      marketing: "3",
       embalagem: "2.5",
     });
 
@@ -113,7 +113,7 @@ export default function PricingCalculatorModern() {
       margem: "15",
       frete: "",
       comissao: "16",
-      marketing: "2",
+      marketing: "3",
       embalagem: "2.5",
     });
 

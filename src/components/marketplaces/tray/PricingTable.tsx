@@ -1,6 +1,13 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useTransition, useMemo } from "react";
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useTransition,
+  useMemo,
+  useRef,
+} from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
 import { useTrayImportExport } from "@/components/marketplaces/tray/hooks/useTrayImportExport";
@@ -22,6 +29,10 @@ import PricingHeaderRow from "@/components/marketplaces/tray/PricingHeaderRow";
  * - Evita refetch ao sair/voltar da tela
  * - TTL: 60s (ajuste como quiser)
  * - Cache por "chave" (página, filtros, busca, sort, etc.)
+ *
+ * ✅ AJUSTE IMPORTANTE:
+ * - "Hidrata" do cache ANTES de mostrar loading,
+ *   para não ficar “carregando” quando troca de aba/rota e volta.
  */
 type CacheEntry = {
   rows: Row[];
@@ -57,9 +68,7 @@ function makeCacheKey(params: {
 }
 
 function setCache(key: string, entry: CacheEntry) {
-  // mantém tamanho do cache controlado
   if (TRAY_CACHE.size >= CACHE_MAX_KEYS) {
-    // remove o mais antigo
     let oldestKey: string | null = null;
     let oldestAt = Infinity;
     for (const [k, v] of TRAY_CACHE.entries()) {
@@ -103,8 +112,6 @@ export default function PricingTable() {
   const [totalItems, setTotalItems] = useState(0);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  // 🔥 edição baseada no UUID
   const [editing, setEditing] = useState<any>(null);
 
   const [openPricingModal, setOpenPricingModal] = useState(false);
@@ -116,18 +123,18 @@ export default function PricingTable() {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
   const [isPending, startTransition] = useTransition();
-
-  // ✅ loader do botão Exportar
   const [exporting, setExporting] = useState(false);
 
   const impExp = useTrayImportExport(filteredRows, selectedLoja, selectedBrands);
+
+  // ✅ evita request antigo sobrescrever estado novo
+  const reqIdRef = useRef(0);
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(timeout);
   }, [search]);
 
-  // ✅ quando buscar (ou mudar filtros), volta pra página 1
   useEffect(() => {
     setCurrentPage(1);
   }, [debouncedSearch, selectedLoja, selectedBrands]);
@@ -154,21 +161,24 @@ export default function PricingTable() {
     ]
   );
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-
-    // ✅ GARANTE AUTH: sem sessão, não busca (RLS vai retornar vazio)
-    const { data: sess } = await supabase.auth.getSession();
-    if (!sess.session) {
-      console.log("🔒 Sem sessão (anon) — aguardando autenticação para carregar anúncios.");
-      setRows([]);
-      setFilteredRows([]);
-      setTotalItems(0);
+  /**
+   * ✅ HIDRATAÇÃO IMEDIATA DO CACHE
+   * Quando você volta para a tela, ela não fica “carregando” se existir cache válido.
+   */
+  useEffect(() => {
+    const cached = getCache(cacheKey);
+    if (cached) {
+      setRows(cached.rows);
+      setFilteredRows(cached.rows);
+      setTotalItems(cached.totalItems);
       setLoading(false);
-      return;
     }
+  }, [cacheKey]);
 
-    // ✅ CACHE HIT
+  const loadData = useCallback(async () => {
+    const myReqId = ++reqIdRef.current;
+
+    // ✅ 1) cache primeiro (não liga loading se tiver cache)
     const cached = getCache(cacheKey);
     if (cached) {
       startTransition(() => {
@@ -177,6 +187,21 @@ export default function PricingTable() {
         setTotalItems(cached.totalItems);
         setLoading(false);
       });
+      return;
+    }
+
+    // ✅ 2) agora sim liga loading porque vai ao banco
+    setLoading(true);
+
+    // ✅ GARANTE AUTH: sem sessão, não busca (RLS retorna vazio)
+    const { data: sess } = await supabase.auth.getSession();
+    if (!sess.session) {
+      console.log("🔒 Sem sessão (anon) — aguardando autenticação para carregar anúncios.");
+      if (myReqId !== reqIdRef.current) return;
+      setRows([]);
+      setFilteredRows([]);
+      setTotalItems(0);
+      setLoading(false);
       return;
     }
 
@@ -215,8 +240,7 @@ export default function PricingTable() {
     if (selectedLoja.length) query = query.in("Loja", selectedLoja);
     if (selectedBrands.length) query = query.in("Marca", selectedBrands);
 
-    // ✅ busca SERVER-SIDE (funciona mesmo fora da página atual)
-    // Busca por: ID + ID Bling + Referência + Marca
+    // ✅ busca SERVER-SIDE (ID + ID Bling + Referência + Marca)
     if (debouncedSearch) {
       const term = debouncedSearch.replace(/[%_]/g, "").trim();
       const safe = term.replace(/"/g, "");
@@ -232,7 +256,7 @@ export default function PricingTable() {
       );
     }
 
-    // ✅ ORDENAÇÃO: padronizar em "Atualizado em"
+    // ✅ ORDENAÇÃO: "Atualizado em"
     if (sortColumn) {
       query = query
         .order(sortColumn, {
@@ -242,12 +266,14 @@ export default function PricingTable() {
         .order("Atualizado em", { ascending: false })
         .order("id", { ascending: false });
     } else {
-      query = query.order("Atualizado em", { ascending: false }).order("id", {
-        ascending: false,
-      });
+      query = query
+        .order("Atualizado em", { ascending: false })
+        .order("id", { ascending: false });
     }
 
     const { data, error, count } = await query.range(start, end);
+
+    if (myReqId !== reqIdRef.current) return;
 
     if (error) {
       console.error("❌ Supabase error:", error.message, error.details, error.hint);
@@ -281,7 +307,7 @@ export default function PricingTable() {
       };
     });
 
-    // ✅ SALVA NO CACHE
+    // ✅ salva cache
     setCache(cacheKey, {
       rows: normalized,
       totalItems: count || 0,
@@ -303,10 +329,9 @@ export default function PricingTable() {
     selectedLoja,
     selectedBrands,
     debouncedSearch,
-    startTransition,
   ]);
 
-  // ✅ IMPORTANTE: ao montar, espera sessão e também recarrega quando auth ficar pronta
+  // ✅ ao montar, espera sessão e recarrega quando auth ficar pronta
   useEffect(() => {
     let cancelled = false;
 
@@ -349,7 +374,6 @@ export default function PricingTable() {
   const openEditor = useCallback(
     (row: Row, field: keyof Row, isMoney: boolean, e: React.MouseEvent) => {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-
       const rawValue = parseBR(row[field]);
       const formatted = toBR(rawValue);
 
@@ -395,9 +419,12 @@ export default function PricingTable() {
       })
       .eq("id", dbId);
 
-    if (error) console.error("❌ Erro ao salvar:", error);
+    if (error) {
+      console.error("❌ Erro ao salvar:", error);
+      return;
+    }
 
-    // ✅ Dados mudaram -> invalida cache e recarrega a página atual
+    // ✅ dados mudaram -> invalida cache e recarrega
     clearTrayCache();
     setEditing(null);
     loadData();
@@ -407,7 +434,7 @@ export default function PricingTable() {
 
   const handlePricingImport = async (data: any[]) => {
     for (const row of data) {
-      const loja = String(row.Loja || "").trim().toUpperCase(); // PK/SB
+      const loja = String(row.Loja || "").trim().toUpperCase();
       const id = String(row.ID ?? "").trim();
 
       if (!id || !loja) continue;
@@ -435,7 +462,6 @@ export default function PricingTable() {
 
     setOpenPricingModal(false);
 
-    // ✅ invalida cache e recarrega
     clearTrayCache();
     loadData();
   };
@@ -443,7 +469,6 @@ export default function PricingTable() {
   const handleExportAll = useCallback(async () => {
     setExporting(true);
     try {
-      // ✅ GARANTE AUTH antes do export também
       const { data: sess } = await supabase.auth.getSession();
       if (!sess.session) {
         alert("Você precisa estar logado para exportar.");

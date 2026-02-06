@@ -1,6 +1,13 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useTransition, useMemo } from "react";
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useTransition,
+  useMemo,
+  useRef,
+} from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
 import { useTrayImportExport } from "@/components/marketplaces/shopee/hooks/useTrayImportExport";
@@ -22,6 +29,9 @@ import PricingHeaderRow from "@/components/marketplaces/shopee/PricingHeaderRow"
  * - Evita refetch ao sair/voltar da tela
  * - TTL: 60s (ajuste como quiser)
  * - Cache por "chave" (página, filtros, busca, sort, etc.)
+ *
+ * ✅ BONUS: "hidrata" do cache ANTES de mostrar loading
+ * - ao voltar de outra aba, não fica piscando "carregando"
  */
 type CacheEntry = {
   rows: Row[];
@@ -57,9 +67,7 @@ function makeCacheKey(params: {
 }
 
 function setCache(key: string, entry: CacheEntry) {
-  // mantém tamanho do cache controlado
   if (SHOPEE_CACHE.size >= CACHE_MAX_KEYS) {
-    // remove o mais antigo
     let oldestKey: string | null = null;
     let oldestAt = Infinity;
     for (const [k, v] of SHOPEE_CACHE.entries()) {
@@ -83,7 +91,6 @@ function getCache(key: string) {
   return entry;
 }
 
-// opcional: para invalidar tudo quando fizer update/import
 function clearShopeeCache() {
   SHOPEE_CACHE.clear();
 }
@@ -105,9 +112,7 @@ export default function PricingTable() {
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // 🔥 edição baseada no UUID
   const [editing, setEditing] = useState<any>(null);
-
   const [openPricingModal, setOpenPricingModal] = useState(false);
 
   const [search, setSearch] = useState("");
@@ -117,18 +122,18 @@ export default function PricingTable() {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
   const [isPending, startTransition] = useTransition();
-
-  // ✅ loader do botão Exportar
   const [exporting, setExporting] = useState(false);
 
   const impExp = useTrayImportExport(filteredRows, selectedLoja, selectedBrands);
+
+  // evita "setState" de um request antigo sobrescrever o novo
+  const reqIdRef = useRef(0);
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(timeout);
   }, [search]);
 
-  // ✅ quando buscar (ou mudar filtros), volta pra página 1
   useEffect(() => {
     setCurrentPage(1);
   }, [debouncedSearch, selectedLoja, selectedBrands]);
@@ -155,21 +160,24 @@ export default function PricingTable() {
     ]
   );
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-
-    // ✅ GARANTE AUTH: se não tiver sessão, não busca (RLS vai retornar vazio)
-    const { data: sess } = await supabase.auth.getSession();
-    if (!sess.session) {
-      console.log("🔒 Sem sessão (anon) — aguardando autenticação para carregar anúncios.");
-      setRows([]);
-      setFilteredRows([]);
-      setTotalItems(0);
+  /**
+   * ✅ HIDRATA IMEDIATO do cache (antes do loadData)
+   * Isso elimina o "fica carregando" ao voltar de outra aba/rota.
+   */
+  useEffect(() => {
+    const cached = getCache(cacheKey);
+    if (cached) {
+      setRows(cached.rows);
+      setFilteredRows(cached.rows);
+      setTotalItems(cached.totalItems);
       setLoading(false);
-      return;
     }
+  }, [cacheKey]);
 
-    // ✅ CACHE HIT
+  const loadData = useCallback(async () => {
+    const myReqId = ++reqIdRef.current;
+
+    // ✅ 1) cache primeiro (não liga loading se tiver cache)
     const cached = getCache(cacheKey);
     if (cached) {
       startTransition(() => {
@@ -178,6 +186,21 @@ export default function PricingTable() {
         setTotalItems(cached.totalItems);
         setLoading(false);
       });
+      return;
+    }
+
+    // ✅ 2) agora sim liga loading porque vai ao banco
+    setLoading(true);
+
+    // ✅ GARANTE AUTH
+    const { data: sess } = await supabase.auth.getSession();
+    if (!sess.session) {
+      console.log("🔒 Sem sessão (anon) — aguardando autenticação para carregar anúncios.");
+      if (myReqId !== reqIdRef.current) return;
+      setRows([]);
+      setFilteredRows([]);
+      setTotalItems(0);
+      setLoading(false);
       return;
     }
 
@@ -216,7 +239,6 @@ export default function PricingTable() {
     if (selectedLoja.length) query = query.in("Loja", selectedLoja);
     if (selectedBrands.length) query = query.in("Marca", selectedBrands);
 
-    // ✅ busca SERVER-SIDE (ID, Marca, Referência, ID Bling)
     if (debouncedSearch) {
       const term = debouncedSearch.replace(/[%_]/g, "").trim();
       const safe = term.replace(/"/g, "");
@@ -232,7 +254,6 @@ export default function PricingTable() {
       );
     }
 
-    // ✅ ORDENAÇÃO: usar "Atualizado em" (conforme seu banco)
     if (sortColumn) {
       query = query
         .order(sortColumn, {
@@ -242,12 +263,14 @@ export default function PricingTable() {
         .order("Atualizado em", { ascending: false })
         .order("id", { ascending: false });
     } else {
-      query = query.order("Atualizado em", { ascending: false }).order("id", {
-        ascending: false,
-      });
+      query = query
+        .order("Atualizado em", { ascending: false })
+        .order("id", { ascending: false });
     }
 
     const { data, error, count } = await query.range(start, end);
+
+    if (myReqId !== reqIdRef.current) return;
 
     if (error) {
       console.error("❌ Supabase error:", error.message, error.details, error.hint);
@@ -281,7 +304,6 @@ export default function PricingTable() {
       };
     });
 
-    // ✅ SALVA NO CACHE
     setCache(cacheKey, {
       rows: normalized,
       totalItems: count || 0,
@@ -303,10 +325,8 @@ export default function PricingTable() {
     selectedLoja,
     selectedBrands,
     debouncedSearch,
-    startTransition,
   ]);
 
-  // ✅ IMPORTANTE: ao montar, espera sessão e também recarrega quando auth ficar pronta
   useEffect(() => {
     let cancelled = false;
 
@@ -385,7 +405,8 @@ export default function PricingTable() {
 
     const rowUpdated = updatedRows.find((r) => r.id === dbId);
 
-    const table = loja === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
+    const table =
+      loja === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
 
     const { error } = await supabase
       .from(table)
@@ -400,17 +421,13 @@ export default function PricingTable() {
       return;
     }
 
-    // ✅ dados mudaram -> invalida cache (simples e seguro)
     clearShopeeCache();
-
     setEditing(null);
-    // ✅ opcional: recarrega a página atual
     loadData();
   }, [editing, rows, loadData]);
 
   const cancelEdit = () => setEditing(null);
 
-  // ✅ IMPORTAÇÃO: atualizar por (ID + Loja), NÃO por UUID
   const handlePricingImport = async (data: any[]) => {
     for (const row of data) {
       const loja = String(row.Loja || "").trim().toUpperCase();
@@ -418,7 +435,8 @@ export default function PricingTable() {
 
       if (!id || !loja) continue;
 
-      const table = loja === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
+      const table =
+        loja === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
 
       const { error } = await supabase
         .from(table)
@@ -440,8 +458,6 @@ export default function PricingTable() {
     }
 
     setOpenPricingModal(false);
-
-    // ✅ invalida cache e recarrega
     clearShopeeCache();
     loadData();
   };
@@ -449,7 +465,6 @@ export default function PricingTable() {
   const handleExportAll = useCallback(async () => {
     setExporting(true);
     try {
-      // ✅ GARANTE AUTH antes do export também
       const { data: sess } = await supabase.auth.getSession();
       if (!sess.session) {
         alert("Você precisa estar logado para exportar.");
@@ -493,7 +508,8 @@ export default function PricingTable() {
           .range(page * pageSize, (page + 1) * pageSize - 1);
 
         if (selectedLoja.length) exportQuery = exportQuery.in("Loja", selectedLoja);
-        if (selectedBrands.length) exportQuery = exportQuery.in("Marca", selectedBrands);
+        if (selectedBrands.length)
+          exportQuery = exportQuery.in("Marca", selectedBrands);
 
         if (debouncedSearch) {
           const term = debouncedSearch.replace(/[%_]/g, "").trim();

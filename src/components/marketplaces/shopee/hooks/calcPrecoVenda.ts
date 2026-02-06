@@ -1,83 +1,67 @@
 // calcPrecoVenda.ts
 import { Row } from "./types";
 
+/**
+ * parseBR — mesmo parser do hook usePrecificacao
+ */
 export const parseBR = (v: string | number | null | undefined): number => {
   if (v === null || v === undefined || v === "") return 0;
   const s = String(v).trim();
+
   if (typeof v === "number") return v;
 
   if (s.includes(",")) {
-    if (s.match(/\.\d{3},/)) return Number(s.replace(/\./g, "").replace(",", "."));
+    // 1.234,56
+    if (s.match(/\.\d{3},/)) {
+      return Number(s.replace(/\./g, "").replace(",", "."));
+    }
+    // 10,5
     return Number(s.replace(",", "."));
   }
 
-  if (s.includes(".") && s.split(".")[1]?.length <= 2) return Number(s);
+  // 10.50
+  if (s.includes(".") && s.split(".")[1]?.length <= 2) {
+    return Number(s);
+  }
 
+  // 1234 or 1.234 (tratando como milhar)
   return Number(s.replace(/\./g, ""));
 };
 
-type RegraFaixa = {
-  embalagem: number;
-  frete: number;
-  impostoPct: number;
-  comissaoPct: number;
-  margemPct: number;
-  marketingPct: number;
-};
-
-const regraPorPrecoVenda = (pv: number): RegraFaixa => {
-  // pv aqui é o preço de venda "estimado" na iteração atual
-  if (pv <= 79.99) {
-    return {
-      embalagem: 2.5,
-      frete: 4,
-      impostoPct: 12,
-      comissaoPct: 20,
-      margemPct: 15,
-      marketingPct: 3,
-    };
-  }
-  if (pv <= 99.99) {
-    return {
-      embalagem: 2.5,
-      frete: 16,
-      impostoPct: 12,
-      comissaoPct: 14,
-      margemPct: 15,
-      marketingPct: 3,
-    };
-  }
-  if (pv <= 199.99) {
-    return {
-      embalagem: 2.5,
-      frete: 20,
-      impostoPct: 12,
-      comissaoPct: 14,
-      margemPct: 15,
-      marketingPct: 3,
-    };
-  }
-  return {
-    embalagem: 2.5,
-    frete: 26,
-    impostoPct: 12,
-    comissaoPct: 14,
-    margemPct: 15,
-    marketingPct: 3,
-  };
-};
-
+/**
+ * Calcula o preço de venda (IGUAL À SUA FÓRMULA DO EXCEL):
+ *
+ * SE(
+ *  (S - (S*K/100) + L + M) > 500;
+ *  (S - (S*K/100) + L + 100) / (1 - (O+P+Q)/100);
+ *  (S - (S*K/100) + L + M)   / (1 - (N+O+P+Q)/100)
+ * )
+ */
 export function calcPrecoVenda(row: Row, overrides?: Partial<Row>) {
   const get = (k: keyof Row, fallback = 0) =>
     parseBR(overrides?.[k] ?? row[k] ?? fallback);
 
-  const custo = get("Custo");          // S
-  const descontoPct = get("Desconto"); // K (%)
+  // ----------- valores base -----------
+  const custo = get("Custo");                 // S
+  const descontoPct = get("Desconto");        // K (%)
+  const embalagem = get("Embalagem", 2.5);    // L (R$)
+  const frete = get("Frete");                 // M (R$)
+
+  // ----------- percentuais (em %) -----------
+  const comissaoPct = get("Comissão");        // N (%)
+  const impostoPct = get("Imposto");          // O (%)
+  const lucroPct = get("Margem de Lucro");    // P (%)
+  const marketingPct = get("Marketing");      // Q (%)
 
   if (custo <= 0) return 0;
 
+  // custo líquido: S * (1 - K/100)
   const custoLiquido = custo * (1 - descontoPct / 100);
 
+  // teste do SE: (S*(1-K/100) + L + M) > 500
+  const baseTeste = custoLiquido + embalagem + frete;
+
+  // helper divisor
   const safeCalc = (numerador: number, divisor: number) => {
     if (divisor <= 0 || !isFinite(divisor)) return 0;
     const pv = numerador / divisor;
@@ -85,42 +69,25 @@ export function calcPrecoVenda(row: Row, overrides?: Partial<Row>) {
     return pv;
   };
 
-  // Chute inicial de PV (pode ser qualquer valor razoável)
-  let pv = 100;
+  let pv = 0;
 
-  // Itera até estabilizar a faixa (geralmente 2-4 vezes resolve)
-  for (let i = 0; i < 8; i++) {
-    const r = regraPorPrecoVenda(pv);
-
-    // Mantém sua regra do "SE baseTeste > 500"
-    const baseTeste = custoLiquido + r.embalagem + r.frete;
-
-    let novoPv = 0;
-
-    if (baseTeste > 500) {
-      // TRUE: sem comissão, frete vira 100 (como na sua fórmula)
-      const numerador = custoLiquido + r.embalagem + 100;
-      const divisor = 1 - (r.impostoPct + r.margemPct + r.marketingPct) / 100;
-      novoPv = safeCalc(numerador, divisor);
-    } else {
-      // FALSE: com comissão + frete por faixa
-      const numerador = custoLiquido + r.embalagem + r.frete;
-      const divisor =
-        1 - (r.comissaoPct + r.impostoPct + r.margemPct + r.marketingPct) / 100;
-      novoPv = safeCalc(numerador, divisor);
-    }
-
-    novoPv = Number(novoPv.toFixed(2));
-
-    // Se mudou muito pouco, para
-    if (Math.abs(novoPv - pv) < 0.01) {
-      pv = novoPv;
-      break;
-    }
-
-    pv = novoPv;
+  if (baseTeste > 500) {
+    // TRUE:
+    // numerador = custoLiquido + embalagem + 100
+    // divisor   = 1 - (O+P+Q)/100   (sem comissão)
+    const numerador = custoLiquido + embalagem + 100;
+    const divisor = 1 - (impostoPct + lucroPct + marketingPct) / 100;
+    pv = safeCalc(numerador, divisor);
+  } else {
+    // FALSE:
+    // numerador = custoLiquido + embalagem + frete
+    // divisor   = 1 - (N+O+P+Q)/100
+    const numerador = custoLiquido + embalagem + frete;
+    const divisor =
+      1 - (comissaoPct + impostoPct + lucroPct + marketingPct) / 100;
+    pv = safeCalc(numerador, divisor);
   }
 
   if (pv <= 0) return 0;
-  return pv;
+  return Number(pv.toFixed(2));
 }
