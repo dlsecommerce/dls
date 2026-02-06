@@ -39,7 +39,7 @@ type CacheEntry = {
   savedAt: number;
 };
 
-const CACHE_TTL_MS = 60_000; // 1 minuto
+const CACHE_TTL_MS = 10 * 60_000; // 10 minutos
 const CACHE_MAX_KEYS = 25; // evita crescer infinito
 const SHOPEE_CACHE = new Map<string, CacheEntry>();
 
