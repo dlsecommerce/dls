@@ -89,6 +89,28 @@ function clearShopeeCache() {
   SHOPEE_CACHE.clear();
 }
 
+/**
+ * ✅ Normaliza e identifica a loja (evita cair na tabela errada)
+ * Ajuste aqui caso seus valores reais de "Loja" sejam diferentes.
+ */
+function normalizeLojaCode(lojaRaw: unknown): "PK" | "SB" | null {
+  const s = String(lojaRaw ?? "").trim().toUpperCase();
+
+  // casos comuns
+  if (s === "PK" || s.startsWith("PK")) return "PK";
+  if (s === "SB" || s.startsWith("SB")) return "SB";
+
+  // se vier nome completo
+  if (s.includes("PIKOT")) return "PK";
+  if (s.includes("SOBA")) return "SB";
+
+  return null;
+}
+
+function tableByLojaCode(code: "PK" | "SB") {
+  return code === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
+}
+
 export default function PricingTable() {
   const router = useRouter();
 
@@ -118,6 +140,7 @@ export default function PricingTable() {
   const [isPending, startTransition] = useTransition();
   const [exporting, setExporting] = useState(false);
 
+  // ✅ Export usa os dados filtrados em tela (ou export All pega tudo)
   const impExp = useTrayImportExport(filteredRows, selectedLoja, selectedBrands);
 
   const reqIdRef = useRef(0);
@@ -266,7 +289,10 @@ export default function PricingTable() {
 
     if (sortColumn) {
       query = query
-        .order(sortColumn, { ascending: sortDirection === "asc", nullsFirst: true })
+        .order(sortColumn, {
+          ascending: sortDirection === "asc",
+          nullsFirst: true,
+        })
         .order("Atualizado em", { ascending: false })
         .order("id", { ascending: false });
     } else {
@@ -280,7 +306,12 @@ export default function PricingTable() {
     if (myReqId !== reqIdRef.current) return;
 
     if (error) {
-      console.error("❌ Supabase error:", error.message, error.details, error.hint);
+      console.error(
+        "❌ Supabase error:",
+        error.message,
+        error.details,
+        error.hint
+      );
       setRows([]);
       setFilteredRows([]);
       setTotalItems(0);
@@ -311,7 +342,11 @@ export default function PricingTable() {
       };
     });
 
-    setCache(cacheKey, { rows: normalized, totalItems: count || 0, savedAt: Date.now() });
+    setCache(cacheKey, {
+      rows: normalized,
+      totalItems: count || 0,
+      savedAt: Date.now(),
+    });
 
     startTransition(() => {
       setRows(normalized);
@@ -386,8 +421,13 @@ export default function PricingTable() {
     []
   );
 
-  // ✅ NÃO refetch ao salvar: atualiza UI + cache e salva no Supabase
-  // ✅ Lê de volta (select().single()) da tabela PK/SB para não "voltar" valor
+  /**
+   * ✅ AJUSTE PRINCIPAL (Shopee igual Tray, porém mais robusto):
+   * - normaliza Loja (PK/SB) antes de escolher tabela
+   * - tenta update por id e valida se atualizou 1 linha
+   * - se não atualizou nada (id da view não bate), faz fallback por (ID + Loja)
+   * - mantém UI + cache otimista (como já estava)
+   */
   const confirmEdit = useCallback(async () => {
     if (!editing) return;
 
@@ -396,8 +436,11 @@ export default function PricingTable() {
 
     const shouldRecalcPV = PREC_FIELDS.includes(field);
 
-    let newRowUpdated: Row | undefined;
+    // pega a linha atual (antes de atualizar) pra fallback por ID + Loja
+    const currentRow = rows.find((r) => r.id === dbId);
 
+    // otimista (UI)
+    let newRowUpdated: Row | undefined;
     const updatedRows = rows.map((r) => {
       if (r.id === dbId) {
         const updated: Row = { ...r, [field]: newVal };
@@ -408,7 +451,6 @@ export default function PricingTable() {
       return r;
     });
 
-    // otimista
     setRows(updatedRows);
     setFilteredRows(updatedRows);
     setEditing(null);
@@ -423,111 +465,79 @@ export default function PricingTable() {
       });
     }
 
-    const table = loja === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
+    // ✅ normaliza loja e define tabela correta
+    const lojaCode = normalizeLojaCode(loja);
+    if (!lojaCode) {
+      console.error("❌ Loja inválida para salvar. Valor recebido:", loja);
+      return;
+    }
+
+    const table = tableByLojaCode(lojaCode);
 
     const payload: any = { [String(field)]: newVal };
     if (shouldRecalcPV) payload["Preço de Venda"] = newRowUpdated?.["Preço de Venda"];
 
-    const { data: saved, error } = await supabase
+    // ✅ 1) tenta salvar por id (mais direto)
+    const { data: upd1, error: err1 } = await supabase
       .from(table)
       .update(payload)
       .eq("id", dbId)
-      .select(
-        `
-        id,
-        anuncio_id,
-        ID,
-        Loja,
-        "ID Tray",
-        "ID Var",
-        "ID Bling",
-        Nome,
-        Marca,
-        Referência,
-        Categoria,
-        Desconto,
-        Embalagem,
-        Frete,
-        Comissão,
-        Imposto,
-        Marketing,
-        "Margem de Lucro",
-        Custo,
-        "Preço de Venda",
-        "Atualizado em"
-      `
-      )
-      .single();
+      .select("id"); // valida se alterou
 
-    if (error) {
-      console.error("❌ Erro ao salvar:", error);
+    if (err1) {
+      console.error("❌ Erro ao salvar (por id):", err1);
       return;
     }
 
-    // fixa UI/caches com o que o banco realmente gravou
-    if (saved) {
-      const fixed: Row = {
-        ...(newRowUpdated as Row),
-        ...saved,
-        Desconto: parseBR(saved.Desconto),
-        Embalagem: parseBR(saved.Embalagem),
-        Frete: parseBR(saved.Frete),
-        Comissão: parseBR(saved.Comissão),
-        Imposto: parseBR(saved.Imposto),
-        Marketing: parseBR(saved.Marketing),
-        "Margem de Lucro": parseBR(saved["Margem de Lucro"]),
-        Custo: parseBR(saved.Custo),
-        "Preço de Venda": parseBR(saved["Preço de Venda"]),
-      };
+    // se não alterou nenhuma linha, faz fallback
+    if (!upd1?.length) {
+      const fallbackID = currentRow?.ID ?? (newRowUpdated as any)?.ID;
 
-      setRows((prev) => prev.map((r) => (r.id === dbId ? fixed : r)));
-      setFilteredRows((prev) => prev.map((r) => (r.id === dbId ? fixed : r)));
+      if (!fallbackID) {
+        console.error(
+          "❌ Update não encontrou a linha por id e não há ID para fallback.",
+          { dbId, loja, lojaCode, table }
+        );
+        return;
+      }
 
-      const cached2 = getCache(cacheKey);
-      if (cached2) {
-        setCache(cacheKey, {
-          ...cached2,
-          rows: cached2.rows.map((r) => (r.id === dbId ? fixed : r)),
-          savedAt: Date.now(),
-        });
+      const { data: upd2, error: err2 } = await supabase
+        .from(table)
+        .update(payload)
+        .eq("ID", fallbackID as any)
+        .eq("Loja", lojaCode as any)
+        .select("id");
+
+      if (err2) {
+        console.error("❌ Erro ao salvar (fallback ID+Loja):", err2);
+        return;
+      }
+
+      if (!upd2?.length) {
+        console.error(
+          "❌ Update NÃO alterou nenhuma linha (id e fallback falharam).",
+          { dbId, fallbackID, loja, lojaCode, table, payload }
+        );
+        return;
       }
     }
   }, [editing, rows, cacheKey, PREC_FIELDS]);
 
   const cancelEdit = () => setEditing(null);
 
-  const handlePricingImport = async (data: any[]) => {
-    for (const row of data) {
-      const loja = String(row.Loja || "").trim().toUpperCase();
-      const id = String(row.ID ?? "").trim();
-
-      if (!id || !loja) continue;
-
-      const table = loja === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
-
-      const { error } = await supabase
-        .from(table)
-        .update({
-          Desconto: row.Desconto,
-          Embalagem: row.Embalagem,
-          Frete: row.Frete,
-          Comissão: row.Comissão,
-          Imposto: row.Imposto,
-          Marketing: row.Marketing,
-          Custo: row.Custo,
-          "Margem de Lucro": row["Margem de Lucro"],
-          "Preço de Venda": row["Preço de Venda"],
-        })
-        .eq("ID", id)
-        .eq("Loja", loja);
-
-      if (error) console.error("❌ Erro ao importar:", error);
-    }
-
-    setOpenPricingModal(false);
-    clearShopeeCache();
-    loadData();
-  };
+  /**
+   * ✅ RECOMENDADO:
+   * O modal (PricingMassEditionModal) já atualiza via RPC.
+   * Então aqui a gente só fecha, limpa cache e recarrega a listagem.
+   */
+  const handlePricingImport = useCallback(
+    async (_data: any[]) => {
+      setOpenPricingModal(false);
+      clearShopeeCache();
+      await loadData();
+    },
+    [loadData]
+  );
 
   const handleExportAll = useCallback(async () => {
     setExporting(true);
@@ -575,7 +585,8 @@ export default function PricingTable() {
           .range(page * pageSize, (page + 1) * pageSize - 1);
 
         if (selectedLoja.length) exportQuery = exportQuery.in("Loja", selectedLoja);
-        if (selectedBrands.length) exportQuery = exportQuery.in("Marca", selectedBrands);
+        if (selectedBrands.length)
+          exportQuery = exportQuery.in("Marca", selectedBrands);
 
         if (debouncedSearch) {
           const term = debouncedSearch.replace(/[%_]/g, "").trim();
@@ -583,6 +594,7 @@ export default function PricingTable() {
           const pattern = `%${safe}%`;
 
           const onlyDigits = /^[0-9]+$/.test(safe);
+
           const orParts: string[] = [
             `ID::text.ilike.${pattern}`,
             `"ID Tray"::text.ilike.${pattern}`,
@@ -590,6 +602,7 @@ export default function PricingTable() {
             `"Marca".ilike.${pattern}`,
             `"Referência".ilike.${pattern}`,
           ];
+
           if (onlyDigits) {
             orParts.unshift(`ID.eq.${safe}`);
             orParts.unshift(`"ID Tray".eq.${safe}`);

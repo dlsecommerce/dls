@@ -69,6 +69,59 @@ export default function PricingMassEditionModal({
   );
 
   // =============================================================
+  // ✅ helpers: normalização de strings/headers
+  // =============================================================
+  const normalizeText = (v: any) =>
+    String(v ?? "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // remove acentos
+      .replace(/\u00A0/g, " ")
+      .replace(/\s+/g, " ");
+
+  const normalizeHeader = (h: string) =>
+    normalizeText(h).replace(/[^a-z0-9]+/g, " ").trim();
+
+  const headerKeyMap = useMemo(() => {
+    // Aceita variações comuns no CSV/XLSX
+    const map: Record<string, string> = {
+      id: "ID",
+      codigo: "ID", // se vier "Código" como ID (opcional)
+      loja: "Loja",
+      "id bling": "ID Bling",
+      bling: "ID Bling",
+      referencia: "Referência",
+      "id tray": "ID Tray",
+      tray: "ID Tray",
+      "id var": "ID Var",
+      var: "ID Var",
+      od: "OD",
+      nome: "Nome",
+      marca: "Marca",
+      categoria: "Categoria",
+      desconto: "Desconto",
+      embalagem: "Embalagem",
+      frete: "Frete",
+      comissao: "Comissão",
+      imposto: "Imposto",
+      "margem de lucro": "Margem de Lucro",
+      margem: "Margem de Lucro",
+      marketing: "Marketing",
+      custo: "Custo",
+      "preco de venda": "Preço de Venda",
+      "preco venda": "Preço de Venda",
+      preco: "Preço de Venda",
+    };
+
+    // também garante mapeamento exato dos targetCols
+    for (const c of targetCols) {
+      map[normalizeHeader(c)] = c;
+    }
+    return map;
+  }, [targetCols]);
+
+  // =============================================================
   // ✅ parse numérico BR/US + {v,w} do XLSX
   // =============================================================
   const toNumberBR = (v: any) => {
@@ -104,15 +157,15 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ Normaliza headers do arquivo para bater com targetCols
+  // ✅ Normaliza headers do arquivo (suporta variações/acento)
   // =============================================================
   const normalizeRowsByHeaders = (rows: ImportRow[]) => {
     return rows.map((row) => {
       const normalizedRow: Record<string, any> = {};
       for (const key of Object.keys(row)) {
-        const cleanKey = key.trim().toLowerCase();
-        const match = targetCols.find((c) => c.trim().toLowerCase() === cleanKey);
-        normalizedRow[match || key] = row[key];
+        const nk = normalizeHeader(key);
+        const mapped = headerKeyMap[nk] ?? headerKeyMap[normalizeText(key)] ?? null;
+        normalizedRow[mapped || key] = row[key];
       }
       return normalizedRow;
     });
@@ -162,6 +215,29 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
+  // ✅ Import XLSX/XLS (com skip do header mesclado)
+  // =============================================================
+  const parseXlsx = async (file: File) => {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const sheetName = wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
+
+    const a1 = ws["A1"]?.v;
+    const hasMergedHeaders = typeof a1 === "string" && String(a1).toUpperCase().includes("IDENTIFICA");
+
+    if (hasMergedHeaders && ws["!ref"]) {
+      const range = XLSX.utils.decode_range(ws["!ref"]);
+      // pula a primeira linha (títulos mesclados)
+      range.s.r = Math.max(range.s.r, 1);
+      ws["!ref"] = XLSX.utils.encode_range(range);
+    }
+
+    const jsonData: ImportRow[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+    return jsonData;
+  };
+
+  // =============================================================
   // 📌 IMPORTAÇÃO DO ARQUIVO
   // =============================================================
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -177,7 +253,6 @@ export default function PricingMassEditionModal({
     try {
       const ext = file.name.split(".").pop()?.toLowerCase();
 
-      // ✅ CSV ultra rápido
       if (ext === "csv") {
         const rows = await parseCsvFast(file);
         const normalized = normalizeRowsByHeaders(rows);
@@ -188,29 +263,19 @@ export default function PricingMassEditionModal({
         return;
       }
 
-      // XLSX fallback (mais pesado)
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
-      const sheetName = wb.SheetNames[0];
-      const ws = wb.Sheets[sheetName];
+      if (ext === "xlsx" || ext === "xls") {
+        const rows = await parseXlsx(file);
+        const normalized = normalizeRowsByHeaders(rows);
 
-      // ✅ evita 2 parses: detecta header mesclado pelo A1
-      const a1 = ws["A1"]?.v;
-      const hasMergedHeaders =
-        typeof a1 === "string" && a1.toUpperCase().includes("IDENTIFICA");
-
-      if (hasMergedHeaders && ws["!ref"]) {
-        const range = XLSX.utils.decode_range(ws["!ref"]);
-        range.s.r = Math.max(range.s.r, 1);
-        ws["!ref"] = XLSX.utils.encode_range(range);
+        progressRef.current = 100;
+        toast.success("Planilha carregada!", { description: `Encontrados ${normalized.length} itens.` });
+        setPreviewData(normalized);
+        return;
       }
 
-      const jsonData: ImportRow[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
-      const normalized = normalizeRowsByHeaders(jsonData);
-
-      progressRef.current = 100;
-      toast.success("Planilha carregada!", { description: `Encontrados ${normalized.length} itens.` });
-      setPreviewData(normalized);
+      toast.error("Formato não suportado", {
+        description: "Use CSV, XLSX ou XLS.",
+      });
     } catch (err) {
       console.error("Erro ao ler arquivo:", err);
       toast.error("Erro ao processar a planilha", {
@@ -224,6 +289,29 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
+  // ✅ Detecta Loja e converte para PK/SB (evita 0 updates)
+  // =============================================================
+  const mapLoja = (v: any) => {
+    const raw = String(v ?? "").trim();
+    if (!raw) return "";
+
+    const norm = raw
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    if (norm === "PK" || norm.includes("PIKOT")) return "PK";
+    if (norm === "SB" || norm.includes("SOBAQUETAS") || norm.includes("SO BAQUETAS")) return "SB";
+
+    // fallback: se já vier algo curto tipo "Pk " ou "Sb "
+    const short = norm.replace(/\s+/g, "");
+    if (short === "PK") return "PK";
+    if (short === "SB") return "SB";
+
+    return norm;
+  };
+
+  // =============================================================
   // ✅ Monta payload para RPC (somente colunas relevantes)
   // - percentuais aceitam 10 ou 0.10
   // - money idem
@@ -231,7 +319,7 @@ export default function PricingMassEditionModal({
   // =============================================================
   const buildRpcRow = (row: ImportRow) => {
     const id = String(row["ID"] ?? "").trim();
-    const loja = String(row["Loja"] ?? "").trim().toUpperCase(); // PK/SB
+    const loja = mapLoja(row["Loja"]); // ✅ agora vira PK/SB mesmo com nome completo
     if (!id || !loja) return null;
 
     const percentCols = ["Desconto", "Comissão", "Imposto", "Margem de Lucro", "Marketing"];
@@ -274,7 +362,6 @@ export default function PricingMassEditionModal({
       }
     }
 
-    // Se não tiver nada pra atualizar além de id/loja, ignora:
     const hasAny =
       out.desconto !== null ||
       out.embalagem !== null ||
@@ -291,15 +378,23 @@ export default function PricingMassEditionModal({
 
   // =============================================================
   // ✅ Atualiza por RPC em batches (PK e SB separados)
-  // RPCs esperadas:
-  // - update_pricing_batch_pk(payload jsonb) returns int
-  // - update_pricing_batch_sb(payload jsonb) returns int
   // =============================================================
   const updateByRpcBatches = async (rows: ImportRow[]) => {
     const rpcRows = rows.map(buildRpcRow).filter(Boolean) as any[];
 
     const pk = rpcRows.filter((r) => r.loja === "PK");
     const sb = rpcRows.filter((r) => r.loja === "SB");
+
+    // ✅ feedback imediato (evita "não acontece nada")
+    toast.message("Pré-validação do arquivo", {
+      description: `Válidas: ${rpcRows.length} | PK: ${pk.length} | SB: ${sb.length}`,
+    });
+
+    // ✅ se nada caiu em PK/SB, não roda loop vazio
+    if (pk.length === 0 && sb.length === 0) {
+      progressRef.current = 100;
+      return { updatedCount: 0, totalToUpdate: rpcRows.length };
+    }
 
     let updatedCount = 0;
 
@@ -308,24 +403,29 @@ export default function PricingMassEditionModal({
 
     let batchesDone = 0;
 
-    const runBatches = async (arr: any[], rpcName: "update_pricing_batch_pk" | "update_pricing_batch_sb") => {
+    const runBatches = async (
+      arr: any[],
+      rpcName: "update_pricing_batch_pk" | "update_pricing_batch_sb"
+    ) => {
       for (let i = 0; i < arr.length; i += BATCH_SIZE) {
         const batch = arr.slice(i, i + BATCH_SIZE);
 
         const { data, error } = await supabase.rpc(rpcName, {
-          payload: batch, // jsonb
+          payload: batch,
         });
 
         if (error) {
-          // Se a RPC não existir / permissão / RLS bloqueou, você vai ver aqui.
+          console.error("[RPC ERROR]", rpcName, error);
           throw error;
         }
 
-        // data é um int (rows updated) se a função retornar int
         if (typeof data === "number") updatedCount += data;
 
         batchesDone++;
-        progressRef.current = Math.min(99, Math.round((batchesDone / totalBatches) * 100));
+        progressRef.current = Math.min(
+          99,
+          Math.round((batchesDone / Math.max(1, totalBatches)) * 100)
+        );
       }
     };
 
@@ -358,8 +458,8 @@ export default function PricingMassEditionModal({
         toast.warning("Nenhum item foi atualizado", {
           description:
             totalToUpdate > 0
-              ? "Possível bloqueio de RLS ou IDs/Lojas não bateram."
-              : "Nenhuma linha tinha campos válidos para atualizar.",
+              ? "IDs/Loja não bateram, ou RLS bloqueou, ou não havia valores numéricos para atualizar."
+              : "Nenhuma linha tinha campos válidos para atualizar (ID/Loja/valores).",
         });
       }
 
