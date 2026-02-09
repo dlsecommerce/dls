@@ -2,30 +2,42 @@
 import { Row } from "./types";
 
 /**
- * parseBR — mesmo parser do hook usePrecificacao
+ * ✅ parseBR — robusto (não retorna NaN)
+ * - remove símbolos (R$, %, espaços, etc.)
+ * - entende 1.234,56 e 10,5
+ * - entende 10.50 (decimal)
+ * - entende 1.234 (milhar)
  */
 export const parseBR = (v: string | number | null | undefined): number => {
   if (v === null || v === undefined || v === "") return 0;
-  if (typeof v === "number") return v;
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
 
-  const s = String(v).trim();
+  const s0 = String(v).trim();
+
+  // remove tudo que não seja dígito, separador decimal/milhar, sinal
+  const s = s0.replace(/[^\d.,-]/g, "");
+
+  if (!s) return 0;
+
+  let out: number;
 
   if (s.includes(",")) {
     // 1.234,56
-    if (s.match(/\.\d{3},/)) {
-      return Number(s.replace(/\./g, "").replace(",", "."));
+    if (/\.\d{3},/.test(s)) {
+      out = Number(s.replace(/\./g, "").replace(",", "."));
+    } else {
+      // 10,5
+      out = Number(s.replace(",", "."));
     }
-    // 10,5
-    return Number(s.replace(",", "."));
+  } else if (s.includes(".") && s.split(".")[1]?.length <= 2) {
+    // 10.50
+    out = Number(s);
+  } else {
+    // 1234 or 1.234 (milhar)
+    out = Number(s.replace(/\./g, ""));
   }
 
-  // 10.50
-  if (s.includes(".") && s.split(".")[1]?.length <= 2) {
-    return Number(s);
-  }
-
-  // 1234 or 1.234 (tratando como milhar)
-  return Number(s.replace(/\./g, ""));
+  return Number.isFinite(out) ? out : 0;
 };
 
 type AppliedRules = {
@@ -101,11 +113,6 @@ const RULES: Array<{
 const round2 = (n: number) => Number(n.toFixed(2));
 
 /**
- * Fórmula do Preço de Venda (T) conforme sua regra:
- *
- * PV = ( (S - (S*K/100)) + L + M ) + (N%*PV) + (O%*PV) + (P%*PV) + (Q%*PV)
- *
- * Rearranjando:
  * PV = (custoLiquido + embalagem + frete) / (1 - (N+O+P+Q)/100)
  */
 function calcPVWithParams(
@@ -125,12 +132,12 @@ function calcPVWithParams(
     100;
 
   const divisor = 1 - somaPct;
-  if (divisor <= 0 || !isFinite(divisor)) return 0;
+  if (divisor <= 0 || !Number.isFinite(divisor)) return 0;
 
   const numerador = custoLiquido + params.Embalagem + params.Frete;
   const pv = numerador / divisor;
 
-  if (!isFinite(pv) || isNaN(pv) || pv <= 0) return 0;
+  if (!Number.isFinite(pv) || pv <= 0) return 0;
   return round2(pv);
 }
 
@@ -138,7 +145,6 @@ function pickRulesByPV(
   custo: number,
   descontoPct: number
 ): { pv: number; applied: AppliedRules } {
-  // testa as faixas em ordem: a primeira cujo PV calculado cair no intervalo, vence
   for (const r of RULES) {
     const pv = calcPVWithParams(custo, descontoPct, r.values);
     const okMin = pv >= r.min;
@@ -148,7 +154,6 @@ function pickRulesByPV(
     }
   }
 
-  // fallback: se nenhuma “encaixou” por arredondamento/limite, escolhe a que gerar maior PV (normalmente ACIMA_200)
   const candidates = RULES.map((r) => ({
     r,
     pv: calcPVWithParams(custo, descontoPct, r.values),
@@ -169,16 +174,13 @@ function pickRulesByPV(
  * - se houver valores (não-zerados) em Embalagem/Frete/Comissão/Imposto/Margem/Marketing,
  *   o PV é calculado usando os valores do row (ou overrides).
  * - caso todos estejam 0, cai no automático por faixa (RULES).
- *
- * OBS: se você quiser que SEMPRE use manual (mesmo com 0), remova o "hasAny"
- * e retorne direto calcPVWithParams(custo, descontoPct, manualParams).
  */
 export function calcPrecoVenda(row: Row, overrides?: Partial<Row>) {
   const get = (k: keyof Row, fallback = 0) =>
     parseBR(overrides?.[k] ?? row[k] ?? fallback);
 
-  const custo = get("Custo"); // S
-  const descontoPct = get("Desconto"); // K (%)
+  const custo = get("Custo");
+  const descontoPct = get("Desconto");
 
   const manualParams: Omit<AppliedRules, "faixa"> = {
     Embalagem: get("Embalagem"),
@@ -191,19 +193,12 @@ export function calcPrecoVenda(row: Row, overrides?: Partial<Row>) {
 
   const hasAny = Object.values(manualParams).some((v) => Number(v) !== 0);
 
-  if (hasAny) {
-    return calcPVWithParams(custo, descontoPct, manualParams);
-  }
+  if (hasAny) return calcPVWithParams(custo, descontoPct, manualParams);
 
   const { pv } = pickRulesByPV(custo, descontoPct);
   return pv;
 }
 
-/**
- * Versão que devolve também os valores aplicados (L/M/N/O/P/Q + faixa)
- * - Se estiver usando MANUAL, devolve os valores do próprio row (faixa = "MANUAL")
- * - Se estiver no automático (tudo 0), devolve os valores da regra aplicada
- */
 export function calcPrecoVendaWithApplied(row: Row, overrides?: Partial<Row>) {
   const get = (k: keyof Row, fallback = 0) =>
     parseBR(overrides?.[k] ?? row[k] ?? fallback);
@@ -227,8 +222,7 @@ export function calcPrecoVendaWithApplied(row: Row, overrides?: Partial<Row>) {
     return {
       pv,
       applied: {
-        // "faixa" só pra informação/debug
-        faixa: "ACIMA_200", // não existe "MANUAL" no tipo atual; se quiser, eu ajusto o union do tipo
+        faixa: "ACIMA_200",
         ...manualParams,
       } as AppliedRules,
       isManual: true as const,

@@ -91,16 +91,13 @@ function clearShopeeCache() {
 
 /**
  * ✅ Normaliza Loja para escolher a tabela correta.
- * Ajuste aqui se seu campo Loja tiver outros valores.
  */
 function normalizeLojaCode(lojaRaw: unknown): "PK" | "SB" | null {
   const s = String(lojaRaw ?? "").trim().toUpperCase();
 
-  // códigos diretos
   if (s === "PK" || s.startsWith("PK")) return "PK";
   if (s === "SB" || s.startsWith("SB")) return "SB";
 
-  // nomes comuns
   if (s.includes("PIKOT")) return "PK";
   if (s.includes("SOBA")) return "SB";
 
@@ -140,12 +137,10 @@ export default function PricingTable() {
   const [isPending, startTransition] = useTransition();
   const [exporting, setExporting] = useState(false);
 
-  // ✅ Export usa os dados filtrados em tela (ou export All pega tudo)
   const impExp = useTrayImportExport(filteredRows, selectedLoja, selectedBrands);
 
   const reqIdRef = useRef(0);
 
-  // ✅ só recalcula PV se mexer em algum campo de precificação
   const PREC_FIELDS: Array<keyof Row> = useMemo(
     () => [
       "Custo",
@@ -191,7 +186,6 @@ export default function PricingTable() {
     ]
   );
 
-  // ✅ hidrata cache ao voltar pra tela
   useEffect(() => {
     const cached = getCache(cacheKey);
     if (cached) {
@@ -322,7 +316,7 @@ export default function PricingTable() {
 
       return {
         ...r,
-        id: Number(r.id), // ✅ garante number
+        id: Number(r.id),
         anuncio_id: r.anuncio_id,
         OD,
         Desconto: parseBR(r.Desconto),
@@ -397,11 +391,11 @@ export default function PricingTable() {
   const openEditor = useCallback(
     (row: Row, field: keyof Row, isMoney: boolean, e: React.MouseEvent) => {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      const rawValue = parseBR(row[field]);
+      const rawValue = parseBR(row[field] as any);
       const formatted = toBR(rawValue);
 
       setEditing({
-        dbId: Number(row.id), // ✅ garante number (mata “volta instantaneamente” por type mismatch)
+        dbId: Number(row.id),
         loja: row.Loja,
         field,
         value: formatted,
@@ -412,12 +406,6 @@ export default function PricingTable() {
     []
   );
 
-  /**
-   * ✅ Agora IGUAL Tray:
-   * - UI + cache otimista
-   * - update no supabase (sem select/single/merge que pode sobrescrever)
-   * - correções: id number + loja normalizada + fallback por ID+Loja se id da view não bater
-   */
   const confirmEdit = useCallback(async () => {
     if (!editing) return;
 
@@ -428,14 +416,27 @@ export default function PricingTable() {
 
     const shouldRecalcPV = PREC_FIELDS.includes(field);
 
-    // linha atual (pra fallback por ID)
     const currentRow = rows.find((r) => Number(r.id) === dbIdNum);
+    if (!currentRow) {
+      setEditing(null);
+      return;
+    }
+
+    // ✅ Se não mudou, só fecha (evita sensação de "travou")
+    const oldVal = parseBR((currentRow as any)[field]);
+    if (newVal === oldVal) {
+      setEditing(null);
+      return;
+    }
+
+    // Snapshot para revert caso falhe
+    const prevRows = rows;
 
     let newRowUpdated: Row | undefined;
 
     const updatedRows = rows.map((r) => {
       if (Number(r.id) === dbIdNum) {
-        const updated: Row = { ...r, [field]: newVal };
+        const updated: Row = { ...r, [field]: newVal } as any;
         if (shouldRecalcPV) updated["Preço de Venda"] = calcPrecoVenda(updated);
         newRowUpdated = updated;
         return updated;
@@ -462,6 +463,10 @@ export default function PricingTable() {
     const lojaCode = normalizeLojaCode(loja);
     if (!lojaCode) {
       console.error("❌ Loja inválida para salvar:", loja);
+      alert("Loja inválida para salvar. Veja o console.");
+      // revert
+      setRows(prevRows);
+      setFilteredRows(prevRows);
       return;
     }
     const table = tableByLojaCode(lojaCode);
@@ -470,53 +475,69 @@ export default function PricingTable() {
     const payload: any = { [String(field)]: newVal };
     if (shouldRecalcPV) payload["Preço de Venda"] = newRowUpdated?.["Preço de Venda"];
 
-    // 1) tenta por id (rápido)
-    const { data: upd1, error: err1 } = await supabase
-      .from(table)
-      .update(payload)
-      .eq("id", dbIdNum)
-      .select("id"); // só para garantir que realmente atualizou
-
-    if (err1) {
-      console.error("❌ Erro ao salvar (por id):", err1);
-      return;
-    }
-
-    // 2) fallback se id da view não bater com id da tabela base
-    if (!upd1?.length) {
-      const fallbackID = (currentRow as any)?.ID ?? (newRowUpdated as any)?.ID;
-
-      if (!fallbackID) {
-        console.error("❌ Update não encontrou por id e não há ID para fallback.", {
-          dbIdNum,
-          loja,
-          lojaCode,
-          table,
-          payload,
-        });
-        return;
-      }
-
-      const { data: upd2, error: err2 } = await supabase
+    try {
+      // 1) tenta por id (rápido)
+      const { data: upd1, error: err1 } = await supabase
         .from(table)
         .update(payload)
-        .eq("ID", fallbackID as any)
-        .eq("Loja", lojaCode as any)
+        .eq("id", dbIdNum)
         .select("id");
 
-      if (err2) {
-        console.error("❌ Erro ao salvar (fallback ID+Loja):", err2);
-        return;
-      }
+      if (err1) throw err1;
 
-      if (!upd2?.length) {
-        console.error("❌ Update não alterou nenhuma linha (id e fallback falharam).", {
-          dbIdNum,
-          fallbackID,
-          loja,
-          lojaCode,
-          table,
-          payload,
+      // 2) fallback se id da view não bater com id da tabela base
+      if (!upd1?.length) {
+        const fallbackID = (currentRow as any)?.ID ?? (newRowUpdated as any)?.ID;
+
+        if (!fallbackID) {
+          console.error("❌ Update não encontrou por id e não há ID para fallback.", {
+            dbIdNum,
+            loja,
+            lojaCode,
+            table,
+            payload,
+          });
+          throw new Error("Sem ID para fallback.");
+        }
+
+        // ✅ tenta Loja original OU lojaCode (porque a base pode guardar diferente)
+        const lojaOriginal = String(loja ?? "").trim();
+
+        const { data: upd2, error: err2 } = await supabase
+          .from(table)
+          .update(payload)
+          .eq("ID", fallbackID as any)
+          .or(`Loja.eq.${lojaOriginal},Loja.eq.${lojaCode}`)
+          .select("id");
+
+        if (err2) throw err2;
+
+        if (!upd2?.length) {
+          console.error("❌ Update não alterou nenhuma linha (id e fallback falharam).", {
+            dbIdNum,
+            fallbackID,
+            lojaOriginal,
+            lojaCode,
+            table,
+            payload,
+          });
+          throw new Error("Nenhuma linha atualizada no fallback.");
+        }
+      }
+    } catch (e: any) {
+      console.error("❌ Falha ao salvar. Revertendo UI.", e);
+      alert("Erro ao salvar. Veja o console.");
+
+      // ✅ reverte UI + cache
+      setRows(prevRows);
+      setFilteredRows(prevRows);
+
+      const cached2 = getCache(cacheKey);
+      if (cached2) {
+        setCache(cacheKey, {
+          ...cached2,
+          rows: prevRows,
+          savedAt: Date.now(),
         });
       }
     }
@@ -524,10 +545,6 @@ export default function PricingTable() {
 
   const cancelEdit = () => setEditing(null);
 
-  /**
-   * ✅ O modal já atualiza via RPC
-   * Então aqui só fecha, limpa cache e recarrega
-   */
   const handlePricingImport = useCallback(
     async (_data: any[]) => {
       setOpenPricingModal(false);
