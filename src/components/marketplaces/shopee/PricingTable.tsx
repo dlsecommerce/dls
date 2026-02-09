@@ -137,10 +137,12 @@ export default function PricingTable() {
   const [isPending, startTransition] = useTransition();
   const [exporting, setExporting] = useState(false);
 
+  // ✅ Export usa os dados filtrados em tela (ou export All pega tudo)
   const impExp = useTrayImportExport(filteredRows, selectedLoja, selectedBrands);
 
   const reqIdRef = useRef(0);
 
+  // ✅ só recalcula PV se mexer em algum campo de precificação
   const PREC_FIELDS: Array<keyof Row> = useMemo(
     () => [
       "Custo",
@@ -186,6 +188,7 @@ export default function PricingTable() {
     ]
   );
 
+  // ✅ hidrata cache ao voltar pra tela
   useEffect(() => {
     const cached = getCache(cacheKey);
     if (cached) {
@@ -316,7 +319,8 @@ export default function PricingTable() {
 
       return {
         ...r,
-        id: Number(r.id),
+        // ✅ id pode ser UUID: NUNCA converter com Number()
+        id: String(r.id),
         anuncio_id: r.anuncio_id,
         OD,
         Desconto: parseBR(r.Desconto),
@@ -391,11 +395,12 @@ export default function PricingTable() {
   const openEditor = useCallback(
     (row: Row, field: keyof Row, isMoney: boolean, e: React.MouseEvent) => {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      const rawValue = parseBR(row[field] as any);
+      const rawValue = parseBR((row as any)[field]);
       const formatted = toBR(rawValue);
 
       setEditing({
-        dbId: Number(row.id),
+        // ✅ dbId deve ser string (UUID) ou fallback pro ID numérico como string
+        dbId: String((row as any).id ?? (row as any).ID),
         loja: row.Loja,
         field,
         value: formatted,
@@ -411,13 +416,17 @@ export default function PricingTable() {
 
     const { dbId, loja, field, value } = editing;
 
-    const dbIdNum = Number(dbId);
+    const dbIdStr = String(dbId);
     const newVal = parseBR(value);
 
     const shouldRecalcPV = PREC_FIELDS.includes(field);
 
-    const currentRow = rows.find((r) => Number(r.id) === dbIdNum);
+    // ✅ encontra linha por UUID (row.id) ou fallback pelo ID numérico (row.ID)
+    let currentRow = rows.find((r: any) => String((r as any).id) === dbIdStr);
+    if (!currentRow) currentRow = rows.find((r: any) => String((r as any).ID) === dbIdStr);
+
     if (!currentRow) {
+      console.error("❌ Não encontrou linha para editar:", { dbIdStr, field, value });
       setEditing(null);
       return;
     }
@@ -434,9 +443,12 @@ export default function PricingTable() {
 
     let newRowUpdated: Row | undefined;
 
-    const updatedRows = rows.map((r) => {
-      if (Number(r.id) === dbIdNum) {
-        const updated: Row = { ...r, [field]: newVal } as any;
+    const updatedRows = rows.map((r: any) => {
+      const same =
+        String((r as any).id) === dbIdStr || String((r as any).ID) === dbIdStr;
+
+      if (same) {
+        const updated: Row = { ...(r as any), [field]: newVal } as any;
         if (shouldRecalcPV) updated["Preço de Venda"] = calcPrecoVenda(updated);
         newRowUpdated = updated;
         return updated;
@@ -454,7 +466,11 @@ export default function PricingTable() {
     if (cached && newRowUpdated) {
       setCache(cacheKey, {
         ...cached,
-        rows: cached.rows.map((r) => (Number(r.id) === dbIdNum ? newRowUpdated! : r)),
+        rows: cached.rows.map((r: any) => {
+          const same =
+            String((r as any).id) === dbIdStr || String((r as any).ID) === dbIdStr;
+          return same ? (newRowUpdated as any) : r;
+        }),
         savedAt: Date.now(),
       });
     }
@@ -473,14 +489,14 @@ export default function PricingTable() {
 
     // payload
     const payload: any = { [String(field)]: newVal };
-    if (shouldRecalcPV) payload["Preço de Venda"] = newRowUpdated?.["Preço de Venda"];
+    if (shouldRecalcPV) payload["Preço de Venda"] = (newRowUpdated as any)?.["Preço de Venda"];
 
     try {
-      // 1) tenta por id (rápido)
+      // 1) tenta por UUID (id string)
       const { data: upd1, error: err1 } = await supabase
         .from(table)
         .update(payload)
-        .eq("id", dbIdNum)
+        .eq("id", dbIdStr)
         .select("id");
 
       if (err1) throw err1;
@@ -491,7 +507,7 @@ export default function PricingTable() {
 
         if (!fallbackID) {
           console.error("❌ Update não encontrou por id e não há ID para fallback.", {
-            dbIdNum,
+            dbIdStr,
             loja,
             lojaCode,
             table,
@@ -500,7 +516,7 @@ export default function PricingTable() {
           throw new Error("Sem ID para fallback.");
         }
 
-        // ✅ tenta Loja original OU lojaCode (porque a base pode guardar diferente)
+        // tenta Loja original OU lojaCode (porque a base pode guardar diferente)
         const lojaOriginal = String(loja ?? "").trim();
 
         const { data: upd2, error: err2 } = await supabase
@@ -514,7 +530,7 @@ export default function PricingTable() {
 
         if (!upd2?.length) {
           console.error("❌ Update não alterou nenhuma linha (id e fallback falharam).", {
-            dbIdNum,
+            dbIdStr,
             fallbackID,
             lojaOriginal,
             lojaCode,
@@ -545,6 +561,10 @@ export default function PricingTable() {
 
   const cancelEdit = () => setEditing(null);
 
+  /**
+   * ✅ O modal já atualiza via RPC
+   * Então aqui só fecha, limpa cache e recarrega
+   */
   const handlePricingImport = useCallback(
     async (_data: any[]) => {
       setOpenPricingModal(false);
