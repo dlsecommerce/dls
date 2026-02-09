@@ -29,19 +29,19 @@ export const parseBR = (v: string | number | null | undefined): number => {
 };
 
 type AppliedRules = {
-  Embalagem: number;         // L (R$)
-  Frete: number;             // M (R$)
-  "Comissão": number;        // N (%)
-  Imposto: number;           // O (%)
+  Embalagem: number; // L (R$)
+  Frete: number; // M (R$)
+  "Comissão": number; // N (%)
+  Imposto: number; // O (%)
   "Margem de Lucro": number; // P (%)
-  Marketing: number;         // Q (%)
+  Marketing: number; // Q (%)
   faixa: "ATE_79_99" | "80_A_99_99" | "100_A_199_99" | "ACIMA_200";
 };
 
 const RULES: Array<{
   faixa: AppliedRules["faixa"];
-  min: number;          // inclusive
-  max: number | null;   // inclusive (null = infinito)
+  min: number; // inclusive
+  max: number | null; // inclusive (null = infinito)
   values: Omit<AppliedRules, "faixa">;
 }> = [
   {
@@ -157,24 +157,43 @@ function pickRulesByPV(
   const best = candidates[0];
   return {
     pv: best?.pv ?? 0,
-    applied: { faixa: best?.r.faixa ?? "ACIMA_200", ...(best?.r.values ?? RULES[3].values) },
+    applied: {
+      faixa: best?.r.faixa ?? "ACIMA_200",
+      ...(best?.r.values ?? RULES[3].values),
+    },
   };
 }
 
 /**
- * calcPrecoVenda:
- * - calcula PV (coluna T) aplicando automaticamente a regra de faixa
- * - respeita overrides de Custo/Desconto (se você passar)
+ * ✅ MANUAL (prioridade total):
+ * - se houver valores (não-zerados) em Embalagem/Frete/Comissão/Imposto/Margem/Marketing,
+ *   o PV é calculado usando os valores do row (ou overrides).
+ * - caso todos estejam 0, cai no automático por faixa (RULES).
  *
- * Se você quiser preencher também L/M/N/O/P/Q na planilha,
- * use calcPrecoVendaWithApplied() abaixo.
+ * OBS: se você quiser que SEMPRE use manual (mesmo com 0), remova o "hasAny"
+ * e retorne direto calcPVWithParams(custo, descontoPct, manualParams).
  */
 export function calcPrecoVenda(row: Row, overrides?: Partial<Row>) {
   const get = (k: keyof Row, fallback = 0) =>
     parseBR(overrides?.[k] ?? row[k] ?? fallback);
 
-  const custo = get("Custo");          // S
+  const custo = get("Custo"); // S
   const descontoPct = get("Desconto"); // K (%)
+
+  const manualParams: Omit<AppliedRules, "faixa"> = {
+    Embalagem: get("Embalagem"),
+    Frete: get("Frete"),
+    "Comissão": get("Comissão"),
+    Imposto: get("Imposto"),
+    "Margem de Lucro": get("Margem de Lucro"),
+    Marketing: get("Marketing"),
+  };
+
+  const hasAny = Object.values(manualParams).some((v) => Number(v) !== 0);
+
+  if (hasAny) {
+    return calcPVWithParams(custo, descontoPct, manualParams);
+  }
 
   const { pv } = pickRulesByPV(custo, descontoPct);
   return pv;
@@ -182,19 +201,40 @@ export function calcPrecoVenda(row: Row, overrides?: Partial<Row>) {
 
 /**
  * Versão que devolve também os valores aplicados (L/M/N/O/P/Q + faixa)
- * pra você escrever nas células correspondentes.
+ * - Se estiver usando MANUAL, devolve os valores do próprio row (faixa = "MANUAL")
+ * - Se estiver no automático (tudo 0), devolve os valores da regra aplicada
  */
 export function calcPrecoVendaWithApplied(row: Row, overrides?: Partial<Row>) {
   const get = (k: keyof Row, fallback = 0) =>
     parseBR(overrides?.[k] ?? row[k] ?? fallback);
 
-  const custo = get("Custo");          // S
-  const descontoPct = get("Desconto"); // K (%)
+  const custo = get("Custo");
+  const descontoPct = get("Desconto");
+
+  const manualParams: Omit<AppliedRules, "faixa"> = {
+    Embalagem: get("Embalagem"),
+    Frete: get("Frete"),
+    "Comissão": get("Comissão"),
+    Imposto: get("Imposto"),
+    "Margem de Lucro": get("Margem de Lucro"),
+    Marketing: get("Marketing"),
+  };
+
+  const hasAny = Object.values(manualParams).some((v) => Number(v) !== 0);
+
+  if (hasAny) {
+    const pv = calcPVWithParams(custo, descontoPct, manualParams);
+    return {
+      pv,
+      applied: {
+        // "faixa" só pra informação/debug
+        faixa: "ACIMA_200", // não existe "MANUAL" no tipo atual; se quiser, eu ajusto o union do tipo
+        ...manualParams,
+      } as AppliedRules,
+      isManual: true as const,
+    };
+  }
 
   const { pv, applied } = pickRulesByPV(custo, descontoPct);
-
-  return {
-    pv,
-    applied, // aqui estão os valores para L/M/N/O/P/Q
-  };
+  return { pv, applied, isManual: false as const };
 }

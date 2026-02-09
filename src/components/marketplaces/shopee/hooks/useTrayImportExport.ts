@@ -187,30 +187,10 @@ export function useTrayImportExport(
       sheet.getRow(1).eachCell((cell) => (cell.border = undefined));
 
       // -----------------------------
-      // Helper parse number (inclui string)
+      // Helper: seta fórmula
       // -----------------------------
-      const parseNum = (v: any): number | null => {
-        if (v === null || v === undefined || v === "") return null;
-        if (typeof v === "number") return Number.isFinite(v) ? v : null;
-
-        // aceita "12,34" ou "12.34" ou "1.234,56"
-        const s = String(v).trim().replace(/\./g, "").replace(",", ".");
-        const n = Number(s);
-        return Number.isFinite(n) ? n : null;
-      };
-
-      // -----------------------------
-      // Helper: seta fórmula + result (se vier do DB) ou só fórmula
-      // -----------------------------
-      const setFormula = (
-        addr: string,
-        formula: string,
-        result?: number | null
-      ) => {
-        sheet.getCell(addr).value = {
-          formula,
-          ...(result !== null && result !== undefined ? { result } : {}),
-        };
+      const setFormula = (addr: string, formula: string) => {
+        sheet.getCell(addr).value = { formula };
       };
 
       // -----------------------------
@@ -255,15 +235,15 @@ export function useTrayImportExport(
           row.Marca || "",
           row.Categoria || "",
           row.Desconto ?? 0, // K
-          row.Embalagem ?? 2.5, // L
-          row.Frete ?? 0, // M
-          row.Comissão ?? 0, // N
-          row.Imposto ?? 0, // O
-          row["Margem de Lucro"] ?? 0, // P
-          row.Marketing ?? 0, // Q
+          null, // L (vai ser regra)
+          null, // M (vai ser regra)
+          null, // N (vai ser regra)
+          null, // O (vai ser regra)
+          null, // P (vai ser regra)
+          null, // Q (vai ser regra)
           "", // R
           row.Custo ?? 0, // S
-          null, // T
+          null, // T (fórmula)
         ];
 
         const newRow = sheet.addRow(line);
@@ -281,80 +261,45 @@ export function useTrayImportExport(
           cell.alignment = { horizontal: "center", vertical: "middle" };
         });
 
-        // -----------------------------
-        // Valores iniciais vindos do Supabase (se existirem)
-        // -----------------------------
-        const precoVendaDB = parseNum(row["Preço de Venda"]);
-
-        const embDB = parseNum(row["Embalagem"]);
-        const freteDB = parseNum(row["Frete"]);
-        const comDB = parseNum(row["Comissão"]);
-        const impDB = parseNum(row["Imposto"]);
-        const lucroDB = parseNum(row["Margem de Lucro"]);
-        const mktDB = parseNum(row["Marketing"]);
-
-        // ✅ imposto por loja (PK=12 / SB=10), só usa se DB não vier
         const impostoLoja = getImpostoPorLoja(row.Loja);
 
         // ============================================================
-        // ✅ Defaults por faixa (SEM circularidade)
-        // Agora o PV estimado usa impostoLoja para escolher o frete/comissão default
+        // ✅ PVs estimados para decidir faixa (SEM circularidade)
+        // (usam os defaults de cada faixa + imposto por loja)
         // ============================================================
         const PV1 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+4)/(1-((20+${impostoLoja}+15+3)/100)))`;
         const PV2 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+16)/(1-((14+${impostoLoja}+15+3)/100)))`;
         const PV3 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+20)/(1-((14+${impostoLoja}+15+3)/100)))`;
         const PV4 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+26)/(1-((14+${impostoLoja}+15+3)/100)))`;
 
-        // ✅ Preço de Venda (T) — FÓRMULA INVARIANTE (recalcula ao editar qualquer campo)
-        // Regra correta:
-        // PV = (S*(1-K/100) + L + M) / (1 - (N+O+P+Q)/100)
+        // ============================================================
+        // ✅ SEMPRE APLICAR REGRAS (independente do DB)
+        // ============================================================
+
+        // L (Embalagem) = 2,5
+        sheet.getCell(`L${rowNumber}`).value = 2.5;
+
+        // O (Imposto) = por loja
+        sheet.getCell(`O${rowNumber}`).value = impostoLoja;
+
+        // P (Margem) = 15
+        sheet.getCell(`P${rowNumber}`).value = 15;
+
+        // Q (Marketing) = 3
+        sheet.getCell(`Q${rowNumber}`).value = 3;
+
+        // M (Frete) = por faixa (com base nos PVs estimados)
+        // mesma lógica do seu RULES
+        const formulaFrete = `IF(${PV1}<=79.99,4,IF(${PV2}<=99.99,16,IF(${PV3}<=199.99,20,26)))`;
+        setFormula(`M${rowNumber}`, formulaFrete);
+
+        // N (Comissão) = por faixa
+        const formulaComissao = `IF(${PV1}<=79.99,20,14)`;
+        setFormula(`N${rowNumber}`, formulaComissao);
+
+        // T (Preço de Venda) — fórmula invariável (recalcula ao editar qualquer campo)
         const formulaPrecoVendaInvariant = `ROUND((S${rowNumber}*(1-K${rowNumber}/100)+L${rowNumber}+M${rowNumber})/(1-((N${rowNumber}+O${rowNumber}+P${rowNumber}+Q${rowNumber})/100)),2)`;
-
-        setFormula(`T${rowNumber}`, formulaPrecoVendaInvariant, precoVendaDB);
-
-        // ✅ Embalagem (L) — 2,50 se não vier do DB
-        if (embDB !== null) {
-          sheet.getCell(`L${rowNumber}`).value = embDB;
-        } else {
-          sheet.getCell(`L${rowNumber}`).value = 2.5;
-        }
-
-        // ✅ Imposto (O) — SB=10 / PK=12 (se não vier do DB)
-        if (impDB !== null) {
-          sheet.getCell(`O${rowNumber}`).value = impDB;
-        } else {
-          sheet.getCell(`O${rowNumber}`).value = impostoLoja;
-        }
-
-        // ✅ Margem de Lucro (P) — 15% se não vier do DB
-        if (lucroDB !== null) {
-          sheet.getCell(`P${rowNumber}`).value = lucroDB;
-        } else {
-          sheet.getCell(`P${rowNumber}`).value = 15;
-        }
-
-        // ✅ Marketing (Q) — 3% se não vier do DB
-        if (mktDB !== null) {
-          sheet.getCell(`Q${rowNumber}`).value = mktDB;
-        } else {
-          sheet.getCell(`Q${rowNumber}`).value = 3;
-        }
-
-        // ✅ Frete (M) — default por faixa (se não vier do DB)
-        if (freteDB !== null) {
-          sheet.getCell(`M${rowNumber}`).value = freteDB;
-        } else {
-          const formulaFrete = `IF(${PV1}<=79.99,4,IF(${PV2}<=99.99,16,IF(${PV3}<=199.99,20,26)))`;
-          setFormula(`M${rowNumber}`, formulaFrete, null);
-        }
-
-        // ✅ Comissão (N) — default por faixa (se não vier do DB)
-        if (comDB !== null) {
-          sheet.getCell(`N${rowNumber}`).value = comDB;
-        } else {
-          const formulaComissao = `IF(${PV1}<=79.99,20,14)`;
-          setFormula(`N${rowNumber}`, formulaComissao, null);
-        }
+        setFormula(`T${rowNumber}`, formulaPrecoVendaInvariant);
 
         // formatos (garantia)
         sheet.getCell(`L${rowNumber}`).numFmt = '_("R$"* #,##0.00_)';
