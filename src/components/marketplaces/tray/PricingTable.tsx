@@ -24,16 +24,6 @@ import { Check as CheckIcon, X as XIcon } from "lucide-react";
 import PricingMassEditionModal from "@/components/marketplaces/tray/PricingMassEditionModal";
 import PricingHeaderRow from "@/components/marketplaces/tray/PricingHeaderRow";
 
-/**
- * ✅ Cache simples em memória (sem libs)
- * - Evita refetch ao sair/voltar da tela
- * - TTL: 10min
- * - Cache por "chave" (página, filtros, busca, sort, etc.)
- *
- * ✅ AJUSTE IMPORTANTE:
- * - "Hidrata" do cache ANTES de mostrar loading,
- *   para não ficar “carregando” quando troca de aba/rota e volta.
- */
 type CacheEntry = {
   rows: Row[];
   totalItems: number;
@@ -129,6 +119,21 @@ export default function PricingTable() {
 
   // ✅ evita request antigo sobrescrever estado novo
   const reqIdRef = useRef(0);
+
+  // ✅ Campos que disparam recálculo do PV
+  const PREC_FIELDS: Array<keyof Row> = useMemo(
+    () => [
+      "Custo",
+      "Desconto",
+      "Embalagem",
+      "Frete",
+      "Comissão",
+      "Imposto",
+      "Marketing",
+      "Margem de Lucro",
+    ],
+    []
+  );
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearch(search.trim()), 300);
@@ -244,17 +249,13 @@ export default function PricingTable() {
       const onlyDigits = /^[0-9]+$/.test(safe);
 
       const orParts: string[] = [
-        // ilike por texto (funciona mesmo se for número no banco)
         `ID::text.ilike.${pattern}`,
         `"ID Tray"::text.ilike.${pattern}`,
         `"ID Bling"::text.ilike.${pattern}`,
-
-        // texto normal
         `"Marca".ilike.${pattern}`,
         `"Referência".ilike.${pattern}`,
       ];
 
-      // se for só número, tenta match exato também
       if (onlyDigits) {
         orParts.unshift(`ID.eq.${safe}`);
         orParts.unshift(`"ID Tray".eq.${safe}`);
@@ -396,45 +397,54 @@ export default function PricingTable() {
     []
   );
 
+  // ✅ NÃO refetch ao salvar: atualiza UI + cache e só salva no Supabase
   const confirmEdit = useCallback(async () => {
     if (!editing) return;
 
     const { dbId, loja, field, value } = editing;
     const newVal = parseBR(value);
 
+    const shouldRecalcPV = PREC_FIELDS.includes(field);
+
+    let newRowUpdated: Row | undefined;
+
     const updatedRows = rows.map((r) => {
       if (r.id === dbId) {
         const updated: Row = { ...r, [field]: newVal };
-        updated["Preço de Venda"] = calcPrecoVenda(updated);
+        if (shouldRecalcPV) updated["Preço de Venda"] = calcPrecoVenda(updated);
+        newRowUpdated = updated;
         return updated;
       }
       return r;
     });
 
+    // UI otimista
     setRows(updatedRows);
     setFilteredRows(updatedRows);
+    setEditing(null);
 
-    const rowUpdated = updatedRows.find((r) => r.id === dbId);
+    // atualiza cache da página atual (sem limpar tudo)
+    const cached = getCache(cacheKey);
+    if (cached && newRowUpdated) {
+      setCache(cacheKey, {
+        ...cached,
+        rows: cached.rows.map((r) => (r.id === dbId ? newRowUpdated! : r)),
+        savedAt: Date.now(),
+      });
+    }
 
     const table = loja === "PK" ? "marketplace_tray_pk" : "marketplace_tray_sb";
 
-    const { error } = await supabase
-      .from(table)
-      .update({
-        [String(field)]: newVal,
-        "Preço de Venda": rowUpdated?.["Preço de Venda"],
-      })
-      .eq("id", dbId);
+    const payload: any = { [String(field)]: newVal };
+    if (shouldRecalcPV) payload["Preço de Venda"] = newRowUpdated?.["Preço de Venda"];
+
+    const { error } = await supabase.from(table).update(payload).eq("id", dbId);
 
     if (error) {
       console.error("❌ Erro ao salvar:", error);
-      return;
+      // opcional: aqui você pode reverter UI ou mostrar toast
     }
-
-    clearTrayCache();
-    setEditing(null);
-    loadData();
-  }, [editing, rows, loadData]);
+  }, [editing, rows, cacheKey, PREC_FIELDS]);
 
   const cancelEdit = () => setEditing(null);
 
@@ -629,7 +639,10 @@ export default function PricingTable() {
         />
 
         {editing && (
-          <FloatingEditor anchorRect={editing.anchorRect} onClose={() => setEditing(null)}>
+          <FloatingEditor
+            anchorRect={editing.anchorRect}
+            onClose={() => setEditing(null)}
+          >
             <div className="relative flex items-center rounded-md border border-neutral-700 bg-black/30 px-2 py-1.5">
               <span className="text-xs px-1 py-0.5 rounded bg-black/60 border border-neutral-700 mr-1">
                 {editing.isMoney ? "R$" : "%"}

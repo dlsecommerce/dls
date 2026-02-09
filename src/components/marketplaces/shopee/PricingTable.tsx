@@ -122,6 +122,21 @@ export default function PricingTable() {
 
   const reqIdRef = useRef(0);
 
+  // ✅ só recalcula PV se mexer em algum campo de precificação
+  const PREC_FIELDS: Array<keyof Row> = useMemo(
+    () => [
+      "Custo",
+      "Desconto",
+      "Embalagem",
+      "Frete",
+      "Comissão",
+      "Imposto",
+      "Marketing",
+      "Margem de Lucro",
+    ],
+    []
+  );
+
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(timeout);
@@ -234,17 +249,13 @@ export default function PricingTable() {
       const onlyDigits = /^[0-9]+$/.test(safe);
 
       const orParts: string[] = [
-        // ilike por texto (funciona mesmo se for número no banco)
         `ID::text.ilike.${pattern}`,
         `"ID Tray"::text.ilike.${pattern}`,
         `"ID Bling"::text.ilike.${pattern}`,
-
-        // texto normal
         `"Marca".ilike.${pattern}`,
         `"Referência".ilike.${pattern}`,
       ];
 
-      // se for só número, também tenta match exato (mais certeiro)
       if (onlyDigits) {
         orParts.unshift(`ID.eq.${safe}`);
         orParts.unshift(`"ID Tray".eq.${safe}`);
@@ -256,7 +267,10 @@ export default function PricingTable() {
 
     if (sortColumn) {
       query = query
-        .order(sortColumn, { ascending: sortDirection === "asc", nullsFirst: true })
+        .order(sortColumn, {
+          ascending: sortDirection === "asc",
+          nullsFirst: true,
+        })
         .order("Atualizado em", { ascending: false })
         .order("id", { ascending: false });
     } else {
@@ -301,7 +315,11 @@ export default function PricingTable() {
       };
     });
 
-    setCache(cacheKey, { rows: normalized, totalItems: count || 0, savedAt: Date.now() });
+    setCache(cacheKey, {
+      rows: normalized,
+      totalItems: count || 0,
+      savedAt: Date.now(),
+    });
 
     startTransition(() => {
       setRows(normalized);
@@ -376,30 +394,38 @@ export default function PricingTable() {
     []
   );
 
-  // ✅ NÃO refetch ao salvar: atualiza UI + cache e só salva no Supabase
+  // ✅ NÃO refetch ao salvar: atualiza UI + cache e salva no Supabase
+  // ✅ Agora também “lê de volta” o que o banco salvou (select().single())
   const confirmEdit = useCallback(async () => {
     if (!editing) return;
 
     const { dbId, loja, field, value } = editing;
     const newVal = parseBR(value);
 
+    const shouldRecalcPV = PREC_FIELDS.includes(field);
+
     let newRowUpdated: Row | undefined;
 
     const updatedRows = rows.map((r) => {
       if (r.id === dbId) {
         const updated: Row = { ...r, [field]: newVal };
-        updated["Preço de Venda"] = calcPrecoVenda(updated);
+
+        if (shouldRecalcPV) {
+          updated["Preço de Venda"] = calcPrecoVenda(updated);
+        }
+
         newRowUpdated = updated;
         return updated;
       }
       return r;
     });
 
+    // otimista: já atualiza UI
     setRows(updatedRows);
     setFilteredRows(updatedRows);
     setEditing(null);
 
-    // atualiza cache da página atual
+    // atualiza cache da página atual (otimista)
     const cached = getCache(cacheKey);
     if (cached && newRowUpdated) {
       setCache(cacheKey, {
@@ -411,18 +437,79 @@ export default function PricingTable() {
 
     const table = loja === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
 
-    const { error } = await supabase
+    const payload: any = {
+      [String(field)]: newVal,
+    };
+
+    if (shouldRecalcPV) {
+      payload["Preço de Venda"] = newRowUpdated?.["Preço de Venda"];
+    }
+
+    // ✅ garante que o que ficou no banco é o que aparece na tela
+    const { data: saved, error } = await supabase
       .from(table)
-      .update({
-        [String(field)]: newVal,
-        "Preço de Venda": newRowUpdated?.["Preço de Venda"],
-      })
-      .eq("id", dbId);
+      .update(payload)
+      .eq("id", dbId)
+      .select(
+        `
+        id,
+        anuncio_id,
+        ID,
+        Loja,
+        "ID Tray",
+        "ID Var",
+        "ID Bling",
+        Nome,
+        Marca,
+        Referência,
+        Categoria,
+        Desconto,
+        Embalagem,
+        Frete,
+        Comissão,
+        Imposto,
+        Marketing,
+        "Margem de Lucro",
+        Custo,
+        "Preço de Venda",
+        "Atualizado em"
+      `
+      )
+      .single();
 
     if (error) {
       console.error("❌ Erro ao salvar:", error);
+      return;
     }
-  }, [editing, rows, cacheKey]);
+
+    if (saved && newRowUpdated) {
+      const fixed: Row = {
+        ...newRowUpdated,
+        ...saved,
+        Desconto: parseBR(saved.Desconto),
+        Embalagem: parseBR(saved.Embalagem),
+        Frete: parseBR(saved.Frete),
+        Comissão: parseBR(saved.Comissão),
+        Imposto: parseBR(saved.Imposto),
+        Marketing: parseBR(saved.Marketing),
+        "Margem de Lucro": parseBR(saved["Margem de Lucro"]),
+        Custo: parseBR(saved.Custo),
+        "Preço de Venda": parseBR(saved["Preço de Venda"]),
+      };
+
+      setRows((prev) => prev.map((r) => (r.id === dbId ? fixed : r)));
+      setFilteredRows((prev) => prev.map((r) => (r.id === dbId ? fixed : r)));
+
+      const cached2 = getCache(cacheKey);
+      if (cached2) {
+        setCache(cacheKey, {
+          ...cached2,
+          rows: cached2.rows.map((r) => (r.id === dbId ? fixed : r)),
+          savedAt: Date.now(),
+        });
+      }
+    }
+  }, [editing, rows, cacheKey, PREC_FIELDS]);
 
   const cancelEdit = () => setEditing(null);
 
@@ -627,9 +714,7 @@ export default function PricingTable() {
                 className="flex-1 bg-transparent outline-none text-sm text-white pr-10"
                 value={editing.value}
                 onChange={(e) =>
-                  setEditing((p: any) =>
-                    p ? { ...p, value: e.target.value } : p
-                  )
+                  setEditing((p: any) => (p ? { ...p, value: e.target.value } : p))
                 }
                 onKeyDown={(e) => {
                   if (e.key === "Enter") confirmEdit();
