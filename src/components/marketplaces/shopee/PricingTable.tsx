@@ -240,7 +240,6 @@ export default function PricingTable() {
     if (selectedLoja.length) query = query.in("Loja", selectedLoja);
     if (selectedBrands.length) query = query.in("Marca", selectedBrands);
 
-    // ✅ BUSCA SERVER-SIDE CORRIGIDA (ID / ID Tray numéricos -> cast pra text)
     if (debouncedSearch) {
       const term = debouncedSearch.replace(/[%_]/g, "").trim();
       const safe = term.replace(/"/g, "");
@@ -267,10 +266,7 @@ export default function PricingTable() {
 
     if (sortColumn) {
       query = query
-        .order(sortColumn, {
-          ascending: sortDirection === "asc",
-          nullsFirst: true,
-        })
+        .order(sortColumn, { ascending: sortDirection === "asc", nullsFirst: true })
         .order("Atualizado em", { ascending: false })
         .order("id", { ascending: false });
     } else {
@@ -315,11 +311,7 @@ export default function PricingTable() {
       };
     });
 
-    setCache(cacheKey, {
-      rows: normalized,
-      totalItems: count || 0,
-      savedAt: Date.now(),
-    });
+    setCache(cacheKey, { rows: normalized, totalItems: count || 0, savedAt: Date.now() });
 
     startTransition(() => {
       setRows(normalized);
@@ -395,7 +387,7 @@ export default function PricingTable() {
   );
 
   // ✅ NÃO refetch ao salvar: atualiza UI + cache e salva no Supabase
-  // ✅ Agora também “lê de volta” o que o banco salvou (select().single())
+  // ✅ Lê de volta (select().single()) da tabela PK/SB para não "voltar" valor
   const confirmEdit = useCallback(async () => {
     if (!editing) return;
 
@@ -409,23 +401,19 @@ export default function PricingTable() {
     const updatedRows = rows.map((r) => {
       if (r.id === dbId) {
         const updated: Row = { ...r, [field]: newVal };
-
-        if (shouldRecalcPV) {
-          updated["Preço de Venda"] = calcPrecoVenda(updated);
-        }
-
+        if (shouldRecalcPV) updated["Preço de Venda"] = calcPrecoVenda(updated);
         newRowUpdated = updated;
         return updated;
       }
       return r;
     });
 
-    // otimista: já atualiza UI
+    // otimista
     setRows(updatedRows);
     setFilteredRows(updatedRows);
     setEditing(null);
 
-    // atualiza cache da página atual (otimista)
+    // cache otimista
     const cached = getCache(cacheKey);
     if (cached && newRowUpdated) {
       setCache(cacheKey, {
@@ -437,15 +425,9 @@ export default function PricingTable() {
 
     const table = loja === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
 
-    const payload: any = {
-      [String(field)]: newVal,
-    };
+    const payload: any = { [String(field)]: newVal };
+    if (shouldRecalcPV) payload["Preço de Venda"] = newRowUpdated?.["Preço de Venda"];
 
-    if (shouldRecalcPV) {
-      payload["Preço de Venda"] = newRowUpdated?.["Preço de Venda"];
-    }
-
-    // ✅ garante que o que ficou no banco é o que aparece na tela
     const { data: saved, error } = await supabase
       .from(table)
       .update(payload)
@@ -482,9 +464,10 @@ export default function PricingTable() {
       return;
     }
 
-    if (saved && newRowUpdated) {
+    // fixa UI/caches com o que o banco realmente gravou
+    if (saved) {
       const fixed: Row = {
-        ...newRowUpdated,
+        ...(newRowUpdated as Row),
         ...saved,
         Desconto: parseBR(saved.Desconto),
         Embalagem: parseBR(saved.Embalagem),

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { UploadCloud, Layers, Loader, AlertTriangle } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
+import Papa from "papaparse";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -21,42 +22,54 @@ type Props = {
   onImportComplete: (data: any[]) => void;
 };
 
+type ImportRow = Record<string, any>;
+
+const BATCH_SIZE = 1000; // ✅ ajuste: 500~2000 costuma ficar ótimo
+
 export default function PricingMassEditionModal({
   open,
   onOpenChange,
   onImportComplete,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [previewData, setPreviewData] = useState<any[]>([]);
+
+  const [previewData, setPreviewData] = useState<ImportRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [updating, setUpdating] = useState(false);
+
   const [progress, setProgress] = useState(0);
+  const progressRef = useRef(0);
+  const progressTimerRef = useRef<number | null>(null);
+
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const targetCols = [
-    "ID",
-    "Loja",
-    "ID Bling",
-    "Referência",
-    "ID Tray",
-    "ID Var",
-    "OD",
-    "Nome",
-    "Marca",
-    "Categoria",
-    "Desconto",
-    "Embalagem",
-    "Frete",
-    "Comissão",
-    "Imposto",
-    "Margem de Lucro",
-    "Marketing",
-    "Custo",
-    "Preço de Venda",
-  ];
+  const targetCols = useMemo(
+    () => [
+      "ID",
+      "Loja",
+      "ID Bling",
+      "Referência",
+      "ID Tray",
+      "ID Var",
+      "OD",
+      "Nome",
+      "Marca",
+      "Categoria",
+      "Desconto",
+      "Embalagem",
+      "Frete",
+      "Comissão",
+      "Imposto",
+      "Margem de Lucro",
+      "Marketing",
+      "Custo",
+      "Preço de Venda",
+    ],
+    []
+  );
 
   // =============================================================
-  // ✅ parser robusto p/ XLSX (trata objeto {v,w}, "R$", "%", BR/US)
+  // ✅ parse numérico BR/US + {v,w} do XLSX
   // =============================================================
   const toNumberBR = (v: any) => {
     if (v === null || v === undefined) return null;
@@ -79,6 +92,7 @@ export default function PricingMassEditionModal({
       .replace(/%/g, "")
       .trim();
 
+    // 1.234,56 -> 1234.56
     if (s.includes(",") && s.includes(".")) {
       s = s.replace(/\./g, "").replace(",", ".");
     } else if (s.includes(",")) {
@@ -90,7 +104,65 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // 📌 IMPORTAÇÃO DA PLANILHA
+  // ✅ Normaliza headers do arquivo para bater com targetCols
+  // =============================================================
+  const normalizeRowsByHeaders = (rows: ImportRow[]) => {
+    return rows.map((row) => {
+      const normalizedRow: Record<string, any> = {};
+      for (const key of Object.keys(row)) {
+        const cleanKey = key.trim().toLowerCase();
+        const match = targetCols.find((c) => c.trim().toLowerCase() === cleanKey);
+        normalizedRow[match || key] = row[key];
+      }
+      return normalizedRow;
+    });
+  };
+
+  // =============================================================
+  // ✅ Progress "throttle" (não re-render a cada linha)
+  // =============================================================
+  const startProgressPump = () => {
+    if (progressTimerRef.current) window.clearInterval(progressTimerRef.current);
+    progressTimerRef.current = window.setInterval(() => {
+      setProgress(progressRef.current);
+    }, 200);
+  };
+
+  const stopProgressPump = () => {
+    if (progressTimerRef.current) window.clearInterval(progressTimerRef.current);
+    progressTimerRef.current = null;
+    setProgress(progressRef.current);
+  };
+
+  // =============================================================
+  // ✅ IMPORTAÇÃO TURBO DE CSV (worker + progress real por bytes)
+  // =============================================================
+  const parseCsvFast = (file: File) => {
+    return new Promise<ImportRow[]>((resolve, reject) => {
+      const all: ImportRow[] = [];
+
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        worker: true, // ✅ fora da UI
+        dynamicTyping: false,
+        chunkSize: 1024 * 1024 * 2, // 2MB
+        chunk: (result) => {
+          all.push(...(result.data as ImportRow[]));
+
+          const cursor = (result.meta as any)?.cursor as number | undefined;
+          if (cursor && file.size) {
+            progressRef.current = Math.min(99, Math.round((cursor / file.size) * 100));
+          }
+        },
+        complete: () => resolve(all),
+        error: (err) => reject(err),
+      });
+    });
+  };
+
+  // =============================================================
+  // 📌 IMPORTAÇÃO DO ARQUIVO
   // =============================================================
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.currentTarget.files?.[0];
@@ -98,182 +170,218 @@ export default function PricingMassEditionModal({
 
     setLoading(true);
     setPreviewData([]);
+    setProgress(0);
+    progressRef.current = 0;
+    startProgressPump();
 
     try {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: "array" });
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
+      const ext = file.name.split(".").pop()?.toLowerCase();
 
-      const range = XLSX.utils.decode_range(worksheet["!ref"]!);
-      const firstRow = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0];
+      // ✅ CSV ultra rápido
+      if (ext === "csv") {
+        const rows = await parseCsvFast(file);
+        const normalized = normalizeRowsByHeaders(rows);
 
-      const hasMergedHeaders =
-        firstRow?.some(
-          (v: any) =>
-            typeof v === "string" && v.toUpperCase().includes("IDENTIFICAÇÃO")
-        ) || false;
-
-      if (hasMergedHeaders) {
-        range.s.r = 1;
-        worksheet["!ref"] = XLSX.utils.encode_range(range);
+        progressRef.current = 100;
+        toast.success("CSV carregado!", { description: `Encontrados ${normalized.length} itens.` });
+        setPreviewData(normalized);
+        return;
       }
 
-      const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet, {
-        defval: "",
-      });
+      // XLSX fallback (mais pesado)
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const sheetName = wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
 
-      const normalized = jsonData.map((row) => {
-        const normalizedRow: Record<string, any> = {};
-        Object.keys(row).forEach((key) => {
-          const cleanKey = key.trim().toLowerCase();
-          const match = targetCols.find(
-            (c) => c.trim().toLowerCase() === cleanKey
-          );
-          normalizedRow[match || key] = row[key];
-        });
-        return normalizedRow;
-      });
+      // ✅ evita 2 parses: detecta header mesclado pelo A1
+      const a1 = ws["A1"]?.v;
+      const hasMergedHeaders =
+        typeof a1 === "string" && a1.toUpperCase().includes("IDENTIFICA");
 
+      if (hasMergedHeaders && ws["!ref"]) {
+        const range = XLSX.utils.decode_range(ws["!ref"]);
+        range.s.r = Math.max(range.s.r, 1);
+        ws["!ref"] = XLSX.utils.encode_range(range);
+      }
+
+      const jsonData: ImportRow[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+      const normalized = normalizeRowsByHeaders(jsonData);
+
+      progressRef.current = 100;
+      toast.success("Planilha carregada!", { description: `Encontrados ${normalized.length} itens.` });
       setPreviewData(normalized);
-      toast.success("Planilha carregada!", {
-        description: `Encontrados ${normalized.length} itens.`,
-      });
     } catch (err) {
       console.error("Erro ao ler arquivo:", err);
       toast.error("Erro ao processar a planilha", {
         description: "Verifique o arquivo e tente novamente.",
       });
     } finally {
+      stopProgressPump();
       setLoading(false);
       e.target.value = "";
     }
   };
 
   // =============================================================
-  // ✅ ATUALIZAÇÃO NO SUPABASE (ID + Loja)
-  // ✅ percentuais aceitam 10 OU 0.10
+  // ✅ Monta payload para RPC (somente colunas relevantes)
+  // - percentuais aceitam 10 ou 0.10
+  // - money idem
+  // - null => não altera no banco (COALESCE no SQL)
+  // =============================================================
+  const buildRpcRow = (row: ImportRow) => {
+    const id = String(row["ID"] ?? "").trim();
+    const loja = String(row["Loja"] ?? "").trim().toUpperCase(); // PK/SB
+    if (!id || !loja) return null;
+
+    const percentCols = ["Desconto", "Comissão", "Imposto", "Margem de Lucro", "Marketing"];
+    const moneyCols = ["Embalagem", "Frete", "Custo", "Preço de Venda"];
+
+    const out: any = {
+      id,
+      loja,
+      desconto: null,
+      embalagem: null,
+      frete: null,
+      comissao: null,
+      imposto: null,
+      margem_de_lucro: null,
+      marketing: null,
+      custo: null,
+      preco_de_venda: null,
+    };
+
+    for (const col of percentCols) {
+      const num = toNumberBR(row[col]);
+      if (num !== null) {
+        const fixed = num > 0 && num <= 1 ? num * 100 : num;
+        if (col === "Desconto") out.desconto = fixed;
+        if (col === "Comissão") out.comissao = fixed;
+        if (col === "Imposto") out.imposto = fixed;
+        if (col === "Margem de Lucro") out.margem_de_lucro = fixed;
+        if (col === "Marketing") out.marketing = fixed;
+      }
+    }
+
+    for (const col of moneyCols) {
+      const num = toNumberBR(row[col]);
+      if (num !== null) {
+        const fixedMoney = col === "Preço de Venda" ? Number(num.toFixed(2)) : num;
+        if (col === "Embalagem") out.embalagem = fixedMoney;
+        if (col === "Frete") out.frete = fixedMoney;
+        if (col === "Custo") out.custo = fixedMoney;
+        if (col === "Preço de Venda") out.preco_de_venda = fixedMoney;
+      }
+    }
+
+    // Se não tiver nada pra atualizar além de id/loja, ignora:
+    const hasAny =
+      out.desconto !== null ||
+      out.embalagem !== null ||
+      out.frete !== null ||
+      out.comissao !== null ||
+      out.imposto !== null ||
+      out.margem_de_lucro !== null ||
+      out.marketing !== null ||
+      out.custo !== null ||
+      out.preco_de_venda !== null;
+
+    return hasAny ? out : null;
+  };
+
+  // =============================================================
+  // ✅ Atualiza por RPC em batches (PK e SB separados)
+  // RPCs esperadas:
+  // - update_pricing_batch_pk(payload jsonb) returns int
+  // - update_pricing_batch_sb(payload jsonb) returns int
+  // =============================================================
+  const updateByRpcBatches = async (rows: ImportRow[]) => {
+    const rpcRows = rows.map(buildRpcRow).filter(Boolean) as any[];
+
+    const pk = rpcRows.filter((r) => r.loja === "PK");
+    const sb = rpcRows.filter((r) => r.loja === "SB");
+
+    let updatedCount = 0;
+
+    const totalBatches =
+      Math.ceil(pk.length / BATCH_SIZE) + Math.ceil(sb.length / BATCH_SIZE);
+
+    let batchesDone = 0;
+
+    const runBatches = async (arr: any[], rpcName: "update_pricing_batch_pk" | "update_pricing_batch_sb") => {
+      for (let i = 0; i < arr.length; i += BATCH_SIZE) {
+        const batch = arr.slice(i, i + BATCH_SIZE);
+
+        const { data, error } = await supabase.rpc(rpcName, {
+          payload: batch, // jsonb
+        });
+
+        if (error) {
+          // Se a RPC não existir / permissão / RLS bloqueou, você vai ver aqui.
+          throw error;
+        }
+
+        // data é um int (rows updated) se a função retornar int
+        if (typeof data === "number") updatedCount += data;
+
+        batchesDone++;
+        progressRef.current = Math.min(99, Math.round((batchesDone / totalBatches) * 100));
+      }
+    };
+
+    await runBatches(pk, "update_pricing_batch_pk");
+    await runBatches(sb, "update_pricing_batch_sb");
+
+    progressRef.current = 100;
+    return { updatedCount, totalToUpdate: rpcRows.length };
+  };
+
+  // =============================================================
+  // ✅ CONFIRMAR UPDATE (RPC)
   // =============================================================
   const handleUpdateConfirm = async () => {
     if (previewData.length === 0) return;
 
     setUpdating(true);
     setProgress(0);
-
-    const total = previewData.length;
-    let processed = 0;
-
-    let updatedCount = 0;
-    let notFoundCount = 0;
-    let errorCount = 0;
+    progressRef.current = 0;
+    startProgressPump();
 
     try {
-      for (const row of previewData) {
-        const id = String(row["ID"] ?? "").trim();
-        const loja = String(row["Loja"] ?? "").trim().toUpperCase(); // PK/SB
+      const { updatedCount, totalToUpdate } = await updateByRpcBatches(previewData);
 
-        if (!id || !loja) {
-          processed++;
-          setProgress(Math.round((processed / total) * 100));
-          continue;
-        }
-
-        const tabela =
-          loja === "SB" ? "marketplace_shopee_sb" : "marketplace_shopee_pk";
-
-        const updateFields: Record<string, any> = {};
-
-        const percentCols = [
-          "Desconto",
-          "Comissão",
-          "Imposto",
-          "Margem de Lucro",
-          "Marketing",
-        ];
-        const moneyCols = ["Embalagem", "Frete", "Custo", "Preço de Venda"];
-
-        for (const col of percentCols) {
-          const num = toNumberBR(row[col]);
-          if (num !== null) {
-            const fixed = num > 0 && num <= 1 ? num * 100 : num;
-            updateFields[col] = fixed;
-          }
-        }
-
-        for (const col of moneyCols) {
-          const num = toNumberBR(row[col]);
-          if (num !== null) {
-            updateFields[col] =
-              col === "Preço de Venda" ? Number(num.toFixed(2)) : num;
-          }
-        }
-
-        if (Object.keys(updateFields).length > 0) {
-          const { data: updated, error } = await supabase
-            .from(tabela)
-            .update(updateFields)
-            .eq("ID", id)
-            .eq("Loja", loja)
-            .select("ID");
-
-          if (error) {
-            errorCount++;
-            console.warn(`❌ Erro ao atualizar ID ${id} (${loja}):`, error.message);
-          } else if (!updated || updated.length === 0) {
-            notFoundCount++;
-            console.warn(
-              `⚠️ Atualizou 0 linhas para ID ${id} (${loja}). Confira se existe no banco.`,
-              updateFields
-            );
-          } else {
-            updatedCount++;
-          }
-        }
-
-        processed++;
-        setProgress(Math.round((processed / total) * 100));
-      }
-
-      // ✅ Toast final (sem alert)
       if (updatedCount > 0) {
         toast.success("Atualização concluída!", {
           description: `${updatedCount} item(ns) atualizado(s).`,
         });
       } else {
         toast.warning("Nenhum item foi atualizado", {
-          description: "Confira se ID e Loja (PK/SB) batem com o banco.",
-        });
-      }
-
-      if (notFoundCount > 0) {
-        toast.warning("Alguns itens não foram encontrados", {
-          description: `${notFoundCount} linha(s) não bateram com ID + Loja.`,
-        });
-      }
-
-      if (errorCount > 0) {
-        toast.error("Algumas atualizações falharam", {
-          description: `${errorCount} erro(s). Veja o console.`,
+          description:
+            totalToUpdate > 0
+              ? "Possível bloqueio de RLS ou IDs/Lojas não bateram."
+              : "Nenhuma linha tinha campos válidos para atualizar.",
         });
       }
 
       onImportComplete(previewData);
       onOpenChange(false);
       setConfirmOpen(false);
-    } catch (err) {
-      console.error("Erro ao atualizar preços:", err);
-      toast.error("Erro ao atualizar no Supabase", {
-        description: "Veja o console para mais detalhes.",
+    } catch (err: any) {
+      console.error("Erro ao atualizar via RPC:", err);
+
+      toast.error("Erro ao atualizar no Supabase (RPC)", {
+        description:
+          err?.message ||
+          "Verifique se as RPCs existem e se você deu EXECUTE para authenticated.",
       });
     } finally {
+      stopProgressPump();
       setUpdating(false);
     }
   };
 
   const columns =
-    previewData.length > 0
-      ? Object.keys(previewData[0])
-      : targetCols.slice(0, 12);
+    previewData.length > 0 ? Object.keys(previewData[0]) : targetCols.slice(0, 12);
 
   return (
     <>
@@ -296,7 +404,7 @@ export default function PricingMassEditionModal({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx, .xls, .csv"
+                accept=".xlsx,.xls,.csv"
                 className="hidden"
                 onChange={handleFileImport}
               />
@@ -318,13 +426,22 @@ export default function PricingMassEditionModal({
                   </div>
                   <div className="flex-1">
                     <h4 className="font-bold mb-1">
-                      {loading ? "Lendo Planilha..." : "Importar Planilha"}
+                      {loading ? `Lendo arquivo... (${progress}%)` : "Importar Planilha"}
                     </h4>
                     <p className="text-sm text-neutral-400">
-                      Selecione um arquivo XLSX contendo os preços.
+                      Para 50k+ linhas, use CSV (mais rápido). XLSX funciona, mas é mais pesado.
                     </p>
                   </div>
                 </div>
+
+                {loading && (
+                  <div className="w-full h-2 bg-neutral-800 rounded-full mt-4">
+                    <div
+                      className="h-2 bg-green-500 transition-all"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                )}
               </div>
 
               {loading ? (
@@ -351,16 +468,11 @@ export default function PricingMassEditionModal({
                         <tr
                           key={i}
                           className={`${
-                            i % 2 === 0
-                              ? "bg-neutral-900/40"
-                              : "bg-neutral-800/40"
+                            i % 2 === 0 ? "bg-neutral-900/40" : "bg-neutral-800/40"
                           } hover:bg-white/10`}
                         >
                           {columns.map((col) => (
-                            <td
-                              key={col}
-                              className="p-2 border-b border-neutral-800"
-                            >
+                            <td key={col} className="p-2 border-b border-neutral-800">
                               {row[col] ?? ""}
                             </td>
                           ))}
@@ -370,9 +482,7 @@ export default function PricingMassEditionModal({
                   </table>
                 </div>
               ) : (
-                <p className="text-center text-neutral-400 italic">
-                  Nenhum arquivo importado.
-                </p>
+                <p className="text-center text-neutral-400 italic">Nenhum arquivo importado.</p>
               )}
             </motion.div>
           </div>
@@ -425,11 +535,8 @@ export default function PricingMassEditionModal({
 
           <p className="mt-3 text-neutral-300">
             Deseja realmente atualizar
-            <span className="text-white font-semibold">
-              {" "}
-              {previewData.length}{" "}
-            </span>
-            itens?
+            <span className="text-white font-semibold"> {previewData.length} </span>
+            itens? (será feito em lote via RPC)
           </p>
 
           <DialogFooter className="mt-5 flex justify-end gap-3">
@@ -447,11 +554,7 @@ export default function PricingMassEditionModal({
               onClick={handleUpdateConfirm}
               disabled={updating}
             >
-              {updating ? (
-                <Loader className="animate-spin w-5 h-5" />
-              ) : (
-                "Confirmar"
-              )}
+              {updating ? <Loader className="animate-spin w-5 h-5" /> : "Confirmar"}
             </Button>
           </DialogFooter>
         </DialogContent>
