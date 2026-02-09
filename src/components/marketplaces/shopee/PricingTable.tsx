@@ -90,17 +90,17 @@ function clearShopeeCache() {
 }
 
 /**
- * ✅ Normaliza e identifica a loja (evita cair na tabela errada)
- * Ajuste aqui caso seus valores reais de "Loja" sejam diferentes.
+ * ✅ Normaliza Loja para escolher a tabela correta.
+ * Ajuste aqui se seu campo Loja tiver outros valores.
  */
 function normalizeLojaCode(lojaRaw: unknown): "PK" | "SB" | null {
   const s = String(lojaRaw ?? "").trim().toUpperCase();
 
-  // casos comuns
+  // códigos diretos
   if (s === "PK" || s.startsWith("PK")) return "PK";
   if (s === "SB" || s.startsWith("SB")) return "SB";
 
-  // se vier nome completo
+  // nomes comuns
   if (s.includes("PIKOT")) return "PK";
   if (s.includes("SOBA")) return "SB";
 
@@ -306,12 +306,7 @@ export default function PricingTable() {
     if (myReqId !== reqIdRef.current) return;
 
     if (error) {
-      console.error(
-        "❌ Supabase error:",
-        error.message,
-        error.details,
-        error.hint
-      );
+      console.error("❌ Supabase error:", error.message, error.details, error.hint);
       setRows([]);
       setFilteredRows([]);
       setTotalItems(0);
@@ -327,7 +322,7 @@ export default function PricingTable() {
 
       return {
         ...r,
-        id: r.id,
+        id: Number(r.id), // ✅ garante number
         anuncio_id: r.anuncio_id,
         OD,
         Desconto: parseBR(r.Desconto),
@@ -342,11 +337,7 @@ export default function PricingTable() {
       };
     });
 
-    setCache(cacheKey, {
-      rows: normalized,
-      totalItems: count || 0,
-      savedAt: Date.now(),
-    });
+    setCache(cacheKey, { rows: normalized, totalItems: count || 0, savedAt: Date.now() });
 
     startTransition(() => {
       setRows(normalized);
@@ -410,7 +401,7 @@ export default function PricingTable() {
       const formatted = toBR(rawValue);
 
       setEditing({
-        dbId: row.id,
+        dbId: Number(row.id), // ✅ garante number (mata “volta instantaneamente” por type mismatch)
         loja: row.Loja,
         field,
         value: formatted,
@@ -422,27 +413,28 @@ export default function PricingTable() {
   );
 
   /**
-   * ✅ AJUSTE PRINCIPAL (Shopee igual Tray, porém mais robusto):
-   * - normaliza Loja (PK/SB) antes de escolher tabela
-   * - tenta update por id e valida se atualizou 1 linha
-   * - se não atualizou nada (id da view não bate), faz fallback por (ID + Loja)
-   * - mantém UI + cache otimista (como já estava)
+   * ✅ Agora IGUAL Tray:
+   * - UI + cache otimista
+   * - update no supabase (sem select/single/merge que pode sobrescrever)
+   * - correções: id number + loja normalizada + fallback por ID+Loja se id da view não bater
    */
   const confirmEdit = useCallback(async () => {
     if (!editing) return;
 
     const { dbId, loja, field, value } = editing;
+
+    const dbIdNum = Number(dbId);
     const newVal = parseBR(value);
 
     const shouldRecalcPV = PREC_FIELDS.includes(field);
 
-    // pega a linha atual (antes de atualizar) pra fallback por ID + Loja
-    const currentRow = rows.find((r) => r.id === dbId);
+    // linha atual (pra fallback por ID)
+    const currentRow = rows.find((r) => Number(r.id) === dbIdNum);
 
-    // otimista (UI)
     let newRowUpdated: Row | undefined;
+
     const updatedRows = rows.map((r) => {
-      if (r.id === dbId) {
+      if (Number(r.id) === dbIdNum) {
         const updated: Row = { ...r, [field]: newVal };
         if (shouldRecalcPV) updated["Preço de Venda"] = calcPrecoVenda(updated);
         newRowUpdated = updated;
@@ -451,6 +443,7 @@ export default function PricingTable() {
       return r;
     });
 
+    // UI otimista
     setRows(updatedRows);
     setFilteredRows(updatedRows);
     setEditing(null);
@@ -460,44 +453,47 @@ export default function PricingTable() {
     if (cached && newRowUpdated) {
       setCache(cacheKey, {
         ...cached,
-        rows: cached.rows.map((r) => (r.id === dbId ? newRowUpdated! : r)),
+        rows: cached.rows.map((r) => (Number(r.id) === dbIdNum ? newRowUpdated! : r)),
         savedAt: Date.now(),
       });
     }
 
-    // ✅ normaliza loja e define tabela correta
+    // define tabela correta
     const lojaCode = normalizeLojaCode(loja);
     if (!lojaCode) {
-      console.error("❌ Loja inválida para salvar. Valor recebido:", loja);
+      console.error("❌ Loja inválida para salvar:", loja);
       return;
     }
-
     const table = tableByLojaCode(lojaCode);
 
+    // payload
     const payload: any = { [String(field)]: newVal };
     if (shouldRecalcPV) payload["Preço de Venda"] = newRowUpdated?.["Preço de Venda"];
 
-    // ✅ 1) tenta salvar por id (mais direto)
+    // 1) tenta por id (rápido)
     const { data: upd1, error: err1 } = await supabase
       .from(table)
       .update(payload)
-      .eq("id", dbId)
-      .select("id"); // valida se alterou
+      .eq("id", dbIdNum)
+      .select("id"); // só para garantir que realmente atualizou
 
     if (err1) {
       console.error("❌ Erro ao salvar (por id):", err1);
       return;
     }
 
-    // se não alterou nenhuma linha, faz fallback
+    // 2) fallback se id da view não bater com id da tabela base
     if (!upd1?.length) {
-      const fallbackID = currentRow?.ID ?? (newRowUpdated as any)?.ID;
+      const fallbackID = (currentRow as any)?.ID ?? (newRowUpdated as any)?.ID;
 
       if (!fallbackID) {
-        console.error(
-          "❌ Update não encontrou a linha por id e não há ID para fallback.",
-          { dbId, loja, lojaCode, table }
-        );
+        console.error("❌ Update não encontrou por id e não há ID para fallback.", {
+          dbIdNum,
+          loja,
+          lojaCode,
+          table,
+          payload,
+        });
         return;
       }
 
@@ -514,11 +510,14 @@ export default function PricingTable() {
       }
 
       if (!upd2?.length) {
-        console.error(
-          "❌ Update NÃO alterou nenhuma linha (id e fallback falharam).",
-          { dbId, fallbackID, loja, lojaCode, table, payload }
-        );
-        return;
+        console.error("❌ Update não alterou nenhuma linha (id e fallback falharam).", {
+          dbIdNum,
+          fallbackID,
+          loja,
+          lojaCode,
+          table,
+          payload,
+        });
       }
     }
   }, [editing, rows, cacheKey, PREC_FIELDS]);
@@ -526,9 +525,8 @@ export default function PricingTable() {
   const cancelEdit = () => setEditing(null);
 
   /**
-   * ✅ RECOMENDADO:
-   * O modal (PricingMassEditionModal) já atualiza via RPC.
-   * Então aqui a gente só fecha, limpa cache e recarrega a listagem.
+   * ✅ O modal já atualiza via RPC
+   * Então aqui só fecha, limpa cache e recarrega
    */
   const handlePricingImport = useCallback(
     async (_data: any[]) => {
@@ -585,8 +583,7 @@ export default function PricingTable() {
           .range(page * pageSize, (page + 1) * pageSize - 1);
 
         if (selectedLoja.length) exportQuery = exportQuery.in("Loja", selectedLoja);
-        if (selectedBrands.length)
-          exportQuery = exportQuery.in("Marca", selectedBrands);
+        if (selectedBrands.length) exportQuery = exportQuery.in("Marca", selectedBrands);
 
         if (debouncedSearch) {
           const term = debouncedSearch.replace(/[%_]/g, "").trim();

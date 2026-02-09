@@ -24,7 +24,7 @@ type Props = {
 
 type ImportRow = Record<string, any>;
 
-const BATCH_SIZE = 1000; // ✅ ajuste: 500~2000 costuma ficar ótimo
+const BATCH_SIZE = 1000; // 500~2000 costuma ser bom
 
 export default function PricingMassEditionModal({
   open,
@@ -43,6 +43,7 @@ export default function PricingMassEditionModal({
 
   const [confirmOpen, setConfirmOpen] = useState(false);
 
+  // Cabeçalhos esperados (exibição)
   const targetCols = useMemo(
     () => [
       "ID",
@@ -69,7 +70,7 @@ export default function PricingMassEditionModal({
   );
 
   // =============================================================
-  // ✅ helpers: normalização de strings/headers
+  // ✅ Normalização forte de texto (acentos/espaços/pontuação)
   // =============================================================
   const normalizeText = (v: any) =>
     String(v ?? "")
@@ -80,18 +81,20 @@ export default function PricingMassEditionModal({
       .replace(/\u00A0/g, " ")
       .replace(/\s+/g, " ");
 
-  const normalizeHeader = (h: string) =>
+  const normalizeHeader = (h: any) =>
     normalizeText(h).replace(/[^a-z0-9]+/g, " ").trim();
 
+  // Mapa de variações comuns -> coluna padrão
   const headerKeyMap = useMemo(() => {
-    // Aceita variações comuns no CSV/XLSX
     const map: Record<string, string> = {
       id: "ID",
-      codigo: "ID", // se vier "Código" como ID (opcional)
+      "id produto": "ID",
+      codigo: "ID",
       loja: "Loja",
       "id bling": "ID Bling",
       bling: "ID Bling",
       referencia: "Referência",
+      "ref": "Referência",
       "id tray": "ID Tray",
       tray: "ID Tray",
       "id var": "ID Var",
@@ -106,15 +109,16 @@ export default function PricingMassEditionModal({
       comissao: "Comissão",
       imposto: "Imposto",
       "margem de lucro": "Margem de Lucro",
-      margem: "Margem de Lucro",
+      "margem": "Margem de Lucro",
       marketing: "Marketing",
       custo: "Custo",
       "preco de venda": "Preço de Venda",
       "preco venda": "Preço de Venda",
-      preco: "Preço de Venda",
+      "preco": "Preço de Venda",
+      "preco final": "Preço de Venda",
     };
 
-    // também garante mapeamento exato dos targetCols
+    // garante match exato para os targetCols também
     for (const c of targetCols) {
       map[normalizeHeader(c)] = c;
     }
@@ -157,15 +161,16 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ Normaliza headers do arquivo (suporta variações/acento)
+  // ✅ Normaliza headers do arquivo para bater com targetCols
+  // (aceita variação + remove acento/pontuação)
   // =============================================================
   const normalizeRowsByHeaders = (rows: ImportRow[]) => {
     return rows.map((row) => {
       const normalizedRow: Record<string, any> = {};
       for (const key of Object.keys(row)) {
         const nk = normalizeHeader(key);
-        const mapped = headerKeyMap[nk] ?? headerKeyMap[normalizeText(key)] ?? null;
-        normalizedRow[mapped || key] = row[key];
+        const match = headerKeyMap[nk] ?? null;
+        normalizedRow[match || key] = row[key];
       }
       return normalizedRow;
     });
@@ -188,7 +193,7 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ IMPORTAÇÃO TURBO DE CSV (worker + progress real por bytes)
+  // ✅ IMPORTAÇÃO TURBO DE CSV (worker + progress por bytes)
   // =============================================================
   const parseCsvFast = (file: File) => {
     return new Promise<ImportRow[]>((resolve, reject) => {
@@ -197,12 +202,11 @@ export default function PricingMassEditionModal({
       Papa.parse(file, {
         header: true,
         skipEmptyLines: true,
-        worker: true, // ✅ fora da UI
+        worker: true,
         dynamicTyping: false,
         chunkSize: 1024 * 1024 * 2, // 2MB
         chunk: (result) => {
           all.push(...(result.data as ImportRow[]));
-
           const cursor = (result.meta as any)?.cursor as number | undefined;
           if (cursor && file.size) {
             progressRef.current = Math.min(99, Math.round((cursor / file.size) * 100));
@@ -215,7 +219,7 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ Import XLSX/XLS (com skip do header mesclado)
+  // ✅ IMPORTAÇÃO XLSX/XLS (com skip de header mesclado)
   // =============================================================
   const parseXlsx = async (file: File) => {
     const buf = await file.arrayBuffer();
@@ -224,12 +228,12 @@ export default function PricingMassEditionModal({
     const ws = wb.Sheets[sheetName];
 
     const a1 = ws["A1"]?.v;
-    const hasMergedHeaders = typeof a1 === "string" && String(a1).toUpperCase().includes("IDENTIFICA");
+    const hasMergedHeaders =
+      typeof a1 === "string" && String(a1).toUpperCase().includes("IDENTIFICA");
 
     if (hasMergedHeaders && ws["!ref"]) {
       const range = XLSX.utils.decode_range(ws["!ref"]);
-      // pula a primeira linha (títulos mesclados)
-      range.s.r = Math.max(range.s.r, 1);
+      range.s.r = Math.max(range.s.r, 1); // pula primeira linha
       ws["!ref"] = XLSX.utils.encode_range(range);
     }
 
@@ -258,7 +262,9 @@ export default function PricingMassEditionModal({
         const normalized = normalizeRowsByHeaders(rows);
 
         progressRef.current = 100;
-        toast.success("CSV carregado!", { description: `Encontrados ${normalized.length} itens.` });
+        toast.success("CSV carregado!", {
+          description: `Encontrados ${normalized.length} itens.`,
+        });
         setPreviewData(normalized);
         return;
       }
@@ -268,7 +274,9 @@ export default function PricingMassEditionModal({
         const normalized = normalizeRowsByHeaders(rows);
 
         progressRef.current = 100;
-        toast.success("Planilha carregada!", { description: `Encontrados ${normalized.length} itens.` });
+        toast.success("Planilha carregada!", {
+          description: `Encontrados ${normalized.length} itens.`,
+        });
         setPreviewData(normalized);
         return;
       }
@@ -289,7 +297,7 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ Detecta Loja e converte para PK/SB (evita 0 updates)
+  // ✅ Mapeia Loja para PK/SB (ponto MAIS comum de dar 0 updates)
   // =============================================================
   const mapLoja = (v: any) => {
     const raw = String(v ?? "").trim();
@@ -301,9 +309,10 @@ export default function PricingMassEditionModal({
       .replace(/[\u0300-\u036f]/g, "");
 
     if (norm === "PK" || norm.includes("PIKOT")) return "PK";
-    if (norm === "SB" || norm.includes("SOBAQUETAS") || norm.includes("SO BAQUETAS")) return "SB";
+    if (norm === "SB" || norm.includes("SOBAQUETAS") || norm.includes("SO BAQUETAS"))
+      return "SB";
 
-    // fallback: se já vier algo curto tipo "Pk " ou "Sb "
+    // fallback: se vier "Pk " / "Sb "
     const short = norm.replace(/\s+/g, "");
     if (short === "PK") return "PK";
     if (short === "SB") return "SB";
@@ -312,14 +321,14 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ Monta payload para RPC (somente colunas relevantes)
+  // ✅ Monta payload para RPC
   // - percentuais aceitam 10 ou 0.10
   // - money idem
   // - null => não altera no banco (COALESCE no SQL)
   // =============================================================
   const buildRpcRow = (row: ImportRow) => {
     const id = String(row["ID"] ?? "").trim();
-    const loja = mapLoja(row["Loja"]); // ✅ agora vira PK/SB mesmo com nome completo
+    const loja = mapLoja(row["Loja"]);
     if (!id || !loja) return null;
 
     const percentCols = ["Desconto", "Comissão", "Imposto", "Margem de Lucro", "Marketing"];
@@ -377,7 +386,7 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ Atualiza por RPC em batches (PK e SB separados)
+  // ✅ Atualiza por RPC em batches (com retornos explícitos)
   // =============================================================
   const updateByRpcBatches = async (rows: ImportRow[]) => {
     const rpcRows = rows.map(buildRpcRow).filter(Boolean) as any[];
@@ -385,22 +394,24 @@ export default function PricingMassEditionModal({
     const pk = rpcRows.filter((r) => r.loja === "PK");
     const sb = rpcRows.filter((r) => r.loja === "SB");
 
-    // ✅ feedback imediato (evita "não acontece nada")
     toast.message("Pré-validação do arquivo", {
       description: `Válidas: ${rpcRows.length} | PK: ${pk.length} | SB: ${sb.length}`,
     });
 
-    // ✅ se nada caiu em PK/SB, não roda loop vazio
+    // nada para atualizar
+    if (rpcRows.length === 0) {
+      progressRef.current = 100;
+      return { updatedCount: 0, totalToUpdate: 0, pkCount: 0, sbCount: 0 };
+    }
+
+    // lojas não reconhecidas
     if (pk.length === 0 && sb.length === 0) {
       progressRef.current = 100;
-      return { updatedCount: 0, totalToUpdate: rpcRows.length };
+      return { updatedCount: 0, totalToUpdate: rpcRows.length, pkCount: 0, sbCount: 0 };
     }
 
     let updatedCount = 0;
-
-    const totalBatches =
-      Math.ceil(pk.length / BATCH_SIZE) + Math.ceil(sb.length / BATCH_SIZE);
-
+    const totalBatches = Math.ceil(pk.length / BATCH_SIZE) + Math.ceil(sb.length / BATCH_SIZE);
     let batchesDone = 0;
 
     const runBatches = async (
@@ -410,9 +421,9 @@ export default function PricingMassEditionModal({
       for (let i = 0; i < arr.length; i += BATCH_SIZE) {
         const batch = arr.slice(i, i + BATCH_SIZE);
 
-        const { data, error } = await supabase.rpc(rpcName, {
-          payload: batch,
-        });
+        console.log("[RPC] chamando", rpcName, "batchLen", batch.length);
+
+        const { data, error } = await supabase.rpc(rpcName, { payload: batch });
 
         if (error) {
           console.error("[RPC ERROR]", rpcName, error);
@@ -433,14 +444,32 @@ export default function PricingMassEditionModal({
     await runBatches(sb, "update_pricing_batch_sb");
 
     progressRef.current = 100;
-    return { updatedCount, totalToUpdate: rpcRows.length };
+    return {
+      updatedCount,
+      totalToUpdate: rpcRows.length,
+      pkCount: pk.length,
+      sbCount: sb.length,
+    };
   };
 
   // =============================================================
-  // ✅ CONFIRMAR UPDATE (RPC)
+  // ✅ CONFIRMAR UPDATE (com sinais de vida + auth + erros visíveis)
   // =============================================================
   const handleUpdateConfirm = async () => {
-    if (previewData.length === 0) return;
+    console.log("[CONFIRM] cliquei confirmar", { previewLen: previewData.length });
+    toast.message("Cliquei em Confirmar ✅");
+
+    const { data: sess, error: sessErr } = await supabase.auth.getSession();
+    if (sessErr) console.error("[AUTH] erro session:", sessErr);
+    if (!sess.session) {
+      toast.error("Você não está logado", { description: "Faça login e tente novamente." });
+      return;
+    }
+
+    if (previewData.length === 0) {
+      toast.warning("Nenhum arquivo importado");
+      return;
+    }
 
     setUpdating(true);
     setProgress(0);
@@ -448,7 +477,29 @@ export default function PricingMassEditionModal({
     startProgressPump();
 
     try {
-      const { updatedCount, totalToUpdate } = await updateByRpcBatches(previewData);
+      toast.message("Iniciando atualização...", {
+        description: `Linhas importadas: ${previewData.length}`,
+      });
+
+      const { updatedCount, totalToUpdate, pkCount, sbCount } =
+        await updateByRpcBatches(previewData);
+
+      console.log("[RESULT]", { updatedCount, totalToUpdate, pkCount, sbCount });
+
+      if (totalToUpdate === 0) {
+        toast.warning("Nenhuma linha válida para atualizar", {
+          description: 'Confira se o arquivo tem "ID", "Loja" e algum valor numérico.',
+        });
+        return;
+      }
+
+      if (pkCount === 0 && sbCount === 0) {
+        toast.error("Coluna Loja inválida", {
+          description:
+            'A coluna "Loja" precisa ser (ou virar) PK/SB. Ex.: "Pikot" => PK, "Sobaquetas" => SB.',
+        });
+        return;
+      }
 
       if (updatedCount > 0) {
         toast.success("Atualização concluída!", {
@@ -457,22 +508,20 @@ export default function PricingMassEditionModal({
       } else {
         toast.warning("Nenhum item foi atualizado", {
           description:
-            totalToUpdate > 0
-              ? "IDs/Loja não bateram, ou RLS bloqueou, ou não havia valores numéricos para atualizar."
-              : "Nenhuma linha tinha campos válidos para atualizar (ID/Loja/valores).",
+            "IDs/Loja não bateram OU RLS bloqueou OU suas RPCs não atualizaram nada.",
         });
       }
 
+      // aqui só notificamos o pai (recarregar tela/cache, se você quiser)
       onImportComplete(previewData);
+
+      // fecha modal
       onOpenChange(false);
       setConfirmOpen(false);
     } catch (err: any) {
       console.error("Erro ao atualizar via RPC:", err);
-
-      toast.error("Erro ao atualizar no Supabase (RPC)", {
-        description:
-          err?.message ||
-          "Verifique se as RPCs existem e se você deu EXECUTE para authenticated.",
+      toast.error("Erro ao atualizar (RPC)", {
+        description: err?.message || err?.details || JSON.stringify(err),
       });
     } finally {
       stopProgressPump();
@@ -651,7 +700,11 @@ export default function PricingMassEditionModal({
 
             <Button
               className="bg-green-600 hover:scale-105 text-white"
-              onClick={handleUpdateConfirm}
+              onClick={() => {
+                console.log("[UI] Cliquei CONFIRMAR (wrapper)");
+                toast.message("Confirmar clicado ✅");
+                void handleUpdateConfirm();
+              }}
               disabled={updating}
             >
               {updating ? <Loader className="animate-spin w-5 h-5" /> : "Confirmar"}
