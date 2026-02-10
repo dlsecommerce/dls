@@ -27,7 +27,7 @@ type ImportRow = Record<string, any>;
 const BATCH_SIZE = 1000; // 500~2000 costuma ser bom
 
 // 🔊 Toquezinho de confirmação (sem mp3)
-const playDing = (freq = 880, durationMs = 90, volume = 0.04) => {
+const playSuccess = (freq = 880, durationMs = 90, volume = 0.04) => {
   try {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
     const ctx = new AudioCtx();
@@ -320,7 +320,7 @@ export default function PricingMassEditionModal({
 
         progressRef.current = 100;
         toastCustom.success("CSV carregado!", `Encontrados ${normalized.length} itens.`);
-        playDing(); // 🔔 som de importação OK
+        playSuccess(); // ✅ SOM AQUI (final da importação)
 
         setPreviewData(normalized);
         return;
@@ -332,7 +332,7 @@ export default function PricingMassEditionModal({
 
         progressRef.current = 100;
         toastCustom.success("Planilha carregada!", `Encontrados ${normalized.length} itens.`);
-        playDing(); // 🔔 som de importação OK
+        playSuccess(); // ✅ SOM AQUI (final da importação)
 
         setPreviewData(normalized);
         return;
@@ -504,7 +504,7 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ CONFIRMAR UPDATE (com auth + erros visíveis)
+  // ✅ CONFIRMAR UPDATE (SEM SOM!)
   // =============================================================
   const handleUpdateConfirm = async () => {
     console.log("[CONFIRM] cliquei confirmar", { previewLen: previewData.length });
@@ -553,7 +553,7 @@ export default function PricingMassEditionModal({
 
       if (updatedCount > 0) {
         toastCustom.success("Atualizado com sucesso", `${updatedCount} item(ns) atualizado(s).`);
-        playDing(1046, 120); // 🔔 som de atualização OK
+        // ❌ sem som aqui
       } else {
         toastCustom.warning(
           "Nenhum item foi atualizado",

@@ -5,8 +5,71 @@ import { supabase } from "@/integrations/supabase/client";
 import { importFromXlsxOrCsv } from "@/components/announce/helpers/importFromXlsxOrCsv";
 import { exportFilteredToXlsx } from "@/components/announce/helpers/exportFilteredToXlsx";
 import type { RowShape } from "@/components/announce/helpers/importFromXlsxOrCsv";
+import { toast } from "sonner";
 
 type ImportMode = "inclusao" | "alteracao";
+
+/* =========================
+   🔊 Som: só para "fim da importação"
+========================= */
+const playImportSuccess = (freq = 880, durationMs = 90, volume = 0.04) => {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const ctx = new AudioCtx();
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.value = freq;
+
+    gain.gain.value = volume;
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + durationMs / 1000);
+
+    osc.onended = () => ctx.close();
+  } catch {
+    // ignora
+  }
+};
+
+/* =========================
+   ✅ Toasts custom
+========================= */
+const toastCustom = {
+  success: (title: string, description?: string) =>
+    toast.success(title, {
+      description,
+      className: "bg-green-600 border border-green-500 text-white shadow-lg",
+      duration: 3500,
+    }),
+
+  error: (title: string, description?: string) =>
+    toast.error(title, {
+      description,
+      className: "bg-red-600 border border-red-500 text-white shadow-lg",
+      duration: 4500,
+    }),
+
+  warning: (title: string, description?: string) =>
+    toast.warning(title, {
+      description,
+      className: "bg-orange-500 border border-orange-400 text-white shadow-lg",
+      duration: 4000,
+      position: "top-center",
+    }),
+
+  message: (title: string, description?: string) =>
+    toast.message(title, {
+      description,
+      className: "bg-neutral-900 border border-neutral-700 text-white shadow-lg",
+      duration: 3500,
+    }),
+};
 
 /* =========================
    Normalização geral
@@ -55,13 +118,10 @@ function storeSigla(nomeLoja: string) {
 
 /* =========================
    Sigla de Marca (sem MAP)
-   Ex: "VDR Relatório" -> "VDR"
-   Ex: "Telefunken" -> "TEL"
 ========================= */
 function marcaSigla(marca: string, maxLen = 3) {
   const clean = String(marca ?? "").trim();
 
-  // limpa (remove acento, espaços, símbolos) e deixa uppercase
   const code = clean
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
@@ -75,11 +135,6 @@ function marcaSigla(marca: string, maxLen = 3) {
 
 /* =========================
    Nome do arquivo (GLOBAL)
-   Regras:
-   - Sem filtros: "ANÚNCIOS - RELATÓRIO - dataHora"
-   - Só loja: "ANÚNCIOS - RELATÓRIO - PK - dataHora"
-   - Só marcas: "ANÚNCIOS - RELATÓRIO - LIV-ITC - dataHora"
-   - Marca + loja: "ANÚNCIOS - RELATÓRIO - LIV-PK - dataHora"
 ========================= */
 function buildExportFilename(filters?: {
   selectedStores?: string[];
@@ -101,14 +156,12 @@ function buildExportFilename(filters?: {
     new Set((filters?.selectedBrands ?? []).map((m) => marcaSigla(m, 3)))
   ).filter(Boolean);
 
-  // Loja: se marcar 1 só (PK ou SB), entra. Se marcar as duas, não entra (vira “todos”).
   const lojaCodes = Array.from(
     new Set((filters?.selectedStores ?? []).map((s) => storeSigla(s)).filter(Boolean))
   );
 
   const lojaFinal = lojaCodes.length === 1 ? lojaCodes[0] : "";
 
-  // marcas primeiro, depois loja
   const middle = [marcas.join("-"), lojaFinal].filter(Boolean).join("-");
 
   return middle
@@ -118,8 +171,6 @@ function buildExportFilename(filters?: {
 
 /* =========================
    Filtro GLOBAL:
-   - OR dentro de cada grupo
-   - AND entre grupos
 ========================= */
 function applyGlobalFilters(
   rows: RowShape[],
@@ -135,7 +186,6 @@ function applyGlobalFilters(
 
   if (!rows?.length) return [];
 
-  // sem filtros → retorna como está
   if (lojas.length === 0 && marcas.length === 0 && cats.length === 0) return rows;
 
   return rows.filter((r: any) => {
@@ -152,8 +202,7 @@ function applyGlobalFilters(
 }
 
 /* =========================
-   Search filter (para Opção B)
-   Aplica no export quando há seleção ou não.
+   Search filter
 ========================= */
 function applySearchFilter(rows: RowShape[], search?: string) {
   const s = normText(search ?? "");
@@ -227,7 +276,7 @@ export function useImportExport(
       await openPreview(f, importMode);
     } catch (err) {
       console.error("Erro ao importar arquivo:", err);
-      alert("Erro ao ler o arquivo. Verifique se é .xlsx ou .csv.");
+      toastCustom.error("Erro ao ler o arquivo", "Verifique se é .xlsx ou .csv.");
     } finally {
       e.target.value = "";
     }
@@ -240,26 +289,51 @@ export function useImportExport(
       await openPreview(file, mode);
     } catch (err) {
       console.error("Erro ao importar arquivo direto:", err);
-      alert("Erro ao ler o arquivo. Verifique se é .xlsx ou .csv.");
+      toastCustom.error("Erro ao ler o arquivo", "Verifique se é .xlsx ou .csv.");
     }
   };
 
   /* =========================
-     Confirma Importação
+     ✅ Confirma Importação (AQUI É O LUGAR CERTO DO SOM!)
   ========================= */
   const confirmImport = async () => {
     if (!importFile) return;
 
+    // segurança: se modal recebeu errors bloqueadores, não deixa confirmar
+    if (errors.length > 0) {
+      toastCustom.error("Importação bloqueada", "Corrija os erros antes de confirmar.");
+      return;
+    }
+
     setImporting(true);
+
     try {
+      toastCustom.message("Importando...", "Aguarde a conclusão da importação.");
+
       await importFromXlsxOrCsv(importFile, false, importMode);
+
+      // ✅ recarrega listagem
       await loadAnuncios(currentPage);
-    } catch (err) {
+
+      // ✅ FECHOU / SUCESSO
+      setOpenConfirmImport(false);
+
+      toastCustom.success(
+        importMode === "inclusao" ? "Inclusão concluída!" : "Alteração concluída!",
+        `Processados ${importCount} registro(s).`
+      );
+
+      // 🔔 SOM APENAS AQUI (fim da importação)
+      playImportSuccess();
+    } catch (err: any) {
       console.error("Erro ao importar:", err);
-      alert("Erro ao importar dados. Veja o console.");
+
+      toastCustom.error(
+        "Erro ao importar dados",
+        err?.message || err?.details || "Veja o console para mais detalhes."
+      );
     } finally {
       setImporting(false);
-      setOpenConfirmImport(false);
     }
   };
 
@@ -284,13 +358,11 @@ export function useImportExport(
       head: countOnly,
     });
 
-    // 🔎 Search
     if (filters?.search?.trim()) {
       const s = filters.search.trim();
       q = q.or(`Nome.ilike.%${s}%,Marca.ilike.%${s}%,Referência.ilike.%${s}%`);
     }
 
-    // 🏪 Loja PK/SB
     const lojaCodes =
       filters?.selectedStores
         ?.map(toStoreCode)
@@ -330,14 +402,12 @@ export function useImportExport(
       results = results.concat((data as RowShape[]) || []);
     }
 
-    // ✅ aplica Loja/Marca/Categoria (global AND) com normalização
     results = applyGlobalFilters(results, {
       selectedStores: filters?.selectedStores ?? [],
       selectedBrands: filters?.selectedBrands ?? [],
       selectedCategorias: filters?.selectedCategorias ?? [],
     });
 
-    // ✅ aplica search também (compatível com a tela)
     results = applySearchFilter(results, filters?.search);
 
     return results;
@@ -352,12 +422,11 @@ export function useImportExport(
 
     const base = selectedRows.length > 0 ? selectedRows : await fetchAllFiltered();
 
-    // ✅ OPÇÃO B: mesmo com seleção, respeita Loja/Marca/Categoria + Search
     let exportData = applyGlobalFilters(base, activeFilters);
     exportData = applySearchFilter(exportData, filters?.search);
 
     if (!exportData.length) {
-      alert("Nenhum dado encontrado para exportar.");
+      toastCustom.warning("Nada para exportar", "Nenhum dado encontrado com os filtros atuais.");
       return;
     }
 
@@ -367,6 +436,7 @@ export function useImportExport(
     });
 
     exportFilteredToXlsx(exportData, filename);
+    toastCustom.success("Exportação gerada!", "O download foi iniciado.");
   };
 
   return {

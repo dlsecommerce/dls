@@ -24,32 +24,6 @@ type Props = {
   tipo: "inclusao" | "alteracao";
 };
 
-// 🔊 Toquezinho de confirmação (sem mp3)
-const playSuccess = (freq = 880, durationMs = 90, volume = 0.04) => {
-  try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    const ctx = new AudioCtx();
-
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = "sine";
-    osc.frequency.value = freq;
-
-    gain.gain.value = volume;
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start();
-    osc.stop(ctx.currentTime + durationMs / 1000);
-
-    osc.onended = () => ctx.close();
-  } catch {
-    // ignora
-  }
-};
-
 // ✅ Toasts custom (verde/vermelho/laranja + warning top-center)
 const toastCustom = {
   success: (title: string, description?: string) =>
@@ -72,6 +46,13 @@ const toastCustom = {
       className: "bg-orange-500 border border-orange-400 text-white shadow-lg",
       duration: 4000,
       position: "top-center",
+    }),
+
+  message: (title: string, description?: string) =>
+    toast.message(title, {
+      description,
+      className: "bg-neutral-900 border border-neutral-700 text-white shadow-lg",
+      duration: 3000,
     }),
 };
 
@@ -244,6 +225,7 @@ export default function ConfirmImportModal({
             disabled={loading || errors.length > 0}
             onClick={(e) => {
               e.stopPropagation();
+
               if (errors.length > 0) {
                 toastCustom.error(
                   "Importação bloqueada",
@@ -259,11 +241,8 @@ export default function ConfirmImportModal({
                 );
               }
 
-              // 🔔 som de confirmação (ação do usuário)
-              // (Se você quiser som SÓ quando terminar de importar, remova esta linha)
-              playSuccess();
-
-              // dispara ação do pai (onde o import de fato acontece)
+              // ✅ Aqui só dispara o processo (som fica NO FINAL do import no componente pai)
+              toastCustom.message("Importação iniciada", "Processando arquivo...");
               onConfirm();
             }}
           >

@@ -4,11 +4,11 @@ import { Providers } from "./providers";
 import "./globals.css";
 import { ClientWrapper } from "@/components/client/ClientWrapper";
 
-// 🔹 Provider do Supabase (client-side)
 import SupabaseProvider from "@/components/provider/SupabaseProvider";
-
-// 🔹 ThemeProvider do next-themes
 import { ThemeProvider } from "next-themes";
+
+// ✅ agora é client
+import { ClientToaster } from "@/components/client/ClientToaster";
 
 const inter = Inter({ subsets: ["latin"], display: "swap" });
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://pikotshop.com.br";
@@ -43,11 +43,7 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body className={inter.className}>
@@ -56,17 +52,16 @@ export default function RootLayout({
           defaultTheme="dark"
           enableSystem={false}
           disableTransitionOnChange={false}
-          value={{
-            light: "light",
-            dark: "dark",
-          }}
+          value={{ light: "light", dark: "dark" }}
         >
           <Providers>
-            {/* SupabaseProvider agora cuida do usuário só no client */}
             <SupabaseProvider>
               <main className="relative z-10 text-foreground min-h-screen">
                 <ClientWrapper>{children}</ClientWrapper>
               </main>
+
+              {/* ✅ Toaster agora monta no client */}
+              <ClientToaster />
             </SupabaseProvider>
           </Providers>
         </ThemeProvider>

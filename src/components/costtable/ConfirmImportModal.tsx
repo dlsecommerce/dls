@@ -24,31 +24,6 @@ type Props = {
   tipo: "inclusao" | "alteracao";
 };
 
-// 🔊 Toquezinho (sem mp3)
-const playSuccess = (freq = 950, durationMs = 70, volume = 0.03) => {
-  try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    const ctx = new AudioCtx();
-
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = "sine";
-    osc.frequency.value = freq;
-    gain.gain.value = volume;
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start();
-    osc.stop(ctx.currentTime + durationMs / 1000);
-
-    osc.onended = () => ctx.close();
-  } catch {
-    // ignora
-  }
-};
-
 // ✅ Toasts custom (verde/vermelho/laranja + warning top-center)
 const toastCustom = {
   success: (title: string, description?: string) =>
@@ -72,6 +47,13 @@ const toastCustom = {
       duration: 4000,
       position: "top-center",
     }),
+
+  message: (title: string, description?: string) =>
+    toast.message(title, {
+      description,
+      className: "bg-neutral-900 border border-neutral-700 text-white shadow-lg",
+      duration: 3000,
+    }),
 };
 
 export default function ConfirmImportModal({
@@ -89,27 +71,42 @@ export default function ConfirmImportModal({
 
   const titulo =
     tipo === "inclusao"
-      ? "Confirmar Inclusão de Custos"
-      : "Confirmar Alteração de Custos";
+      ? "Confirmar Inclusão de Anúncios"
+      : "Confirmar Alteração de Anúncios";
 
   const texto =
     tipo === "inclusao"
-      ? "Você está prestes a INCLUIR novos custos na base. Códigos já existentes serão bloqueados."
-      : "Você está prestes a ALTERAR custos existentes. Códigos inexistentes serão bloqueados.";
+      ? "Você está prestes a INCLUIR novos anúncios no sistema."
+      : "Você está prestes a ALTERAR anúncios existentes.";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         onClick={(e) => e.stopPropagation()}
-        className="bg-[#0f0f0f]/95 backdrop-blur-xl border border-neutral-700 rounded-2xl text-white max-w-3xl shadow-2xl"
+        className="
+          bg-[#0f0f0f]/95 backdrop-blur-xl
+          border border-neutral-700
+          rounded-2xl text-white
+          shadow-2xl
+
+          w-[95vw] max-w-3xl
+          max-h-[85vh]
+
+          overflow-hidden
+          min-w-0
+          p-6
+
+          flex flex-col
+        "
       >
-        <DialogHeader>
+        <DialogHeader className="min-w-0 shrink-0">
           <DialogTitle className="text-lg font-semibold text-white">
             {titulo}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 mt-2">
+        {/* ✅ Miolo */}
+        <div className="mt-3 min-w-0 flex-1 min-h-0 overflow-y-auto pr-1 space-y-4">
           <p className="text-neutral-300 leading-relaxed">{texto}</p>
 
           <p className="text-neutral-300">
@@ -123,10 +120,10 @@ export default function ConfirmImportModal({
             <motion.div
               initial={{ opacity: 0, y: -5 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-red-500/10 border border-red-600/40 rounded-xl p-3 text-sm text-red-400 flex items-start gap-2"
+              className="bg-red-500/10 border border-red-600/40 rounded-xl p-3 text-sm text-red-400 flex items-start gap-2 min-w-0"
             >
               <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-              <div>
+              <div className="min-w-0">
                 <strong className="text-red-400">Erros encontrados:</strong>
                 <ul className="list-disc list-inside mt-1">
                   {errors.map((msg, i) => (
@@ -145,10 +142,10 @@ export default function ConfirmImportModal({
             <motion.div
               initial={{ opacity: 0, y: -5 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 text-sm text-yellow-300 flex items-start gap-2"
+              className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 text-sm text-yellow-300 flex items-start gap-2 min-w-0"
             >
               <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
-              <div>
+              <div className="min-w-0">
                 <strong className="text-yellow-400">Avisos:</strong>
                 <ul className="list-disc list-inside mt-1">
                   {warnings.map((msg, i) => (
@@ -161,41 +158,48 @@ export default function ConfirmImportModal({
 
           {/* 📋 Preview */}
           {preview.length > 0 && (
-            <div className="mt-4 max-h-60 overflow-auto rounded-xl border border-neutral-700">
-              <table className="w-full text-sm text-neutral-300">
-                <thead className="bg-neutral-800 sticky top-0">
-                  <tr>
-                    {keys.map((k) => (
-                      <th
-                        key={k}
-                        className="text-left p-2 font-semibold whitespace-nowrap"
-                      >
-                        {k}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.map((row, i) => (
-                    <tr
-                      key={i}
-                      className="odd:bg-neutral-900 even:bg-neutral-800/50 transition-colors"
-                    >
+            <div className="mt-2 w-full min-w-0 rounded-xl border border-neutral-700 overflow-hidden">
+              <div className="h-56 w-full min-w-0 overflow-auto">
+                <table className="min-w-max text-sm text-neutral-300">
+                  <thead className="bg-neutral-800 sticky top-0 z-10">
+                    <tr>
                       {keys.map((k) => (
-                        <td key={k} className="p-2">
-                          {row?.[k] ?? "-"}
-                        </td>
+                        <th
+                          key={k}
+                          className="text-left p-2 font-semibold whitespace-nowrap"
+                        >
+                          {k}
+                        </th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+
+                  <tbody>
+                    {preview.map((row, i) => (
+                      <tr
+                        key={i}
+                        className="odd:bg-neutral-900 even:bg-neutral-800/50 transition-colors"
+                      >
+                        {keys.map((k) => (
+                          <td
+                            key={k}
+                            className="p-2 whitespace-nowrap max-w-[240px] overflow-hidden text-ellipsis"
+                            title={String(row?.[k] ?? "-")}
+                          >
+                            {row?.[k] ?? "-"}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Botões */}
-        <DialogFooter className="mt-5 flex justify-end gap-3">
+        {/* ✅ Footer */}
+        <DialogFooter className="mt-5 shrink-0 min-w-0 flex justify-end gap-3">
           <Button
             variant="outline"
             className="border-neutral-700 text-white hover:scale-105 cursor-pointer"
@@ -208,7 +212,6 @@ export default function ConfirmImportModal({
             Cancelar
           </Button>
 
-          {/* Botão confirmar — DESATIVADO SE HOUVER ERROS */}
           <Button
             className={`
               hover:scale-105 text-white flex items-center gap-2 cursor-pointer
@@ -238,17 +241,13 @@ export default function ConfirmImportModal({
                 );
               }
 
-              // 🔔 som de clique/confirmar (feedback imediato)
-              // (se você quiser som só no sucesso real, remova esta linha)
-              playSuccess();
+              // ✅ feedback de clique (sem som)
+              toastCustom.message(
+                "Importação iniciada",
+                "Processando... aguarde a finalização."
+              );
 
-              // opcional: toast de “processando” (não é sucesso!)
-              toast.message("Processando importação...", {
-                description: "Aguarde a finalização.",
-                className: "bg-neutral-900 border border-neutral-700 text-white shadow-lg",
-                duration: 2000,
-              });
-
+              // dispara ação do pai (onde o import de fato acontece)
               onConfirm();
             }}
           >

@@ -26,8 +26,8 @@ type ImportRow = Record<string, any>;
 
 const BATCH_SIZE = 1000;
 
-// 🔊 Toquezinho de confirmação (sem mp3)
-const playDing = (freq = 880, durationMs = 90, volume = 0.04) => {
+// 🔊 Toquezinho de confirmação (sem mp3) — SOM APENAS NA IMPORTAÇÃO
+const playSuccess = (freq = 880, durationMs = 90, volume = 0.04) => {
   try {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
     const ctx = new AudioCtx();
@@ -324,7 +324,7 @@ export default function PricingMassEditionModal({
         setPreviewData(normalized);
 
         toastCustom.success("CSV carregado!", `Encontrados ${normalized.length} itens.`);
-        playDing(); // 🔔 som de importação OK
+        playSuccess(); // ✅ SOM APENAS AQUI (importação finalizada)
         return;
       }
 
@@ -335,7 +335,7 @@ export default function PricingMassEditionModal({
         setPreviewData(normalized);
 
         toastCustom.success("Planilha carregada!", `Encontrados ${normalized.length} itens.`);
-        playDing(); // 🔔 som de importação OK
+        playSuccess(); // ✅ SOM APENAS AQUI (importação finalizada)
         return;
       }
 
@@ -354,7 +354,7 @@ export default function PricingMassEditionModal({
   // ✅ payload para RPC (chave por "ID" do arquivo)
   // =============================================================
   const buildRpcRow = (row: ImportRow) => {
-    const id = String(row["ID"] ?? "").trim(); // vai virar ::bigint na RPC
+    const id = String(row["ID"] ?? "").trim();
     const loja = mapLoja(row["Loja"]);
     if (!id || !loja) return null;
 
@@ -421,7 +421,10 @@ export default function PricingMassEditionModal({
     const pk = rpcRows.filter((r) => r.loja === "PK");
     const sb = rpcRows.filter((r) => r.loja === "SB");
 
-    toastCustom.warning("Pré-validação", `Válidas: ${rpcRows.length} | PK: ${pk.length} | SB: ${sb.length}`);
+    toastCustom.warning(
+      "Pré-validação",
+      `Válidas: ${rpcRows.length} | PK: ${pk.length} | SB: ${sb.length}`
+    );
 
     if (rpcRows.length === 0) {
       progressRef.current = 100;
@@ -461,7 +464,7 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ CONFIRMAR UPDATE (RPC)
+  // ✅ CONFIRMAR UPDATE (RPC) — SEM SOM AQUI
   // =============================================================
   const handleUpdateConfirm = async () => {
     if (previewData.length === 0) return;
@@ -478,23 +481,33 @@ export default function PricingMassEditionModal({
     startProgressPump();
 
     try {
-      const { updatedCount, totalToUpdate, pkCount, sbCount } = await updateByRpcBatches(previewData);
+      const { updatedCount, totalToUpdate, pkCount, sbCount } =
+        await updateByRpcBatches(previewData);
 
       if (totalToUpdate === 0) {
-        toastCustom.warning("Nenhuma linha válida para atualizar", 'Confira se o arquivo tem "ID", "Loja" e valores numéricos.');
+        toastCustom.warning(
+          "Nenhuma linha válida para atualizar",
+          'Confira se o arquivo tem "ID", "Loja" e valores numéricos.'
+        );
         return;
       }
 
       if (pkCount === 0 && sbCount === 0) {
-        toastCustom.error("Coluna Loja inválida", 'A coluna "Loja" precisa virar PK ou SB (ex.: Pikot => PK, Sobaquetas => SB).');
+        toastCustom.error(
+          "Coluna Loja inválida",
+          'A coluna "Loja" precisa virar PK ou SB (ex.: Pikot => PK, Sobaquetas => SB).'
+        );
         return;
       }
 
       if (updatedCount > 0) {
         toastCustom.success("Atualizado com sucesso", `${updatedCount} item(ns) foram atualizados.`);
-        playDing(1046, 120); // 🔔 som de atualização OK (mais "vitorioso")
+        // ❌ sem som aqui
       } else {
-        toastCustom.warning("Nenhum item foi atualizado", "IDs/Loja não bateram OU RLS bloqueou OU RPC não atualizou.");
+        toastCustom.warning(
+          "Nenhum item foi atualizado",
+          "IDs/Loja não bateram OU RLS bloqueou OU RPC não atualizou."
+        );
       }
 
       onImportComplete(previewData);
@@ -579,10 +592,7 @@ export default function PricingMassEditionModal({
                     <thead className="bg-neutral-800/80 text-white sticky top-0">
                       <tr>
                         {columns.map((col) => (
-                          <th
-                            key={col}
-                            className="p-2 border-b border-neutral-700 text-left font-semibold"
-                          >
+                          <th key={col} className="p-2 border-b border-neutral-700 text-left font-semibold">
                             {col}
                           </th>
                         ))}
