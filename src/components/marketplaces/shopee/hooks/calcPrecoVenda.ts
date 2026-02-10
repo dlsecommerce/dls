@@ -16,37 +16,45 @@ export const parseBR = (v: string | number | null | undefined): number => {
 
   // remove tudo que não seja dígito, separador decimal/milhar, sinal
   const s = s0.replace(/[^\d.,-]/g, "");
-
   if (!s) return 0;
 
   let out: number;
 
   if (s.includes(",")) {
     // 1.234,56
-    if (/\.\d{3},/.test(s)) {
-      out = Number(s.replace(/\./g, "").replace(",", "."));
-    } else {
-      // 10,5
-      out = Number(s.replace(",", "."));
-    }
+    if (/\.\d{3},/.test(s)) out = Number(s.replace(/\./g, "").replace(",", "."));
+    else out = Number(s.replace(",", "."));
   } else if (s.includes(".") && s.split(".")[1]?.length <= 2) {
-    // 10.50
     out = Number(s);
   } else {
-    // 1234 or 1.234 (milhar)
     out = Number(s.replace(/\./g, ""));
   }
 
   return Number.isFinite(out) ? out : 0;
 };
 
+/**
+ * ✅ parseBRNullable
+ * - vazio => null (volta pro automático)
+ * - number => number
+ * - string numérica => number
+ */
+export const parseBRNullable = (
+  v: string | number | null | undefined
+): number | null => {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "string" && v.trim() === "") return null;
+  const n = parseBR(v);
+  return Number.isFinite(n) ? n : null;
+};
+
 type AppliedRules = {
-  Embalagem: number; // L (R$)
-  Frete: number; // M (R$)
-  "Comissão": number; // N (%)
-  Imposto: number; // O (%)
-  "Margem de Lucro": number; // P (%)
-  Marketing: number; // Q (%)
+  Embalagem: number; // R$
+  Frete: number; // R$
+  "Comissão": number; // %
+  Imposto: number; // %
+  "Margem de Lucro": number; // %
+  Marketing: number; // %
   faixa: "ATE_79_99" | "80_A_99_99" | "100_A_199_99" | "ACIMA_200";
 };
 
@@ -170,65 +178,72 @@ function pickRulesByPV(
 }
 
 /**
- * ✅ MANUAL (prioridade total):
- * - se houver valores (não-zerados) em Embalagem/Frete/Comissão/Imposto/Margem/Marketing,
- *   o PV é calculado usando os valores do row (ou overrides).
- * - caso todos estejam 0, cai no automático por faixa (RULES).
+ * ✅ Resolve cada campo:
+ * - se manual (não-null) usa manual
+ * - se null => usa regra (applied)
+ */
+function resolveParams(
+  applied: AppliedRules,
+  manual: Partial<Omit<AppliedRules, "faixa">>
+): Omit<AppliedRules, "faixa"> {
+  return {
+    Embalagem: manual.Embalagem ?? applied.Embalagem,
+    Frete: manual.Frete ?? applied.Frete,
+    "Comissão": manual["Comissão"] ?? applied["Comissão"],
+    Imposto: manual.Imposto ?? applied.Imposto,
+    "Margem de Lucro": manual["Margem de Lucro"] ?? applied["Margem de Lucro"],
+    Marketing: manual.Marketing ?? applied.Marketing,
+  };
+}
+
+/**
+ * ✅ PV simples (mantido pra compat)
  */
 export function calcPrecoVenda(row: Row, overrides?: Partial<Row>) {
-  const get = (k: keyof Row, fallback = 0) =>
-    parseBR(overrides?.[k] ?? row[k] ?? fallback);
-
-  const custo = get("Custo");
-  const descontoPct = get("Desconto");
-
-  const manualParams: Omit<AppliedRules, "faixa"> = {
-    Embalagem: get("Embalagem"),
-    Frete: get("Frete"),
-    "Comissão": get("Comissão"),
-    Imposto: get("Imposto"),
-    "Margem de Lucro": get("Margem de Lucro"),
-    Marketing: get("Marketing"),
-  };
-
-  const hasAny = Object.values(manualParams).some((v) => Number(v) !== 0);
-
-  if (hasAny) return calcPVWithParams(custo, descontoPct, manualParams);
-
-  const { pv } = pickRulesByPV(custo, descontoPct);
+  const { pv } = calcPrecoVendaWithApplied(row, overrides);
   return pv;
 }
 
+/**
+ * ✅ Função principal pro seu caso:
+ * - regra é padrão (campos null usam RULES)
+ * - campos com número são manuais
+ * - retorna PV + params resolvidos + applied (da regra)
+ */
 export function calcPrecoVendaWithApplied(row: Row, overrides?: Partial<Row>) {
-  const get = (k: keyof Row, fallback = 0) =>
-    parseBR(overrides?.[k] ?? row[k] ?? fallback);
+  const getN = (k: keyof Row) => parseBR(overrides?.[k] ?? row[k] ?? 0);
+  const getNullable = (k: keyof Row) =>
+    parseBRNullable(overrides?.[k] ?? row[k]);
 
-  const custo = get("Custo");
-  const descontoPct = get("Desconto");
+  const custo = getN("Custo");
+  const descontoPct = getN("Desconto");
 
-  const manualParams: Omit<AppliedRules, "faixa"> = {
-    Embalagem: get("Embalagem"),
-    Frete: get("Frete"),
-    "Comissão": get("Comissão"),
-    Imposto: get("Imposto"),
-    "Margem de Lucro": get("Margem de Lucro"),
-    Marketing: get("Marketing"),
+  // 1) pega a regra (faixa) base
+  const { applied } = pickRulesByPV(custo, descontoPct);
+
+  // 2) lê manuais (null = automático)
+  const manual: Partial<Omit<AppliedRules, "faixa">> = {
+    Embalagem: getNullable("Embalagem") ?? undefined,
+    Frete: getNullable("Frete") ?? undefined,
+    "Comissão": getNullable("Comissão") ?? undefined,
+    Imposto: getNullable("Imposto") ?? undefined,
+    "Margem de Lucro": getNullable("Margem de Lucro") ?? undefined,
+    Marketing: getNullable("Marketing") ?? undefined,
   };
 
-  const hasAny = Object.values(manualParams).some((v) => Number(v) !== 0);
+  // 3) resolve (manual ou regra)
+  const resolved = resolveParams(applied, manual);
 
-  if (hasAny) {
-    const pv = calcPVWithParams(custo, descontoPct, manualParams);
-    return {
-      pv,
-      applied: {
-        faixa: "ACIMA_200",
-        ...manualParams,
-      } as AppliedRules,
-      isManual: true as const,
-    };
-  }
+  // 4) calcula PV com resolved
+  const pv = calcPVWithParams(custo, descontoPct, resolved);
 
-  const { pv, applied } = pickRulesByPV(custo, descontoPct);
-  return { pv, applied, isManual: false as const };
+  // 5) se tem qualquer manual, marcamos
+  const isManual = Object.values(manual).some((v) => v !== undefined);
+
+  return {
+    pv,
+    applied, // regra base escolhida
+    resolved, // params efetivos usados no cálculo
+    isManual: isManual as boolean,
+  };
 }

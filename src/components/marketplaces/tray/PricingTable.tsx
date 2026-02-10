@@ -440,45 +440,158 @@ export default function PricingTable() {
 
     const { error } = await supabase.from(table).update(payload).eq("id", dbId);
 
-    if (error) {
-      console.error("❌ Erro ao salvar:", error);
-      // opcional: aqui você pode reverter UI ou mostrar toast
-    }
+    if (error) console.error("❌ Erro ao salvar:", error);
   }, [editing, rows, cacheKey, PREC_FIELDS]);
 
   const cancelEdit = () => setEditing(null);
 
-  const handlePricingImport = async (data: any[]) => {
-    for (const row of data) {
-      const loja = String(row.Loja || "").trim().toUpperCase();
-      const id = String(row.ID ?? "").trim();
+  // ============================================================
+  // ✅ IMPORT via RPC em lote (PK/SB) - ajuste aplicado aqui
+  // ============================================================
+  const BATCH_SIZE = 1000;
 
-      if (!id || !loja) continue;
+  const toNumberBRLocal = (v: any) => {
+    if (v === null || v === undefined) return null;
+    if (typeof v === "number") return v;
+    let s = String(v).replace(/\u00A0/g, " ").trim();
+    if (!s) return null;
 
-      const table = loja === "PK" ? "marketplace_tray_pk" : "marketplace_tray_sb";
+    s = s
+      .replace(/\s+/g, " ")
+      .replace(/R\$\s?/gi, "")
+      .replace(/%/g, "")
+      .trim();
 
-      const { error } = await supabase
-        .from(table)
-        .update({
-          Desconto: row.Desconto,
-          Embalagem: row.Embalagem,
-          Frete: row.Frete,
-          Comissão: row.Comissão,
-          Imposto: row.Imposto,
-          Marketing: row.Marketing,
-          Custo: row.Custo,
-          "Margem de Lucro": row["Margem de Lucro"],
-          "Preço de Venda": row["Preço de Venda"],
-        })
-        .eq("ID", id)
-        .eq("Loja", loja);
+    if (s.includes(",") && s.includes(".")) s = s.replace(/\./g, "").replace(",", ".");
+    else if (s.includes(",")) s = s.replace(",", ".");
 
-      if (error) console.error("❌ Erro ao importar:", error);
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const normalizeLoja = (v: any) => {
+    const raw = String(v ?? "").trim();
+    if (!raw) return "";
+    const norm = raw
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    if (norm === "PK" || norm.includes("PIKOT")) return "PK";
+    if (norm === "SB" || norm.includes("SOBAQUETAS") || norm.includes("SO BAQUETAS"))
+      return "SB";
+    return norm;
+  };
+
+  const buildRpcRow = (row: any) => {
+    const id = String(row["ID"] ?? "").trim(); // na RPC vira ::bigint e bate em t."ID"
+    const loja = normalizeLoja(row["Loja"]);
+    if (!id || !loja) return null;
+
+    const percentCols = [
+      "Desconto",
+      "Comissão",
+      "Imposto",
+      "Margem de Lucro",
+      "Marketing",
+    ];
+    const moneyCols = ["Embalagem", "Frete", "Custo", "Preço de Venda"];
+
+    const out: any = {
+      id,
+      loja,
+      desconto: null,
+      embalagem: null,
+      frete: null,
+      comissao: null,
+      imposto: null,
+      margem_de_lucro: null,
+      marketing: null,
+      custo: null,
+      preco_de_venda: null,
+    };
+
+    for (const col of percentCols) {
+      const num = toNumberBRLocal(row[col]);
+      if (num !== null) {
+        const fixed = num > 0 && num <= 1 ? num * 100 : num;
+        if (col === "Desconto") out.desconto = fixed;
+        if (col === "Comissão") out.comissao = fixed;
+        if (col === "Imposto") out.imposto = fixed;
+        if (col === "Margem de Lucro") out.margem_de_lucro = fixed;
+        if (col === "Marketing") out.marketing = fixed;
+      }
     }
 
-    setOpenPricingModal(false);
-    clearTrayCache();
-    loadData();
+    for (const col of moneyCols) {
+      const num = toNumberBRLocal(row[col]);
+      if (num !== null) {
+        const fixedMoney = col === "Preço de Venda" ? Number(num.toFixed(2)) : num;
+        if (col === "Embalagem") out.embalagem = fixedMoney;
+        if (col === "Frete") out.frete = fixedMoney;
+        if (col === "Custo") out.custo = fixedMoney;
+        if (col === "Preço de Venda") out.preco_de_venda = fixedMoney;
+      }
+    }
+
+    const hasAny =
+      out.desconto !== null ||
+      out.embalagem !== null ||
+      out.frete !== null ||
+      out.comissao !== null ||
+      out.imposto !== null ||
+      out.margem_de_lucro !== null ||
+      out.marketing !== null ||
+      out.custo !== null ||
+      out.preco_de_venda !== null;
+
+    return hasAny ? out : null;
+  };
+
+  const handlePricingImport = async (data: any[]) => {
+    const rpcRows = (data || []).map(buildRpcRow).filter(Boolean) as any[];
+
+    const pk = rpcRows.filter((r) => r.loja === "PK");
+    const sb = rpcRows.filter((r) => r.loja === "SB");
+
+    if (rpcRows.length === 0) {
+      toast.warning("Nenhuma linha válida para atualizar", {
+        description: 'Confira se o arquivo tem "ID", "Loja" e valores válidos.',
+      });
+      setOpenPricingModal(false);
+      return;
+    }
+
+    let updatedCount = 0;
+
+    const runBatches = async (
+      arr: any[],
+      rpcName: "update_tray_pricing_batch_pk" | "update_tray_pricing_batch_sb"
+    ) => {
+      for (let i = 0; i < arr.length; i += BATCH_SIZE) {
+        const batch = arr.slice(i, i + BATCH_SIZE);
+        const { data, error } = await supabase.rpc(rpcName, { payload: batch });
+        if (error) throw error;
+        if (typeof data === "number") updatedCount += data;
+      }
+    };
+
+    try {
+      await runBatches(pk, "update_tray_pricing_batch_pk");
+      await runBatches(sb, "update_tray_pricing_batch_sb");
+
+      toast.success("Importação concluída!", {
+        description: `${updatedCount} item(ns) atualizado(s).`,
+      });
+    } catch (e: any) {
+      console.error("Erro import Tray RPC:", e);
+      toast.error("Erro ao importar (RPC)", {
+        description: e?.message || "Veja o console.",
+      });
+    } finally {
+      setOpenPricingModal(false);
+      clearTrayCache();
+      loadData();
+    }
   };
 
   const handleExportAll = useCallback(async () => {
@@ -639,10 +752,7 @@ export default function PricingTable() {
         />
 
         {editing && (
-          <FloatingEditor
-            anchorRect={editing.anchorRect}
-            onClose={() => setEditing(null)}
-          >
+          <FloatingEditor anchorRect={editing.anchorRect} onClose={cancelEdit}>
             <div className="relative flex items-center rounded-md border border-neutral-700 bg-black/30 px-2 py-1.5">
               <span className="text-xs px-1 py-0.5 rounded bg-black/60 border border-neutral-700 mr-1">
                 {editing.isMoney ? "R$" : "%"}
@@ -658,14 +768,14 @@ export default function PricingTable() {
                 }
                 onKeyDown={(e) => {
                   if (e.key === "Enter") confirmEdit();
-                  if (e.key === "Escape") setEditing(null);
+                  if (e.key === "Escape") cancelEdit();
                 }}
               />
 
               <div className="absolute right-1 flex items-center gap-1">
                 <button
                   title="Cancelar"
-                  onClick={() => setEditing(null)}
+                  onClick={cancelEdit}
                   className="text-red-400 hover:text-red-300"
                 >
                   <XIcon className="w-4 h-4" />

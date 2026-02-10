@@ -18,7 +18,10 @@ import { FloatingEditor } from "./FloatingEditor";
 import TopBarLite from "@/components/marketplaces/shopee/TopBar";
 import { TableRows } from "@/components/marketplaces/shopee/TableRows";
 import { toBR, parseBR } from "@/components/marketplaces/shopee/hooks/helpers";
-import { calcPrecoVenda } from "@/components/marketplaces/shopee/hooks/calcPrecoVenda";
+import {
+  calcPrecoVendaWithApplied,
+  parseBRNullable,
+} from "@/components/marketplaces/shopee/hooks/calcPrecoVenda";
 import { Row } from "@/components/marketplaces/shopee/hooks/types";
 import { Check as CheckIcon, X as XIcon } from "lucide-react";
 import PricingMassEditionModal from "@/components/marketplaces/shopee/PricingMassEditionModal";
@@ -323,23 +326,32 @@ export default function PricingTable() {
         id: String(r.id),
         anuncio_id: r.anuncio_id,
         OD,
-        Desconto: parseBR(r.Desconto),
-        Embalagem: parseBR(r.Embalagem),
-        Frete: parseBR(r.Frete),
-        Comissão: parseBR(r.Comissão),
-        Imposto: parseBR(r.Imposto),
-        Marketing: parseBR(r.Marketing),
-        "Margem de Lucro": parseBR(r["Margem de Lucro"]),
-        Custo: parseBR(r.Custo),
-        "Preço de Venda": parseBR(r["Preço de Venda"]),
-      };
+
+        // ✅ IMPORTANTE: aqui mantemos o que vem do banco (pode ser null)
+        // Mas como seu helper parseBR transforma null em 0, a UI vai mostrar 0.
+        // Se você quer mostrar “padrão regra” quando vier null, o correto é:
+        // - manter null em row e resolver na UI
+        // - OU, mais simples: manter números no banco (via manual/import) e usar regra só no cálculo.
+        //
+        // Como você pediu pra regra ser o padrão quando "não mexer", o ideal é salvar NULL.
+        // Para não quebrar UI, vamos manter null no estado e só converter no display/editor.
+        Desconto: r.Desconto ?? null,
+        Embalagem: r.Embalagem ?? null,
+        Frete: r.Frete ?? null,
+        Comissão: r.Comissão ?? null,
+        Imposto: r.Imposto ?? null,
+        Marketing: r.Marketing ?? null,
+        "Margem de Lucro": r["Margem de Lucro"] ?? null,
+        Custo: r.Custo ?? null,
+        "Preço de Venda": r["Preço de Venda"] ?? null,
+      } as any;
     });
 
-    setCache(cacheKey, { rows: normalized, totalItems: count || 0, savedAt: Date.now() });
+    setCache(cacheKey, { rows: normalized as any, totalItems: count || 0, savedAt: Date.now() });
 
     startTransition(() => {
-      setRows(normalized);
-      setFilteredRows(normalized);
+      setRows(normalized as any);
+      setFilteredRows(normalized as any);
       setTotalItems(count || 0);
       setLoading(false);
     });
@@ -395,11 +407,13 @@ export default function PricingTable() {
   const openEditor = useCallback(
     (row: Row, field: keyof Row, isMoney: boolean, e: React.MouseEvent) => {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      const rawValue = parseBR((row as any)[field]);
-      const formatted = toBR(rawValue);
+
+      // ✅ editor mostra vazio se for null (para permitir voltar pro automático)
+      const rawNullable = (row as any)[field] ?? null;
+      const n = rawNullable === null ? null : parseBR(rawNullable as any);
+      const formatted = n === null ? "" : toBR(n);
 
       setEditing({
-        // ✅ dbId deve ser string (UUID) ou fallback pro ID numérico como string
         dbId: String((row as any).id ?? (row as any).ID),
         loja: row.Loja,
         field,
@@ -415,14 +429,15 @@ export default function PricingTable() {
     if (!editing) return;
 
     const { dbId, loja, field, value } = editing;
-
     const dbIdStr = String(dbId);
-    const newVal = parseBR(value);
+
+    // ✅ vazio => null (automatico)
+    const newValNullable = parseBRNullable(value);
 
     const shouldRecalcPV = PREC_FIELDS.includes(field);
 
-    // ✅ encontra linha por UUID (row.id) ou fallback pelo ID numérico (row.ID)
-    let currentRow = rows.find((r: any) => String((r as any).id) === dbIdStr);
+    // encontra a linha
+    let currentRow: any = rows.find((r: any) => String(r.id) === dbIdStr);
     if (!currentRow) currentRow = rows.find((r: any) => String((r as any).ID) === dbIdStr);
 
     if (!currentRow) {
@@ -431,29 +446,43 @@ export default function PricingTable() {
       return;
     }
 
-    // ✅ Se não mudou, só fecha (evita sensação de "travou")
-    const oldVal = parseBR((currentRow as any)[field]);
-    if (newVal === oldVal) {
+    const oldValNullable = parseBRNullable((currentRow as any)[field]);
+    const same =
+      (oldValNullable === null && newValNullable === null) ||
+      (oldValNullable !== null &&
+        newValNullable !== null &&
+        parseBR(oldValNullable) === parseBR(newValNullable));
+
+    if (same) {
       setEditing(null);
       return;
     }
 
-    // Snapshot para revert caso falhe
     const prevRows = rows;
-
     let newRowUpdated: Row | undefined;
 
     const updatedRows = rows.map((r: any) => {
-      const same =
-        String((r as any).id) === dbIdStr || String((r as any).ID) === dbIdStr;
+      const isSame = String((r as any).id) === dbIdStr || String((r as any).ID) === dbIdStr;
+      if (!isSame) return r;
 
-      if (same) {
-        const updated: Row = { ...(r as any), [field]: newVal } as any;
-        if (shouldRecalcPV) updated["Preço de Venda"] = calcPrecoVenda(updated);
-        newRowUpdated = updated;
-        return updated;
+      const updated: any = { ...(r as any), [field]: newValNullable };
+
+      if (shouldRecalcPV) {
+        const { pv, resolved } = calcPrecoVendaWithApplied(updated);
+
+        updated["Preço de Venda"] = pv;
+
+        // ✅ garante que a UI e o banco ficam iguais ao "resultado aplicado"
+        updated.Embalagem = resolved.Embalagem;
+        updated.Frete = resolved.Frete;
+        updated["Comissão"] = resolved["Comissão"];
+        updated.Imposto = resolved.Imposto;
+        updated.Marketing = resolved.Marketing;
+        updated["Margem de Lucro"] = resolved["Margem de Lucro"];
       }
-      return r;
+
+      newRowUpdated = updated as Row;
+      return updated as Row;
     });
 
     // UI otimista
@@ -467,32 +496,39 @@ export default function PricingTable() {
       setCache(cacheKey, {
         ...cached,
         rows: cached.rows.map((r: any) => {
-          const same =
-            String((r as any).id) === dbIdStr || String((r as any).ID) === dbIdStr;
-          return same ? (newRowUpdated as any) : r;
+          const isSame = String((r as any).id) === dbIdStr || String((r as any).ID) === dbIdStr;
+          return isSame ? (newRowUpdated as any) : r;
         }),
         savedAt: Date.now(),
       });
     }
 
-    // define tabela correta
     const lojaCode = normalizeLojaCode(loja);
     if (!lojaCode) {
       console.error("❌ Loja inválida para salvar:", loja);
       alert("Loja inválida para salvar. Veja o console.");
-      // revert
       setRows(prevRows);
       setFilteredRows(prevRows);
       return;
     }
     const table = tableByLojaCode(lojaCode);
 
-    // payload
-    const payload: any = { [String(field)]: newVal };
-    if (shouldRecalcPV) payload["Preço de Venda"] = (newRowUpdated as any)?.["Preço de Venda"];
+    // ✅ payload: salva campo editado (pode ser null) + PV + campos aplicados
+    const payload: any = { [String(field)]: newValNullable };
+
+    if (shouldRecalcPV && newRowUpdated) {
+      payload["Preço de Venda"] = (newRowUpdated as any)?.["Preço de Venda"];
+
+      payload.Embalagem = (newRowUpdated as any).Embalagem;
+      payload.Frete = (newRowUpdated as any).Frete;
+      payload["Comissão"] = (newRowUpdated as any)["Comissão"];
+      payload.Imposto = (newRowUpdated as any).Imposto;
+      payload.Marketing = (newRowUpdated as any).Marketing;
+      payload["Margem de Lucro"] = (newRowUpdated as any)["Margem de Lucro"];
+    }
 
     try {
-      // 1) tenta por UUID (id string)
+      // 1) tenta por UUID
       const { data: upd1, error: err1 } = await supabase
         .from(table)
         .update(payload)
@@ -516,7 +552,6 @@ export default function PricingTable() {
           throw new Error("Sem ID para fallback.");
         }
 
-        // tenta Loja original OU lojaCode (porque a base pode guardar diferente)
         const lojaOriginal = String(loja ?? "").trim();
 
         const { data: upd2, error: err2 } = await supabase
@@ -544,7 +579,7 @@ export default function PricingTable() {
       console.error("❌ Falha ao salvar. Revertendo UI.", e);
       alert("Erro ao salvar. Veja o console.");
 
-      // ✅ reverte UI + cache
+      // reverte
       setRows(prevRows);
       setFilteredRows(prevRows);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { UploadCloud, Layers, Loader, AlertTriangle } from "lucide-react";
 import * as XLSX from "xlsx-js-style";
+import Papa from "papaparse";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -21,42 +22,113 @@ type Props = {
   onImportComplete: (data: any[]) => void;
 };
 
+type ImportRow = Record<string, any>;
+
+const BATCH_SIZE = 1000;
+
 export default function PricingMassEditionModal({
   open,
   onOpenChange,
   onImportComplete,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [previewData, setPreviewData] = useState<any[]>([]);
+
+  const [previewData, setPreviewData] = useState<ImportRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [updating, setUpdating] = useState(false);
+
   const [progress, setProgress] = useState(0);
+  const progressRef = useRef(0);
+  const progressTimerRef = useRef<number | null>(null);
+
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const targetCols = [
-    "ID",
-    "Loja",
-    "ID Bling",
-    "Referência",
-    "ID Tray",
-    "ID Var",
-    "OD",
-    "Nome",
-    "Marca",
-    "Categoria",
-    "Desconto",
-    "Embalagem",
-    "Frete",
-    "Comissão",
-    "Imposto",
-    "Margem de Lucro",
-    "Marketing",
-    "Custo",
-    "Preço de Venda",
-  ];
+  const targetCols = useMemo(
+    () => [
+      "ID",
+      "Loja",
+      "ID Bling",
+      "Referência",
+      "ID Tray",
+      "ID Var",
+      "OD",
+      "Nome",
+      "Marca",
+      "Categoria",
+      "Desconto",
+      "Embalagem",
+      "Frete",
+      "Comissão",
+      "Imposto",
+      "Margem de Lucro",
+      "Marketing",
+      "Custo",
+      "Preço de Venda",
+    ],
+    []
+  );
 
   // =============================================================
-  // ✅ parser robusto p/ XLSX (trata objeto {v,w}, "R$", "%", BR/US)
+  // ✅ Normalização de texto (headers/loja)
+  // =============================================================
+  const normalizeText = (v: any) =>
+    String(v ?? "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\u00A0/g, " ")
+      .replace(/\s+/g, " ");
+
+  const normalizeHeader = (h: any) =>
+    normalizeText(h).replace(/[^a-z0-9]+/g, " ").trim();
+
+  const headerKeyMap = useMemo(() => {
+    const map: Record<string, string> = {
+      id: "ID",
+      "id produto": "ID",
+      loja: "Loja",
+      "id bling": "ID Bling",
+      bling: "ID Bling",
+      referencia: "Referência",
+      "id tray": "ID Tray",
+      tray: "ID Tray",
+      "id var": "ID Var",
+      od: "OD",
+      nome: "Nome",
+      marca: "Marca",
+      categoria: "Categoria",
+      desconto: "Desconto",
+      embalagem: "Embalagem",
+      frete: "Frete",
+      comissao: "Comissão",
+      imposto: "Imposto",
+      "margem de lucro": "Margem de Lucro",
+      marketing: "Marketing",
+      custo: "Custo",
+      "preco de venda": "Preço de Venda",
+      "preco venda": "Preço de Venda",
+      preco: "Preço de Venda",
+    };
+
+    for (const c of targetCols) map[normalizeHeader(c)] = c;
+    return map;
+  }, [targetCols]);
+
+  const normalizeRowsByHeaders = (rows: ImportRow[]) => {
+    return rows.map((row) => {
+      const normalizedRow: Record<string, any> = {};
+      for (const key of Object.keys(row)) {
+        const nk = normalizeHeader(key);
+        const match = headerKeyMap[nk] ?? null;
+        normalizedRow[match || key] = row[key];
+      }
+      return normalizedRow;
+    });
+  };
+
+  // =============================================================
+  // ✅ parse numérico BR/US + {v,w}
   // =============================================================
   const toNumberBR = (v: any) => {
     if (v === null || v === undefined) return null;
@@ -79,18 +151,100 @@ export default function PricingMassEditionModal({
       .replace(/%/g, "")
       .trim();
 
-    if (s.includes(",") && s.includes(".")) {
-      s = s.replace(/\./g, "").replace(",", ".");
-    } else if (s.includes(",")) {
-      s = s.replace(",", ".");
-    }
+    if (s.includes(",") && s.includes(".")) s = s.replace(/\./g, "").replace(",", ".");
+    else if (s.includes(",")) s = s.replace(",", ".");
 
     const n = Number(s);
     return Number.isFinite(n) ? n : null;
   };
 
   // =============================================================
-  // 📌 IMPORTAÇÃO DA PLANILHA
+  // ✅ Loja -> PK/SB
+  // =============================================================
+  const mapLoja = (v: any) => {
+    const raw = String(v ?? "").trim();
+    if (!raw) return "";
+
+    const norm = raw
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    if (norm === "PK" || norm.includes("PIKOT")) return "PK";
+    if (norm === "SB" || norm.includes("SOBAQUETAS") || norm.includes("SO BAQUETAS"))
+      return "SB";
+
+    const short = norm.replace(/\s+/g, "");
+    if (short === "PK") return "PK";
+    if (short === "SB") return "SB";
+
+    return norm;
+  };
+
+  // =============================================================
+  // ✅ Progress throttle
+  // =============================================================
+  const startProgressPump = () => {
+    if (progressTimerRef.current) window.clearInterval(progressTimerRef.current);
+    progressTimerRef.current = window.setInterval(() => setProgress(progressRef.current), 200);
+  };
+
+  const stopProgressPump = () => {
+    if (progressTimerRef.current) window.clearInterval(progressTimerRef.current);
+    progressTimerRef.current = null;
+    setProgress(progressRef.current);
+  };
+
+  // =============================================================
+  // ✅ CSV parse
+  // =============================================================
+  const parseCsvFast = (file: File) => {
+    return new Promise<ImportRow[]>((resolve, reject) => {
+      const all: ImportRow[] = [];
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        worker: true,
+        dynamicTyping: false,
+        chunkSize: 1024 * 1024 * 2,
+        chunk: (result) => {
+          all.push(...(result.data as ImportRow[]));
+          const cursor = (result.meta as any)?.cursor as number | undefined;
+          if (cursor && file.size) {
+            progressRef.current = Math.min(99, Math.round((cursor / file.size) * 100));
+          }
+        },
+        complete: () => resolve(all),
+        error: (err) => reject(err),
+      });
+    });
+  };
+
+  // =============================================================
+  // ✅ XLSX parse
+  // =============================================================
+  const parseXlsx = async (file: File) => {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const sheetName = wb.SheetNames[0];
+    const ws = wb.Sheets[sheetName];
+
+    const a1 = ws["A1"]?.v;
+    const hasMergedHeaders =
+      typeof a1 === "string" && String(a1).toUpperCase().includes("IDENTIFICA");
+
+    if (hasMergedHeaders && ws["!ref"]) {
+      const range = XLSX.utils.decode_range(ws["!ref"]);
+      range.s.r = Math.max(range.s.r, 1);
+      ws["!ref"] = XLSX.utils.encode_range(range);
+    }
+
+    const jsonData: ImportRow[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+    return jsonData;
+  };
+
+  // =============================================================
+  // 📌 IMPORTAÇÃO DO ARQUIVO (CSV/XLSX)
   // =============================================================
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.currentTarget.files?.[0];
@@ -98,182 +252,217 @@ export default function PricingMassEditionModal({
 
     setLoading(true);
     setPreviewData([]);
+    setProgress(0);
+    progressRef.current = 0;
+    startProgressPump();
 
     try {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: "array" });
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
+      const ext = file.name.split(".").pop()?.toLowerCase();
 
-      const range = XLSX.utils.decode_range(worksheet["!ref"]!);
-      const firstRow = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0];
-
-      const hasMergedHeaders =
-        firstRow?.some(
-          (v: any) =>
-            typeof v === "string" && v.toUpperCase().includes("IDENTIFICAÇÃO")
-        ) || false;
-
-      if (hasMergedHeaders) {
-        range.s.r = 1;
-        worksheet["!ref"] = XLSX.utils.encode_range(range);
+      if (ext === "csv") {
+        const rows = await parseCsvFast(file);
+        const normalized = normalizeRowsByHeaders(rows);
+        progressRef.current = 100;
+        setPreviewData(normalized);
+        toast.success("CSV carregado!", { description: `Encontrados ${normalized.length} itens.` });
+        return;
       }
 
-      const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet, {
-        defval: "",
-      });
-
-      const normalized = jsonData.map((row) => {
-        const normalizedRow: Record<string, any> = {};
-        Object.keys(row).forEach((key) => {
-          const cleanKey = key.trim().toLowerCase();
-          const match = targetCols.find(
-            (c) => c.trim().toLowerCase() === cleanKey
-          );
-          normalizedRow[match || key] = row[key];
+      if (ext === "xlsx" || ext === "xls") {
+        const rows = await parseXlsx(file);
+        const normalized = normalizeRowsByHeaders(rows);
+        progressRef.current = 100;
+        setPreviewData(normalized);
+        toast.success("Planilha carregada!", {
+          description: `Encontrados ${normalized.length} itens.`,
         });
-        return normalizedRow;
-      });
+        return;
+      }
 
-      setPreviewData(normalized);
-      toast.success("Planilha carregada!", {
-        description: `Encontrados ${normalized.length} itens.`,
-      });
+      toast.error("Formato não suportado", { description: "Use CSV, XLSX ou XLS." });
     } catch (err) {
       console.error("Erro ao ler arquivo:", err);
-      toast.error("Erro ao processar a planilha", {
-        description: "Verifique o arquivo e tente novamente.",
-      });
+      toast.error("Erro ao processar a planilha", { description: "Verifique o arquivo e tente novamente." });
     } finally {
+      stopProgressPump();
       setLoading(false);
       e.target.value = "";
     }
   };
 
   // =============================================================
-  // ✅ ATUALIZAÇÃO NO SUPABASE (ID + Loja)
-  // ✅ percentuais aceitam 10 OU 0.10
+  // ✅ payload para RPC (chave por "ID" do arquivo)
+  // =============================================================
+  const buildRpcRow = (row: ImportRow) => {
+    const id = String(row["ID"] ?? "").trim(); // vai virar ::bigint na RPC
+    const loja = mapLoja(row["Loja"]);
+    if (!id || !loja) return null;
+
+    const percentCols = ["Desconto", "Comissão", "Imposto", "Margem de Lucro", "Marketing"];
+    const moneyCols = ["Embalagem", "Frete", "Custo", "Preço de Venda"];
+
+    const out: any = {
+      id,
+      loja,
+      desconto: null,
+      embalagem: null,
+      frete: null,
+      comissao: null,
+      imposto: null,
+      margem_de_lucro: null,
+      marketing: null,
+      custo: null,
+      preco_de_venda: null,
+    };
+
+    for (const col of percentCols) {
+      const num = toNumberBR(row[col]);
+      if (num !== null) {
+        const fixed = num > 0 && num <= 1 ? num * 100 : num;
+        if (col === "Desconto") out.desconto = fixed;
+        if (col === "Comissão") out.comissao = fixed;
+        if (col === "Imposto") out.imposto = fixed;
+        if (col === "Margem de Lucro") out.margem_de_lucro = fixed;
+        if (col === "Marketing") out.marketing = fixed;
+      }
+    }
+
+    for (const col of moneyCols) {
+      const num = toNumberBR(row[col]);
+      if (num !== null) {
+        const fixedMoney = col === "Preço de Venda" ? Number(num.toFixed(2)) : num;
+        if (col === "Embalagem") out.embalagem = fixedMoney;
+        if (col === "Frete") out.frete = fixedMoney;
+        if (col === "Custo") out.custo = fixedMoney;
+        if (col === "Preço de Venda") out.preco_de_venda = fixedMoney;
+      }
+    }
+
+    const hasAny =
+      out.desconto !== null ||
+      out.embalagem !== null ||
+      out.frete !== null ||
+      out.comissao !== null ||
+      out.imposto !== null ||
+      out.margem_de_lucro !== null ||
+      out.marketing !== null ||
+      out.custo !== null ||
+      out.preco_de_venda !== null;
+
+    return hasAny ? out : null;
+  };
+
+  // =============================================================
+  // ✅ Atualiza por RPC em batches (PK e SB)
+  // RPCs esperadas:
+  // - update_tray_pricing_batch_pk(payload jsonb) returns int
+  // - update_tray_pricing_batch_sb(payload jsonb) returns int
+  // =============================================================
+  const updateByRpcBatches = async (rows: ImportRow[]) => {
+    const rpcRows = rows.map(buildRpcRow).filter(Boolean) as any[];
+
+    const pk = rpcRows.filter((r) => r.loja === "PK");
+    const sb = rpcRows.filter((r) => r.loja === "SB");
+
+    toast.message("Pré-validação", {
+      description: `Válidas: ${rpcRows.length} | PK: ${pk.length} | SB: ${sb.length}`,
+    });
+
+    if (rpcRows.length === 0) {
+      progressRef.current = 100;
+      return { updatedCount: 0, totalToUpdate: 0, pkCount: 0, sbCount: 0 };
+    }
+
+    let updatedCount = 0;
+
+    const totalBatches = Math.ceil(pk.length / BATCH_SIZE) + Math.ceil(sb.length / BATCH_SIZE);
+    let batchesDone = 0;
+
+    const runBatches = async (
+      arr: any[],
+      rpcName: "update_tray_pricing_batch_pk" | "update_tray_pricing_batch_sb"
+    ) => {
+      for (let i = 0; i < arr.length; i += BATCH_SIZE) {
+        const batch = arr.slice(i, i + BATCH_SIZE);
+
+        const { data, error } = await supabase.rpc(rpcName, { payload: batch });
+
+        if (error) throw error;
+        if (typeof data === "number") updatedCount += data;
+
+        batchesDone++;
+        progressRef.current = Math.min(
+          99,
+          Math.round((batchesDone / Math.max(1, totalBatches)) * 100)
+        );
+      }
+    };
+
+    await runBatches(pk, "update_tray_pricing_batch_pk");
+    await runBatches(sb, "update_tray_pricing_batch_sb");
+
+    progressRef.current = 100;
+    return { updatedCount, totalToUpdate: rpcRows.length, pkCount: pk.length, sbCount: sb.length };
+  };
+
+  // =============================================================
+  // ✅ CONFIRMAR UPDATE (RPC)
   // =============================================================
   const handleUpdateConfirm = async () => {
     if (previewData.length === 0) return;
 
+    const { data: sess } = await supabase.auth.getSession();
+    if (!sess.session) {
+      toast.error("Você não está logado", { description: "Faça login e tente novamente." });
+      return;
+    }
+
     setUpdating(true);
     setProgress(0);
-
-    const total = previewData.length;
-    let processed = 0;
-
-    let updatedCount = 0;
-    let notFoundCount = 0;
-    let errorCount = 0;
+    progressRef.current = 0;
+    startProgressPump();
 
     try {
-      for (const row of previewData) {
-        const id = String(row["ID"] ?? "").trim();
-        const loja = String(row["Loja"] ?? "").trim().toUpperCase(); // PK/SB
+      const { updatedCount, totalToUpdate, pkCount, sbCount } = await updateByRpcBatches(previewData);
 
-        if (!id || !loja) {
-          processed++;
-          setProgress(Math.round((processed / total) * 100));
-          continue;
-        }
-
-        const tabela =
-          loja === "SB" ? "marketplace_tray_sb" : "marketplace_tray_pk";
-
-        const updateFields: Record<string, any> = {};
-
-        const percentCols = [
-          "Desconto",
-          "Comissão",
-          "Imposto",
-          "Margem de Lucro",
-          "Marketing",
-        ];
-        const moneyCols = ["Embalagem", "Frete", "Custo", "Preço de Venda"];
-
-        for (const col of percentCols) {
-          const num = toNumberBR(row[col]);
-          if (num !== null) {
-            const fixed = num > 0 && num <= 1 ? num * 100 : num;
-            updateFields[col] = fixed;
-          }
-        }
-
-        for (const col of moneyCols) {
-          const num = toNumberBR(row[col]);
-          if (num !== null) {
-            updateFields[col] =
-              col === "Preço de Venda" ? Number(num.toFixed(2)) : num;
-          }
-        }
-
-        if (Object.keys(updateFields).length > 0) {
-          const { data: updated, error } = await supabase
-            .from(tabela)
-            .update(updateFields)
-            .eq("ID", id)
-            .eq("Loja", loja)
-            .select("ID");
-
-          if (error) {
-            errorCount++;
-            console.warn(`❌ Erro ao atualizar ID ${id} (${loja}):`, error.message);
-          } else if (!updated || updated.length === 0) {
-            notFoundCount++;
-            console.warn(
-              `⚠️ Atualizou 0 linhas para ID ${id} (${loja}). Confira se existe no banco.`,
-              updateFields
-            );
-          } else {
-            updatedCount++;
-          }
-        }
-
-        processed++;
-        setProgress(Math.round((processed / total) * 100));
+      if (totalToUpdate === 0) {
+        toast.warning("Nenhuma linha válida para atualizar", {
+          description: 'Confira se o arquivo tem "ID", "Loja" e valores numéricos.',
+        });
+        return;
       }
 
-      // ✅ Toast final (sem alert)
+      if (pkCount === 0 && sbCount === 0) {
+        toast.error("Coluna Loja inválida", {
+          description: 'A coluna "Loja" precisa virar PK ou SB (ex.: Pikot => PK, Sobaquetas => SB).',
+        });
+        return;
+      }
+
       if (updatedCount > 0) {
         toast.success("Atualização concluída!", {
           description: `${updatedCount} item(ns) atualizado(s).`,
         });
       } else {
         toast.warning("Nenhum item foi atualizado", {
-          description: "Confira se ID e Loja (PK/SB) batem com o banco.",
-        });
-      }
-
-      if (notFoundCount > 0) {
-        toast.warning("Alguns itens não foram encontrados", {
-          description: `${notFoundCount} linha(s) não bateram com ID + Loja.`,
-        });
-      }
-
-      if (errorCount > 0) {
-        toast.error("Algumas atualizações falharam", {
-          description: `${errorCount} erro(s). Veja o console.`,
+          description: "IDs/Loja não bateram OU RLS bloqueou OU RPC não atualizou.",
         });
       }
 
       onImportComplete(previewData);
       onOpenChange(false);
       setConfirmOpen(false);
-    } catch (err) {
-      console.error("Erro ao atualizar preços:", err);
-      toast.error("Erro ao atualizar no Supabase", {
-        description: "Veja o console para mais detalhes.",
-      });
+    } catch (err: any) {
+      console.error("Erro ao atualizar via RPC:", err);
+      toast.error("Erro ao atualizar (RPC)", { description: err?.message || "Veja o console." });
     } finally {
+      stopProgressPump();
       setUpdating(false);
     }
   };
 
   const columns =
-    previewData.length > 0
-      ? Object.keys(previewData[0])
-      : targetCols.slice(0, 12);
+    previewData.length > 0 ? Object.keys(previewData[0]) : targetCols.slice(0, 12);
 
   return (
     <>
@@ -282,7 +471,7 @@ export default function PricingMassEditionModal({
           <DialogHeader>
             <DialogTitle className="text-xl font-semibold flex items-center gap-2 text-white">
               <Layers className="w-5 h-5 text-white" />
-              Importação de Preços
+              Importação de Preços (Tray)
             </DialogTitle>
           </DialogHeader>
 
@@ -296,7 +485,7 @@ export default function PricingMassEditionModal({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx, .xls, .csv"
+                accept=".xlsx,.xls,.csv"
                 className="hidden"
                 onChange={handleFileImport}
               />
@@ -318,13 +507,19 @@ export default function PricingMassEditionModal({
                   </div>
                   <div className="flex-1">
                     <h4 className="font-bold mb-1">
-                      {loading ? "Lendo Planilha..." : "Importar Planilha"}
+                      {loading ? `Lendo arquivo... (${progress}%)` : "Importar Planilha"}
                     </h4>
                     <p className="text-sm text-neutral-400">
-                      Selecione um arquivo XLSX contendo os preços.
+                      Para muitos itens, prefira CSV. XLSX também funciona.
                     </p>
                   </div>
                 </div>
+
+                {loading && (
+                  <div className="w-full h-2 bg-neutral-800 rounded-full mt-4">
+                    <div className="h-2 bg-green-500 transition-all" style={{ width: `${progress}%` }} />
+                  </div>
+                )}
               </div>
 
               {loading ? (
@@ -337,10 +532,7 @@ export default function PricingMassEditionModal({
                     <thead className="bg-neutral-800/80 text-white sticky top-0">
                       <tr>
                         {columns.map((col) => (
-                          <th
-                            key={col}
-                            className="p-2 border-b border-neutral-700 text-left font-semibold"
-                          >
+                          <th key={col} className="p-2 border-b border-neutral-700 text-left font-semibold">
                             {col}
                           </th>
                         ))}
@@ -350,17 +542,10 @@ export default function PricingMassEditionModal({
                       {previewData.slice(0, 50).map((row, i) => (
                         <tr
                           key={i}
-                          className={`${
-                            i % 2 === 0
-                              ? "bg-neutral-900/40"
-                              : "bg-neutral-800/40"
-                          } hover:bg-white/10`}
+                          className={`${i % 2 === 0 ? "bg-neutral-900/40" : "bg-neutral-800/40"} hover:bg-white/10`}
                         >
                           {columns.map((col) => (
-                            <td
-                              key={col}
-                              className="p-2 border-b border-neutral-800"
-                            >
+                            <td key={col} className="p-2 border-b border-neutral-800">
                               {row[col] ?? ""}
                             </td>
                           ))}
@@ -370,19 +555,14 @@ export default function PricingMassEditionModal({
                   </table>
                 </div>
               ) : (
-                <p className="text-center text-neutral-400 italic">
-                  Nenhum arquivo importado.
-                </p>
+                <p className="text-center text-neutral-400 italic">Nenhum arquivo importado.</p>
               )}
             </motion.div>
           </div>
 
           {updating && (
             <div className="w-full h-2 bg-neutral-800 rounded-full mt-2">
-              <div
-                className="h-2 bg-green-500 transition-all"
-                style={{ width: `${progress}%` }}
-              />
+              <div className="h-2 bg-green-500 transition-all" style={{ width: `${progress}%` }} />
             </div>
           )}
 
@@ -425,11 +605,8 @@ export default function PricingMassEditionModal({
 
           <p className="mt-3 text-neutral-300">
             Deseja realmente atualizar
-            <span className="text-white font-semibold">
-              {" "}
-              {previewData.length}{" "}
-            </span>
-            itens?
+            <span className="text-white font-semibold"> {previewData.length} </span>
+            itens? (lote via RPC)
           </p>
 
           <DialogFooter className="mt-5 flex justify-end gap-3">
@@ -442,16 +619,8 @@ export default function PricingMassEditionModal({
               Cancelar
             </Button>
 
-            <Button
-              className="bg-green-600 hover:scale-105 text-white"
-              onClick={handleUpdateConfirm}
-              disabled={updating}
-            >
-              {updating ? (
-                <Loader className="animate-spin w-5 h-5" />
-              ) : (
-                "Confirmar"
-              )}
+            <Button className="bg-green-600 hover:scale-105 text-white" onClick={handleUpdateConfirm} disabled={updating}>
+              {updating ? <Loader className="animate-spin w-5 h-5" /> : "Confirmar"}
             </Button>
           </DialogFooter>
         </DialogContent>
