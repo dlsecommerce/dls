@@ -5,7 +5,7 @@ let warmedUp = false;
 
 function getAudio() {
   if (!cached) {
-    const audio = new Audio("/sounds/success.wav");
+    const audio = new Audio("/sounds/success.mp3");
     audio.preload = "auto";
 
     // logs opcionais (pode remover depois que estiver OK)
