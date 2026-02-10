@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Loader, AlertTriangle } from "lucide-react";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 
 type Props = {
   open: boolean;
@@ -21,6 +22,57 @@ type Props = {
   warnings?: string[];
   errors?: string[];
   tipo: "inclusao" | "alteracao";
+};
+
+// 🔊 Toquezinho de confirmação (sem mp3)
+const playSuccess = (freq = 880, durationMs = 90, volume = 0.04) => {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const ctx = new AudioCtx();
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.value = freq;
+
+    gain.gain.value = volume;
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + durationMs / 1000);
+
+    osc.onended = () => ctx.close();
+  } catch {
+    // ignora
+  }
+};
+
+// ✅ Toasts custom (verde/vermelho/laranja + warning top-center)
+const toastCustom = {
+  success: (title: string, description?: string) =>
+    toast.success(title, {
+      description,
+      className: "bg-green-600 border border-green-500 text-white shadow-lg",
+      duration: 3500,
+    }),
+
+  error: (title: string, description?: string) =>
+    toast.error(title, {
+      description,
+      className: "bg-red-600 border border-red-500 text-white shadow-lg",
+      duration: 4500,
+    }),
+
+  warning: (title: string, description?: string) =>
+    toast.warning(title, {
+      description,
+      className: "bg-orange-500 border border-orange-400 text-white shadow-lg",
+      duration: 4000,
+      position: "top-center",
+    }),
 };
 
 export default function ConfirmImportModal({
@@ -44,7 +96,7 @@ export default function ConfirmImportModal({
   const texto =
     tipo === "inclusao"
       ? "Você está prestes a INCLUIR novos anúncios no sistema."
-      : "Você está prestes a ALTERAR anúncios existentes."
+      : "Você está prestes a ALTERAR anúncios existentes.";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -72,7 +124,7 @@ export default function ConfirmImportModal({
           </DialogTitle>
         </DialogHeader>
 
-        {/* ✅ Miolo: ocupa o espaço disponível e rola se precisar */}
+        {/* ✅ Miolo */}
         <div className="mt-3 min-w-0 flex-1 min-h-0 overflow-y-auto pr-1 space-y-4">
           <p className="text-neutral-300 leading-relaxed">{texto}</p>
 
@@ -123,7 +175,7 @@ export default function ConfirmImportModal({
             </motion.div>
           )}
 
-          {/* 📋 Preview (quadrado fixo, scroll interno, não vaza) */}
+          {/* 📋 Preview */}
           {preview.length > 0 && (
             <div className="mt-2 w-full min-w-0 rounded-xl border border-neutral-700 overflow-hidden">
               <div className="h-56 w-full min-w-0 overflow-auto">
@@ -165,7 +217,7 @@ export default function ConfirmImportModal({
           )}
         </div>
 
-        {/* ✅ Footer: sempre visível */}
+        {/* ✅ Footer */}
         <DialogFooter className="mt-5 shrink-0 min-w-0 flex justify-end gap-3">
           <Button
             variant="outline"
@@ -192,7 +244,27 @@ export default function ConfirmImportModal({
             disabled={loading || errors.length > 0}
             onClick={(e) => {
               e.stopPropagation();
-              if (errors.length === 0) onConfirm();
+              if (errors.length > 0) {
+                toastCustom.error(
+                  "Importação bloqueada",
+                  "Corrija os erros para conseguir confirmar."
+                );
+                return;
+              }
+
+              if (warnings.length > 0) {
+                toastCustom.warning(
+                  "Atenção",
+                  "Existem avisos. Você pode confirmar mesmo assim."
+                );
+              }
+
+              // 🔔 som de confirmação (ação do usuário)
+              // (Se você quiser som SÓ quando terminar de importar, remova esta linha)
+              playSuccess();
+
+              // dispara ação do pai (onde o import de fato acontece)
+              onConfirm();
             }}
           >
             {loading ? (

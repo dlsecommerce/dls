@@ -656,7 +656,7 @@ export default function PricingMassEditionModal({
           <p className="mt-3 text-neutral-300">
             Deseja realmente atualizar
             <span className="text-white font-semibold"> {previewData.length} </span>
-            itens? (lote via RPC)
+            itens?
           </p>
 
           <DialogFooter className="mt-5 flex justify-end gap-3">

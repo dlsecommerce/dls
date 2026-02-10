@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Loader, AlertTriangle } from "lucide-react";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
 
 type Props = {
   open: boolean;
@@ -21,6 +22,56 @@ type Props = {
   warnings?: string[];
   errors?: string[];
   tipo: "inclusao" | "alteracao";
+};
+
+// 🔊 Toquezinho (sem mp3)
+const playSuccess = (freq = 950, durationMs = 70, volume = 0.03) => {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const ctx = new AudioCtx();
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    gain.gain.value = volume;
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + durationMs / 1000);
+
+    osc.onended = () => ctx.close();
+  } catch {
+    // ignora
+  }
+};
+
+// ✅ Toasts custom (verde/vermelho/laranja + warning top-center)
+const toastCustom = {
+  success: (title: string, description?: string) =>
+    toast.success(title, {
+      description,
+      className: "bg-green-600 border border-green-500 text-white shadow-lg",
+      duration: 3500,
+    }),
+
+  error: (title: string, description?: string) =>
+    toast.error(title, {
+      description,
+      className: "bg-red-600 border border-red-500 text-white shadow-lg",
+      duration: 4500,
+    }),
+
+  warning: (title: string, description?: string) =>
+    toast.warning(title, {
+      description,
+      className: "bg-orange-500 border border-orange-400 text-white shadow-lg",
+      duration: 4000,
+      position: "top-center",
+    }),
 };
 
 export default function ConfirmImportModal({
@@ -59,7 +110,6 @@ export default function ConfirmImportModal({
         </DialogHeader>
 
         <div className="space-y-4 mt-2">
-
           <p className="text-neutral-300 leading-relaxed">{texto}</p>
 
           <p className="text-neutral-300">
@@ -133,7 +183,7 @@ export default function ConfirmImportModal({
                     >
                       {keys.map((k) => (
                         <td key={k} className="p-2">
-                          {row[k] ?? "-"}
+                          {row?.[k] ?? "-"}
                         </td>
                       ))}
                     </tr>
@@ -146,7 +196,6 @@ export default function ConfirmImportModal({
 
         {/* Botões */}
         <DialogFooter className="mt-5 flex justify-end gap-3">
-          
           <Button
             variant="outline"
             className="border-neutral-700 text-white hover:scale-105 cursor-pointer"
@@ -173,7 +222,34 @@ export default function ConfirmImportModal({
             disabled={loading || errors.length > 0}
             onClick={(e) => {
               e.stopPropagation();
-              if (errors.length === 0) onConfirm();
+
+              if (errors.length > 0) {
+                toastCustom.error(
+                  "Importação bloqueada",
+                  "Corrija os erros para conseguir confirmar."
+                );
+                return;
+              }
+
+              if (warnings.length > 0) {
+                toastCustom.warning(
+                  "Atenção",
+                  "Existem avisos. Você pode confirmar mesmo assim."
+                );
+              }
+
+              // 🔔 som de clique/confirmar (feedback imediato)
+              // (se você quiser som só no sucesso real, remova esta linha)
+              playSuccess();
+
+              // opcional: toast de “processando” (não é sucesso!)
+              toast.message("Processando importação...", {
+                description: "Aguarde a finalização.",
+                className: "bg-neutral-900 border border-neutral-700 text-white shadow-lg",
+                duration: 2000,
+              });
+
+              onConfirm();
             }}
           >
             {loading ? (
