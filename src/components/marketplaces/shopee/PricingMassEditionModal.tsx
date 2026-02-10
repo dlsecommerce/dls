@@ -26,6 +26,64 @@ type ImportRow = Record<string, any>;
 
 const BATCH_SIZE = 1000; // 500~2000 costuma ser bom
 
+// 🔊 Toquezinho de confirmação (sem mp3)
+const playDing = (freq = 880, durationMs = 90, volume = 0.04) => {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const ctx = new AudioCtx();
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.value = freq;
+
+    gain.gain.value = volume;
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + durationMs / 1000);
+
+    osc.onended = () => ctx.close();
+  } catch {
+    // falhou? ignora
+  }
+};
+
+// ✅ Toasts custom (verde/vermelho/laranja + warning top-center)
+const toastCustom = {
+  success: (title: string, description?: string) =>
+    toast.success(title, {
+      description,
+      className: "bg-green-600 border border-green-500 text-white shadow-lg",
+      duration: 3500,
+    }),
+
+  error: (title: string, description?: string) =>
+    toast.error(title, {
+      description,
+      className: "bg-red-600 border border-red-500 text-white shadow-lg",
+      duration: 4500,
+    }),
+
+  warning: (title: string, description?: string) =>
+    toast.warning(title, {
+      description,
+      className: "bg-orange-500 border border-orange-400 text-white shadow-lg",
+      duration: 4000,
+      position: "top-center", // 👈 aviso em cima no meio
+    }),
+
+  message: (title: string, description?: string) =>
+    toast.message(title, {
+      description,
+      className: "bg-neutral-900 border border-neutral-700 text-white shadow-lg",
+      duration: 3500,
+    }),
+};
+
 export default function PricingMassEditionModal({
   open,
   onOpenChange,
@@ -94,7 +152,7 @@ export default function PricingMassEditionModal({
       "id bling": "ID Bling",
       bling: "ID Bling",
       referencia: "Referência",
-      "ref": "Referência",
+      ref: "Referência",
       "id tray": "ID Tray",
       tray: "ID Tray",
       "id var": "ID Var",
@@ -109,12 +167,12 @@ export default function PricingMassEditionModal({
       comissao: "Comissão",
       imposto: "Imposto",
       "margem de lucro": "Margem de Lucro",
-      "margem": "Margem de Lucro",
+      margem: "Margem de Lucro",
       marketing: "Marketing",
       custo: "Custo",
       "preco de venda": "Preço de Venda",
       "preco venda": "Preço de Venda",
-      "preco": "Preço de Venda",
+      preco: "Preço de Venda",
       "preco final": "Preço de Venda",
     };
 
@@ -132,9 +190,9 @@ export default function PricingMassEditionModal({
     if (v === null || v === undefined) return null;
 
     if (typeof v === "object") {
-      if (typeof v.v === "number") return v.v;
-      if (typeof v.v === "string") v = v.v;
-      else if (typeof v.w === "string") v = v.w;
+      if (typeof (v as any).v === "number") return (v as any).v;
+      if (typeof (v as any).v === "string") v = (v as any).v;
+      else if (typeof (v as any).w === "string") v = (v as any).w;
       else return null;
     }
 
@@ -162,7 +220,6 @@ export default function PricingMassEditionModal({
 
   // =============================================================
   // ✅ Normaliza headers do arquivo para bater com targetCols
-  // (aceita variação + remove acento/pontuação)
   // =============================================================
   const normalizeRowsByHeaders = (rows: ImportRow[]) => {
     return rows.map((row) => {
@@ -262,9 +319,9 @@ export default function PricingMassEditionModal({
         const normalized = normalizeRowsByHeaders(rows);
 
         progressRef.current = 100;
-        toast.success("CSV carregado!", {
-          description: `Encontrados ${normalized.length} itens.`,
-        });
+        toastCustom.success("CSV carregado!", `Encontrados ${normalized.length} itens.`);
+        playDing(); // 🔔 som de importação OK
+
         setPreviewData(normalized);
         return;
       }
@@ -274,21 +331,17 @@ export default function PricingMassEditionModal({
         const normalized = normalizeRowsByHeaders(rows);
 
         progressRef.current = 100;
-        toast.success("Planilha carregada!", {
-          description: `Encontrados ${normalized.length} itens.`,
-        });
+        toastCustom.success("Planilha carregada!", `Encontrados ${normalized.length} itens.`);
+        playDing(); // 🔔 som de importação OK
+
         setPreviewData(normalized);
         return;
       }
 
-      toast.error("Formato não suportado", {
-        description: "Use CSV, XLSX ou XLS.",
-      });
+      toastCustom.warning("Formato não suportado", "Use CSV, XLSX ou XLS.");
     } catch (err) {
       console.error("Erro ao ler arquivo:", err);
-      toast.error("Erro ao processar a planilha", {
-        description: "Verifique o arquivo e tente novamente.",
-      });
+      toastCustom.error("Erro ao processar a planilha", "Verifique o arquivo e tente novamente.");
     } finally {
       stopProgressPump();
       setLoading(false);
@@ -322,9 +375,6 @@ export default function PricingMassEditionModal({
 
   // =============================================================
   // ✅ Monta payload para RPC
-  // - percentuais aceitam 10 ou 0.10
-  // - money idem
-  // - null => não altera no banco (COALESCE no SQL)
   // =============================================================
   const buildRpcRow = (row: ImportRow) => {
     const id = String(row["ID"] ?? "").trim();
@@ -394,9 +444,10 @@ export default function PricingMassEditionModal({
     const pk = rpcRows.filter((r) => r.loja === "PK");
     const sb = rpcRows.filter((r) => r.loja === "SB");
 
-    toast.message("Pré-validação do arquivo", {
-      description: `Válidas: ${rpcRows.length} | PK: ${pk.length} | SB: ${sb.length}`,
-    });
+    toastCustom.warning(
+      "Pré-validação do arquivo",
+      `Válidas: ${rpcRows.length} | PK: ${pk.length} | SB: ${sb.length}`
+    );
 
     // nada para atualizar
     if (rpcRows.length === 0) {
@@ -453,21 +504,21 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ CONFIRMAR UPDATE (com sinais de vida + auth + erros visíveis)
+  // ✅ CONFIRMAR UPDATE (com auth + erros visíveis)
   // =============================================================
   const handleUpdateConfirm = async () => {
     console.log("[CONFIRM] cliquei confirmar", { previewLen: previewData.length });
-    toast.message("Cliquei em Confirmar ✅");
 
     const { data: sess, error: sessErr } = await supabase.auth.getSession();
     if (sessErr) console.error("[AUTH] erro session:", sessErr);
+
     if (!sess.session) {
-      toast.error("Você não está logado", { description: "Faça login e tente novamente." });
+      toastCustom.error("Você não está logado", "Faça login e tente novamente.");
       return;
     }
 
     if (previewData.length === 0) {
-      toast.warning("Nenhum arquivo importado");
+      toastCustom.warning("Nenhum arquivo importado");
       return;
     }
 
@@ -477,9 +528,7 @@ export default function PricingMassEditionModal({
     startProgressPump();
 
     try {
-      toast.message("Iniciando atualização...", {
-        description: `Linhas importadas: ${previewData.length}`,
-      });
+      toastCustom.message("Iniciando atualização...", `Linhas importadas: ${previewData.length}`);
 
       const { updatedCount, totalToUpdate, pkCount, sbCount } =
         await updateByRpcBatches(previewData);
@@ -487,42 +536,41 @@ export default function PricingMassEditionModal({
       console.log("[RESULT]", { updatedCount, totalToUpdate, pkCount, sbCount });
 
       if (totalToUpdate === 0) {
-        toast.warning("Nenhuma linha válida para atualizar", {
-          description: 'Confira se o arquivo tem "ID", "Loja" e algum valor numérico.',
-        });
+        toastCustom.warning(
+          "Nenhuma linha válida para atualizar",
+          'Confira se o arquivo tem "ID", "Loja" e algum valor numérico.'
+        );
         return;
       }
 
       if (pkCount === 0 && sbCount === 0) {
-        toast.error("Coluna Loja inválida", {
-          description:
-            'A coluna "Loja" precisa ser (ou virar) PK/SB. Ex.: "Pikot" => PK, "Sobaquetas" => SB.',
-        });
+        toastCustom.error(
+          "Coluna Loja inválida",
+          'A coluna "Loja" precisa ser (ou virar) PK/SB. Ex.: "Pikot" => PK, "Sobaquetas" => SB.'
+        );
         return;
       }
 
       if (updatedCount > 0) {
-        toast.success("Atualização concluída!", {
-          description: `${updatedCount} item(ns) atualizado(s).`,
-        });
+        toastCustom.success("Atualizado com sucesso", `${updatedCount} item(ns) atualizado(s).`);
+        playDing(1046, 120); // 🔔 som de atualização OK
       } else {
-        toast.warning("Nenhum item foi atualizado", {
-          description:
-            "IDs/Loja não bateram OU RLS bloqueou OU suas RPCs não atualizaram nada.",
-        });
+        toastCustom.warning(
+          "Nenhum item foi atualizado",
+          "IDs/Loja não bateram ou RLS bloqueou ou suas RPCs não atualizaram nada."
+        );
       }
 
-      // aqui só notificamos o pai (recarregar tela/cache, se você quiser)
       onImportComplete(previewData);
 
-      // fecha modal
       onOpenChange(false);
       setConfirmOpen(false);
     } catch (err: any) {
       console.error("Erro ao atualizar via RPC:", err);
-      toast.error("Erro ao atualizar (RPC)", {
-        description: err?.message || err?.details || JSON.stringify(err),
-      });
+      toastCustom.error(
+        "Erro ao atualizar (RPC)",
+        err?.message || err?.details || JSON.stringify(err)
+      );
     } finally {
       stopProgressPump();
       setUpdating(false);
@@ -700,11 +748,7 @@ export default function PricingMassEditionModal({
 
             <Button
               className="bg-green-600 hover:scale-105 text-white"
-              onClick={() => {
-                console.log("[UI] Cliquei CONFIRMAR (wrapper)");
-                toast.message("Confirmar clicado ✅");
-                void handleUpdateConfirm();
-              }}
+              onClick={() => void handleUpdateConfirm()}
               disabled={updating}
             >
               {updating ? <Loader className="animate-spin w-5 h-5" /> : "Confirmar"}
