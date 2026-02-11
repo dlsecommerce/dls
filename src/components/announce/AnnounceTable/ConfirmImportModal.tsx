@@ -12,6 +12,9 @@ import { Loader, AlertTriangle } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 
+// ✅ unlock do áudio (gesto do usuário)
+import { unlockAudio } from "@/utils/sound";
+
 type Props = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -223,7 +226,7 @@ export default function ConfirmImportModal({
               ${errors.length > 0 ? "opacity-40 cursor-not-allowed" : ""}
             `}
             disabled={loading || errors.length > 0}
-            onClick={(e) => {
+            onClick={async (e) => {
               e.stopPropagation();
 
               if (errors.length > 0) {
@@ -241,9 +244,12 @@ export default function ConfirmImportModal({
                 );
               }
 
+              // ✅ desbloqueia o áudio NO CLIQUE (sem som)
+              await unlockAudio();
+
               // ✅ Aqui só dispara o processo (som fica NO FINAL do import no componente pai)
               toastCustom.message("Importação iniciada", "Processando arquivo...");
-              onConfirm();
+              void onConfirm();
             }}
           >
             {loading ? (

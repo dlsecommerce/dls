@@ -16,6 +16,9 @@ import Papa from "papaparse";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
+// ✅ usar seu util
+import { unlockAudio, playImportSuccessSound } from "@/utils/sound";
+
 type Props = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -26,33 +29,7 @@ type ImportRow = Record<string, any>;
 
 const BATCH_SIZE = 1000;
 
-// 🔊 Toquezinho de confirmação (sem mp3) — SOM APENAS NA IMPORTAÇÃO
-const playSuccess = (freq = 880, durationMs = 90, volume = 0.04) => {
-  try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    const ctx = new AudioCtx();
-
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = "sine";
-    osc.frequency.value = freq;
-
-    gain.gain.value = volume;
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start();
-    osc.stop(ctx.currentTime + durationMs / 1000);
-
-    osc.onended = () => ctx.close();
-  } catch {
-    // falhou? ignora, não quebra a UI
-  }
-};
-
-// ✅ Toasts custom (verde/vermelho/laranja + warning top-center)
+// ✅ Toasts custom
 const toastCustom = {
   success: (title: string, description?: string) =>
     toast.success(title, {
@@ -135,7 +112,7 @@ export default function PricingMassEditionModal({
       .toLowerCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
-      .replace(/\u00A0/g, " ")
+      .replace(/\u00a0/g, " ")
       .replace(/\s+/g, " ");
 
   const normalizeHeader = (h: any) =>
@@ -200,7 +177,7 @@ export default function PricingMassEditionModal({
 
     if (typeof v === "number") return v;
 
-    let s = String(v).replace(/\u00A0/g, " ").trim();
+    let s = String(v).replace(/\u00a0/g, " ").trim();
     if (!s) return null;
 
     s = s
@@ -297,12 +274,12 @@ export default function PricingMassEditionModal({
       ws["!ref"] = XLSX.utils.encode_range(range);
     }
 
-    const jsonData: ImportRow[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
-    return jsonData;
+    return XLSX.utils.sheet_to_json(ws, { defval: "" }) as ImportRow[];
   };
 
   // =============================================================
   // 📌 IMPORTAÇÃO DO ARQUIVO (CSV/XLSX)
+  // ✅ SEM SOM AQUI
   // =============================================================
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.currentTarget.files?.[0];
@@ -322,9 +299,7 @@ export default function PricingMassEditionModal({
         const normalized = normalizeRowsByHeaders(rows);
         progressRef.current = 100;
         setPreviewData(normalized);
-
         toastCustom.success("CSV carregado!", `Encontrados ${normalized.length} itens.`);
-        playSuccess(); // ✅ SOM APENAS AQUI (importação finalizada)
         return;
       }
 
@@ -333,9 +308,7 @@ export default function PricingMassEditionModal({
         const normalized = normalizeRowsByHeaders(rows);
         progressRef.current = 100;
         setPreviewData(normalized);
-
         toastCustom.success("Planilha carregada!", `Encontrados ${normalized.length} itens.`);
-        playSuccess(); // ✅ SOM APENAS AQUI (importação finalizada)
         return;
       }
 
@@ -421,10 +394,7 @@ export default function PricingMassEditionModal({
     const pk = rpcRows.filter((r) => r.loja === "PK");
     const sb = rpcRows.filter((r) => r.loja === "SB");
 
-    toastCustom.warning(
-      "Pré-validação",
-      `Válidas: ${rpcRows.length} | PK: ${pk.length} | SB: ${sb.length}`
-    );
+    toastCustom.warning("Pré-validação", `Válidas: ${rpcRows.length} | PK: ${pk.length} | SB: ${sb.length}`);
 
     if (rpcRows.length === 0) {
       progressRef.current = 100;
@@ -449,10 +419,7 @@ export default function PricingMassEditionModal({
         if (typeof data === "number") updatedCount += data;
 
         batchesDone++;
-        progressRef.current = Math.min(
-          99,
-          Math.round((batchesDone / Math.max(1, totalBatches)) * 100)
-        );
+        progressRef.current = Math.min(99, Math.round((batchesDone / Math.max(1, totalBatches)) * 100));
       }
     };
 
@@ -464,7 +431,8 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ CONFIRMAR UPDATE (RPC) — SEM SOM AQUI
+  // ✅ CONFIRMAR UPDATE (RPC)
+  // ✅ SOM SÓ NO SUCESSO REAL
   // =============================================================
   const handleUpdateConfirm = async () => {
     if (previewData.length === 0) return;
@@ -481,8 +449,7 @@ export default function PricingMassEditionModal({
     startProgressPump();
 
     try {
-      const { updatedCount, totalToUpdate, pkCount, sbCount } =
-        await updateByRpcBatches(previewData);
+      const { updatedCount, totalToUpdate, pkCount, sbCount } = await updateByRpcBatches(previewData);
 
       if (totalToUpdate === 0) {
         toastCustom.warning(
@@ -502,7 +469,8 @@ export default function PricingMassEditionModal({
 
       if (updatedCount > 0) {
         toastCustom.success("Atualizado com sucesso", `${updatedCount} item(ns) foram atualizados.`);
-        // ❌ sem som aqui
+        // ✅ SOM REAL (depois do sucesso)
+        playImportSuccessSound(0.4);
       } else {
         toastCustom.warning(
           "Nenhum item foi atualizado",
@@ -681,8 +649,13 @@ export default function PricingMassEditionModal({
 
             <Button
               className="bg-green-600 hover:scale-105 text-white"
-              onClick={handleUpdateConfirm}
               disabled={updating}
+              onClick={async () => {
+                // ✅ desbloqueia o áudio NO CLIQUE (sem som)
+                await unlockAudio();
+                // ✅ processa a importação; som toca só no sucesso real
+                await handleUpdateConfirm();
+              }}
             >
               {updating ? <Loader className="animate-spin w-5 h-5" /> : "Confirmar"}
             </Button>

@@ -12,6 +12,9 @@ import { Loader, AlertTriangle } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 
+// ✅ desbloqueio de áudio (mudo) no clique do usuário
+import { unlockAudio } from "@/utils/sound";
+
 type Props = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -223,7 +226,7 @@ export default function ConfirmImportModal({
               ${errors.length > 0 ? "opacity-40 cursor-not-allowed" : ""}
             `}
             disabled={loading || errors.length > 0}
-            onClick={(e) => {
+            onClick={async (e) => {
               e.stopPropagation();
 
               if (errors.length > 0) {
@@ -246,6 +249,9 @@ export default function ConfirmImportModal({
                 "Importação iniciada",
                 "Processando... aguarde a finalização."
               );
+
+              // ✅ desbloqueia o áudio NO CLIQUE (mudo / sem som)
+              await unlockAudio();
 
               // dispara ação do pai (onde o import de fato acontece)
               onConfirm();

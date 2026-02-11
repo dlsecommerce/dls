@@ -124,6 +124,27 @@ export default function PricingCalculatorModern() {
     useState(false);
   const [userEditedShopeeFrete, setUserEditedShopeeFrete] = useState(false);
 
+  // ✅ NOVO: permitir editar também imposto/margem/marketing/embalagem na Shopee
+  const [userEditedShopeeImposto, setUserEditedShopeeImposto] =
+    useState(false);
+  const [userEditedShopeeMargem, setUserEditedShopeeMargem] = useState(false);
+  const [userEditedShopeeMarketing, setUserEditedShopeeMarketing] =
+    useState(false);
+  const [userEditedShopeeEmbalagem, setUserEditedShopeeEmbalagem] =
+    useState(false);
+
+  // =====================
+  // ✅ OPÇÃO B: ao mudar COMPOSIÇÃO (custos), Shopee volta pro automático
+  // =====================
+  useEffect(() => {
+    setUserEditedShopeeComissao(false);
+    setUserEditedShopeeFrete(false);
+    setUserEditedShopeeImposto(false);
+    setUserEditedShopeeMargem(false);
+    setUserEditedShopeeMarketing(false);
+    setUserEditedShopeeEmbalagem(false);
+  }, [composicao]);
+
   // =====================
   // Sugestões Supabase
   // =====================
@@ -187,11 +208,13 @@ export default function PricingCalculatorModern() {
   // 🔥 BUSCA REFINADA (EXATO → COMEÇA COM → CONTÉM)
   // ============================================================
 
-  let ultimaBusca = "";
+  // ✅ FIX: não pode ser "let" local porque reseta a cada render
+  const ultimaBuscaRef = useRef("");
 
   const buscarSugestoes = async (termo: string, idx: number) => {
     const raw = termo.trim();
-    ultimaBusca = raw;
+    ultimaBuscaRef.current = raw;
+
     if (!raw) {
       setSugestoes([]);
       return;
@@ -204,7 +227,7 @@ export default function PricingCalculatorModern() {
       .eq('"Código"', raw)
       .limit(5);
 
-    if (ultimaBusca !== raw) return;
+    if (ultimaBuscaRef.current !== raw) return;
 
     if (exact.data && exact.data.length > 0) {
       setCampoAtivo(idx);
@@ -225,7 +248,7 @@ export default function PricingCalculatorModern() {
       .ilike('"Código"', `${raw}%`)
       .limit(5);
 
-    if (ultimaBusca !== raw) return;
+    if (ultimaBuscaRef.current !== raw) return;
 
     if (starts.data && starts.data.length > 0) {
       setCampoAtivo(idx);
@@ -246,7 +269,7 @@ export default function PricingCalculatorModern() {
       .ilike('"Código"', `%${raw}%`)
       .limit(5);
 
-    if (ultimaBusca !== raw) return;
+    if (ultimaBuscaRef.current !== raw) return;
 
     setCampoAtivo(idx);
     setSugestoes(
@@ -400,14 +423,16 @@ export default function PricingCalculatorModern() {
     setCalculoMarketplacePremium((p) => ({ ...p, embalagem: v }));
   };
 
-  // ✅ Shopee: default alinhado com suas regras (2,50)
+  // ✅ Shopee: Embalagem editável + trava automático ao editar
   const handleEmbalagemChangeShopee = (raw: string) => {
+    setUserEditedShopeeEmbalagem(true);
     const v = toInternal(raw);
     setCalculoShopee((p) => ({ ...p, embalagem: v }));
   };
 
   const handleEmbalagemBlurShopee = (raw: string) => {
-    const internal = toInternal(raw || "2.5");
+    const internal = toInternal(raw || "");
+    if (!internal) setUserEditedShopeeEmbalagem(false); // se apagar, volta pro automático
     const v = internal || "2.5";
     setCalculoShopee((p) => ({ ...p, embalagem: v }));
   };
@@ -488,17 +513,26 @@ export default function PricingCalculatorModern() {
 
     setCalculoShopee((prev) => ({
       ...prev,
-      // estes sempre seguem regra (você não pediu edição manual)
-      embalagem: regras.embalagem,
-      imposto: regras.imposto,
-      margem: regras.margem,
-      marketing: regras.marketing,
 
-      // estes respeitam edição manual do usuário
+      // ✅ agora também respeitam edição manual (editáveis)
+      embalagem: userEditedShopeeEmbalagem ? prev.embalagem : regras.embalagem,
+      imposto: userEditedShopeeImposto ? prev.imposto : regras.imposto,
+      margem: userEditedShopeeMargem ? prev.margem : regras.margem,
+      marketing: userEditedShopeeMarketing ? prev.marketing : regras.marketing,
+
+      // estes já respeitavam edição manual do usuário
       comissao: userEditedShopeeComissao ? prev.comissao : regras.comissao,
       frete: userEditedShopeeFrete ? prev.frete : regras.frete,
     }));
-  }, [precoShopee, userEditedShopeeComissao, userEditedShopeeFrete]);
+  }, [
+    precoShopee,
+    userEditedShopeeComissao,
+    userEditedShopeeFrete,
+    userEditedShopeeImposto,
+    userEditedShopeeMargem,
+    userEditedShopeeMarketing,
+    userEditedShopeeEmbalagem,
+  ]);
 
   // =============================
   // SINCRONIZAR PREÇOS PARA A SEÇÃO DE ACRÉSCIMOS
@@ -587,6 +621,10 @@ export default function PricingCalculatorModern() {
 
         setUserEditedShopeeComissao(false);
         setUserEditedShopeeFrete(false);
+        setUserEditedShopeeImposto(false);
+        setUserEditedShopeeMargem(false);
+        setUserEditedShopeeMarketing(false);
+        setUserEditedShopeeEmbalagem(false);
 
         setTimeout(() => setIsClearing(false), 300);
       } else {
@@ -791,6 +829,15 @@ export default function PricingCalculatorModern() {
           setUserEditedShopeeComissao={setUserEditedShopeeComissao}
           userEditedShopeeFrete={userEditedShopeeFrete}
           setUserEditedShopeeFrete={setUserEditedShopeeFrete}
+          // ✅ NOVOS PROPS Shopee editável
+          userEditedShopeeImposto={userEditedShopeeImposto}
+          setUserEditedShopeeImposto={setUserEditedShopeeImposto}
+          userEditedShopeeMargem={userEditedShopeeMargem}
+          setUserEditedShopeeMargem={setUserEditedShopeeMargem}
+          userEditedShopeeMarketing={userEditedShopeeMarketing}
+          setUserEditedShopeeMarketing={setUserEditedShopeeMarketing}
+          userEditedShopeeEmbalagem={userEditedShopeeEmbalagem}
+          setUserEditedShopeeEmbalagem={setUserEditedShopeeEmbalagem}
         />
       </div>
     </div>

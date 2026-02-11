@@ -1,64 +1,50 @@
 "use client";
 
-let cached: HTMLAudioElement | null = null;
-let warmedUp = false;
+let audio: HTMLAudioElement | null = null;
+let unlocked = false;
 
 function getAudio() {
-  if (!cached) {
-    const audio = new Audio("/sounds/success.mp3");
+  if (!audio) {
+    audio = new Audio("/sounds/success.mp3");
     audio.preload = "auto";
-
-    // logs opcionais (pode remover depois que estiver OK)
-    audio.addEventListener("error", () => {
-      const err = audio.error;
-      console.error("[AUDIO] erro ao carregar/tocar", {
-        code: err?.code,
-        src: audio.src,
-      });
-    });
-
-    cached = audio;
   }
-  return cached;
+  return audio;
 }
 
 /**
- * Chame isso no clique do botão "Confirmar" (antes do await pesado)
- * para evitar bloqueio do navegador.
+ * ✅ Chamar APENAS em um gesto do usuário (click/tap)
+ * Não emite som audível (volume 0).
  */
-export async function warmupImportSound() {
+export async function unlockAudio() {
   try {
-    const audio = getAudio();
-    audio.volume = 0;         // toca mudo só pra desbloquear
-    audio.currentTime = 0;
-    await audio.play();
-    audio.pause();
-    audio.currentTime = 0;
-    warmedUp = true;
+    if (unlocked) return;
+
+    const a = getAudio();
+    a.volume = 0;
+    a.currentTime = 0;
+
+    // tenta tocar mudo só pra "liberar"
+    await a.play();
+    a.pause();
+    a.currentTime = 0;
+
+    unlocked = true;
   } catch {
-    // alguns browsers não deixam mesmo — ok ignorar
+    // se falhar, tudo bem; pode tentar de novo em outro gesto
   }
 }
 
 /**
- * Chame isso quando a importação FINALIZAR com sucesso
+ * ✅ Som real — chame SOMENTE quando terminar com sucesso.
  */
 export function playImportSuccessSound(volume = 0.4) {
   try {
-    const audio = getAudio();
-
-    audio.pause();           // reset limpo
-    audio.currentTime = 0;
-    audio.volume = volume;
-
-    // se não deu warmup, tenta tocar mesmo assim
-    const p = audio.play();
-    if (p && typeof p.catch === "function") {
-      p.catch(() => {
-        // autoplay bloqueado / falha silenciosa
-      });
-    }
+    const a = getAudio();
+    a.pause();
+    a.currentTime = 0;
+    a.volume = volume;
+    void a.play();
   } catch {
-    // ignora qualquer erro
+    // ignora
   }
 }

@@ -7,35 +7,10 @@ import { exportFilteredToXlsx } from "@/components/announce/helpers/exportFilter
 import type { RowShape } from "@/components/announce/helpers/importFromXlsxOrCsv";
 import { toast } from "sonner";
 
+// ✅ usar seu util do MP3
+import { unlockAudio, playImportSuccessSound } from "@/utils/sound";
+
 type ImportMode = "inclusao" | "alteracao";
-
-/* =========================
-   🔊 Som: só para "fim da importação"
-========================= */
-const playImportSuccess = (freq = 880, durationMs = 90, volume = 0.04) => {
-  try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    const ctx = new AudioCtx();
-
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = "sine";
-    osc.frequency.value = freq;
-
-    gain.gain.value = volume;
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start();
-    osc.stop(ctx.currentTime + durationMs / 1000);
-
-    osc.onended = () => ctx.close();
-  } catch {
-    // ignora
-  }
-};
 
 /* =========================
    ✅ Toasts custom
@@ -157,11 +132,12 @@ function buildExportFilename(filters?: {
   ).filter(Boolean);
 
   const lojaCodes = Array.from(
-    new Set((filters?.selectedStores ?? []).map((s) => storeSigla(s)).filter(Boolean))
+    new Set(
+      (filters?.selectedStores ?? []).map((s) => storeSigla(s)).filter(Boolean)
+    )
   );
 
   const lojaFinal = lojaCodes.length === 1 ? lojaCodes[0] : "";
-
   const middle = [marcas.join("-"), lojaFinal].filter(Boolean).join("-");
 
   return middle
@@ -170,7 +146,7 @@ function buildExportFilename(filters?: {
 }
 
 /* =========================
-   Filtro GLOBAL:
+   Filtro GLOBAL
 ========================= */
 function applyGlobalFilters(
   rows: RowShape[],
@@ -185,7 +161,6 @@ function applyGlobalFilters(
   const cats = (filters?.selectedCategorias ?? []).map(normText);
 
   if (!rows?.length) return [];
-
   if (lojas.length === 0 && marcas.length === 0 && cats.length === 0) return rows;
 
   return rows.filter((r: any) => {
@@ -294,12 +269,14 @@ export function useImportExport(
   };
 
   /* =========================
-     ✅ Confirma Importação (AQUI É O LUGAR CERTO DO SOM!)
+     ✅ Confirma Importação
+     🔑 IMPORTANTE:
+     - unlockAudio() deve ser chamado NO CLIQUE do botão "Confirmar"
+     - aqui toca o som só no sucesso real
   ========================= */
   const confirmImport = async () => {
     if (!importFile) return;
 
-    // segurança: se modal recebeu errors bloqueadores, não deixa confirmar
     if (errors.length > 0) {
       toastCustom.error("Importação bloqueada", "Corrija os erros antes de confirmar.");
       return;
@@ -311,11 +288,8 @@ export function useImportExport(
       toastCustom.message("Importando...", "Aguarde a conclusão da importação.");
 
       await importFromXlsxOrCsv(importFile, false, importMode);
-
-      // ✅ recarrega listagem
       await loadAnuncios(currentPage);
 
-      // ✅ FECHOU / SUCESSO
       setOpenConfirmImport(false);
 
       toastCustom.success(
@@ -323,11 +297,10 @@ export function useImportExport(
         `Processados ${importCount} registro(s).`
       );
 
-      // 🔔 SOM APENAS AQUI (fim da importação)
-      playImportSuccess();
+      // 🔊 SOM: somente no sucesso real (fim da importação)
+      playImportSuccessSound(0.4);
     } catch (err: any) {
       console.error("Erro ao importar:", err);
-
       toastCustom.error(
         "Erro ao importar dados",
         err?.message || err?.details || "Veja o console para mais detalhes."
@@ -421,7 +394,6 @@ export function useImportExport(
     };
 
     const base = selectedRows.length > 0 ? selectedRows : await fetchAllFiltered();
-
     let exportData = applyGlobalFilters(base, activeFilters);
     exportData = applySearchFilter(exportData, filters?.search);
 
@@ -445,7 +417,11 @@ export function useImportExport(
 
     handleFileSelect,
     handleFileDirect,
+
+    // ✅ IMPORTANTE: chame isso no clique do botão Confirmar:
+    // await unlockAudio(); await confirmImport();
     confirmImport,
+
     handleExport,
 
     importMode,
@@ -460,5 +436,6 @@ export function useImportExport(
     setOpenMassEdition,
     openConfirmImport,
     setOpenConfirmImport,
+    unlockAudio,
   };
 }

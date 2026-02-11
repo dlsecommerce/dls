@@ -27,7 +27,11 @@ const HelpTooltip = ({ text }: { text: string }) => (
 
 type Props = {
   composicao: Item[];
-  setComposicao: (v: Item[]) => void;
+  // 👇 OBS: seu tipo aqui está (v: Item[]) => void, mas você usa setState functional abaixo.
+  // Para ficar 100% tipado, o ideal seria: React.Dispatch<React.SetStateAction<Item[]>>
+  // Mas vou manter compatível com o que você mandou.
+  setComposicao: any;
+
   codeRefs: React.MutableRefObject<HTMLInputElement[]>;
   qtyRefs: React.MutableRefObject<HTMLInputElement[]>;
   costRefs: React.MutableRefObject<HTMLInputElement[]>;
@@ -40,8 +44,14 @@ type Props = {
   buscarSugestoes: (termo: string, idx: number) => void;
   selecionarSugestao: (codigo: string, custo: number, idx: number) => void;
   autoSelecionarPrimeiro: (idx: number) => Promise<void>;
-  handleKeyDownCodigo: (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => void;
-  handleKeyDownQuantidade: (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => void;
+  handleKeyDownCodigo: (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    idx: number
+  ) => void;
+  handleKeyDownQuantidade: (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    idx: number
+  ) => void;
   onBlurQuantidade: (idx: number) => void;
   onBlurCusto: (idx: number) => void;
   adicionarItem: () => void;
@@ -68,7 +78,6 @@ export default function ComposicaoCustos({
   onBlurCusto,
   adicionarItem,
 }: Props) {
-  
   /* ========== DEBOUNCED buscarSugestoes ========== */
   const buscarSugestoesDebounced = React.useRef(
     debounce((termo: string, idx: number) => buscarSugestoes(termo, idx), 10)
@@ -83,13 +92,16 @@ export default function ComposicaoCustos({
       : "";
 
   const removerItem = (idx: number) => {
-    setComposicao((prev) => prev.filter((_, i) => i !== idx));
+    setComposicao((prev: Item[]) => prev.filter((_, i) => i !== idx));
   };
 
   /* ==========================================================
-     TAB NO CUSTO — cria nova linha APENAS se todos preenchidos
+     TAB/ENTER NO CUSTO — cria nova linha APENAS se todos preenchidos
      ========================================================== */
-  const handleKeyDownCusto = (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
+  const handleKeyDownCusto = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    idx: number
+  ) => {
     if (e.key === "Tab" || e.key === "Enter") {
       e.preventDefault();
 
@@ -106,7 +118,10 @@ export default function ComposicaoCustos({
 
       // Cria nova linha somente se todos os campos estiverem preenchidos
       if (isLast && codigoOK && quantidadeOK && custoOK) {
-        setComposicao((prev) => [...prev, { codigo: "", quantidade: "", custo: "" }]);
+        setComposicao((prev: Item[]) => [
+          ...prev,
+          { codigo: "", quantidade: "", custo: "" },
+        ]);
 
         setTimeout(() => {
           ignoreBlur.current = false;
@@ -144,6 +159,7 @@ export default function ComposicaoCustos({
             {/* Botão remove */}
             {idx > 0 && (
               <button
+                type="button"
                 onClick={() => removerItem(idx)}
                 className="absolute -top-1 -right-1 w-5 h-5 p-0 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-full flex items-center justify-center transition-all"
               >
@@ -153,7 +169,9 @@ export default function ComposicaoCustos({
 
             {/* Código */}
             <div className="relative">
-              <Label className="text-neutral-400 text-[10px] block mb-1">Código</Label>
+              <Label className="text-neutral-400 text-[10px] block mb-1">
+                Código
+              </Label>
               <Input
                 ref={(el) => (codeRefs.current[idx] = el!)}
                 value={item.codigo}
@@ -163,14 +181,22 @@ export default function ComposicaoCustos({
                   novo[idx].codigo = e.target.value;
                   setComposicao(novo);
 
+                  // ✅ garante que o dropdown está “vivo” nesse campo
+                  setCampoAtivo(idx);
+
+                  // ✅ UX: ao digitar, já aponta pro 1º item
+                  setIndiceSelecionado(0);
+
                   buscarSugestoesDebounced(e.target.value, idx);
                 }}
                 onKeyDown={(e) => handleKeyDownCodigo(e, idx)}
                 onBlur={() => {
+                  // ✅ se estiver tab/enter de custo, não auto-seleciona
                   if (!ignoreBlur.current) autoSelecionarPrimeiro(idx);
                 }}
                 className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
               />
+
               {campoAtivo === idx && sugestoes.length > 0 && (
                 <div
                   ref={listaRef}
@@ -178,14 +204,26 @@ export default function ComposicaoCustos({
                 >
                   {sugestoes.map((s, i) => (
                     <div
-                      key={i}
+                      key={`${s.codigo}-${i}`}
                       className={`px-2 py-1 text-xs flex justify-between cursor-pointer ${
-                        i === indiceSelecionado ? "bg-[#1a8ceb]/30" : "hover:bg-[#1a8ceb]/20"
+                        i === indiceSelecionado
+                          ? "bg-[#1a8ceb]/30"
+                          : "hover:bg-[#1a8ceb]/20"
                       }`}
-                      onClick={() => selecionarSugestao(s.codigo, s.custo, idx)}
+                      // ✅ FIX CRÍTICO:
+                      // onMouseDown roda ANTES do document.mousedown e ANTES do blur,
+                      // então impede o "autoSelecionarPrimeiro" de pegar sempre o 1º.
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        selecionarSugestao(s.codigo, s.custo, idx);
+                      }}
+                      onMouseEnter={() => setIndiceSelecionado(i)}
                     >
                       <span className="text-white">{s.codigo}</span>
-                      <span className="text-[#1a8ceb]">R$ {formatBR(s.custo)}</span>
+                      <span className="text-[#1a8ceb]">
+                        R$ {formatBR(s.custo)}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -194,7 +232,9 @@ export default function ComposicaoCustos({
 
             {/* Quantidade */}
             <div>
-              <Label className="text-neutral-400 text-[10px] block mb-1">Quantidade</Label>
+              <Label className="text-neutral-400 text-[10px] block mb-1">
+                Quantidade
+              </Label>
               <Input
                 ref={(el) => (qtyRefs.current[idx] = el!)}
                 value={item.quantidade}
@@ -212,7 +252,9 @@ export default function ComposicaoCustos({
 
             {/* Custo */}
             <div>
-              <Label className="text-neutral-400 text-[10px] block mb-1">Custo (R$)</Label>
+              <Label className="text-neutral-400 text-[10px] block mb-1">
+                Custo (R$)
+              </Label>
               <Input
                 ref={(el) => (costRefs.current[idx] = el!)}
                 value={item.custo}

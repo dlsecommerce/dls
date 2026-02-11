@@ -1,14 +1,19 @@
 "use client";
 import React, { useMemo, useRef, useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import ComposicaoCustos, { Item } from "@/components/decomposition/CompositionCosts";
+import ComposicaoCustos, {
+  Item,
+} from "@/components/decomposition/CompositionCosts";
 import PrecoVenda from "@/components/decomposition/PriceSale";
 import Resultados, { ResultadoView } from "@/components/decomposition/Results";
 
 /* ===== Helpers de formatação BR ===== */
 export const formatBR = (num: number) =>
   Number.isFinite(num)
-    ? num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    ? num.toLocaleString("pt-BR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })
     : "";
 
 export const parseBR = (val: string): number => {
@@ -31,7 +36,9 @@ export default function Decomposition() {
   ]);
 
   /* ===== Sugestões (Supabase) ===== */
-  const [sugestoes, setSugestoes] = useState<{ codigo: string; custo: number }[]>([]);
+  const [sugestoes, setSugestoes] = useState<{ codigo: string; custo: number }[]>(
+    []
+  );
   const [campoAtivo, setCampoAtivo] = useState<number | null>(null);
   const [indiceSelecionado, setIndiceSelecionado] = useState<number>(-1);
 
@@ -40,6 +47,9 @@ export default function Decomposition() {
   const codeRefs = useRef<HTMLInputElement[]>([]);
   const qtyRefs = useRef<HTMLInputElement[]>([]);
   const costRefs = useRef<HTMLInputElement[]>([]);
+
+  // ✅ FIX: evita resposta velha sobrescrever a nova (corrida de requisições)
+  const reqIdRef = useRef(0);
 
   /* ===== Cálculo proporcional ===== */
   const custoTotalGeral = useMemo(() => {
@@ -68,15 +78,26 @@ export default function Decomposition() {
 
   /* ===== Supabase: buscar sugestões ===== */
   const buscarSugestoes = async (termo: string, idx: number) => {
-    if (!termo.trim()) {
+    const raw = termo.trim();
+
+    // id desta busca
+    const myReqId = ++reqIdRef.current;
+
+    if (!raw) {
       setSugestoes([]);
+      setCampoAtivo(null);
+      setIndiceSelecionado(-1);
       return;
     }
+
     const { data, error } = await supabase
       .from("custos")
       .select('"Código", "Custo Atual"')
-      .ilike('"Código"', `%${termo}%`)
+      .ilike('"Código"', `%${raw}%`)
       .limit(5);
+
+    // ✅ se chegou outra busca depois dessa, ignora este resultado
+    if (myReqId !== reqIdRef.current) return;
 
     if (error) {
       console.error("Erro Supabase:", error);
@@ -90,7 +111,9 @@ export default function Decomposition() {
         custo: Number(d["Custo Atual"]) || 0,
       })) || []
     );
-    setIndiceSelecionado(-1);
+
+    // ✅ UX: deixa o primeiro selecionado
+    setIndiceSelecionado((data?.length ?? 0) > 0 ? 0 : -1);
   };
 
   const selecionarSugestao = (codigo: string, custo: number, idx: number) => {
@@ -99,9 +122,11 @@ export default function Decomposition() {
     // custo já formatado visualmente
     novo[idx].custo = formatBR(custo);
     setComposicao(novo);
+
     setSugestoes([]);
     setCampoAtivo(null);
     setIndiceSelecionado(-1);
+
     // vai para quantidade
     setTimeout(() => qtyRefs.current[idx]?.focus(), 0);
   };
@@ -109,18 +134,25 @@ export default function Decomposition() {
   const autoSelecionarPrimeiro = async (idx: number) => {
     const termo = composicao[idx]?.codigo?.trim();
     if (!termo) return;
-    if (sugestoes.length > 0) {
+
+    // ✅ usa as sugestões já abertas do mesmo campo
+    if (campoAtivo === idx && sugestoes.length > 0) {
       const s = sugestoes[0];
       selecionarSugestao(s.codigo, s.custo, idx);
       return;
     }
+
     const { data } = await supabase
       .from("custos")
       .select('"Código", "Custo Atual"')
       .ilike('"Código"', `%${termo}%`)
       .limit(1);
+
     if (data && data.length > 0) {
-      const s = { codigo: data[0]["Código"], custo: Number(data[0]["Custo Atual"]) || 0 };
+      const s = {
+        codigo: data[0]["Código"],
+        custo: Number(data[0]["Custo Atual"]) || 0,
+      };
       selecionarSugestao(s.codigo, s.custo, idx);
     }
   };
@@ -129,19 +161,23 @@ export default function Decomposition() {
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (campoAtivo === null) return;
+
       const listaEl = listaRef.current;
       const inputEl = codeRefs.current[campoAtivo];
       const target = e.target as Node;
-      if (!listaEl?.contains(target) && !inputEl?.contains(target)) {
-        autoSelecionarPrimeiro(campoAtivo);
-        setSugestoes([]);
-        setCampoAtivo(null);
-        setIndiceSelecionado(-1);
-      }
+
+      // se clicou na lista OU no input ativo, não fecha
+      if (listaEl?.contains(target) || inputEl?.contains(target)) return;
+
+      autoSelecionarPrimeiro(campoAtivo);
+      setSugestoes([]);
+      setCampoAtivo(null);
+      setIndiceSelecionado(-1);
     };
+
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [campoAtivo, sugestoes]);
+  }, [campoAtivo, sugestoes, composicao]);
 
   /* ===== Navegação ===== */
   const moveVertical = (
@@ -165,11 +201,15 @@ export default function Decomposition() {
     } else {
       if (current === "cost") qtyRefs.current[idx]?.focus();
       else if (current === "qty") codeRefs.current[idx]?.focus();
-      else if (current === "code" && costRefs.current[idx - 1]) costRefs.current[idx - 1].focus();
+      else if (current === "code" && costRefs.current[idx - 1])
+        costRefs.current[idx - 1].focus();
     }
   };
 
-  const handleKeyDownCodigo = (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
+  const handleKeyDownCodigo = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    idx: number
+  ) => {
     if (sugestoes.length) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -187,11 +227,13 @@ export default function Decomposition() {
         return;
       }
     }
+
     if (e.key === "Tab" || e.key === "Enter") {
       e.preventDefault();
       autoSelecionarPrimeiro(idx).then(() => qtyRefs.current[idx]?.focus());
       return;
     }
+
     if (e.key === "ArrowDown") {
       e.preventDefault();
       moveVertical(codeRefs, idx, "down");
@@ -214,7 +256,10 @@ export default function Decomposition() {
     }
   };
 
-  const handleKeyDownQuantidade = (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
+  const handleKeyDownQuantidade = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    idx: number
+  ) => {
     if (e.key === "Tab" || e.key === "Enter") {
       e.preventDefault();
       costRefs.current[idx]?.focus();
@@ -232,21 +277,30 @@ export default function Decomposition() {
     }
   };
 
-  const handleKeyDownCusto = (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
+  const handleKeyDownCusto = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    idx: number
+  ) => {
     if (e.key === "Tab" || e.key === "Enter") {
       e.preventDefault();
+
       // Se for a última linha e inserir custo, cria nova linha (novo bloco de resultados)
       const isLast = idx === composicao.length - 1;
       const temCusto = parseBR(composicao[idx].custo) > 0;
       const temCodigo = composicao[idx].codigo.trim().length > 0;
+
       if (isLast && (temCusto || temCodigo)) {
-        setComposicao((prev) => [...prev, { codigo: "", quantidade: "", custo: "" }]);
+        setComposicao((prev) => [
+          ...prev,
+          { codigo: "", quantidade: "", custo: "" },
+        ]);
         setTimeout(() => codeRefs.current[idx + 1]?.focus(), 0);
       } else {
         codeRefs.current[idx + 1]?.focus();
       }
       return;
     }
+
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       moveVertical(costRefs, idx, e.key === "ArrowDown" ? "down" : "up");
@@ -266,16 +320,23 @@ export default function Decomposition() {
     novo[idx].quantidade = n ? formatBR(n) : "";
     setComposicao(novo);
   };
+
   const onBlurCusto = (idx: number) => {
     const n = parseBR(composicao[idx].custo);
     const novo = [...composicao];
     novo[idx].custo = n ? formatBR(n) : "";
     setComposicao(novo);
+
     // Se for última linha e inseriu custo, cria nova linha automaticamente
-    if (idx === composicao.length - 1 && n > 0 && composicao[idx].codigo.trim()) {
+    if (
+      idx === composicao.length - 1 &&
+      n > 0 &&
+      composicao[idx].codigo.trim()
+    ) {
       setComposicao((prev) => [...prev, { codigo: "", quantidade: "", custo: "" }]);
     }
   };
+
   const onBlurPrecoVenda = () => {
     const v = parseBR(precoVenda);
     setPrecoVenda(v ? formatBR(v) : "");

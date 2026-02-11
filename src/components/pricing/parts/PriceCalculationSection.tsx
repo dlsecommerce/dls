@@ -36,6 +36,7 @@ type PriceCalculationSectionProps = {
     refs: React.MutableRefObject<HTMLInputElement[]>,
     total: number
   ) => void;
+
   calcLojaRefs: React.MutableRefObject<HTMLInputElement[]>;
   calcShopeeRefs: React.MutableRefObject<HTMLInputElement[]>;
   calcMLClassicoRefs: React.MutableRefObject<HTMLInputElement[]>;
@@ -56,11 +57,20 @@ type PriceCalculationSectionProps = {
 
   syncDescontoFromLoja: (descontoInternal: string) => void;
 
-  // NOVOS: controle de edição manual Shopee
   userEditedShopeeComissao: boolean;
   setUserEditedShopeeComissao: (v: boolean) => void;
   userEditedShopeeFrete: boolean;
   setUserEditedShopeeFrete: (v: boolean) => void;
+
+  // ✅ NOVOS: flags para permitir editar também imposto/margem/marketing/embalagem na Shopee
+  userEditedShopeeImposto: boolean;
+  setUserEditedShopeeImposto: (v: boolean) => void;
+  userEditedShopeeMargem: boolean;
+  setUserEditedShopeeMargem: (v: boolean) => void;
+  userEditedShopeeMarketing: boolean;
+  setUserEditedShopeeMarketing: (v: boolean) => void;
+  userEditedShopeeEmbalagem: boolean;
+  setUserEditedShopeeEmbalagem: (v: boolean) => void;
 };
 
 export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = ({
@@ -102,7 +112,22 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
   setUserEditedShopeeComissao,
   userEditedShopeeFrete,
   setUserEditedShopeeFrete,
+  userEditedShopeeImposto,
+  setUserEditedShopeeImposto,
+  userEditedShopeeMargem,
+  setUserEditedShopeeMargem,
+  userEditedShopeeMarketing,
+  setUserEditedShopeeMarketing,
+  userEditedShopeeEmbalagem,
+  setUserEditedShopeeEmbalagem,
 }) => {
+  const isEmptyOrZero = (v: string) => {
+    const s = (v || "").trim();
+    if (!s) return true;
+    const n = Number(s);
+    return !isFinite(n) || n === 0;
+  };
+
   return (
     <motion.div
       className="lg:col-span-6 p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg flex flex-col justify-between h-full"
@@ -127,9 +152,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
           />
         </div>
 
-        {/* 4 BLOCOS EM LINHA (responsivo: 1, 2 ou 4 colunas) */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 mb-2">
-          {/* Preço Loja */}
           <PriceBlock
             nome="Preço Loja"
             blocoIndex={0}
@@ -148,25 +171,18 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
               if (key === "desconto") {
                 syncDescontoFromLoja(internalValue);
               } else {
-                setCalculoLoja({
-                  ...calculoLoja,
-                  [key]: internalValue,
-                });
+                setCalculoLoja({ ...calculoLoja, [key]: internalValue });
               }
             }}
             onFieldBlur={(key, internalValue) => {
               if (key === "desconto") {
                 syncDescontoFromLoja(internalValue);
               } else {
-                setCalculoLoja({
-                  ...calculoLoja,
-                  [key]: internalValue,
-                });
+                setCalculoLoja({ ...calculoLoja, [key]: internalValue });
               }
             }}
           />
 
-          {/* Preço Shopee */}
           <PriceBlock
             nome="Preço Shopee"
             blocoIndex={1}
@@ -182,36 +198,43 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
             handleEmbalagemBlur={handleEmbalagemBlurShopee}
             handleEmbalagemChange={handleEmbalagemChangeShopee}
             onFieldChange={(key, internalValue) => {
-              // marca edição manual para comissao/frete
-              if (key === "comissao") {
-                setUserEditedShopeeComissao(true);
-              }
-              if (key === "frete") {
-                setUserEditedShopeeFrete(true);
-              }
+              // ✅ trava automático só para os campos que o usuário mexeu
+              if (key === "comissao") setUserEditedShopeeComissao(true);
+              if (key === "frete") setUserEditedShopeeFrete(true);
+              if (key === "imposto") setUserEditedShopeeImposto(true);
+              if (key === "margem") setUserEditedShopeeMargem(true);
+              if (key === "marketing") setUserEditedShopeeMarketing(true);
+              // embalagem é controlada fora do grid (no PriceBlock, abaixo de "desconto")
+              // mas mantemos o prop aqui para consistência do pai
+              if (key === "embalagem") setUserEditedShopeeEmbalagem(true);
 
-              setCalculoShopee({
-                ...calculoShopee,
-                [key]: internalValue,
-              });
+              setCalculoShopee({ ...calculoShopee, [key]: internalValue });
             }}
             onFieldBlur={(key, internalValue) => {
-              // se o usuário apagar o campo, volta para modo automático
-              if (key === "comissao" && !internalValue) {
+              // ✅ se o usuário apagar/zerar, volta pro automático daquele campo
+              if (key === "comissao" && isEmptyOrZero(internalValue)) {
                 setUserEditedShopeeComissao(false);
               }
-              if (key === "frete" && !internalValue) {
+              if (key === "frete" && isEmptyOrZero(internalValue)) {
                 setUserEditedShopeeFrete(false);
               }
+              if (key === "imposto" && isEmptyOrZero(internalValue)) {
+                setUserEditedShopeeImposto(false);
+              }
+              if (key === "margem" && isEmptyOrZero(internalValue)) {
+                setUserEditedShopeeMargem(false);
+              }
+              if (key === "marketing" && isEmptyOrZero(internalValue)) {
+                setUserEditedShopeeMarketing(false);
+              }
+              if (key === "embalagem" && isEmptyOrZero(internalValue)) {
+                setUserEditedShopeeEmbalagem(false);
+              }
 
-              setCalculoShopee({
-                ...calculoShopee,
-                [key]: internalValue,
-              });
+              setCalculoShopee({ ...calculoShopee, [key]: internalValue });
             }}
           />
 
-          {/* Preço Mercado Livre Clássico */}
           <PriceBlock
             nome="Preço ML Clássico"
             blocoIndex={2}
@@ -228,7 +251,6 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
             handleEmbalagemChange={handleEmbalagemChangeShared}
           />
 
-          {/* Preço Mercado Livre Premium */}
           <PriceBlock
             nome="Preço ML Premium"
             blocoIndex={3}

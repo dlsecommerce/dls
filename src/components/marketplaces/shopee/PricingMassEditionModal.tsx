@@ -16,6 +16,12 @@ import Papa from "papaparse";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
+// ✅ áudio centralizado (public/sounds/success.mp3)
+import {
+  unlockAudio,
+  playImportSuccessSound,
+} from "@/utils/sound";
+
 type Props = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -25,32 +31,6 @@ type Props = {
 type ImportRow = Record<string, any>;
 
 const BATCH_SIZE = 1000; // 500~2000 costuma ser bom
-
-// 🔊 Toquezinho de confirmação (sem mp3)
-const playSuccess = (freq = 880, durationMs = 90, volume = 0.04) => {
-  try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    const ctx = new AudioCtx();
-
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = "sine";
-    osc.frequency.value = freq;
-
-    gain.gain.value = volume;
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start();
-    osc.stop(ctx.currentTime + durationMs / 1000);
-
-    osc.onended = () => ctx.close();
-  } catch {
-    // falhou? ignora
-  }
-};
 
 // ✅ Toasts custom (verde/vermelho/laranja + warning top-center)
 const toastCustom = {
@@ -73,7 +53,7 @@ const toastCustom = {
       description,
       className: "bg-orange-500 border border-orange-400 text-white shadow-lg",
       duration: 4000,
-      position: "top-center", // 👈 aviso em cima no meio
+      position: "top-center",
     }),
 
   message: (title: string, description?: string) =>
@@ -135,7 +115,7 @@ export default function PricingMassEditionModal({
       .trim()
       .toLowerCase()
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "") // remove acentos
+      .replace(/[\u0300-\u036f]/g, "")
       .replace(/\u00A0/g, " ")
       .replace(/\s+/g, " ");
 
@@ -176,7 +156,6 @@ export default function PricingMassEditionModal({
       "preco final": "Preço de Venda",
     };
 
-    // garante match exato para os targetCols também
     for (const c of targetCols) {
       map[normalizeHeader(c)] = c;
     }
@@ -207,7 +186,6 @@ export default function PricingMassEditionModal({
       .replace(/%/g, "")
       .trim();
 
-    // 1.234,56 -> 1234.56
     if (s.includes(",") && s.includes(".")) {
       s = s.replace(/\./g, "").replace(",", ".");
     } else if (s.includes(",")) {
@@ -234,7 +212,7 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ Progress "throttle" (não re-render a cada linha)
+  // ✅ Progress "throttle"
   // =============================================================
   const startProgressPump = () => {
     if (progressTimerRef.current) window.clearInterval(progressTimerRef.current);
@@ -250,7 +228,7 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ IMPORTAÇÃO TURBO DE CSV (worker + progress por bytes)
+  // ✅ IMPORTAÇÃO TURBO DE CSV
   // =============================================================
   const parseCsvFast = (file: File) => {
     return new Promise<ImportRow[]>((resolve, reject) => {
@@ -261,12 +239,15 @@ export default function PricingMassEditionModal({
         skipEmptyLines: true,
         worker: true,
         dynamicTyping: false,
-        chunkSize: 1024 * 1024 * 2, // 2MB
+        chunkSize: 1024 * 1024 * 2,
         chunk: (result) => {
           all.push(...(result.data as ImportRow[]));
           const cursor = (result.meta as any)?.cursor as number | undefined;
           if (cursor && file.size) {
-            progressRef.current = Math.min(99, Math.round((cursor / file.size) * 100));
+            progressRef.current = Math.min(
+              99,
+              Math.round((cursor / file.size) * 100)
+            );
           }
         },
         complete: () => resolve(all),
@@ -286,11 +267,12 @@ export default function PricingMassEditionModal({
 
     const a1 = ws["A1"]?.v;
     const hasMergedHeaders =
-      typeof a1 === "string" && String(a1).toUpperCase().includes("IDENTIFICA");
+      typeof a1 === "string" &&
+      String(a1).toUpperCase().includes("IDENTIFICA");
 
     if (hasMergedHeaders && ws["!ref"]) {
       const range = XLSX.utils.decode_range(ws["!ref"]);
-      range.s.r = Math.max(range.s.r, 1); // pula primeira linha
+      range.s.r = Math.max(range.s.r, 1);
       ws["!ref"] = XLSX.utils.encode_range(range);
     }
 
@@ -299,7 +281,7 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // 📌 IMPORTAÇÃO DO ARQUIVO
+  // 📌 LEITURA DO ARQUIVO (SEM SOM AQUI)
   // =============================================================
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.currentTarget.files?.[0];
@@ -319,8 +301,10 @@ export default function PricingMassEditionModal({
         const normalized = normalizeRowsByHeaders(rows);
 
         progressRef.current = 100;
-        toastCustom.success("CSV carregado!", `Encontrados ${normalized.length} itens.`);
-        playSuccess(); // ✅ SOM AQUI (final da importação)
+        toastCustom.success(
+          "CSV carregado!",
+          `Encontrados ${normalized.length} itens.`
+        );
 
         setPreviewData(normalized);
         return;
@@ -331,8 +315,10 @@ export default function PricingMassEditionModal({
         const normalized = normalizeRowsByHeaders(rows);
 
         progressRef.current = 100;
-        toastCustom.success("Planilha carregada!", `Encontrados ${normalized.length} itens.`);
-        playSuccess(); // ✅ SOM AQUI (final da importação)
+        toastCustom.success(
+          "Planilha carregada!",
+          `Encontrados ${normalized.length} itens.`
+        );
 
         setPreviewData(normalized);
         return;
@@ -341,7 +327,10 @@ export default function PricingMassEditionModal({
       toastCustom.warning("Formato não suportado", "Use CSV, XLSX ou XLS.");
     } catch (err) {
       console.error("Erro ao ler arquivo:", err);
-      toastCustom.error("Erro ao processar a planilha", "Verifique o arquivo e tente novamente.");
+      toastCustom.error(
+        "Erro ao processar a planilha",
+        "Verifique o arquivo e tente novamente."
+      );
     } finally {
       stopProgressPump();
       setLoading(false);
@@ -350,7 +339,7 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ Mapeia Loja para PK/SB (ponto MAIS comum de dar 0 updates)
+  // ✅ Mapeia Loja para PK/SB
   // =============================================================
   const mapLoja = (v: any) => {
     const raw = String(v ?? "").trim();
@@ -362,10 +351,13 @@ export default function PricingMassEditionModal({
       .replace(/[\u0300-\u036f]/g, "");
 
     if (norm === "PK" || norm.includes("PIKOT")) return "PK";
-    if (norm === "SB" || norm.includes("SOBAQUETAS") || norm.includes("SO BAQUETAS"))
+    if (
+      norm === "SB" ||
+      norm.includes("SOBAQUETAS") ||
+      norm.includes("SO BAQUETAS")
+    )
       return "SB";
 
-    // fallback: se vier "Pk " / "Sb "
     const short = norm.replace(/\s+/g, "");
     if (short === "PK") return "PK";
     if (short === "SB") return "SB";
@@ -381,7 +373,13 @@ export default function PricingMassEditionModal({
     const loja = mapLoja(row["Loja"]);
     if (!id || !loja) return null;
 
-    const percentCols = ["Desconto", "Comissão", "Imposto", "Margem de Lucro", "Marketing"];
+    const percentCols = [
+      "Desconto",
+      "Comissão",
+      "Imposto",
+      "Margem de Lucro",
+      "Marketing",
+    ];
     const moneyCols = ["Embalagem", "Frete", "Custo", "Preço de Venda"];
 
     const out: any = {
@@ -413,7 +411,8 @@ export default function PricingMassEditionModal({
     for (const col of moneyCols) {
       const num = toNumberBR(row[col]);
       if (num !== null) {
-        const fixedMoney = col === "Preço de Venda" ? Number(num.toFixed(2)) : num;
+        const fixedMoney =
+          col === "Preço de Venda" ? Number(num.toFixed(2)) : num;
         if (col === "Embalagem") out.embalagem = fixedMoney;
         if (col === "Frete") out.frete = fixedMoney;
         if (col === "Custo") out.custo = fixedMoney;
@@ -436,7 +435,7 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ Atualiza por RPC em batches (com retornos explícitos)
+  // ✅ Atualiza por RPC em batches
   // =============================================================
   const updateByRpcBatches = async (rows: ImportRow[]) => {
     const rpcRows = rows.map(buildRpcRow).filter(Boolean) as any[];
@@ -449,20 +448,24 @@ export default function PricingMassEditionModal({
       `Válidas: ${rpcRows.length} | PK: ${pk.length} | SB: ${sb.length}`
     );
 
-    // nada para atualizar
     if (rpcRows.length === 0) {
       progressRef.current = 100;
       return { updatedCount: 0, totalToUpdate: 0, pkCount: 0, sbCount: 0 };
     }
 
-    // lojas não reconhecidas
     if (pk.length === 0 && sb.length === 0) {
       progressRef.current = 100;
-      return { updatedCount: 0, totalToUpdate: rpcRows.length, pkCount: 0, sbCount: 0 };
+      return {
+        updatedCount: 0,
+        totalToUpdate: rpcRows.length,
+        pkCount: 0,
+        sbCount: 0,
+      };
     }
 
     let updatedCount = 0;
-    const totalBatches = Math.ceil(pk.length / BATCH_SIZE) + Math.ceil(sb.length / BATCH_SIZE);
+    const totalBatches =
+      Math.ceil(pk.length / BATCH_SIZE) + Math.ceil(sb.length / BATCH_SIZE);
     let batchesDone = 0;
 
     const runBatches = async (
@@ -504,9 +507,13 @@ export default function PricingMassEditionModal({
   };
 
   // =============================================================
-  // ✅ CONFIRMAR UPDATE (SEM SOM!)
+  // ✅ CONFIRMAR UPDATE — SOM APENAS NO SUCESSO REAL
   // =============================================================
   const handleUpdateConfirm = async () => {
+    // ✅ desbloqueia áudio NO GESTO DO USUÁRIO
+    // (se falhar, não quebra nada)
+    void unlockAudio();
+
     console.log("[CONFIRM] cliquei confirmar", { previewLen: previewData.length });
 
     const { data: sess, error: sessErr } = await supabase.auth.getSession();
@@ -528,7 +535,10 @@ export default function PricingMassEditionModal({
     startProgressPump();
 
     try {
-      toastCustom.message("Iniciando atualização...", `Linhas importadas: ${previewData.length}`);
+      toastCustom.message(
+        "Iniciando atualização...",
+        `Linhas importadas: ${previewData.length}`
+      );
 
       const { updatedCount, totalToUpdate, pkCount, sbCount } =
         await updateByRpcBatches(previewData);
@@ -552,8 +562,13 @@ export default function PricingMassEditionModal({
       }
 
       if (updatedCount > 0) {
-        toastCustom.success("Atualizado com sucesso", `${updatedCount} item(ns) atualizado(s).`);
-        // ❌ sem som aqui
+        toastCustom.success(
+          "Atualizado com sucesso",
+          `${updatedCount} item(ns) atualizado(s).`
+        );
+
+        // ✅ SOM SOMENTE AQUI: sucesso real
+        playImportSuccessSound(0.4);
       } else {
         toastCustom.warning(
           "Nenhum item foi atualizado",
@@ -562,7 +577,6 @@ export default function PricingMassEditionModal({
       }
 
       onImportComplete(previewData);
-
       onOpenChange(false);
       setConfirmOpen(false);
     } catch (err: any) {
@@ -623,7 +637,9 @@ export default function PricingMassEditionModal({
                   </div>
                   <div className="flex-1">
                     <h4 className="font-bold mb-1">
-                      {loading ? `Lendo arquivo... (${progress}%)` : "Importar Planilha"}
+                      {loading
+                        ? `Lendo arquivo... (${progress}%)`
+                        : "Importar Planilha"}
                     </h4>
                     <p className="text-sm text-neutral-400">
                       Para 50k+ linhas, use CSV (mais rápido). XLSX funciona, mas é mais pesado.
@@ -679,7 +695,9 @@ export default function PricingMassEditionModal({
                   </table>
                 </div>
               ) : (
-                <p className="text-center text-neutral-400 italic">Nenhum arquivo importado.</p>
+                <p className="text-center text-neutral-400 italic">
+                  Nenhum arquivo importado.
+                </p>
               )}
             </motion.div>
           </div>
