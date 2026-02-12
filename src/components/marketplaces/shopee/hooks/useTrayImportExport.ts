@@ -239,7 +239,7 @@ export function useTrayImportExport(
           null, // M (vai ser regra)
           null, // N (vai ser regra)
           null, // O (vai ser regra)
-          null, // P (vai ser regra)
+          null, // P (EDITÁVEL - não preencher)
           null, // Q (vai ser regra)
           "", // R
           row.Custo ?? 0, // S
@@ -265,12 +265,15 @@ export function useTrayImportExport(
 
         // ============================================================
         // ✅ PVs estimados para decidir faixa (SEM circularidade)
-        // (usam os defaults de cada faixa + imposto por loja)
+        // Agora a margem é EDITÁVEL (coluna P) e NÃO tem default.
+        // Se P estiver vazia, considera 0.
         // ============================================================
-        const PV1 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+4)/(1-((20+${impostoLoja}+15+3)/100)))`;
-        const PV2 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+16)/(1-((14+${impostoLoja}+15+3)/100)))`;
-        const PV3 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+20)/(1-((14+${impostoLoja}+15+3)/100)))`;
-        const PV4 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+26)/(1-((14+${impostoLoja}+15+3)/100)))`;
+        const margemSafe = `IF(P${rowNumber}="",0,P${rowNumber})`;
+
+        const PV1 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+4)/(1-((20+${impostoLoja}+${margemSafe}+3)/100)))`;
+        const PV2 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+16)/(1-((14+${impostoLoja}+${margemSafe}+3)/100)))`;
+        const PV3 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+20)/(1-((14+${impostoLoja}+${margemSafe}+3)/100)))`;
+        const PV4 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+26)/(1-((14+${impostoLoja}+${margemSafe}+3)/100)))`;
 
         // ============================================================
         // ✅ SEMPRE APLICAR REGRAS (independente do DB)
@@ -282,14 +285,13 @@ export function useTrayImportExport(
         // O (Imposto) = por loja
         sheet.getCell(`O${rowNumber}`).value = impostoLoja;
 
-        // P (Margem) = 15
-        sheet.getCell(`P${rowNumber}`).value = 15;
+        // P (Margem) = EDITÁVEL (não preencher)
+        sheet.getCell(`P${rowNumber}`).value = null;
 
         // Q (Marketing) = 3
         sheet.getCell(`Q${rowNumber}`).value = 3;
 
         // M (Frete) = por faixa (com base nos PVs estimados)
-        // mesma lógica do seu RULES
         const formulaFrete = `IF(${PV1}<=79.99,4,IF(${PV2}<=99.99,16,IF(${PV3}<=199.99,20,26)))`;
         setFormula(`M${rowNumber}`, formulaFrete);
 
@@ -298,7 +300,8 @@ export function useTrayImportExport(
         setFormula(`N${rowNumber}`, formulaComissao);
 
         // T (Preço de Venda) — fórmula invariável (recalcula ao editar qualquer campo)
-        const formulaPrecoVendaInvariant = `ROUND((S${rowNumber}*(1-K${rowNumber}/100)+L${rowNumber}+M${rowNumber})/(1-((N${rowNumber}+O${rowNumber}+P${rowNumber}+Q${rowNumber})/100)),2)`;
+        // Margem editável: se P estiver vazia, considera 0
+        const formulaPrecoVendaInvariant = `ROUND((S${rowNumber}*(1-K${rowNumber}/100)+L${rowNumber}+M${rowNumber})/(1-((N${rowNumber}+O${rowNumber}+IF(P${rowNumber}="",0,P${rowNumber})+Q${rowNumber})/100)),2)`;
         setFormula(`T${rowNumber}`, formulaPrecoVendaInvariant);
 
         // formatos (garantia)
