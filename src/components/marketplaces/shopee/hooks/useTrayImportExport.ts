@@ -264,43 +264,63 @@ export function useTrayImportExport(
         const impostoLoja = getImpostoPorLoja(row.Loja);
 
         // ============================================================
-        // ✅ PVs estimados para decidir faixa (SEM circularidade)
-        // Agora a margem é EDITÁVEL (coluna P) e NÃO tem default.
-        // Se P estiver vazia, considera 0.
-        // ============================================================
-        const margemSafe = `IF(P${rowNumber}="",0,P${rowNumber})`;
-
-        const PV1 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+4)/(1-((20+${impostoLoja}+${margemSafe}+3)/100)))`;
-        const PV2 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+16)/(1-((14+${impostoLoja}+${margemSafe}+3)/100)))`;
-        const PV3 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+20)/(1-((14+${impostoLoja}+${margemSafe}+3)/100)))`;
-        const PV4 = `((S${rowNumber}*(1-K${rowNumber}/100)+2.5+26)/(1-((14+${impostoLoja}+${margemSafe}+3)/100)))`;
-
-        // ============================================================
-        // ✅ SEMPRE APLICAR REGRAS (independente do DB)
+        // ✅ APLICAR REGRAS (com campos EDITÁVEIS)
+        // - L, O e Q recebem default, mas o usuário pode editar depois
+        // - P (Margem) fica em branco (editável)
         // ============================================================
 
-        // L (Embalagem) = 2,5
+        // L (Embalagem) = 2,5 (editável na planilha)
         sheet.getCell(`L${rowNumber}`).value = 2.5;
 
-        // O (Imposto) = por loja
+        // O (Imposto) = por loja (editável na planilha)
         sheet.getCell(`O${rowNumber}`).value = impostoLoja;
 
         // P (Margem) = EDITÁVEL (não preencher)
         sheet.getCell(`P${rowNumber}`).value = null;
 
-        // Q (Marketing) = 3
+        // Q (Marketing) = 3 (editável na planilha)
         sheet.getCell(`Q${rowNumber}`).value = 3;
+
+        // ============================================================
+        // ✅ PVs estimados para decidir faixa (SEM circularidade)
+        // IMPORTANTE:
+        // - Agora os PVs usam as CÉLULAS (K, L, O, P, Q, S)
+        // - Então, se você alterar desconto/embalagem/imposto/margem/marketing/custo,
+        //   a faixa (Frete/Comissão) muda automaticamente conforme a regra.
+        // ============================================================
+        const embalagemSafe = `IF(L${rowNumber}="",0,L${rowNumber})`;
+        const impostoSafe = `IF(O${rowNumber}="",0,O${rowNumber})`;
+        const margemSafe = `IF(P${rowNumber}="",0,P${rowNumber})`;
+        const marketingSafe = `IF(Q${rowNumber}="",0,Q${rowNumber})`;
+
+        // Faixa 1: PV <= 79,99 -> Frete 4 / Comissão 20%
+        const PV1 = `((S${rowNumber}*(1-K${rowNumber}/100)+${embalagemSafe}+4)/(1-((20+${impostoSafe}+${margemSafe}+${marketingSafe})/100)))`;
+
+        // Faixa 2: PV <= 99,99 -> Frete 16 / Comissão 14%
+        const PV2 = `((S${rowNumber}*(1-K${rowNumber}/100)+${embalagemSafe}+16)/(1-((14+${impostoSafe}+${margemSafe}+${marketingSafe})/100)))`;
+
+        // Faixa 3: PV <= 199,99 -> Frete 20 / Comissão 14%
+        const PV3 = `((S${rowNumber}*(1-K${rowNumber}/100)+${embalagemSafe}+20)/(1-((14+${impostoSafe}+${margemSafe}+${marketingSafe})/100)))`;
+
+        // Faixa 4: PV > 199,99 -> Frete 26 / Comissão 14%
+        const PV4 = `((S${rowNumber}*(1-K${rowNumber}/100)+${embalagemSafe}+26)/(1-((14+${impostoSafe}+${margemSafe}+${marketingSafe})/100)))`;
+
+        // ============================================================
+        // ✅ REGRAS SHOPEE (atualizam automaticamente conforme os percentuais)
+        // ============================================================
 
         // M (Frete) = por faixa (com base nos PVs estimados)
         const formulaFrete = `IF(${PV1}<=79.99,4,IF(${PV2}<=99.99,16,IF(${PV3}<=199.99,20,26)))`;
         setFormula(`M${rowNumber}`, formulaFrete);
 
-        // N (Comissão) = por faixa
+        // N (Comissão) = por faixa (mesma regra do seu código)
         const formulaComissao = `IF(${PV1}<=79.99,20,14)`;
         setFormula(`N${rowNumber}`, formulaComissao);
 
-        // T (Preço de Venda) — fórmula invariável (recalcula ao editar qualquer campo)
-        // Margem editável: se P estiver vazia, considera 0
+        // ============================================================
+        // ✅ PREÇO DE VENDA (recalcula ao editar qualquer campo)
+        // - Margem editável (P): se vazia, considera 0
+        // ============================================================
         const formulaPrecoVendaInvariant = `ROUND((S${rowNumber}*(1-K${rowNumber}/100)+L${rowNumber}+M${rowNumber})/(1-((N${rowNumber}+O${rowNumber}+IF(P${rowNumber}="",0,P${rowNumber})+Q${rowNumber})/100)),2)`;
         setFormula(`T${rowNumber}`, formulaPrecoVendaInvariant);
 
