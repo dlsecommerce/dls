@@ -223,6 +223,10 @@ export function useTrayImportExport(
       };
 
       data.forEach((row) => {
+        // ✅ PRESERVA a Margem de Lucro vinda do import (se existir)
+        const margemAtual =
+          row["Margem de Lucro"] ?? row.MargemDeLucro ?? row.margemDeLucro ?? null;
+
         const line = [
           row.ID || "",
           row.Loja || "",
@@ -239,7 +243,7 @@ export function useTrayImportExport(
           null, // M (vai ser regra)
           null, // N (vai ser regra)
           null, // O (vai ser regra)
-          null, // P (EDITÁVEL - não preencher)
+          margemAtual, // ✅ P (EDITÁVEL, mas preserva se veio preenchido)
           null, // Q (vai ser regra)
           "", // R
           row.Custo ?? 0, // S
@@ -266,7 +270,7 @@ export function useTrayImportExport(
         // ============================================================
         // ✅ APLICAR REGRAS (com campos EDITÁVEIS)
         // - L, O e Q recebem default, mas o usuário pode editar depois
-        // - P (Margem) fica em branco (editável)
+        // - P (Margem) fica editável e NÃO é apagada se já veio preenchida
         // ============================================================
 
         // L (Embalagem) = 2,5 (editável na planilha)
@@ -275,18 +279,15 @@ export function useTrayImportExport(
         // O (Imposto) = por loja (editável na planilha)
         sheet.getCell(`O${rowNumber}`).value = impostoLoja;
 
-        // P (Margem) = EDITÁVEL (não preencher)
-        sheet.getCell(`P${rowNumber}`).value = null;
+        // ✅ P (Margem) = preserva se veio do import; senão, deixa em branco
+        sheet.getCell(`P${rowNumber}`).value =
+          margemAtual === undefined || margemAtual === "" ? null : margemAtual;
 
         // Q (Marketing) = 3 (editável na planilha)
         sheet.getCell(`Q${rowNumber}`).value = 3;
 
         // ============================================================
         // ✅ PVs estimados para decidir faixa (SEM circularidade)
-        // IMPORTANTE:
-        // - Agora os PVs usam as CÉLULAS (K, L, O, P, Q, S)
-        // - Então, se você alterar desconto/embalagem/imposto/margem/marketing/custo,
-        //   a faixa (Frete/Comissão) muda automaticamente conforme a regra.
         // ============================================================
         const embalagemSafe = `IF(L${rowNumber}="",0,L${rowNumber})`;
         const impostoSafe = `IF(O${rowNumber}="",0,O${rowNumber})`;
@@ -306,20 +307,19 @@ export function useTrayImportExport(
         const PV4 = `((S${rowNumber}*(1-K${rowNumber}/100)+${embalagemSafe}+26)/(1-((14+${impostoSafe}+${margemSafe}+${marketingSafe})/100)))`;
 
         // ============================================================
-        // ✅ REGRAS SHOPEE (atualizam automaticamente conforme os percentuais)
+        // ✅ REGRAS SHOPEE
         // ============================================================
 
-        // M (Frete) = por faixa (com base nos PVs estimados)
+        // M (Frete) = por faixa
         const formulaFrete = `IF(${PV1}<=79.99,4,IF(${PV2}<=99.99,16,IF(${PV3}<=199.99,20,26)))`;
         setFormula(`M${rowNumber}`, formulaFrete);
 
-        // N (Comissão) = por faixa (mesma regra do seu código)
+        // N (Comissão) = por faixa
         const formulaComissao = `IF(${PV1}<=79.99,20,14)`;
         setFormula(`N${rowNumber}`, formulaComissao);
 
         // ============================================================
-        // ✅ PREÇO DE VENDA (recalcula ao editar qualquer campo)
-        // - Margem editável (P): se vazia, considera 0
+        // ✅ PREÇO DE VENDA
         // ============================================================
         const formulaPrecoVendaInvariant = `ROUND((S${rowNumber}*(1-K${rowNumber}/100)+L${rowNumber}+M${rowNumber})/(1-((N${rowNumber}+O${rowNumber}+IF(P${rowNumber}="",0,P${rowNumber})+Q${rowNumber})/100)),2)`;
         setFormula(`T${rowNumber}`, formulaPrecoVendaInvariant);
