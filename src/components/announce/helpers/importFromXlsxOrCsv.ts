@@ -174,19 +174,21 @@ async function upsertWithFallback(
   if (rows.length === 0) return;
 
   /**
-   * ✅ CORREÇÃO DO ERRO:
-   * Em anuncios_pk, a coluna ID é BIGINT. Se você enviar ID: "" o Postgres dá:
-   * invalid input syntax for type numeric: ""
-   *
-   * Então:
-   * - se ID vier vazio -> NÃO enviamos o campo (delete)
-   * - ID Bling placeholder -> NULL (evita sujeira)
+   * ✅ CORREÇÃO DEFINITIVA:
+   * - Nunca mandar "" para o banco (qualquer coluna bigint/numeric/int explode)
+   * - No anuncios_pk, ID é BIGINT: se vier vazio -> remove o campo (deixa DEFAULT nextval gerar)
+   * - ID Bling placeholder -> NULL
    */
   const cleanedRows = rows.map((r) => {
     const out: any = { ...r };
 
-    // 🔥 NÃO mande ID vazio pro banco (ID é bigint no PK)
-    if (out.ID === "" || out.ID === null || out.ID === undefined) {
+    // 🔥 regra universal: "" vira NULL (mata o erro de numeric/int/bigint)
+    for (const k of Object.keys(out)) {
+      if (out[k] === "") out[k] = null;
+    }
+
+    // 🔥 ID vazio: NÃO enviar (ID é bigint no anuncios_pk)
+    if (out.ID === null || out.ID === undefined) {
       delete out.ID;
     }
 
@@ -233,7 +235,9 @@ async function upsertWithFallback(
   if (error2) {
     console.error("UPSERT ERROR:", error2);
     throw new Error(
-      `Erro ao importar ${table}: ${error2.message}${error2.details ? " | " + error2.details : ""}`
+      `Erro ao importar ${table}: ${error2.message}${
+        error2.details ? " | " + error2.details : ""
+      }`
     );
   }
 }
@@ -339,7 +343,10 @@ export async function importFromXlsxOrCsv(
   range.s.r = 1; // começa na segunda linha (índice 1)
   sheet["!ref"] = XLSX.utils.encode_range(range);
 
-  const json = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: "" });
+  // ✅ CORREÇÃO: não gerar "" para células vazias
+  const json = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
+    defval: null,
+  });
 
   if (json.length === 0) {
     warnings.push("Nenhum dado encontrado após o cabeçalho.");
@@ -351,10 +358,10 @@ export async function importFromXlsxOrCsv(
       const key = Object.keys(row).find((k) =>
         keys.some((p) => k.trim().toLowerCase() === p.trim().toLowerCase())
       );
-      return key ? row[key] : "";
+      return key ? row[key] : null; // ✅ CORREÇÃO: volta null em vez de ""
     };
 
-    const obj: RowShape = {
+    const obj: any = {
       ID: findKey(["ID", "ID Geral", "ID (Supabase)"]),
       Loja: findKey(["Loja", "loja"]),
       "ID Bling": findKey(["ID Bling", "bling"]),
@@ -372,12 +379,8 @@ export async function importFromXlsxOrCsv(
     };
 
     for (let i = 1; i <= 10; i++) {
-      obj[`Código ${i}` as keyof RowShape] = findKey([
-        `Código ${i}`,
-        `codigo ${i}`,
-        `cod ${i}`,
-      ]);
-      obj[`Quantidade ${i}` as keyof RowShape] = findKey([
+      obj[`Código ${i}`] = findKey([`Código ${i}`, `codigo ${i}`, `cod ${i}`]);
+      obj[`Quantidade ${i}`] = findKey([
         `Quantidade ${i}`,
         `quantidade ${i}`,
         `quant ${i}`,
@@ -385,7 +388,7 @@ export async function importFromXlsxOrCsv(
       ]);
     }
 
-    return obj;
+    return obj as RowShape;
   });
 
   // Dedupe do arquivo (evita duplicar já na leitura)
