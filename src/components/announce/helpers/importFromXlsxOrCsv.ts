@@ -136,7 +136,7 @@ function splitByStore(rows: RowShape[]) {
  * Preenche IDs automáticos só quando a gente PRECISAR usar conflito por ID.
  * Se formos upar por "ID Bling", não precisa inventar ID.
  */
-async function preencherIdsAutomaticos(tabela: string, rows: RowShape[]) {
+async function preencherIdsAutomaticos(tabela: string, rows: any[]) {
   if (rows.length === 0) return rows;
 
   const { data: ultimo, error } = await supabase
@@ -153,7 +153,7 @@ async function preencherIdsAutomaticos(tabela: string, rows: RowShape[]) {
 
   return rows.map((r) => {
     if (r.ID === "" || r.ID === null || r.ID === undefined) {
-      (r as any).ID = proximoId;
+      r.ID = proximoId;
       proximoId++;
     }
     return r;
@@ -173,13 +173,30 @@ async function upsertWithFallback(
 ) {
   if (rows.length === 0) return;
 
-  // sempre filtra id bling placeholders antes de usar conflito por ID Bling
-  const cleanedRows = rows.map((r) => ({
-    ...r,
-    "ID Bling": isPlaceholderBling(r["ID Bling"])
-      ? ""
-      : String(r["ID Bling"] ?? "").trim(),
-  }));
+  /**
+   * ✅ CORREÇÃO DO ERRO:
+   * Em anuncios_pk, a coluna ID é BIGINT. Se você enviar ID: "" o Postgres dá:
+   * invalid input syntax for type numeric: ""
+   *
+   * Então:
+   * - se ID vier vazio -> NÃO enviamos o campo (delete)
+   * - ID Bling placeholder -> NULL (evita sujeira)
+   */
+  const cleanedRows = rows.map((r) => {
+    const out: any = { ...r };
+
+    // 🔥 NÃO mande ID vazio pro banco (ID é bigint no PK)
+    if (out.ID === "" || out.ID === null || out.ID === undefined) {
+      delete out.ID;
+    }
+
+    // sempre filtra id bling placeholders antes de usar conflito por ID Bling
+    out["ID Bling"] = isPlaceholderBling(out["ID Bling"])
+      ? null
+      : String(out["ID Bling"] ?? "").trim();
+
+    return out;
+  });
 
   // tenta primeiro
   if (primaryOnConflict) {
@@ -203,7 +220,7 @@ async function upsertWithFallback(
     );
   }
 
-  let payload = cleanedRows;
+  let payload: any[] = cleanedRows;
 
   if (needAutoIdsForFallback) {
     payload = await preencherIdsAutomaticos(table, payload);
@@ -213,7 +230,12 @@ async function upsertWithFallback(
     .from(table)
     .upsert(payload as any, { onConflict: fallbackOnConflict });
 
-  if (error2) throw new Error(`Erro ao importar ${table}: ${error2.message}`);
+  if (error2) {
+    console.error("UPSERT ERROR:", error2);
+    throw new Error(
+      `Erro ao importar ${table}: ${error2.message}${error2.details ? " | " + error2.details : ""}`
+    );
+  }
 }
 
 /* =========================
