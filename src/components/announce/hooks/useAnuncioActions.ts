@@ -30,6 +30,31 @@ function tabelaFromCodigo(c: LojaCodigo): "anuncios_pk" | "anuncios_sb" {
   return c === "PK" ? "anuncios_pk" : "anuncios_sb";
 }
 
+function normalizeStr(v: any): string | null {
+  const s = String(v ?? "").trim();
+  return s ? s : null;
+}
+
+/** ✅ ID Bling: placeholder/"" vira NULL (evita briga com UNIQUE) */
+function normalizeIdBling(v: any): string | null {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+
+  const low = s.toLowerCase();
+  if (
+    low === "n bling" ||
+    low.includes("n bling") ||
+    low.includes("nº bling") ||
+    low === "n/bling" ||
+    low === "na" ||
+    low === "n/a"
+  ) {
+    return null;
+  }
+
+  return s;
+}
+
 export function useAnuncioActions() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -52,10 +77,9 @@ export function useAnuncioActions() {
       try {
         const tabela = tabelaFromCodigo(lojaCodigo);
 
-        // =====================================================
-        // 🔹 Monta composição (Código 1..10, Quantidade 1..10)
-        // ✅ limpa antes para não sobrar lixo antigo quando reduzir itens
-        // =====================================================
+        // =========================
+        // 🔹 composição (limpa 1..10)
+        // =========================
         const camposComposicao: Record<string, any> = {};
         for (let i = 1; i <= 10; i++) {
           camposComposicao[`Código ${i}`] = null;
@@ -64,49 +88,31 @@ export function useAnuncioActions() {
 
         composicao?.slice?.(0, 10)?.forEach?.((c: any, i: number) => {
           const idx = i + 1;
-          const qtd = parseValorBR(c?.quantidade);
-          camposComposicao[`Código ${idx}`] = c?.codigo
-            ? String(c.codigo).trim()
-            : null;
-          camposComposicao[`Quantidade ${idx}`] = isNaN(qtd) ? null : qtd;
+
+          const codigo = normalizeStr(c?.codigo);
+          const qtdNum = parseValorBR(c?.quantidade);
+
+          camposComposicao[`Código ${idx}`] = codigo;
+          camposComposicao[`Quantidade ${idx}`] = isNaN(qtdNum) ? null : qtdNum;
         });
 
         const od = inferirOD(produto?.referencia);
 
-        // =====================================================
-        // ✅ FIX: considerar ID vindo como "id" OU "ID"
-        // (suas tabelas usam coluna "ID", então em edição pode vir como produto.ID)
-        // =====================================================
+        // ✅ ID atual (edição) – pode vir como id ou ID
         const idAtualStr = String(produto?.id ?? produto?.ID ?? "").trim();
-        let novoId = idAtualStr ? Number(idAtualStr) : null;
 
         // =====================================================
-        // 🔹 Se não há ID → novo cadastro
+        // ✅ payload (colunas do banco)
         // =====================================================
-        if (!novoId) {
-          const { data: maxData, error: maxError } = await supabase
-            .from(tabela)
-            .select("ID")
-            .order("ID", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          if (maxError) throw maxError;
-
-          const ultimoId = maxData?.ID ? Number(maxData.ID) : 0;
-          novoId = ultimoId + 1;
-        }
-
-        const payload = {
-          ID: String(novoId).trim(),
-          Loja: lojaCodigo, // ✅ "PK" | "SB" (coluna Loja)
-          "ID Bling": produto?.id_bling || produto?.["ID Bling"] || null,
-          "ID Tray": produto?.id_tray || produto?.["ID Tray"] || null,
-          "ID Var": produto?.id_var || produto?.["ID Var"] || null,
-          Referência: produto?.referencia || produto?.["Referência"] || null,
-          Nome: produto?.nome || produto?.["Nome"] || null,
-          Marca: produto?.marca || produto?.["Marca"] || null,
-          Categoria: produto?.categoria || produto?.["Categoria"] || null,
+        const payload: Record<string, any> = {
+          Loja: lojaCodigo,
+          "ID Bling": normalizeIdBling(produto?.id_bling ?? produto?.["ID Bling"]),
+          "ID Tray": normalizeStr(produto?.id_tray ?? produto?.["ID Tray"]),
+          "ID Var": normalizeStr(produto?.id_var ?? produto?.["ID Var"]),
+          Referência: normalizeStr(produto?.referencia ?? produto?.["Referência"]),
+          Nome: produto?.nome ?? produto?.["Nome"] ?? null,
+          Marca: produto?.marca ?? produto?.["Marca"] ?? null,
+          Categoria: produto?.categoria ?? produto?.["Categoria"] ?? null,
           Peso: produto?.peso ?? produto?.["Peso"] ?? null,
           Altura: produto?.altura ?? produto?.["Altura"] ?? null,
           Largura: produto?.largura ?? produto?.["Largura"] ?? null,
@@ -116,36 +122,52 @@ export function useAnuncioActions() {
         };
 
         // =====================================================
-        // 🔹 Verifica se o ID já existe (mesma loja)
+        // ✅ CASO 1: EDIÇÃO -> UPDATE POR ID (SEM ON CONFLICT)
         // =====================================================
-        const { data: existente, error: erroBusca } = await supabase
-          .from(tabela)
-          .select("ID")
-          .eq("ID", String(novoId))
-          .eq("Loja", lojaCodigo)
-          .maybeSingle();
-
-        if (erroBusca) throw erroBusca;
-
-        let erroOperacao: any;
-        if (existente) {
+        if (idAtualStr) {
           const { error } = await supabase
             .from(tabela)
             .update(payload)
-            .eq("ID", String(novoId))
-            .eq("Loja", lojaCodigo);
-          erroOperacao = error;
-        } else {
-          const { error } = await supabase.from(tabela).insert(payload);
-          erroOperacao = error;
+            .eq("ID", idAtualStr);
+
+          if (error) throw error;
+
+          if (onAfterSave) onAfterSave();
+          else router.push("/dashboard/anuncios");
+
+          return;
         }
 
-        if (erroOperacao) throw erroOperacao;
+        // =====================================================
+        // ✅ CASO 2: NOVO -> GERA NOVO ID e INSERT
+        // =====================================================
+        const { data: maxData, error: maxError } = await supabase
+          .from(tabela)
+          .select("ID")
+          .order("ID", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (maxError) throw maxError;
+
+        const ultimoId = maxData?.ID ? Number(maxData.ID) : 0;
+        const novoId = ultimoId + 1;
+
+        const payloadNovo = {
+          ...payload,
+          ID: String(novoId).trim(),
+        };
+
+        const { error: insertError } = await supabase
+          .from(tabela)
+          .insert([payloadNovo] as any); // array é o padrão mais estável
+
+        if (insertError) throw insertError;
 
         if (onAfterSave) onAfterSave();
         else router.push("/dashboard/anuncios");
       } catch (err: any) {
-        alert("Erro ao salvar anúncio: " + (err.message || err));
+        alert("Erro ao salvar anúncio: " + (err?.message || err));
       } finally {
         setSaving(false);
       }
@@ -174,15 +196,14 @@ export function useAnuncioActions() {
         const { error } = await supabase
           .from(tabela)
           .delete()
-          .eq("ID", idProduto)
-          .eq("Loja", lojaCodigo);
+          .eq("ID", idProduto);
 
         if (error) throw error;
 
         if (onAfterDelete) onAfterDelete();
         else router.push("/dashboard/anuncios");
       } catch (err: any) {
-        alert("Erro ao excluir anúncio: " + (err.message || err));
+        alert("Erro ao excluir anúncio: " + (err?.message || err));
       } finally {
         setDeleting(false);
       }
@@ -191,7 +212,7 @@ export function useAnuncioActions() {
   );
 
   // ===========================================================
-  // 🗑️ EXCLUIR SELECIONADOS (usado pelo modal)
+  // 🗑️ EXCLUIR SELECIONADOS
   // ===========================================================
   const handleDeleteSelected = useCallback(
     async (selectedRows: any[], onAfterDelete?: () => void) => {
@@ -203,7 +224,6 @@ export function useAnuncioActions() {
       setDeleting(true);
 
       try {
-        // 🔹 Agrupa por tabela para deletar em lote
         const grouped = selectedRows.reduce<Record<string, string[]>>(
           (acc, row) => {
             const lojaCodigo = lojaAnyToCodigo(row?.loja ?? row?.Loja);
@@ -226,7 +246,7 @@ export function useAnuncioActions() {
 
         if (onAfterDelete) onAfterDelete();
       } catch (err: any) {
-        alert("Erro ao excluir anúncios: " + (err.message || err));
+        alert("Erro ao excluir anúncios: " + (err?.message || err));
       } finally {
         setDeleting(false);
       }
