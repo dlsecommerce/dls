@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 export interface RowShape {
   ID: string | number;
   Loja?: string;
-  "ID Bling"?: string | null;
+  "ID Bling"?: string;
   "ID Tray"?: string;
   "Referência"?: string;
   "ID Var"?: string;
@@ -45,13 +45,8 @@ type ImportMode = "inclusao" | "alteracao";
 type ImportResult = {
   data: RowShape[];
   warnings: string[];
-  errors: string[]; // ✅ erros bloqueadores para o modal
+  errors: string[]; // ✅ NOVO: erros bloqueadores para o modal
 };
-
-/** ✅ AJUSTE: nomes dos índices UNIQUE reais no Postgres (conforme seu print) */
-const PK_ID_BLING_UNIQUE_INDEX = "idx_anuncios_pk_id_bling_unique";
-// (Se quiser, você pode criar/usar um índice unique no SB também, mas você não mostrou o print do SB)
-// Mantive o SB com '"ID Bling"' como você já tinha.
 
 /** Normaliza string pra chave (dedupe / comparação) */
 function norm(v: any) {
@@ -78,6 +73,7 @@ function toStoreCode(s: any): "PK" | "SB" | null {
 function isPlaceholderBling(v: any) {
   const s = norm(v);
   if (!s) return true;
+  // placeholders comuns que quebram UNIQUE / causam duplicação
   if (s === "n bling" || s.includes("n bling") || s.includes("nº bling"))
     return true;
   if (s === "n/bling" || s === "na" || s === "n/a") return true;
@@ -89,6 +85,11 @@ function dedupeRows(rows: RowShape[]) {
   const map = new Map<string, RowShape>();
 
   for (const r of rows) {
+    // prioridade de chave:
+    // 1) ID Bling (se válido)
+    // 2) OD
+    // 3) ID Tray
+    // 4) Referência + Loja
     const idBlingKey = !isPlaceholderBling(r["ID Bling"])
       ? norm(r["ID Bling"])
       : "";
@@ -101,6 +102,7 @@ function dedupeRows(rows: RowShape[]) {
       (odKey && `od:${odKey}`) ||
       (trayKey && `tray:${trayKey}`) ||
       (refLojaKey !== "|" && `refloja:${refLojaKey}`) ||
+      // fallback extremo (não ideal)
       `row:${JSON.stringify(r)}`;
 
     map.set(key, r);
@@ -109,7 +111,7 @@ function dedupeRows(rows: RowShape[]) {
   return [...map.values()];
 }
 
-/** Reconhece Loja PK/SB e também nomes (Pikot/Sóbaquetas) e padroniza */
+/** ✅ AJUSTE: agora reconhece Loja PK/SB e também nomes (Pikot/Sóbaquetas) e padroniza */
 function splitByStore(rows: RowShape[]) {
   const pikotRows: RowShape[] = [];
   const sobaquetasRows: RowShape[] = [];
@@ -119,9 +121,9 @@ function splitByStore(rows: RowShape[]) {
     const code = toStoreCode(r.Loja);
 
     if (code === "PK") {
-      pikotRows.push({ ...r, Loja: "PK" });
+      pikotRows.push({ ...r, Loja: "PK" }); // ✅ padroniza
     } else if (code === "SB") {
-      sobaquetasRows.push({ ...r, Loja: "SB" });
+      sobaquetasRows.push({ ...r, Loja: "SB" }); // ✅ padroniza
     } else {
       outrosRows.push(r);
     }
@@ -158,14 +160,6 @@ async function preencherIdsAutomaticos(tabela: string, rows: RowShape[]) {
   });
 }
 
-/** Detecta o erro específico de falta de UNIQUE/EXCLUDE para ON CONFLICT */
-function isMissingUniqueConstraintError(msg: string) {
-  return (
-    msg.includes("no unique or exclusion constraint") ||
-    msg.includes("matching the ON CONFLICT specification")
-  );
-}
-
 /**
  * Faz upsert tentando por onConflict desejado.
  * Se der erro típico de "não existe constraint unique", faz fallback com outro onConflict.
@@ -179,12 +173,11 @@ async function upsertWithFallback(
 ) {
   if (rows.length === 0) return;
 
-  // ✅ AJUSTE 1: placeholder vira NULL (não "")
-
+  // sempre filtra id bling placeholders antes de usar conflito por ID Bling
   const cleanedRows = rows.map((r) => ({
     ...r,
     "ID Bling": isPlaceholderBling(r["ID Bling"])
-      ? null
+      ? ""
       : String(r["ID Bling"] ?? "").trim(),
   }));
 
@@ -196,15 +189,12 @@ async function upsertWithFallback(
 
     if (!error) return;
 
-    const msg = (error as any)?.message ?? String(error ?? "");
-
-    // ✅ se não for o erro de constraint, estoura
-    if (!isMissingUniqueConstraintError(msg)) {
-      throw new Error(`Erro ao importar ${table}: ${msg}`);
-    }
-
-    // ✅ se for o erro clássico, cai pro fallback
-    console.warn(`[${table}] upsert primary falhou, usando fallback.`, msg);
+    // cai pro fallback
+    // (isso pega casos tipo: constraint unique não existe no PK ainda)
+    console.warn(
+      `[${table}] upsert primary falhou, usando fallback.`,
+      error.message
+    );
   }
 
   if (!fallbackOnConflict) {
@@ -223,19 +213,23 @@ async function upsertWithFallback(
     .from(table)
     .upsert(payload as any, { onConflict: fallbackOnConflict });
 
-  if (error2) {
-    const msg2 = (error2 as any)?.message ?? String(error2 ?? "");
-    throw new Error(`Erro ao importar ${table}: ${msg2}`);
-  }
+  if (error2) throw new Error(`Erro ao importar ${table}: ${error2.message}`);
 }
 
 /* =========================
    Validações por MODO
+   - inclusao: bloqueia se já existe (por chave)
+   - alteracao: bloqueia se não existe (por chave)
 ========================= */
 async function fetchExistingKeysByStore(
   pikotRows: RowShape[],
   sobaquetasRows: RowShape[]
 ) {
+  // chaves que vamos considerar para existência:
+  // 1) ID Bling (se válido)
+  // 2) OD
+  // 3) ID Tray
+  // 4) Referência + Loja
   const keysPkBling = Array.from(
     new Set(
       pikotRows
@@ -251,6 +245,8 @@ async function fetchExistingKeysByStore(
     )
   );
 
+  // como sua base do SB depende de ID Bling, priorizamos ele
+  // Para PK, também tentamos ID Bling (quando existir), mas pode não ter UNIQUE ainda; aqui é só validação.
   const [pkExisting, sbExisting] = await Promise.all([
     (async () => {
       if (keysPkBling.length === 0) return new Set<string>();
@@ -279,23 +275,25 @@ function computeRowKeyForValidation(r: RowShape) {
   const idBlingKey = !isPlaceholderBling(r["ID Bling"])
     ? norm(r["ID Bling"])
     : "";
+  // Se tiver ID Bling válido, usamos ele como chave principal de validação
   if (idBlingKey) return { kind: "bling" as const, key: idBlingKey };
-
+  // Caso contrário, tentamos outros campos (menos confiáveis)
   const odKey = norm(r.OD);
   if (odKey) return { kind: "od" as const, key: odKey };
-
   const trayKey = norm(r["ID Tray"]);
   if (trayKey) return { kind: "tray" as const, key: trayKey };
-
   const loja = norm(r.Loja);
   const ref = norm(r["Referência"]);
   if (loja && ref) return { kind: "refloja" as const, key: `${loja}|${ref}` };
-
   return { kind: "none" as const, key: "" };
 }
 
 /**
- * Importa XLSX/CSV e valida para inclusao/alteracao.
+ * ✅ Ajuste principal:
+ * Agora recebe o "mode" e gera "errors" bloqueadores para o ConfirmImportModal.
+ *
+ * - inclusao: bloqueia linhas que já existem (por ID Bling quando disponível)
+ * - alteracao: bloqueia linhas que NÃO existem (por ID Bling quando disponível)
  */
 export async function importFromXlsxOrCsv(
   file: File,
@@ -310,20 +308,16 @@ export async function importFromXlsxOrCsv(
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
 
   if (!sheet) {
-    warnings.push(
-      "Não foi possível ler a planilha. Verifique o formato do arquivo."
-    );
+    warnings.push("Não foi possível ler a planilha. Verifique o formato do arquivo.");
     return { data: [], warnings, errors };
   }
 
-  // Pula a primeira linha de grupos
+  // ⚙️ Pula apenas a primeira linha de grupos
   const range = XLSX.utils.decode_range(sheet["!ref"] as string);
-  range.s.r = 1;
+  range.s.r = 1; // começa na segunda linha (índice 1)
   sheet["!ref"] = XLSX.utils.encode_range(range);
 
-  const json = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
-    defval: "",
-  });
+  const json = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: "" });
 
   if (json.length === 0) {
     warnings.push("Nenhum dado encontrado após o cabeçalho.");
@@ -345,14 +339,14 @@ export async function importFromXlsxOrCsv(
       "ID Tray": findKey(["ID Tray", "tray"]),
       "Referência": findKey(["Referência", "referencia"]),
       "ID Var": findKey(["ID Var", "id var"]),
-      OD: findKey(["OD", "od"]),
-      Nome: findKey(["Nome", "name"]),
-      Marca: findKey(["Marca", "brand"]),
-      Categoria: findKey(["Categoria", "category"]),
-      Peso: findKey(["Peso", "weight"]),
-      Altura: findKey(["Altura", "height"]),
-      Largura: findKey(["Largura", "width"]),
-      Comprimento: findKey(["Comprimento", "length"]),
+      "OD": findKey(["OD", "od"]),
+      "Nome": findKey(["Nome", "name"]),
+      "Marca": findKey(["Marca", "brand"]),
+      "Categoria": findKey(["Categoria", "category"]),
+      "Peso": findKey(["Peso", "weight"]),
+      "Altura": findKey(["Altura", "height"]),
+      "Largura": findKey(["Largura", "width"]),
+      "Comprimento": findKey(["Comprimento", "length"]),
     };
 
     for (let i = 1; i <= 10; i++) {
@@ -372,18 +366,16 @@ export async function importFromXlsxOrCsv(
     return obj;
   });
 
-  // Dedupe do arquivo
+  // Dedupe do arquivo (evita duplicar já na leitura)
   const deduped = dedupeRows(normalized);
 
   if (deduped.length !== normalized.length) {
     warnings.push(
-      `Foram removidas ${
-        normalized.length - deduped.length
-      } linha(s) duplicada(s) dentro do arquivo.`
+      `Foram removidas ${normalized.length - deduped.length} linha(s) duplicada(s) dentro do arquivo.`
     );
   }
 
-  // Separar por loja
+  // --- Separar registros por loja ---
   const { pikotRows, sobaquetasRows, outrosRows } = splitByStore(deduped);
 
   if (outrosRows.length > 0) {
@@ -392,7 +384,7 @@ export async function importFromXlsxOrCsv(
     );
   }
 
-  // Filtrar linhas sem ID Bling válido (SB ignora)
+  // --- Filtrar linhas sem ID Bling válido (SB bloqueia, PK avisa) ---
   const sobaquetasValidas = sobaquetasRows.filter(
     (r) => !isPlaceholderBling(r["ID Bling"])
   );
@@ -404,17 +396,17 @@ export async function importFromXlsxOrCsv(
     );
   }
 
-  const pikotSemBling = pikotRows.filter((r) =>
-    isPlaceholderBling(r["ID Bling"])
-  ).length;
-
+  const pikotSemBling = pikotRows.filter((r) => isPlaceholderBling(r["ID Bling"]))
+    .length;
   if (pikotSemBling > 0) {
     warnings.push(
-      `${pikotSemBling} registro(s) do Pikot estão sem "ID Bling" válido. Mesmo com UNIQUE, isso pode facilitar duplicação se você gravar "" em vez de NULL (aqui ajustado para NULL).`
+      `${pikotSemBling} registro(s) do Pikot estão sem "ID Bling" válido. Sem UNIQUE no PK, isso pode facilitar duplicação.`
     );
   }
 
-  // Preview com validação
+  // =========================
+  // ✅ Preview com validação (gera errors)
+  // =========================
   if (pikotRows.length || sobaquetasValidas.length) {
     const { pkExisting, sbExisting } = await fetchExistingKeysByStore(
       pikotRows,
@@ -427,6 +419,7 @@ export async function importFromXlsxOrCsv(
       const lojaCode = toStoreCode(r.Loja);
       const keyInfo = computeRowKeyForValidation(r);
 
+      // se não tem chave confiável, não bloqueia (mas avisa)
       if (keyInfo.kind === "none") continue;
 
       const exists =
@@ -439,12 +432,14 @@ export async function importFromXlsxOrCsv(
           : false;
 
       if (mode === "inclusao") {
+        // inclusão: não pode existir
         if (exists) {
           blocked.push(
             `[${lojaCode ?? "?"}] Registro já existe (${keyInfo.kind}: ${keyInfo.key})`
           );
         }
       } else {
+        // alteração: precisa existir
         if (!exists && keyInfo.kind === "bling") {
           blocked.push(
             `[${lojaCode ?? "?"}] Registro NÃO encontrado para alterar (ID Bling: ${keyInfo.key})`
@@ -461,43 +456,51 @@ export async function importFromXlsxOrCsv(
     }
   }
 
+  // ✅ Se for apenas preview, já devolve (com errors para bloquear o botão)
   if (previewOnly) {
     return { data: deduped, warnings, errors };
   }
 
+  // ✅ Se for import real e tiver erros, bloqueia também (segurança)
   if (errors.length > 0) {
     throw new Error(
       "Importação bloqueada: existem erros no arquivo (veja a pré-visualização)."
     );
   }
 
-  // Inserção/Upsert
+  // --- Inserção/Upsert no Supabase ---
   const inserts: Promise<void>[] = [];
 
-  // anuncios_sb: (mantido como você tinha)
+  // ✅ anuncios_sb: UNIQUE em "ID Bling" → usar onConflict por ele sempre
   if (sobaquetasValidas.length > 0) {
     inserts.push(
       (async () => {
         await upsertWithFallback(
           "anuncios_sb",
           sobaquetasValidas,
+          // primary
           '"ID Bling"',
+          // fallback (se algo muito fora do padrão acontecer)
           "ID",
+          // fallback por ID precisa de auto IDs
           true
         );
       })()
     );
   }
 
-  // ✅ AJUSTE 2: anuncios_pk usa o NOME do índice UNIQUE real
+  // ⚠️ anuncios_pk: tenta "ID Bling" (quando tiver UNIQUE), senão cai pra "ID"
   if (pikotRows.length > 0) {
     inserts.push(
       (async () => {
         await upsertWithFallback(
           "anuncios_pk",
           pikotRows,
-          PK_ID_BLING_UNIQUE_INDEX, // ✅ aqui!
+          // primary (vai funcionar quando você criar UNIQUE no PK)
+          '"ID Bling"',
+          // fallback (sempre existe, pois ID é PK)
           "ID",
+          // fallback por ID precisa de auto IDs
           true
         );
       })()
