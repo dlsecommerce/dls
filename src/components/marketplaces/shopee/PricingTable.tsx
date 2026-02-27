@@ -93,6 +93,26 @@ function clearShopeeCache() {
 }
 
 /**
+ * ✅ Helpers de busca (suporta múltiplos termos separados por vírgula)
+ */
+function sanitizeTerm(input: string) {
+  // remove curingas do ilike e aspas
+  return input.replace(/[%_]/g, "").replace(/"/g, "").trim();
+}
+
+function parseSearchTokens(q: string) {
+  // separa por vírgula e ignora vazios
+  return q
+    .split(",")
+    .map((s) => sanitizeTerm(s))
+    .filter(Boolean);
+}
+
+function isOnlyDigits(s: string) {
+  return /^[0-9]+$/.test(s);
+}
+
+/**
  * ✅ Normaliza Loja para escolher a tabela correta.
  */
 function normalizeLojaCode(lojaRaw: unknown): "PK" | "SB" | null {
@@ -263,25 +283,27 @@ export default function PricingTable() {
     if (selectedLoja.length) query = query.in("Loja", selectedLoja);
     if (selectedBrands.length) query = query.in("Marca", selectedBrands);
 
+    // ✅ BUSCA AJUSTADA (suporta TN 5AM, CL EUCA, ...)
     if (debouncedSearch) {
-      const term = debouncedSearch.replace(/[%_]/g, "").trim();
-      const safe = term.replace(/"/g, "");
-      const pattern = `%${safe}%`;
+      const tokens = parseSearchTokens(debouncedSearch);
 
-      const onlyDigits = /^[0-9]+$/.test(safe);
+      const orParts: string[] = [];
+      for (const t of tokens) {
+        const pattern = `%${t}%`;
 
-      const orParts: string[] = [
-        `ID::text.ilike.${pattern}`,
-        `"ID Tray"::text.ilike.${pattern}`,
-        `"ID Bling"::text.ilike.${pattern}`,
-        `"Marca".ilike.${pattern}`,
-        `"Referência".ilike.${pattern}`,
-      ];
+        // parcial (texto)
+        orParts.push(`ID::text.ilike.${pattern}`);
+        orParts.push(`"ID Tray"::text.ilike.${pattern}`);
+        orParts.push(`"ID Bling"::text.ilike.${pattern}`);
+        orParts.push(`"Marca".ilike.${pattern}`);
+        orParts.push(`"Referência".ilike.${pattern}`);
 
-      if (onlyDigits) {
-        orParts.unshift(`ID.eq.${safe}`);
-        orParts.unshift(`"ID Tray".eq.${safe}`);
-        orParts.unshift(`"ID Bling".eq.${safe}`);
+        // exato (somente números)
+        if (isOnlyDigits(t)) {
+          orParts.push(`ID.eq.${t}`);
+          orParts.push(`"ID Tray".eq.${t}`);
+          orParts.push(`"ID Bling".eq.${t}`);
+        }
       }
 
       query = query.or(orParts.join(","));
@@ -327,14 +349,7 @@ export default function PricingTable() {
         anuncio_id: r.anuncio_id,
         OD,
 
-        // ✅ IMPORTANTE: aqui mantemos o que vem do banco (pode ser null)
-        // Mas como seu helper parseBR transforma null em 0, a UI vai mostrar 0.
-        // Se você quer mostrar “padrão regra” quando vier null, o correto é:
-        // - manter null em row e resolver na UI
-        // - OU, mais simples: manter números no banco (via manual/import) e usar regra só no cálculo.
-        //
-        // Como você pediu pra regra ser o padrão quando "não mexer", o ideal é salvar NULL.
-        // Para não quebrar UI, vamos manter null no estado e só converter no display/editor.
+        // ✅ mantém null no estado (automático)
         Desconto: r.Desconto ?? null,
         Embalagem: r.Embalagem ?? null,
         Frete: r.Frete ?? null,
@@ -347,7 +362,11 @@ export default function PricingTable() {
       } as any;
     });
 
-    setCache(cacheKey, { rows: normalized as any, totalItems: count || 0, savedAt: Date.now() });
+    setCache(cacheKey, {
+      rows: normalized as any,
+      totalItems: count || 0,
+      savedAt: Date.now(),
+    });
 
     startTransition(() => {
       setRows(normalized as any);
@@ -657,25 +676,25 @@ export default function PricingTable() {
         if (selectedLoja.length) exportQuery = exportQuery.in("Loja", selectedLoja);
         if (selectedBrands.length) exportQuery = exportQuery.in("Marca", selectedBrands);
 
+        // ✅ BUSCA AJUSTADA (suporta TN 5AM, CL EUCA, ...)
         if (debouncedSearch) {
-          const term = debouncedSearch.replace(/[%_]/g, "").trim();
-          const safe = term.replace(/"/g, "");
-          const pattern = `%${safe}%`;
+          const tokens = parseSearchTokens(debouncedSearch);
 
-          const onlyDigits = /^[0-9]+$/.test(safe);
+          const orParts: string[] = [];
+          for (const t of tokens) {
+            const pattern = `%${t}%`;
 
-          const orParts: string[] = [
-            `ID::text.ilike.${pattern}`,
-            `"ID Tray"::text.ilike.${pattern}`,
-            `"ID Bling"::text.ilike.${pattern}`,
-            `"Marca".ilike.${pattern}`,
-            `"Referência".ilike.${pattern}`,
-          ];
+            orParts.push(`ID::text.ilike.${pattern}`);
+            orParts.push(`"ID Tray"::text.ilike.${pattern}`);
+            orParts.push(`"ID Bling"::text.ilike.${pattern}`);
+            orParts.push(`"Marca".ilike.${pattern}`);
+            orParts.push(`"Referência".ilike.${pattern}`);
 
-          if (onlyDigits) {
-            orParts.unshift(`ID.eq.${safe}`);
-            orParts.unshift(`"ID Tray".eq.${safe}`);
-            orParts.unshift(`"ID Bling".eq.${safe}`);
+            if (isOnlyDigits(t)) {
+              orParts.push(`ID.eq.${t}`);
+              orParts.push(`"ID Tray".eq.${t}`);
+              orParts.push(`"ID Bling".eq.${t}`);
+            }
           }
 
           exportQuery = exportQuery.or(orParts.join(","));
