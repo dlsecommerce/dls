@@ -112,6 +112,53 @@ function isOnlyDigits(s: string) {
   return /^[0-9]+$/.test(s);
 }
 
+function quoteOrValue(v: string) {
+  // PostgREST: valores com espaço/hífen ficam mais seguros dentro de aspas
+  // e precisa escapar aspas internas
+  const escaped = v.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"${escaped}"`;
+}
+
+function buildOrSearchParts(tokens: string[]) {
+  const orParts: string[] = [];
+
+  for (const t of tokens) {
+    if (!t) continue;
+
+    const variants = Array.from(
+      new Set([
+        t,
+        t.replace(/\s+/g, " "),
+        t.replace(/\s+/g, "-"),
+        t.replace(/\s+/g, ""),
+      ])
+    );
+
+    for (const v of variants) {
+      const pattern = `%${v}%`;
+      const qPattern = quoteOrValue(pattern);
+
+      // parcial (texto)
+      orParts.push(`ID::text.ilike.${qPattern}`);
+      orParts.push(`"ID Tray"::text.ilike.${qPattern}`);
+      orParts.push(`"ID Bling"::text.ilike.${qPattern}`);
+      orParts.push(`"ID Var"::text.ilike.${qPattern}`); // ✅ ADICIONADO
+      orParts.push(`Nome.ilike.${qPattern}`); // ✅ recomendado
+      orParts.push(`"Marca".ilike.${qPattern}`);
+      orParts.push(`"Referência".ilike.${qPattern}`);
+    }
+
+    // exato (somente números)
+    if (isOnlyDigits(t)) {
+      orParts.push(`ID.eq.${t}`);
+      orParts.push(`"ID Tray".eq.${t}`);
+      orParts.push(`"ID Bling".eq.${t}`);
+    }
+  }
+
+  return orParts;
+}
+
 /**
  * ✅ Normaliza Loja para escolher a tabela correta.
  */
@@ -283,30 +330,14 @@ export default function PricingTable() {
     if (selectedLoja.length) query = query.in("Loja", selectedLoja);
     if (selectedBrands.length) query = query.in("Marca", selectedBrands);
 
-    // ✅ BUSCA AJUSTADA (suporta TN 5AM, CL EUCA, ...)
+    // ✅ BUSCA AJUSTADA (suporta vários termos separados por vírgula)
     if (debouncedSearch) {
       const tokens = parseSearchTokens(debouncedSearch);
+      const orParts = buildOrSearchParts(tokens);
 
-      const orParts: string[] = [];
-      for (const t of tokens) {
-        const pattern = `%${t}%`;
-
-        // parcial (texto)
-        orParts.push(`ID::text.ilike.${pattern}`);
-        orParts.push(`"ID Tray"::text.ilike.${pattern}`);
-        orParts.push(`"ID Bling"::text.ilike.${pattern}`);
-        orParts.push(`"Marca".ilike.${pattern}`);
-        orParts.push(`"Referência".ilike.${pattern}`);
-
-        // exato (somente números)
-        if (isOnlyDigits(t)) {
-          orParts.push(`ID.eq.${t}`);
-          orParts.push(`"ID Tray".eq.${t}`);
-          orParts.push(`"ID Bling".eq.${t}`);
-        }
+      if (orParts.length) {
+        query = query.or(orParts.join(","));
       }
-
-      query = query.or(orParts.join(","));
     }
 
     if (sortColumn) {
@@ -328,7 +359,12 @@ export default function PricingTable() {
     if (myReqId !== reqIdRef.current) return;
 
     if (error) {
-      console.error("❌ Supabase error:", error.message, error.details, error.hint);
+      console.error(
+        "❌ Supabase error:",
+        error.message,
+        error.details,
+        error.hint
+      );
       setRows([]);
       setFilteredRows([]);
       setTotalItems(0);
@@ -410,7 +446,8 @@ export default function PricingTable() {
   }, [loadData]);
 
   const handleSort = (col: string) => {
-    if (sortColumn === col) setSortDirection((p) => (p === "asc" ? "desc" : "asc"));
+    if (sortColumn === col)
+      setSortDirection((p) => (p === "asc" ? "desc" : "asc"));
     else {
       setSortColumn(col);
       setSortDirection("asc");
@@ -457,10 +494,15 @@ export default function PricingTable() {
 
     // encontra a linha
     let currentRow: any = rows.find((r: any) => String(r.id) === dbIdStr);
-    if (!currentRow) currentRow = rows.find((r: any) => String((r as any).ID) === dbIdStr);
+    if (!currentRow)
+      currentRow = rows.find((r: any) => String((r as any).ID) === dbIdStr);
 
     if (!currentRow) {
-      console.error("❌ Não encontrou linha para editar:", { dbIdStr, field, value });
+      console.error("❌ Não encontrou linha para editar:", {
+        dbIdStr,
+        field,
+        value,
+      });
       setEditing(null);
       return;
     }
@@ -481,7 +523,8 @@ export default function PricingTable() {
     let newRowUpdated: Row | undefined;
 
     const updatedRows = rows.map((r: any) => {
-      const isSame = String((r as any).id) === dbIdStr || String((r as any).ID) === dbIdStr;
+      const isSame =
+        String((r as any).id) === dbIdStr || String((r as any).ID) === dbIdStr;
       if (!isSame) return r;
 
       const updated: any = { ...(r as any), [field]: newValNullable };
@@ -515,7 +558,9 @@ export default function PricingTable() {
       setCache(cacheKey, {
         ...cached,
         rows: cached.rows.map((r: any) => {
-          const isSame = String((r as any).id) === dbIdStr || String((r as any).ID) === dbIdStr;
+          const isSame =
+            String((r as any).id) === dbIdStr ||
+            String((r as any).ID) === dbIdStr;
           return isSame ? (newRowUpdated as any) : r;
         }),
         savedAt: Date.now(),
@@ -676,28 +721,14 @@ export default function PricingTable() {
         if (selectedLoja.length) exportQuery = exportQuery.in("Loja", selectedLoja);
         if (selectedBrands.length) exportQuery = exportQuery.in("Marca", selectedBrands);
 
-        // ✅ BUSCA AJUSTADA (suporta TN 5AM, CL EUCA, ...)
+        // ✅ BUSCA AJUSTADA (suporta vários termos separados por vírgula)
         if (debouncedSearch) {
           const tokens = parseSearchTokens(debouncedSearch);
+          const orParts = buildOrSearchParts(tokens);
 
-          const orParts: string[] = [];
-          for (const t of tokens) {
-            const pattern = `%${t}%`;
-
-            orParts.push(`ID::text.ilike.${pattern}`);
-            orParts.push(`"ID Tray"::text.ilike.${pattern}`);
-            orParts.push(`"ID Bling"::text.ilike.${pattern}`);
-            orParts.push(`"Marca".ilike.${pattern}`);
-            orParts.push(`"Referência".ilike.${pattern}`);
-
-            if (isOnlyDigits(t)) {
-              orParts.push(`ID.eq.${t}`);
-              orParts.push(`"ID Tray".eq.${t}`);
-              orParts.push(`"ID Bling".eq.${t}`);
-            }
+          if (orParts.length) {
+            exportQuery = exportQuery.or(orParts.join(","));
           }
-
-          exportQuery = exportQuery.or(orParts.join(","));
         }
 
         const { data, error } = await exportQuery;
@@ -798,7 +829,9 @@ export default function PricingTable() {
                 className="flex-1 bg-transparent outline-none text-sm text-white pr-10"
                 value={editing.value}
                 onChange={(e) =>
-                  setEditing((p: any) => (p ? { ...p, value: e.target.value } : p))
+                  setEditing((p: any) =>
+                    p ? { ...p, value: e.target.value } : p
+                  )
                 }
                 onKeyDown={(e) => {
                   if (e.key === "Enter") confirmEdit();
