@@ -1,6 +1,6 @@
 import React from "react";
-import { motion } from "framer-motion";
-import { TrendingUp } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { TrendingUp, ArrowUpCircle } from "lucide-react";
 import { HelpTooltip } from "./HelpTooltip";
 import { ClearAndDownloadActions } from "./ClearAndDownloadActions";
 import { PriceBlock } from "./PriceBlock";
@@ -62,7 +62,6 @@ type PriceCalculationSectionProps = {
   userEditedShopeeFrete: boolean;
   setUserEditedShopeeFrete: (v: boolean) => void;
 
-  // ✅ NOVOS: flags para permitir editar também imposto/margem/marketing/embalagem na Shopee
   userEditedShopeeImposto: boolean;
   setUserEditedShopeeImposto: (v: boolean) => void;
   userEditedShopeeMargem: boolean;
@@ -72,6 +71,15 @@ type PriceCalculationSectionProps = {
   userEditedShopeeEmbalagem: boolean;
   setUserEditedShopeeEmbalagem: (v: boolean) => void;
 };
+
+type BlockKey = "loja" | "shopee" | "mlClassico" | "mlPremium";
+
+const BLOCKS: Array<{ key: BlockKey; nome: string; blocoIndex: number }> = [
+  { key: "loja", nome: "Preço Loja", blocoIndex: 0 },
+  { key: "shopee", nome: "Preço Shopee", blocoIndex: 1 },
+  { key: "mlClassico", nome: "Preço ML Clássico", blocoIndex: 2 },
+  { key: "mlPremium", nome: "Preço ML Premium", blocoIndex: 3 },
+];
 
 export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = ({
   calculoLoja,
@@ -128,9 +136,61 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
     return !isFinite(n) || n === 0;
   };
 
+  // ✅ Blocos visíveis
+  const [visible, setVisible] = React.useState<Record<BlockKey, boolean>>({
+    loja: true,
+    shopee: true,
+    mlClassico: true,
+    mlPremium: true,
+  });
+
+  // 🔒 mantém pelo menos 1 visível
+  const ensureAtLeastOneVisible = React.useCallback(
+    (next: Record<BlockKey, boolean>) => {
+      const count = Object.values(next).filter(Boolean).length;
+      if (count === 0) return { ...next, loja: true };
+      return next;
+    },
+    []
+  );
+
+  const minimize = React.useCallback(
+    (key: BlockKey) => {
+      setVisible((prev) => ensureAtLeastOneVisible({ ...prev, [key]: false }));
+    },
+    [ensureAtLeastOneVisible]
+  );
+
+  const restore = React.useCallback((key: BlockKey) => {
+    setVisible((prev) => ({ ...prev, [key]: true }));
+  }, []);
+
+  const visibleCount = React.useMemo(
+    () => Object.values(visible).filter(Boolean).length,
+    [visible]
+  );
+
+  const hiddenBlocks = BLOCKS.filter((b) => !visible[b.key]);
+
+  // ✅ Grid dinâmico para ocupar tudo e não deixar buraco
+  const gridClass = React.useMemo(() => {
+    // base (mobile/tablet) continua responsivo
+    // no XL a gente ajusta pra não sobrar espaços
+    if (visibleCount <= 1) {
+      return "grid grid-cols-1 gap-2 mb-2";
+    }
+    if (visibleCount === 2) {
+      return "grid grid-cols-1 md:grid-cols-2 gap-2 mb-2";
+    }
+    if (visibleCount === 3) {
+      return "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 mb-2";
+    }
+    return "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 mb-2";
+  }, [visibleCount]);
+
   return (
     <motion.div
-      className="lg:col-span-6 p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg flex flex-col justify-between h-full"
+      className="lg:col-span-6 p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg flex flex-col"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
     >
@@ -152,121 +212,193 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
           />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 mb-2">
-          <PriceBlock
-            nome="Preço Loja"
-            blocoIndex={0}
-            state={calculoLoja}
-            setState={setCalculoLoja}
-            preco={precoLoja}
-            refs={calcLojaRefs}
-            isEditing={isEditing}
-            setEditing={setEditing}
-            toDisplay={toDisplay}
-            toInternal={toInternal}
-            handleLinearNav={handleLinearNav}
-            handleEmbalagemBlur={handleEmbalagemBlurShared}
-            handleEmbalagemChange={handleEmbalagemChangeShared}
-            onFieldChange={(key, internalValue) => {
-              if (key === "desconto") {
-                syncDescontoFromLoja(internalValue);
-              } else {
-                setCalculoLoja({ ...calculoLoja, [key]: internalValue });
-              }
-            }}
-            onFieldBlur={(key, internalValue) => {
-              if (key === "desconto") {
-                syncDescontoFromLoja(internalValue);
-              } else {
-                setCalculoLoja({ ...calculoLoja, [key]: internalValue });
-              }
-            }}
-          />
+        {/* ✅ GRID DINÂMICO (sem espaço vazio) */}
+        <div className={gridClass}>
+          <AnimatePresence initial={false}>
+            {visible.loja && (
+              <motion.div
+                key="loja"
+                layout
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 18 }}
+                transition={{ duration: 0.18 }}
+                className="w-full"
+              >
+                <PriceBlock
+                  nome="Preço Loja"
+                  blocoIndex={0}
+                  state={calculoLoja}
+                  setState={setCalculoLoja}
+                  preco={precoLoja}
+                  refs={calcLojaRefs}
+                  isEditing={isEditing}
+                  setEditing={setEditing}
+                  toDisplay={toDisplay}
+                  toInternal={toInternal}
+                  handleLinearNav={handleLinearNav}
+                  handleEmbalagemBlur={handleEmbalagemBlurShared}
+                  handleEmbalagemChange={handleEmbalagemChangeShared}
+                  onFieldChange={(key, internalValue) => {
+                    if (key === "desconto") syncDescontoFromLoja(internalValue);
+                    else setCalculoLoja({ ...calculoLoja, [key]: internalValue });
+                  }}
+                  onFieldBlur={(key, internalValue) => {
+                    if (key === "desconto") syncDescontoFromLoja(internalValue);
+                    else setCalculoLoja({ ...calculoLoja, [key]: internalValue });
+                  }}
+                  onMinimize={() => minimize("loja")}
+                />
+              </motion.div>
+            )}
 
-          <PriceBlock
-            nome="Preço Shopee"
-            blocoIndex={1}
-            state={calculoShopee}
-            setState={setCalculoShopee}
-            preco={precoShopee}
-            refs={calcShopeeRefs}
-            isEditing={isEditing}
-            setEditing={setEditing}
-            toDisplay={toDisplay}
-            toInternal={toInternal}
-            handleLinearNav={handleLinearNav}
-            handleEmbalagemBlur={handleEmbalagemBlurShopee}
-            handleEmbalagemChange={handleEmbalagemChangeShopee}
-            onFieldChange={(key, internalValue) => {
-              // ✅ trava automático só para os campos que o usuário mexeu
-              if (key === "comissao") setUserEditedShopeeComissao(true);
-              if (key === "frete") setUserEditedShopeeFrete(true);
-              if (key === "imposto") setUserEditedShopeeImposto(true);
-              if (key === "margem") setUserEditedShopeeMargem(true);
-              if (key === "marketing") setUserEditedShopeeMarketing(true);
-              // embalagem é controlada fora do grid (no PriceBlock, abaixo de "desconto")
-              // mas mantemos o prop aqui para consistência do pai
-              if (key === "embalagem") setUserEditedShopeeEmbalagem(true);
+            {visible.shopee && (
+              <motion.div
+                key="shopee"
+                layout
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 18 }}
+                transition={{ duration: 0.18 }}
+                className="w-full"
+              >
+                <PriceBlock
+                  nome="Preço Shopee"
+                  blocoIndex={1}
+                  state={calculoShopee}
+                  setState={setCalculoShopee}
+                  preco={precoShopee}
+                  refs={calcShopeeRefs}
+                  isEditing={isEditing}
+                  setEditing={setEditing}
+                  toDisplay={toDisplay}
+                  toInternal={toInternal}
+                  handleLinearNav={handleLinearNav}
+                  handleEmbalagemBlur={handleEmbalagemBlurShopee}
+                  handleEmbalagemChange={handleEmbalagemChangeShopee}
+                  onFieldChange={(key, internalValue) => {
+                    if (key === "comissao") setUserEditedShopeeComissao(true);
+                    if (key === "frete") setUserEditedShopeeFrete(true);
+                    if (key === "imposto") setUserEditedShopeeImposto(true);
+                    if (key === "margem") setUserEditedShopeeMargem(true);
+                    if (key === "marketing") setUserEditedShopeeMarketing(true);
+                    if (key === "embalagem") setUserEditedShopeeEmbalagem(true);
 
-              setCalculoShopee({ ...calculoShopee, [key]: internalValue });
-            }}
-            onFieldBlur={(key, internalValue) => {
-              // ✅ se o usuário apagar/zerar, volta pro automático daquele campo
-              if (key === "comissao" && isEmptyOrZero(internalValue)) {
-                setUserEditedShopeeComissao(false);
-              }
-              if (key === "frete" && isEmptyOrZero(internalValue)) {
-                setUserEditedShopeeFrete(false);
-              }
-              if (key === "imposto" && isEmptyOrZero(internalValue)) {
-                setUserEditedShopeeImposto(false);
-              }
-              if (key === "margem" && isEmptyOrZero(internalValue)) {
-                setUserEditedShopeeMargem(false);
-              }
-              if (key === "marketing" && isEmptyOrZero(internalValue)) {
-                setUserEditedShopeeMarketing(false);
-              }
-              if (key === "embalagem" && isEmptyOrZero(internalValue)) {
-                setUserEditedShopeeEmbalagem(false);
-              }
+                    setCalculoShopee({ ...calculoShopee, [key]: internalValue });
+                  }}
+                  onFieldBlur={(key, internalValue) => {
+                    if (key === "comissao" && isEmptyOrZero(internalValue))
+                      setUserEditedShopeeComissao(false);
+                    if (key === "frete" && isEmptyOrZero(internalValue))
+                      setUserEditedShopeeFrete(false);
+                    if (key === "imposto" && isEmptyOrZero(internalValue))
+                      setUserEditedShopeeImposto(false);
+                    if (key === "margem" && isEmptyOrZero(internalValue))
+                      setUserEditedShopeeMargem(false);
+                    if (key === "marketing" && isEmptyOrZero(internalValue))
+                      setUserEditedShopeeMarketing(false);
+                    if (key === "embalagem" && isEmptyOrZero(internalValue))
+                      setUserEditedShopeeEmbalagem(false);
 
-              setCalculoShopee({ ...calculoShopee, [key]: internalValue });
-            }}
-          />
+                    setCalculoShopee({ ...calculoShopee, [key]: internalValue });
+                  }}
+                  onMinimize={() => minimize("shopee")}
+                />
+              </motion.div>
+            )}
 
-          <PriceBlock
-            nome="Preço ML Clássico"
-            blocoIndex={2}
-            state={calculoMLClassico}
-            setState={setCalculoMLClassico}
-            preco={precoMLClassico}
-            refs={calcMLClassicoRefs}
-            isEditing={isEditing}
-            setEditing={setEditing}
-            toDisplay={toDisplay}
-            toInternal={toInternal}
-            handleLinearNav={handleLinearNav}
-            handleEmbalagemBlur={handleEmbalagemBlurShared}
-            handleEmbalagemChange={handleEmbalagemChangeShared}
-          />
+            {visible.mlClassico && (
+              <motion.div
+                key="mlClassico"
+                layout
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 18 }}
+                transition={{ duration: 0.18 }}
+                className="w-full"
+              >
+                <PriceBlock
+                  nome="Preço ML Clássico"
+                  blocoIndex={2}
+                  state={calculoMLClassico}
+                  setState={setCalculoMLClassico}
+                  preco={precoMLClassico}
+                  refs={calcMLClassicoRefs}
+                  isEditing={isEditing}
+                  setEditing={setEditing}
+                  toDisplay={toDisplay}
+                  toInternal={toInternal}
+                  handleLinearNav={handleLinearNav}
+                  handleEmbalagemBlur={handleEmbalagemBlurShared}
+                  handleEmbalagemChange={handleEmbalagemChangeShared}
+                  onMinimize={() => minimize("mlClassico")}
+                />
+              </motion.div>
+            )}
 
-          <PriceBlock
-            nome="Preço ML Premium"
-            blocoIndex={3}
-            state={calculoMLPremium}
-            setState={setCalculoMLPremium}
-            preco={precoMLPremium}
-            refs={calcMLPremiumRefs}
-            isEditing={isEditing}
-            setEditing={setEditing}
-            toDisplay={toDisplay}
-            toInternal={toInternal}
-            handleLinearNav={handleLinearNav}
-            handleEmbalagemBlur={handleEmbalagemBlurShared}
-            handleEmbalagemChange={handleEmbalagemChangeShared}
-          />
+            {visible.mlPremium && (
+              <motion.div
+                key="mlPremium"
+                layout
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 18 }}
+                transition={{ duration: 0.18 }}
+                className="w-full"
+              >
+                <PriceBlock
+                  nome="Preço ML Premium"
+                  blocoIndex={3}
+                  state={calculoMLPremium}
+                  setState={setCalculoMLPremium}
+                  preco={precoMLPremium}
+                  refs={calcMLPremiumRefs}
+                  isEditing={isEditing}
+                  setEditing={setEditing}
+                  toDisplay={toDisplay}
+                  toInternal={toInternal}
+                  handleLinearNav={handleLinearNav}
+                  handleEmbalagemBlur={handleEmbalagemBlurShared}
+                  handleEmbalagemChange={handleEmbalagemChangeShared}
+                  onMinimize={() => minimize("mlPremium")}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
+
+        {/* RESTAURAR */}
+        <AnimatePresence>
+          {hiddenBlocks.length > 0 && (
+            <motion.div
+              layout
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              transition={{ duration: 0.18 }}
+              className="mb-2 p-2 rounded-xl border border-white/10 bg-white/5"
+            >
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="text-xs text-white/70">Blocos minimizados:</div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {hiddenBlocks.map((b) => (
+                    <button
+                      key={b.key}
+                      type="button"
+                      onClick={() => restore(b.key)}
+                      className="h-8 px-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition flex items-center gap-2"
+                      title={`Restaurar ${b.nome}`}
+                    >
+                      <ArrowUpCircle className="w-4 h-4" />
+                      <span className="text-xs">{b.nome}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <AcrescimosSection
           acrescimos={acrescimos}
