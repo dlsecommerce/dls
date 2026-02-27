@@ -241,28 +241,33 @@ export default function PricingTable() {
     if (selectedLoja.length) query = query.in("Loja", selectedLoja);
     if (selectedBrands.length) query = query.in("Marca", selectedBrands);
 
-    // ✅ BUSCA SERVER-SIDE CORRIGIDA (ID / ID Tray / ID Bling numéricos -> cast pra text)
+    // ✅ BUSCA SERVER-SIDE (sem ::text) + suporta vírgula (TN 5AM, CL EUCA, ...)
     if (debouncedSearch) {
-      const term = debouncedSearch.replace(/[%_]/g, "").trim();
-      const safe = term.replace(/"/g, "");
-      const pattern = `%${safe}%`;
-      const onlyDigits = /^[0-9]+$/.test(safe);
+      const tokens = debouncedSearch
+        .split(",")
+        .map((t) => t.replace(/[%_]/g, "").replace(/"/g, "").trim())
+        .filter(Boolean);
 
-      const orParts: string[] = [
-        `ID::text.ilike.${pattern}`,
-        `"ID Tray"::text.ilike.${pattern}`,
-        `"ID Bling"::text.ilike.${pattern}`,
-        `"Marca".ilike.${pattern}`,
-        `"Referência".ilike.${pattern}`,
-      ];
+      const orParts: string[] = [];
 
-      if (onlyDigits) {
-        orParts.unshift(`ID.eq.${safe}`);
-        orParts.unshift(`"ID Tray".eq.${safe}`);
-        orParts.unshift(`"ID Bling".eq.${safe}`);
+      for (const term of tokens) {
+        // texto (ilike)
+        orParts.push(`Nome.ilike.%${term}%`);
+        orParts.push(`"Marca".ilike.%${term}%`);
+        orParts.push(`"Referência".ilike.%${term}%`);
+        orParts.push(`"ID Var".ilike.%${term}%`);
+        orParts.push(`"ID Tray".ilike.%${term}%`);
+        orParts.push(`"ID Bling".ilike.%${term}%`);
+
+        // número puro (eq)
+        if (/^[0-9]+$/.test(term)) {
+          orParts.push(`ID.eq.${term}`);
+          orParts.push(`"ID Tray".eq.${term}`);
+          orParts.push(`"ID Bling".eq.${term}`);
+        }
       }
 
-      query = query.or(orParts.join(","));
+      if (orParts.length) query = query.or(orParts.join(","));
     }
 
     // ✅ ORDENAÇÃO: "Atualizado em"
@@ -642,27 +647,31 @@ export default function PricingTable() {
         if (selectedLoja.length) exportQuery = exportQuery.in("Loja", selectedLoja);
         if (selectedBrands.length) exportQuery = exportQuery.in("Marca", selectedBrands);
 
+        // ✅ BUSCA SERVER-SIDE (sem ::text) + suporta vírgula no export também
         if (debouncedSearch) {
-          const term = debouncedSearch.replace(/[%_]/g, "").trim();
-          const safe = term.replace(/"/g, "");
-          const pattern = `%${safe}%`;
-          const onlyDigits = /^[0-9]+$/.test(safe);
+          const tokens = debouncedSearch
+            .split(",")
+            .map((t) => t.replace(/[%_]/g, "").replace(/"/g, "").trim())
+            .filter(Boolean);
 
-          const orParts: string[] = [
-            `ID::text.ilike.${pattern}`,
-            `"ID Tray"::text.ilike.${pattern}`,
-            `"ID Bling"::text.ilike.${pattern}`,
-            `"Marca".ilike.${pattern}`,
-            `"Referência".ilike.${pattern}`,
-          ];
+          const orParts: string[] = [];
 
-          if (onlyDigits) {
-            orParts.unshift(`ID.eq.${safe}`);
-            orParts.unshift(`"ID Tray".eq.${safe}`);
-            orParts.unshift(`"ID Bling".eq.${safe}`);
+          for (const term of tokens) {
+            orParts.push(`Nome.ilike.%${term}%`);
+            orParts.push(`"Marca".ilike.%${term}%`);
+            orParts.push(`"Referência".ilike.%${term}%`);
+            orParts.push(`"ID Var".ilike.%${term}%`);
+            orParts.push(`"ID Tray".ilike.%${term}%`);
+            orParts.push(`"ID Bling".ilike.%${term}%`);
+
+            if (/^[0-9]+$/.test(term)) {
+              orParts.push(`ID.eq.${term}`);
+              orParts.push(`"ID Tray".eq.${term}`);
+              orParts.push(`"ID Bling".eq.${term}`);
+            }
           }
 
-          exportQuery = exportQuery.or(orParts.join(","));
+          if (orParts.length) exportQuery = exportQuery.or(orParts.join(","));
         }
 
         const { data, error } = await exportQuery;
