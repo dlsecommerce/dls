@@ -112,13 +112,19 @@ function isOnlyDigits(s: string) {
   return /^[0-9]+$/.test(s);
 }
 
-function quoteOrValue(v: string) {
-  // PostgREST: valores com espaço/hífen ficam mais seguros dentro de aspas
-  // e precisa escapar aspas internas
-  const escaped = v.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  return `"${escaped}"`;
+function escapeForOrValue(v: string) {
+  // PostgREST precisa que o valor do ilike fique entre aspas
+  // e que aspas internas sejam escapadas
+  return `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
+/**
+ * ✅ Monta um OR válido no PostgREST (SEM ::text)
+ * - Campos de texto: ilike
+ * - Campos numéricos: eq (quando token for só dígitos)
+ *
+ * ⚠️ IMPORTANTE: O PostgREST NÃO aceita cast "::text" dentro do .or()
+ */
 function buildOrSearchParts(tokens: string[]) {
   const orParts: string[] = [];
 
@@ -135,22 +141,24 @@ function buildOrSearchParts(tokens: string[]) {
     );
 
     for (const v of variants) {
-      const pattern = `%${v}%`;
-      const qPattern = quoteOrValue(pattern);
+      const pattern = escapeForOrValue(`%${v}%`);
 
-      // parcial (texto)
-      orParts.push(`ID::text.ilike.${qPattern}`);
-      orParts.push(`"ID Tray"::text.ilike.${qPattern}`);
-      orParts.push(`"ID Bling"::text.ilike.${qPattern}`);
-      orParts.push(`"ID Var"::text.ilike.${qPattern}`); // ✅ ADICIONADO
-      orParts.push(`Nome.ilike.${qPattern}`); // ✅ recomendado
-      orParts.push(`"Marca".ilike.${qPattern}`);
-      orParts.push(`"Referência".ilike.${qPattern}`);
+      // ✅ COLUNAS TEXTO (ilike direto)
+      orParts.push(`"Nome".ilike.${pattern}`);
+      orParts.push(`"Marca".ilike.${pattern}`);
+      orParts.push(`"Referência".ilike.${pattern}`);
+      orParts.push(`"ID Var".ilike.${pattern}`); // ✅ agora busca por ID Var também
+      orParts.push(`"ID Bling".ilike.${pattern}`); // se for text no seu schema/view
+      orParts.push(`"ID Tray".ilike.${pattern}`); // se for text no seu schema/view
     }
 
-    // exato (somente números)
+    // ✅ COLUNAS NUMÉRICAS (eq quando for número puro)
     if (isOnlyDigits(t)) {
-      orParts.push(`ID.eq.${t}`);
+      // "ID" normalmente é bigint/int no seu print
+      orParts.push(`"ID".eq.${t}`);
+
+      // Se "ID Tray"/"ID Bling" forem numéricos (int/bigint) no seu schema,
+      // esses eq vão funcionar. Se forem texto, não faz mal ter os ilike acima.
       orParts.push(`"ID Tray".eq.${t}`);
       orParts.push(`"ID Bling".eq.${t}`);
     }
@@ -330,14 +338,12 @@ export default function PricingTable() {
     if (selectedLoja.length) query = query.in("Loja", selectedLoja);
     if (selectedBrands.length) query = query.in("Marca", selectedBrands);
 
-    // ✅ BUSCA AJUSTADA (suporta vários termos separados por vírgula)
+    // ✅ BUSCA AJUSTADA (SEM ::text e suportando vírgula)
     if (debouncedSearch) {
       const tokens = parseSearchTokens(debouncedSearch);
       const orParts = buildOrSearchParts(tokens);
 
-      if (orParts.length) {
-        query = query.or(orParts.join(","));
-      }
+      if (orParts.length) query = query.or(orParts.join(","));
     }
 
     if (sortColumn) {
@@ -721,14 +727,11 @@ export default function PricingTable() {
         if (selectedLoja.length) exportQuery = exportQuery.in("Loja", selectedLoja);
         if (selectedBrands.length) exportQuery = exportQuery.in("Marca", selectedBrands);
 
-        // ✅ BUSCA AJUSTADA (suporta vários termos separados por vírgula)
+        // ✅ BUSCA AJUSTADA (SEM ::text e suportando vírgula)
         if (debouncedSearch) {
           const tokens = parseSearchTokens(debouncedSearch);
           const orParts = buildOrSearchParts(tokens);
-
-          if (orParts.length) {
-            exportQuery = exportQuery.or(orParts.join(","));
-          }
+          if (orParts.length) exportQuery = exportQuery.or(orParts.join(","));
         }
 
         const { data, error } = await exportQuery;
