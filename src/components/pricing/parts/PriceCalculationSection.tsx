@@ -1,6 +1,6 @@
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { TrendingUp, ArrowUpCircle } from "lucide-react";
+import { TrendingUp, ArrowUpCircle, Check, X } from "lucide-react";
 import { HelpTooltip } from "./HelpTooltip";
 import { ClearAndDownloadActions } from "./ClearAndDownloadActions";
 import { PriceBlock } from "./PriceBlock";
@@ -81,6 +81,8 @@ const BLOCKS: Array<{ key: BlockKey; nome: string; blocoIndex: number }> = [
   { key: "mlPremium", nome: "Preço ML Premium", blocoIndex: 3 },
 ];
 
+const STORAGE_KEY = "pricing.visibleBlocks.v1";
+
 export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = ({
   calculoLoja,
   setCalculoLoja,
@@ -136,13 +138,51 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
     return !isFinite(n) || n === 0;
   };
 
+  // ✅ estado padrão
+  const defaultVisible: Record<BlockKey, boolean> = React.useMemo(
+    () => ({
+      loja: true,
+      shopee: true,
+      mlClassico: true,
+      mlPremium: true,
+    }),
+    []
+  );
+
   // ✅ Blocos visíveis
-  const [visible, setVisible] = React.useState<Record<BlockKey, boolean>>({
-    loja: true,
-    shopee: true,
-    mlClassico: true,
-    mlPremium: true,
-  });
+  const [visible, setVisible] = React.useState<Record<BlockKey, boolean>>(
+    defaultVisible
+  );
+
+  // ✅ Dropdown “Configurar layout”
+  const [isLayoutOpen, setIsLayoutOpen] = React.useState(false);
+
+  // ✅ Carrega do localStorage 1x
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Partial<Record<BlockKey, boolean>>;
+      const next: Record<BlockKey, boolean> = {
+        ...defaultVisible,
+        ...parsed,
+      };
+
+      const count = Object.values(next).filter(Boolean).length;
+      setVisible(count === 0 ? { ...next, loja: true } : next);
+    } catch {
+      // ignore
+    }
+  }, [defaultVisible]);
+
+  // ✅ Salva no localStorage sempre que mudar
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(visible));
+    } catch {
+      // ignore
+    }
+  }, [visible]);
 
   // 🔒 mantém pelo menos 1 visível
   const ensureAtLeastOneVisible = React.useCallback(
@@ -165,28 +205,53 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
     setVisible((prev) => ({ ...prev, [key]: true }));
   }, []);
 
+  const toggleBlock = (key: BlockKey) => {
+    setVisible((prev) =>
+      ensureAtLeastOneVisible({ ...prev, [key]: !prev[key] })
+    );
+  };
+
   const visibleCount = React.useMemo(
     () => Object.values(visible).filter(Boolean).length,
     [visible]
   );
 
-  const hiddenBlocks = BLOCKS.filter((b) => !visible[b.key]);
+  const hiddenBlocks = React.useMemo(
+    () => BLOCKS.filter((b) => !visible[b.key]),
+    [visible]
+  );
 
-  // ✅ Grid dinâmico para ocupar tudo e não deixar buraco
+  // ✅ Grid dinâmico
   const gridClass = React.useMemo(() => {
-    // base (mobile/tablet) continua responsivo
-    // no XL a gente ajusta pra não sobrar espaços
-    if (visibleCount <= 1) {
-      return "grid grid-cols-1 gap-2 mb-2";
-    }
-    if (visibleCount === 2) {
+    if (visibleCount <= 1) return "grid grid-cols-1 gap-2 mb-2";
+    if (visibleCount === 2)
       return "grid grid-cols-1 md:grid-cols-2 gap-2 mb-2";
-    }
-    if (visibleCount === 3) {
+    if (visibleCount === 3)
       return "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 mb-2";
-    }
     return "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 mb-2";
   }, [visibleCount]);
+
+  const shortLabel = (key: BlockKey) => {
+    if (key === "loja") return "Loja";
+    if (key === "shopee") return "Shopee";
+    if (key === "mlClassico") return "Clássico";
+    return "Premium";
+  };
+
+  // ✅ Fecha dropdown ao clicar fora
+  const closeLayoutOnOutside = React.useCallback((e: MouseEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest?.("[data-layout-dropdown]")) return;
+    setIsLayoutOpen(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (!isLayoutOpen) return;
+    window.addEventListener("mousedown", closeLayoutOnOutside);
+    return () =>
+      window.removeEventListener("mousedown", closeLayoutOnOutside);
+  }, [isLayoutOpen, closeLayoutOnOutside]);
 
   return (
     <motion.div
@@ -194,8 +259,9 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
     >
-      <div>
-        <div className="flex items-center justify-between mb-2">
+      <div data-layout-dropdown>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-2 gap-2">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-[#1a8ceb]" />
             <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -204,15 +270,116 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
             </h3>
           </div>
 
+          {/* ✅ Ações + botão layout agora aqui */}
           <ClearAndDownloadActions
             handleDownload={handleDownload}
             handleClearAll={handleClearAll}
             isClearing={isClearing}
             clicks={clicks}
+            onToggleLayout={() => setIsLayoutOpen((v) => !v)}
           />
         </div>
 
-        {/* ✅ GRID DINÂMICO (sem espaço vazio) */}
+        {/* ✅ Dropdown flutuante (ancorado no topo direito do bloco) */}
+        <AnimatePresence>
+          {isLayoutOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.98 }}
+              transition={{ duration: 0.14 }}
+              className="absolute right-0 mt-2 w-[260px] rounded-xl border border-white/10 bg-black/70 backdrop-blur-xl shadow-xl p-2 z-50"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs text-white/80 font-semibold">
+                  Configurar blocos
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsLayoutOpen(false)}
+                  className="p-1 rounded-md hover:bg-white/10 transition"
+                  title="Fechar"
+                >
+                  <X className="w-4 h-4 text-white/70" />
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                {BLOCKS.map((b) => {
+                  const checked = visible[b.key];
+                  return (
+                    <button
+                      key={b.key}
+                      type="button"
+                      onClick={() => toggleBlock(b.key)}
+                      className={[
+                        "h-9 px-2 rounded-lg",
+                        "border border-white/10",
+                        checked ? "bg-white/10" : "bg-white/5",
+                        "hover:bg-white/10 transition",
+                        "flex items-center justify-between",
+                      ].join(" ")}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-white/85">
+                          {b.nome}
+                        </span>
+                        <span className="text-[10px] text-white/50">
+                          ({shortLabel(b.key)})
+                        </span>
+                      </div>
+
+                      <div
+                        className={[
+                          "w-6 h-6 rounded-md border border-white/10",
+                          "flex items-center justify-center",
+                          checked ? "bg-white/10" : "bg-white/0",
+                        ].join(" ")}
+                      >
+                        {checked && (
+                          <Check className="w-4 h-4 text-white/80" />
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setVisible(ensureAtLeastOneVisible(defaultVisible))
+                  }
+                  className="h-9 px-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-xs text-white/80 transition"
+                >
+                  Mostrar todos
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setVisible(
+                      ensureAtLeastOneVisible({
+                        loja: true,
+                        shopee: false,
+                        mlClassico: false,
+                        mlPremium: false,
+                      })
+                    )
+                  }
+                >
+                </button>
+              </div>
+
+              <div className="mt-2 text-[10px] text-white/40">
+                Suas escolhas ficam salvas automaticamente.
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* GRID */}
         <div className={gridClass}>
           <AnimatePresence initial={false}>
             {visible.loja && (
@@ -240,12 +407,24 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                   handleEmbalagemBlur={handleEmbalagemBlurShared}
                   handleEmbalagemChange={handleEmbalagemChangeShared}
                   onFieldChange={(key, internalValue) => {
-                    if (key === "desconto") syncDescontoFromLoja(internalValue);
-                    else setCalculoLoja({ ...calculoLoja, [key]: internalValue });
+                    if (key === "desconto") {
+                      syncDescontoFromLoja(internalValue);
+                    } else {
+                      setCalculoLoja({
+                        ...calculoLoja,
+                        [key]: internalValue,
+                      });
+                    }
                   }}
                   onFieldBlur={(key, internalValue) => {
-                    if (key === "desconto") syncDescontoFromLoja(internalValue);
-                    else setCalculoLoja({ ...calculoLoja, [key]: internalValue });
+                    if (key === "desconto") {
+                      syncDescontoFromLoja(internalValue);
+                    } else {
+                      setCalculoLoja({
+                        ...calculoLoja,
+                        [key]: internalValue,
+                      });
+                    }
                   }}
                   onMinimize={() => minimize("loja")}
                 />
@@ -254,7 +433,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
 
             {visible.shopee && (
               <motion.div
-                key="shopee"
+                key="Preço"
                 layout
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -284,7 +463,10 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                     if (key === "marketing") setUserEditedShopeeMarketing(true);
                     if (key === "embalagem") setUserEditedShopeeEmbalagem(true);
 
-                    setCalculoShopee({ ...calculoShopee, [key]: internalValue });
+                    setCalculoShopee({
+                      ...calculoShopee,
+                      [key]: internalValue,
+                    });
                   }}
                   onFieldBlur={(key, internalValue) => {
                     if (key === "comissao" && isEmptyOrZero(internalValue))
@@ -300,7 +482,10 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                     if (key === "embalagem" && isEmptyOrZero(internalValue))
                       setUserEditedShopeeEmbalagem(false);
 
-                    setCalculoShopee({ ...calculoShopee, [key]: internalValue });
+                    setCalculoShopee({
+                      ...calculoShopee,
+                      [key]: internalValue,
+                    });
                   }}
                   onMinimize={() => minimize("shopee")}
                 />
@@ -367,19 +552,31 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
           </AnimatePresence>
         </div>
 
-        {/* RESTAURAR */}
+        {/* RESTAURAR DOCK */}
         <AnimatePresence>
           {hiddenBlocks.length > 0 && (
             <motion.div
               layout
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
+              exit={{ opacity: 0, y: 8 }}
               transition={{ duration: 0.18 }}
-              className="mb-2 p-2 rounded-xl border border-white/10 bg-white/5"
+              className={[
+                "mb-2",
+                "rounded-xl border border-white/10",
+                "bg-gradient-to-r black-70 from-black/40 to-black/40",
+                "backdrop-blur-lg shadow-lg",
+                "px-2 py-2",
+                "flex items-center justify-between gap-2 flex-wrap",
+              ].join(" ")}
             >
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="text-xs text-white/70">Blocos minimizados:</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-white/60">Ocultos</span>
+                  <span className="text-[10px] px-2 py-[2px] rounded-full border border-white/10 bg-white/5 text-white/70">
+                    {hiddenBlocks.length}
+                  </span>
+                </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
                   {hiddenBlocks.map((b) => (
@@ -387,15 +584,24 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                       key={b.key}
                       type="button"
                       onClick={() => restore(b.key)}
-                      className="h-8 px-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition flex items-center gap-2"
+                      className="h-8 px-3 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white text-xs flex items-center gap-2 transition"
                       title={`Restaurar ${b.nome}`}
                     >
                       <ArrowUpCircle className="w-4 h-4" />
-                      <span className="text-xs">{b.nome}</span>
+                      <span>{shortLabel(b.key)}</span>
                     </button>
                   ))}
                 </div>
               </div>
+
+              <button
+                type="button"
+                onClick={() => hiddenBlocks.forEach((b) => restore(b.key))}
+                className="h-8 px-3 rounded-lg border border-white/10 bg-white/0 hover:bg-white/5 text-xs text-white/60 hover:text-white transition"
+                title="Restaurar todos"
+              >
+                Restaurar todos
+              </button>
             </motion.div>
           )}
         </AnimatePresence>

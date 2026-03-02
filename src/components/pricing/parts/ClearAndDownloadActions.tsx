@@ -1,12 +1,15 @@
 import React from "react";
 import { motion } from "framer-motion";
-import { Download, Trash2 } from "lucide-react";
+import { Download, Trash2, Settings2 } from "lucide-react";
 
 type ClearAndDownloadActionsProps = {
   handleDownload: () => void;
   handleClearAll: () => void;
   isClearing: boolean;
   clicks: number;
+
+  // ✅ NOVO
+  onToggleLayout: () => void;
 };
 
 export const ClearAndDownloadActions: React.FC<ClearAndDownloadActionsProps> = ({
@@ -14,8 +17,20 @@ export const ClearAndDownloadActions: React.FC<ClearAndDownloadActionsProps> = (
   handleClearAll,
   isClearing,
   clicks,
+  onToggleLayout,
 }) => (
   <div className="flex items-center gap-2">
+    {/* ✅ CONFIGURAR LAYOUT */}
+    <motion.button
+      whileTap={{ scale: 0.9 }}
+      onClick={onToggleLayout}
+      title="Configurar layout dos blocos"
+      className="p-2 hover:bg-white/10 rounded-full transition-all"
+    >
+      <Settings2 className="w-4 h-4 text-white opacity-70 hover:opacity-100" />
+    </motion.button>
+
+    {/* DOWNLOAD */}
     <motion.button
       whileTap={{ scale: 0.9 }}
       onClick={handleDownload}
@@ -24,6 +39,8 @@ export const ClearAndDownloadActions: React.FC<ClearAndDownloadActionsProps> = (
     >
       <Download className="w-4 h-4 text-white opacity-70 hover:opacity-100" />
     </motion.button>
+
+    {/* LIMPAR */}
     <motion.button
       whileTap={{ scale: 0.9, rotate: -15 }}
       onClick={handleClearAll}
