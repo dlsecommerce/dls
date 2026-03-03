@@ -24,6 +24,11 @@ import { Check as CheckIcon, X as XIcon } from "lucide-react";
 import PricingMassEditionModal from "@/components/marketplaces/tray/PricingMassEditionModal";
 import PricingHeaderRow from "@/components/marketplaces/tray/PricingHeaderRow";
 
+// ⚠️ se você já tem toast importado em outro lugar, mantenha o seu.
+// Se NÃO tiver, descomente uma das opções abaixo conforme seu projeto:
+// import { toast } from "sonner";
+// import { toast } from "@/components/ui/use-toast";
+
 type CacheEntry = {
   rows: Row[];
   totalItems: number;
@@ -84,6 +89,40 @@ function getCache(key: string) {
 
 function clearTrayCache() {
   TRAY_CACHE.clear();
+}
+
+/**
+ * ✅ Anti “linhas fantasma”
+ * Regra: só consideramos linha válida se tiver ID (coluna "ID" do seu dataset) ou id (pk interno),
+ * e NÃO pode ser vazio/0/"-".
+ * (Opcional) Se quiser ser mais rígido, exija também ID Tray ou Referência.
+ */
+function isValidRow(r: any) {
+  const idHuman = r?.ID;
+  const idPk = r?.id;
+
+  const pick = (v: any) => {
+    if (v === null || v === undefined) return "";
+    const s = String(v).trim();
+    return s;
+  };
+
+  const sHuman = pick(idHuman);
+  const sPk = pick(idPk);
+
+  const hasSomeId =
+    (sHuman && sHuman !== "0" && sHuman !== "-") ||
+    (sPk && sPk !== "0" && sPk !== "-");
+
+  if (!hasSomeId) return false;
+
+  // 🔒 opcional: descomente para filtrar ainda mais (caso queira)
+  // const idTray = pick(r?.["ID Tray"]);
+  // const ref = pick(r?.["Referência"] ?? r?.Referência);
+  // if (!idTray || idTray === "-") return false;
+  // if (!ref || ref === "-") return false;
+
+  return true;
 }
 
 export default function PricingTable() {
@@ -170,8 +209,10 @@ export default function PricingTable() {
   useEffect(() => {
     const cached = getCache(cacheKey);
     if (cached) {
-      setRows(cached.rows);
-      setFilteredRows(cached.rows);
+      // ✅ garante que cache também não reintroduza fantasmas
+      const safe = (cached.rows || []).filter(isValidRow);
+      setRows(safe);
+      setFilteredRows(safe);
       setTotalItems(cached.totalItems);
       setLoading(false);
     }
@@ -184,8 +225,9 @@ export default function PricingTable() {
     const cached = getCache(cacheKey);
     if (cached) {
       startTransition(() => {
-        setRows(cached.rows);
-        setFilteredRows(cached.rows);
+        const safe = (cached.rows || []).filter(isValidRow);
+        setRows(safe);
+        setFilteredRows(safe);
         setTotalItems(cached.totalItems);
         setLoading(false);
       });
@@ -298,7 +340,10 @@ export default function PricingTable() {
       return;
     }
 
-    const normalized = (data || []).map((r: any) => {
+    // ✅ remove fantasmas antes de normalizar (evita parse em dados vazios)
+    const safeData = (data || []).filter(isValidRow);
+
+    const normalized = safeData.map((r: any) => {
       let OD = 3;
       const ref = String(r.Referência || "").trim();
       if (ref.startsWith("PAI -")) OD = 1;
@@ -321,7 +366,7 @@ export default function PricingTable() {
       };
     });
 
-    // ✅ salva cache
+    // ✅ salva cache (já sem fantasmas)
     setCache(cacheKey, {
       rows: normalized,
       totalItems: count || 0,
@@ -451,7 +496,7 @@ export default function PricingTable() {
   const cancelEdit = () => setEditing(null);
 
   // ============================================================
-  // ✅ IMPORT via RPC em lote (PK/SB) - ajuste aplicado aqui
+  // ✅ IMPORT via RPC em lote (PK/SB)
   // ============================================================
   const BATCH_SIZE = 1000;
 
@@ -492,13 +537,7 @@ export default function PricingTable() {
     const loja = normalizeLoja(row["Loja"]);
     if (!id || !loja) return null;
 
-    const percentCols = [
-      "Desconto",
-      "Comissão",
-      "Imposto",
-      "Margem de Lucro",
-      "Marketing",
-    ];
+    const percentCols = ["Desconto", "Comissão", "Imposto", "Margem de Lucro", "Marketing"];
     const moneyCols = ["Embalagem", "Frete", "Custo", "Preço de Venda"];
 
     const out: any = {
@@ -685,6 +724,9 @@ export default function PricingTable() {
         page++;
       }
 
+      // ✅ remove linhas vazias/fantasmas antes de exportar
+      all = all.filter(isValidRow);
+
       await impExp.handleExport(all);
     } catch (e) {
       console.error("ERRO EXPORT:", e);
@@ -761,7 +803,7 @@ export default function PricingTable() {
         />
 
         {editing && (
-          <FloatingEditor anchorRect={editing.anchorRect} onClose={cancelEdit}>
+          <FloatingEditor anchorRect={editing.anchorRect} onClose={() => setEditing(null)}>
             <div className="relative flex items-center rounded-md border border-neutral-700 bg-black/30 px-2 py-1.5">
               <span className="text-xs px-1 py-0.5 rounded bg-black/60 border border-neutral-700 mr-1">
                 {editing.isMoney ? "R$" : "%"}
@@ -777,14 +819,14 @@ export default function PricingTable() {
                 }
                 onKeyDown={(e) => {
                   if (e.key === "Enter") confirmEdit();
-                  if (e.key === "Escape") cancelEdit();
+                  if (e.key === "Escape") setEditing(null);
                 }}
               />
 
               <div className="absolute right-1 flex items-center gap-1">
                 <button
                   title="Cancelar"
-                  onClick={cancelEdit}
+                  onClick={() => setEditing(null)}
                   className="text-red-400 hover:text-red-300"
                 >
                   <XIcon className="w-4 h-4" />

@@ -186,6 +186,30 @@ function tableByLojaCode(code: "PK" | "SB") {
   return code === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
 }
 
+/**
+ * ✅ Anti “linhas fantasma” (UI/Export)
+ * Regra mínima: precisa ter ID (coluna "ID") ou id (pk/view) válido e diferente de 0/"-".
+ */
+function isValidRow(r: any) {
+  const pick = (v: any) => (v === null || v === undefined ? "" : String(v).trim());
+
+  const sID = pick(r?.ID);
+  const sid = pick(r?.id);
+
+  const hasSomeId =
+    (sID && sID !== "0" && sID !== "-") || (sid && sid !== "0" && sid !== "-");
+
+  if (!hasSomeId) return false;
+
+  // 🔒 opcional (mais rígido): descomente se quiser
+  // const ref = pick(r?.["Referência"] ?? r?.Referência);
+  // const idTray = pick(r?.["ID Tray"]);
+  // if (!ref || ref === "-") return false;
+  // if (!idTray || idTray === "-") return false;
+
+  return true;
+}
+
 export default function PricingTable() {
   const router = useRouter();
 
@@ -270,8 +294,9 @@ export default function PricingTable() {
   useEffect(() => {
     const cached = getCache(cacheKey);
     if (cached) {
-      setRows(cached.rows);
-      setFilteredRows(cached.rows);
+      const safe = (cached.rows || []).filter(isValidRow);
+      setRows(safe);
+      setFilteredRows(safe);
       setTotalItems(cached.totalItems);
       setLoading(false);
     }
@@ -283,8 +308,9 @@ export default function PricingTable() {
     const cached = getCache(cacheKey);
     if (cached) {
       startTransition(() => {
-        setRows(cached.rows);
-        setFilteredRows(cached.rows);
+        const safe = (cached.rows || []).filter(isValidRow);
+        setRows(safe);
+        setFilteredRows(safe);
         setTotalItems(cached.totalItems);
         setLoading(false);
       });
@@ -365,12 +391,7 @@ export default function PricingTable() {
     if (myReqId !== reqIdRef.current) return;
 
     if (error) {
-      console.error(
-        "❌ Supabase error:",
-        error.message,
-        error.details,
-        error.hint
-      );
+      console.error("❌ Supabase error:", error.message, error.details, error.hint);
       setRows([]);
       setFilteredRows([]);
       setTotalItems(0);
@@ -378,7 +399,10 @@ export default function PricingTable() {
       return;
     }
 
-    const normalized = (data || []).map((r: any) => {
+    // ✅ remove fantasmas antes de normalizar
+    const safeData = (data || []).filter(isValidRow);
+
+    const normalized = safeData.map((r: any) => {
       let OD = 3;
       const ref = String(r.Referência || "").trim();
       if (ref.startsWith("PAI -")) OD = 1;
@@ -500,15 +524,10 @@ export default function PricingTable() {
 
     // encontra a linha
     let currentRow: any = rows.find((r: any) => String(r.id) === dbIdStr);
-    if (!currentRow)
-      currentRow = rows.find((r: any) => String((r as any).ID) === dbIdStr);
+    if (!currentRow) currentRow = rows.find((r: any) => String((r as any).ID) === dbIdStr);
 
     if (!currentRow) {
-      console.error("❌ Não encontrou linha para editar:", {
-        dbIdStr,
-        field,
-        value,
-      });
+      console.error("❌ Não encontrou linha para editar:", { dbIdStr, field, value });
       setEditing(null);
       return;
     }
@@ -529,8 +548,7 @@ export default function PricingTable() {
     let newRowUpdated: Row | undefined;
 
     const updatedRows = rows.map((r: any) => {
-      const isSame =
-        String((r as any).id) === dbIdStr || String((r as any).ID) === dbIdStr;
+      const isSame = String((r as any).id) === dbIdStr || String((r as any).ID) === dbIdStr;
       if (!isSame) return r;
 
       const updated: any = { ...(r as any), [field]: newValNullable };
@@ -564,9 +582,7 @@ export default function PricingTable() {
       setCache(cacheKey, {
         ...cached,
         rows: cached.rows.map((r: any) => {
-          const isSame =
-            String((r as any).id) === dbIdStr ||
-            String((r as any).ID) === dbIdStr;
+          const isSame = String((r as any).id) === dbIdStr || String((r as any).ID) === dbIdStr;
           return isSame ? (newRowUpdated as any) : r;
         }),
         savedAt: Date.now(),
@@ -744,6 +760,9 @@ export default function PricingTable() {
         page++;
       }
 
+      // ✅ remove linhas vazias/fantasmas antes de exportar
+      all = all.filter(isValidRow);
+
       await impExp.handleExport(all);
     } catch (e) {
       console.error("ERRO EXPORT:", e);
@@ -832,9 +851,7 @@ export default function PricingTable() {
                 className="flex-1 bg-transparent outline-none text-sm text-white pr-10"
                 value={editing.value}
                 onChange={(e) =>
-                  setEditing((p: any) =>
-                    p ? { ...p, value: e.target.value } : p
-                  )
+                  setEditing((p: any) => (p ? { ...p, value: e.target.value } : p))
                 }
                 onKeyDown={(e) => {
                   if (e.key === "Enter") confirmEdit();
