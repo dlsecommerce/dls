@@ -81,7 +81,7 @@ export default function PricingCalculatorModern() {
     frete: "",
     comissao: "6",
     marketing: "3",
-    embalagem: "2.5",
+    embalagem: "3",
   });
 
   // ✅ Shopee já inicia alinhada à regra base (até 79,99)
@@ -92,7 +92,7 @@ export default function PricingCalculatorModern() {
     frete: "4",
     comissao: "20",
     marketing: "3",
-    embalagem: "2.5",
+    embalagem: "3",
   });
 
   const [calculoMarketplaceClassico, setCalculoMarketplaceClassico] =
@@ -103,7 +103,7 @@ export default function PricingCalculatorModern() {
       frete: "",
       comissao: "11",
       marketing: "3",
-      embalagem: "2.5",
+      embalagem: "3",
     });
 
   const [calculoMarketplacePremium, setCalculoMarketplacePremium] =
@@ -114,7 +114,7 @@ export default function PricingCalculatorModern() {
       frete: "",
       comissao: "16",
       marketing: "3",
-      embalagem: "2.5",
+      embalagem: "3",
     });
 
   // =====================
@@ -416,8 +416,8 @@ export default function PricingCalculatorModern() {
   };
 
   const handleEmbalagemBlurShared = (raw: string) => {
-    const internal = toInternal(raw || "2.5");
-    const v = internal || "2.5";
+    const internal = toInternal(raw || "3");
+    const v = internal || "3";
     setCalculoLoja((p) => ({ ...p, embalagem: v }));
     setCalculoMarketplaceClassico((p) => ({ ...p, embalagem: v }));
     setCalculoMarketplacePremium((p) => ({ ...p, embalagem: v }));
@@ -433,7 +433,7 @@ export default function PricingCalculatorModern() {
   const handleEmbalagemBlurShopee = (raw: string) => {
     const internal = toInternal(raw || "");
     if (!internal) setUserEditedShopeeEmbalagem(false); // se apagar, volta pro automático
-    const v = internal || "2.5";
+    const v = internal || "3";
     setCalculoShopee((p) => ({ ...p, embalagem: v }));
   };
 
@@ -454,7 +454,7 @@ export default function PricingCalculatorModern() {
     const comissao = (parseFloat(dados.comissao) || 0) / 100;
     const marketing = (parseFloat(dados.marketing) || 0) / 100;
     const frete = parseFloat(dados.frete) || 0;
-    const embalagem = parseFloat(dados.embalagem || "2.5") || 0;
+    const embalagem = parseFloat(dados.embalagem || "3") || 0;
 
     const custoLiquido = custo * (1 - desconto);
     const divisor = 1 - (imposto + margem + comissao + marketing);
@@ -474,7 +474,7 @@ export default function PricingCalculatorModern() {
   useEffect(() => {
     // Defaults: até 79,99
     let regras = {
-      embalagem: "2.5",
+      embalagem: "3",
       frete: "4",
       imposto: "12",
       comissao: "20",
@@ -484,7 +484,7 @@ export default function PricingCalculatorModern() {
 
     if (precoShopee >= 80 && precoShopee <= 99.99) {
       regras = {
-        embalagem: "2.5",
+        embalagem: "3",
         frete: "16",
         imposto: "12",
         comissao: "14",
@@ -493,7 +493,7 @@ export default function PricingCalculatorModern() {
       };
     } else if (precoShopee >= 100 && precoShopee <= 199.99) {
       regras = {
-        embalagem: "2.5",
+        embalagem: "3",
         frete: "20",
         imposto: "12",
         comissao: "14",
@@ -502,7 +502,7 @@ export default function PricingCalculatorModern() {
       };
     } else if (precoShopee >= 200) {
       regras = {
-        embalagem: "2.5",
+        embalagem: "3",
         frete: "26",
         imposto: "12",
         comissao: "14",
@@ -575,7 +575,7 @@ export default function PricingCalculatorModern() {
           frete: "",
           comissao: "6",
           marketing: "3",
-          embalagem: "2.5",
+          embalagem: "3",
         });
 
         // ✅ Shopee reset já alinhado com a regra base (até 79,99)
@@ -586,7 +586,7 @@ export default function PricingCalculatorModern() {
           frete: "4",
           comissao: "20",
           marketing: "3",
-          embalagem: "2.5",
+          embalagem: "3",
         });
 
         setCalculoMarketplaceClassico({
@@ -596,7 +596,7 @@ export default function PricingCalculatorModern() {
           frete: "",
           comissao: "11",
           marketing: "3",
-          embalagem: "2.5",
+          embalagem: "3",
         });
 
         setCalculoMarketplacePremium({
@@ -606,7 +606,7 @@ export default function PricingCalculatorModern() {
           frete: "",
           comissao: "16",
           marketing: "3",
-          embalagem: "2.5",
+          embalagem: "3",
         });
 
         setAcrescimos({
