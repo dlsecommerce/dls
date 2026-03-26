@@ -274,7 +274,7 @@ export function useTrayImportExport(
         // ============================================================
 
         // L (Embalagem) = 2,5 (editável na planilha)
-        sheet.getCell(`L${rowNumber}`).value = 2.5;
+        sheet.getCell(`L${rowNumber}`).value = 3;
 
         // O (Imposto) = por loja (editável na planilha)
         sheet.getCell(`O${rowNumber}`).value = impostoLoja;
