@@ -10,14 +10,14 @@ export interface RowShape {
   "ID Tray"?: string;
   "Referência"?: string;
   "ID Var"?: string;
-  "OD"?: string;
-  "Nome"?: string;
-  "Marca"?: string;
-  "Categoria"?: string;
-  "Peso"?: string;
-  "Altura"?: string;
-  "Largura"?: string;
-  "Comprimento"?: string;
+  OD?: string;
+  Nome?: string;
+  Marca?: string;
+  Categoria?: string;
+  Peso?: string;
+  Altura?: string;
+  Largura?: string;
+  Comprimento?: string;
   "Código 1"?: string;
   "Quantidade 1"?: string;
   "Código 2"?: string;
@@ -48,7 +48,15 @@ type ImportResult = {
   errors: string[];
 };
 
-/** Normaliza string pra chave (dedupe / comparação) */
+type PersistedRow = {
+  ID: string | number | null;
+  Loja?: string | null;
+  "ID Bling"?: string | null;
+  "ID Tray"?: string | null;
+  "Referência"?: string | null;
+  OD?: string | null;
+};
+
 function norm(v: any) {
   return String(v ?? "").trim().toLowerCase();
 }
@@ -73,15 +81,13 @@ function toStoreCode(s: any): "PK" | "SB" | null {
 function isPlaceholderBling(v: any) {
   const s = norm(v);
   if (!s) return true;
-  if (s === "n bling" || s.includes("n bling") || s.includes("nº bling"))
+  if (s === "n bling" || s.includes("n bling") || s.includes("nº bling")) {
     return true;
+  }
   if (s === "n/bling" || s === "na" || s === "n/a") return true;
   return false;
 }
 
-/** =========================
- * helpers de número BR
- * ========================= */
 export const parseValorBR = (v: string | number | null | undefined): number => {
   if (v === null || v === undefined || v === "") return 0;
   if (typeof v === "number") return v;
@@ -105,10 +111,9 @@ export const parseValorBR = (v: string | number | null | undefined): number => {
   }
 
   const num = parseFloat(str);
-  return isNaN(num) ? 0 : num;
+  return Number.isNaN(num) ? 0 : num;
 };
 
-/** Remove duplicados do próprio arquivo (mantém a última ocorrência) */
 function dedupeRows(rows: RowShape[]) {
   const map = new Map<string, RowShape>();
 
@@ -133,7 +138,6 @@ function dedupeRows(rows: RowShape[]) {
   return [...map.values()];
 }
 
-/** Reconhece Loja PK/SB e também nomes (Pikot/Sóbaquetas) e padroniza */
 function splitByStore(rows: RowShape[]) {
   const pikotRows: RowShape[] = [];
   const sobaquetasRows: RowShape[] = [];
@@ -154,9 +158,29 @@ function splitByStore(rows: RowShape[]) {
   return { pikotRows, sobaquetasRows, outrosRows };
 }
 
-/**
- * Preenche IDs automáticos só quando a gente PRECISAR usar conflito por ID.
- */
+function sanitizeRow(row: RowShape) {
+  const out: any = { ...row };
+
+  for (const k of Object.keys(out)) {
+    if (out[k] === "") out[k] = null;
+  }
+
+  if (out.ID === null || out.ID === undefined || out.ID === "") {
+    delete out.ID;
+  }
+
+  out["ID Bling"] = isPlaceholderBling(out["ID Bling"])
+    ? null
+    : String(out["ID Bling"] ?? "").trim() || null;
+
+  if (out.Loja) {
+    const lojaCode = toStoreCode(out.Loja);
+    if (lojaCode) out.Loja = lojaCode;
+  }
+
+  return out;
+}
+
 async function preencherIdsAutomaticos(tabela: string, rows: any[]) {
   if (rows.length === 0) return rows;
 
@@ -167,8 +191,9 @@ async function preencherIdsAutomaticos(tabela: string, rows: any[]) {
     .limit(1)
     .maybeSingle();
 
-  if (error)
+  if (error) {
     throw new Error(`Erro ao buscar último ID em ${tabela}: ${error.message}`);
+  }
 
   let proximoId = ultimo?.ID ? parseInt(String(ultimo.ID), 10) + 1 : 1;
 
@@ -181,42 +206,150 @@ async function preencherIdsAutomaticos(tabela: string, rows: any[]) {
   });
 }
 
-/**
- * Faz upsert tentando por onConflict desejado.
- */
+function buildRowIdentity(r: Partial<RowShape> | PersistedRow) {
+  const loja = toStoreCode((r as any).Loja);
+
+  const idBling = !isPlaceholderBling((r as any)["ID Bling"])
+    ? norm((r as any)["ID Bling"])
+    : "";
+
+  if (loja && idBling) return `bling:${loja}:${idBling}`;
+
+  const odKey = norm((r as any).OD);
+  if (loja && odKey) return `od:${loja}:${odKey}`;
+
+  const trayKey = norm((r as any)["ID Tray"]);
+  if (loja && trayKey) return `tray:${loja}:${trayKey}`;
+
+  const ref = norm((r as any)["Referência"]);
+  if (loja && ref) return `ref:${loja}:${ref}`;
+
+  const id = norm((r as any).ID);
+  if (loja && id) return `id:${loja}:${id}`;
+
+  return "";
+}
+
+async function fetchRowsByKeys(
+  table: string,
+  rows: RowShape[]
+): Promise<PersistedRow[]> {
+  if (rows.length === 0) return [];
+
+  const blingKeys = Array.from(
+    new Set(
+      rows
+        .map((r) => norm(r["ID Bling"]))
+        .filter((v) => v && !isPlaceholderBling(v))
+    )
+  );
+
+  const trayKeys = Array.from(
+    new Set(rows.map((r) => norm(r["ID Tray"])).filter(Boolean))
+  );
+
+  const odKeys = Array.from(
+    new Set(rows.map((r) => norm(r.OD)).filter(Boolean))
+  );
+
+  const refKeys = Array.from(
+    new Set(rows.map((r) => norm(r["Referência"])).filter(Boolean))
+  );
+
+  const results: PersistedRow[] = [];
+
+  if (blingKeys.length > 0) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('ID, Loja, "ID Bling", "ID Tray", "Referência", OD')
+      .in("ID Bling", blingKeys);
+
+    if (error) {
+      throw new Error(`Erro ao buscar IDs por ID Bling em ${table}: ${error.message}`);
+    }
+
+    results.push(...((data ?? []) as PersistedRow[]));
+  }
+
+  if (trayKeys.length > 0) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('ID, Loja, "ID Bling", "ID Tray", "Referência", OD')
+      .in("ID Tray", trayKeys);
+
+    if (error) {
+      throw new Error(`Erro ao buscar IDs por ID Tray em ${table}: ${error.message}`);
+    }
+
+    results.push(...((data ?? []) as PersistedRow[]));
+  }
+
+  if (odKeys.length > 0) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('ID, Loja, "ID Bling", "ID Tray", "Referência", OD')
+      .in("OD", odKeys);
+
+    if (error) {
+      throw new Error(`Erro ao buscar IDs por OD em ${table}: ${error.message}`);
+    }
+
+    results.push(...((data ?? []) as PersistedRow[]));
+  }
+
+  if (refKeys.length > 0) {
+    const lojaCode = toStoreCode(rows[0]?.Loja);
+    let query = supabase
+      .from(table)
+      .select('ID, Loja, "ID Bling", "ID Tray", "Referência", OD')
+      .in("Referência", refKeys);
+
+    if (lojaCode) {
+      query = query.eq("Loja", lojaCode);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(
+        `Erro ao buscar IDs por Referência em ${table}: ${error.message}`
+      );
+    }
+
+    results.push(...((data ?? []) as PersistedRow[]));
+  }
+
+  const map = new Map<string, PersistedRow>();
+
+  for (const item of results) {
+    const identity = buildRowIdentity(item);
+    if (identity) {
+      map.set(identity, item);
+    }
+  }
+
+  return [...map.values()];
+}
+
 async function upsertWithFallback(
   table: string,
   rows: RowShape[],
   primaryOnConflict: string | null,
   fallbackOnConflict: string | null,
   needAutoIdsForFallback: boolean
-) {
-  if (rows.length === 0) return;
+): Promise<PersistedRow[]> {
+  if (rows.length === 0) return [];
 
-  const cleanedRows = rows.map((r) => {
-    const out: any = { ...r };
-
-    for (const k of Object.keys(out)) {
-      if (out[k] === "") out[k] = null;
-    }
-
-    if (out.ID === null || out.ID === undefined) {
-      delete out.ID;
-    }
-
-    out["ID Bling"] = isPlaceholderBling(out["ID Bling"])
-      ? null
-      : String(out["ID Bling"] ?? "").trim();
-
-    return out;
-  });
+  const cleanedRows = rows.map(sanitizeRow);
 
   if (primaryOnConflict) {
     const { error } = await supabase
       .from(table)
-      .upsert(cleanedRows as any, { onConflict: primaryOnConflict });
+      .upsert(cleanedRows as any[], { onConflict: primaryOnConflict });
 
-    if (!error) return;
+    if (!error) {
+      return await fetchRowsByKeys(table, rows);
+    }
 
     console.warn(
       `[${table}] upsert primary falhou, usando fallback.`,
@@ -238,7 +371,7 @@ async function upsertWithFallback(
 
   const { error: error2 } = await supabase
     .from(table)
-    .upsert(payload as any, { onConflict: fallbackOnConflict });
+    .upsert(payload as any[], { onConflict: fallbackOnConflict });
 
   if (error2) {
     console.error("UPSERT ERROR:", error2);
@@ -248,11 +381,10 @@ async function upsertWithFallback(
       }`
     );
   }
+
+  return await fetchRowsByKeys(table, rows);
 }
 
-/* =========================
-   Validações por MODO
-========================= */
 async function fetchExistingKeysByStore(
   pikotRows: RowShape[],
   sobaquetasRows: RowShape[]
@@ -264,6 +396,7 @@ async function fetchExistingKeysByStore(
         .filter((v) => v && !isPlaceholderBling(v))
     )
   );
+
   const keysSbBling = Array.from(
     new Set(
       sobaquetasRows
@@ -275,20 +408,26 @@ async function fetchExistingKeysByStore(
   const [pkExisting, sbExisting] = await Promise.all([
     (async () => {
       if (keysPkBling.length === 0) return new Set<string>();
+
       const { data, error } = await supabase
         .from("anuncios_pk")
-        .select('"ID Bling"')
-        .in('"ID Bling"', keysPkBling);
+        .select('ID, "ID Bling"')
+        .in("ID Bling", keysPkBling);
+
       if (error) throw error;
+
       return new Set((data ?? []).map((x: any) => norm(x["ID Bling"])));
     })(),
     (async () => {
       if (keysSbBling.length === 0) return new Set<string>();
+
       const { data, error } = await supabase
         .from("anuncios_sb")
-        .select('"ID Bling"')
-        .in('"ID Bling"', keysSbBling);
+        .select('ID, "ID Bling"')
+        .in("ID Bling", keysSbBling);
+
       if (error) throw error;
+
       return new Set((data ?? []).map((x: any) => norm(x["ID Bling"])));
     })(),
   ]);
@@ -300,6 +439,7 @@ function computeRowKeyForValidation(r: RowShape) {
   const idBlingKey = !isPlaceholderBling(r["ID Bling"])
     ? norm(r["ID Bling"])
     : "";
+
   if (idBlingKey) return { kind: "bling" as const, key: idBlingKey };
 
   const odKey = norm(r.OD);
@@ -315,12 +455,6 @@ function computeRowKeyForValidation(r: RowShape) {
   return { kind: "none" as const, key: "" };
 }
 
-/* ============================================================
-   ✅ NOVO: custos no import (mesma lógica do editor)
-   - busca custos existentes
-   - cria custos faltantes com custo 0
-   - retorna mapa codigo -> custoAtual(number)
-============================================================ */
 interface CustoRow {
   Código?: string;
   Codigo?: string;
@@ -332,7 +466,10 @@ interface CustoRow {
 async function fetchOrAddCustos(
   codigos: string[]
 ): Promise<Record<string, number>> {
-  const only = Array.from(new Set(codigos.map((c) => String(c).trim()).filter(Boolean)));
+  const only = Array.from(
+    new Set(codigos.map((c) => String(c).trim()).filter(Boolean))
+  );
+
   if (only.length === 0) return {};
 
   const { data, error } = await supabase
@@ -344,7 +481,9 @@ async function fetchOrAddCustos(
 
   if (error || rows.length === 0) {
     const alt = await supabase.from("custos").select("*").in("Codigo", only);
-    if (!alt.error && alt.data) rows = alt.data as any;
+    if (!alt.error && alt.data) {
+      rows = alt.data as any;
+    }
   }
 
   const map: Record<string, number> = {};
@@ -354,26 +493,31 @@ async function fetchOrAddCustos(
     const codigo = (r.Código || r.Codigo || "").toString().trim();
     const custoRaw = r["Custo Atual"] ?? r["Custo_Atual"] ?? r.custo ?? 0;
     const custoNum = parseValorBR(custoRaw as any);
+
     if (codigo) {
-      map[codigo] = isNaN(custoNum) ? 0 : custoNum;
+      map[codigo] = Number.isNaN(custoNum) ? 0 : custoNum;
       found.add(codigo);
     }
   }
 
   const missing = only.filter((c) => !found.has(c));
+
   if (missing.length > 0) {
     const novos = missing.map((c) => ({ Código: c, "Custo Atual": 0 }));
     const { error: insErr } = await supabase.from("custos").insert(novos);
-    if (insErr) console.warn("⚠️ Erro ao inserir novos custos:", insErr);
-    missing.forEach((c) => (map[c] = 0));
+
+    if (insErr) {
+      console.warn("⚠️ Erro ao inserir novos custos:", insErr);
+    }
+
+    missing.forEach((c) => {
+      map[c] = 0;
+    });
   }
 
   return map;
 }
 
-/* ============================================================
-   ✅ NOVO: extrai composição (códigos/quantidades) de uma row
-============================================================ */
 function extractComposicao(row: RowShape) {
   const itens: Array<{ codigo: string; qtd: number }> = [];
 
@@ -395,24 +539,16 @@ function extractComposicao(row: RowShape) {
   return itens;
 }
 
-/* ============================================================
-   ✅ NOVO: calcula custo total da composição
-============================================================ */
 function calcCustoTotal(
   itens: Array<{ codigo: string; qtd: number }>,
   custosMap: Record<string, number>
 ) {
   return itens.reduce((sum, it) => {
     const custo = custosMap[it.codigo] ?? 0;
-    return sum + (Number(it.qtd) * Number(custo));
+    return sum + Number(it.qtd) * Number(custo);
   }, 0);
 }
 
-/* ============================================================
-   ✅ NOVO: atualiza marketplace_*."Custo" via upsert
-   - usa anuncio_id = row.ID (int8)
-   - set "Custo" = total
-============================================================ */
 async function upsertMarketplaceCusto(
   loja: "PK" | "SB",
   anuncioId: number,
@@ -425,35 +561,57 @@ async function upsertMarketplaceCusto(
 
   const payload = { anuncio_id: anuncioId, Custo: custoTotal };
 
-  // A ideia aqui é: se já existir linha, update; se não existir, cria.
-  // Para isso funcionar 100%, o ideal é ter UNIQUE(anuncio_id) nessas tabelas.
-  // Se não tiver, ainda tenta update primeiro (fallback).
   for (const table of tables) {
-    // 1) tenta UPDATE (não depende de constraint)
     const upd = await supabase
       .from(table)
       .update({ Custo: custoTotal } as any)
-      .eq("anuncio_id", anuncioId);
+      .eq("anuncio_id", anuncioId)
+      .select("anuncio_id");
 
-    if (!upd.error && (upd.count ?? 0) > 0) continue;
+    if (!upd.error && (upd.data?.length ?? 0) > 0) {
+      continue;
+    }
 
-    // 2) se não atualizou nenhuma linha, tenta INSERT
     const ins = await supabase.from(table).insert(payload as any);
+
     if (ins.error) {
-      // se der erro de duplicado por alguma razão, tenta update de novo
-      await supabase
+      const retry = await supabase
         .from(table)
         .update({ Custo: custoTotal } as any)
         .eq("anuncio_id", anuncioId);
+
+      if (retry.error) {
+        throw new Error(
+          `Erro ao atualizar custo em ${table}: ${retry.error.message}`
+        );
+      }
     }
   }
 }
 
-/**
- * ✅ Ajuste principal:
- * - Importa anuncios_pk/anuncios_sb
- * - Depois calcula custos e atualiza marketplace automaticamente
- */
+function mergePersistedIdsIntoRows(rows: RowShape[], persisted: PersistedRow[]) {
+  const persistedMap = new Map<string, PersistedRow>();
+
+  for (const item of persisted) {
+    const key = buildRowIdentity(item);
+    if (key) persistedMap.set(key, item);
+  }
+
+  return rows.map((row) => {
+    const key = buildRowIdentity(row);
+    if (!key) return row;
+
+    const saved = persistedMap.get(key);
+    if (!saved?.ID) return row;
+
+    return {
+      ...row,
+      ID: saved.ID,
+      Loja: toStoreCode(saved.Loja ?? row.Loja) ?? row.Loja,
+    };
+  });
+}
+
 export async function importFromXlsxOrCsv(
   file: File,
   previewOnly = false,
@@ -462,14 +620,34 @@ export async function importFromXlsxOrCsv(
   const warnings: string[] = [];
   const errors: string[] = [];
 
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: "array" });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  let buffer: ArrayBuffer;
+
+  try {
+    buffer = await file.arrayBuffer();
+  } catch (err: any) {
+    throw new Error(`Não foi possível ler o arquivo: ${err?.message || err}`);
+  }
+
+  let workbook: XLSX.WorkBook;
+
+  try {
+    workbook = XLSX.read(buffer, { type: "array" });
+  } catch (err: any) {
+    throw new Error(`Arquivo inválido ou corrompido: ${err?.message || err}`);
+  }
+
+  const firstSheetName = workbook.SheetNames?.[0];
+  const sheet = firstSheetName ? workbook.Sheets[firstSheetName] : null;
 
   if (!sheet) {
     warnings.push(
       "Não foi possível ler a planilha. Verifique o formato do arquivo."
     );
+    return { data: [], warnings, errors };
+  }
+
+  if (!sheet["!ref"]) {
+    warnings.push("A planilha está vazia.");
     return { data: [], warnings, errors };
   }
 
@@ -534,7 +712,7 @@ export async function importFromXlsxOrCsv(
     );
   }
 
-  const { pikotRows, sobaquetasRows, outrosRows } = splitByStore(deduped);
+  let { pikotRows, sobaquetasRows, outrosRows } = splitByStore(deduped);
 
   if (outrosRows.length > 0) {
     warnings.push(
@@ -542,7 +720,7 @@ export async function importFromXlsxOrCsv(
     );
   }
 
-  const sobaquetasValidas = sobaquetasRows.filter(
+  let sobaquetasValidas = sobaquetasRows.filter(
     (r) => !isPlaceholderBling(r["ID Bling"])
   );
   const sobaquetasInvalidas = sobaquetasRows.length - sobaquetasValidas.length;
@@ -553,15 +731,16 @@ export async function importFromXlsxOrCsv(
     );
   }
 
-  const pikotSemBling = pikotRows.filter((r) => isPlaceholderBling(r["ID Bling"]))
-    .length;
+  const pikotSemBling = pikotRows.filter((r) =>
+    isPlaceholderBling(r["ID Bling"])
+  ).length;
+
   if (pikotSemBling > 0) {
     warnings.push(
       `${pikotSemBling} registro(s) do Pikot estão sem "ID Bling" válido. Sem UNIQUE no PK, isso pode facilitar duplicação.`
     );
   }
 
-  // Preview validação
   if (pikotRows.length || sobaquetasValidas.length) {
     const { pkExisting, sbExisting } = await fetchExistingKeysByStore(
       pikotRows,
@@ -613,75 +792,67 @@ export async function importFromXlsxOrCsv(
 
   if (errors.length > 0) {
     throw new Error(
-      "Importação bloqueada: existem erros no arquivo (veja a pré-visualização)."
+      `Importação bloqueada: existem erros no arquivo.\n${errors.join("\n")}`
     );
   }
 
-  // =========================
-  // ✅ IMPORTA ANÚNCIOS
-  // =========================
-  const inserts: Promise<void>[] = [];
+  const persistedPk: PersistedRow[] = [];
+  const persistedSb: PersistedRow[] = [];
 
   if (sobaquetasValidas.length > 0) {
-    inserts.push(
-      (async () => {
-        await upsertWithFallback(
-          "anuncios_sb",
-          sobaquetasValidas,
-          '"ID Bling"',
-          "ID",
-          true
-        );
-      })()
+    const savedSb = await upsertWithFallback(
+      "anuncios_sb",
+      sobaquetasValidas,
+      "ID Bling",
+      "ID",
+      true
     );
+    persistedSb.push(...savedSb);
   }
 
   if (pikotRows.length > 0) {
-    inserts.push(
-      (async () => {
-        await upsertWithFallback(
-          "anuncios_pk",
-          pikotRows,
-          '"ID Bling"',
-          "ID",
-          true
-        );
-      })()
+    const savedPk = await upsertWithFallback(
+      "anuncios_pk",
+      pikotRows,
+      "ID Bling",
+      "ID",
+      true
     );
+    persistedPk.push(...savedPk);
   }
 
-  await Promise.all(inserts);
+  pikotRows = mergePersistedIdsIntoRows(pikotRows, persistedPk);
+  sobaquetasValidas = mergePersistedIdsIntoRows(sobaquetasValidas, persistedSb);
 
-  // =========================
-  // ✅ NOVO: CALCULA + GRAVA CUSTO EM MARKETPLACE
-  // - Usa as próprias rows importadas
-  // - Busca custos (e cria faltantes)
-  // - Atualiza marketplace_* por anuncio_id
-  // =========================
   const allRowsToProcess: Array<{ loja: "PK" | "SB"; row: RowShape }> = [
     ...pikotRows.map((r) => ({ loja: "PK" as const, row: r })),
     ...sobaquetasValidas.map((r) => ({ loja: "SB" as const, row: r })),
   ];
 
-  // 1) coletar todos os códigos usados no arquivo
   const allCodigos: string[] = [];
+
   for (const item of allRowsToProcess) {
     const itens = extractComposicao(item.row);
-    for (const it of itens) allCodigos.push(it.codigo);
+    for (const it of itens) {
+      allCodigos.push(it.codigo);
+    }
   }
 
-  // 2) buscar/criar custos
   const custosMap = await fetchOrAddCustos(allCodigos);
 
-  // 3) processar em lotes para não estourar rate limit
   const BATCH = 50;
+
   for (let i = 0; i < allRowsToProcess.length; i += BATCH) {
     const chunk = allRowsToProcess.slice(i, i + BATCH);
 
     await Promise.all(
       chunk.map(async ({ loja, row }) => {
         const anuncioId = parseInt(String(row.ID ?? "").trim(), 10);
-        if (!Number.isFinite(anuncioId)) return;
+
+        if (!Number.isFinite(anuncioId)) {
+          console.warn("Linha sem ID válido após importação:", row);
+          return;
+        }
 
         const itens = extractComposicao(row);
         const custoTotal = calcCustoTotal(itens, custosMap);
@@ -691,5 +862,11 @@ export async function importFromXlsxOrCsv(
     );
   }
 
-  return { data: deduped, warnings, errors };
+  const finalRows = [...pikotRows, ...sobaquetasValidas];
+
+  return {
+    data: finalRows,
+    warnings,
+    errors,
+  };
 }
