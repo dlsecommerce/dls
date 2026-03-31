@@ -6,9 +6,9 @@ import { createServerClient } from "@supabase/ssr";
 import type { Database } from "@/integrations/supabase/types";
 
 export async function middleware(req: NextRequest) {
+  const pathname = req.nextUrl.pathname;
   const res = NextResponse.next();
 
-  // Cria o cliente Supabase com cookies reativos
   const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -30,30 +30,29 @@ export async function middleware(req: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const pathname = req.nextUrl.pathname;
-
-  // Helper para redirecionar mantendo cookies
   const redirectWithCookies = (path: string) => {
     const response = NextResponse.redirect(new URL(path, req.url));
-    const setCookie = res.headers.get("set-cookie");
-    if (setCookie) response.headers.set("set-cookie", setCookie);
+
+    for (const cookie of res.cookies.getAll()) {
+      response.cookies.set(cookie);
+    }
+
     return response;
   };
 
-  // Usuário logado: / ou /login → manda pra /dashboard
+  // Usuário logado acessando "/" ou "/login"
   if (user && (pathname === "/" || pathname === "/login")) {
     return redirectWithCookies("/dashboard");
   }
 
-  // Usuário não logado: acessando /dashboard → volta pra /login
+  // Usuário não logado acessando área protegida
   if (!user && pathname.startsWith("/dashboard")) {
     return redirectWithCookies("/login");
   }
 
-  // Segue fluxo normal
   return res;
 }
 
 export const config = {
-  matcher: ["/((?!_next|api|static|favicon.ico).*)"],
+  matcher: ["/", "/login", "/dashboard/:path*"],
 };

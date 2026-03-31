@@ -1,45 +1,83 @@
 "use client";
-import { createBrowserClient } from "@supabase/ssr";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import type { Database } from "@/integrations/supabase/types";
+import { supabase } from "@/integrations/supabase/client";
 
 export function useAuth() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
-  const supabase = createBrowserClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-
   async function login(email: string, password: string) {
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) return toast.error(error.message);
 
-    toast.success("Login realizado!");
-    router.replace("/dashboard");
-    router.refresh();
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      toast.success("Login realizado!");
+      router.replace("/dashboard");
+      router.refresh();
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function loginWithGoogle() {
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    });
-    if (error) toast.error(error.message);
-    else if (data.url) window.location.href = data.url;
+    setLoading(true);
+
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function logout() {
-    await supabase.auth.signOut();
-    toast.success("Saiu da conta.");
-    router.replace("/login");
-    router.refresh();
+    setLoading(true);
+
+    try {
+      const { error } = await supabase.auth.signOut();
+
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      toast.success("Saiu da conta.");
+      router.replace("/login");
+      router.refresh();
+    } finally {
+      setLoading(false);
+    }
   }
 
-  return { login, loginWithGoogle, logout, loading };
+  return {
+    login,
+    loginWithGoogle,
+    logout,
+    loading,
+  };
 }
