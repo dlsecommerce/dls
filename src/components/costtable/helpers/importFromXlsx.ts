@@ -110,6 +110,35 @@ function normalizeProduto(value: any): string | null {
 }
 
 // =====================================================================
+// ✅ Marca como texto (trim)
+// =====================================================================
+function normalizeMarca(value: any): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  const s = String(value).trim();
+  return s ? s : null;
+}
+
+// =====================================================================
+// ✅ Código com validação forte
+// =====================================================================
+function normalizeCodigo(value: any): string | null {
+  if (value === null || value === undefined || value === "") return null;
+
+  const codigo = String(value).trim();
+
+  if (!codigo) return null;
+  if (codigo.length < 2) return null;
+
+  // bloqueia lixo tipo ---, ***, espaços etc
+  if (!/^[a-zA-Z0-9\-_.]+$/.test(codigo)) return null;
+
+  const lower = codigo.toLowerCase();
+  if (lower === "null" || lower === "undefined" || lower === "nan") return null;
+
+  return codigo;
+}
+
+// =====================================================================
 // ✅ normalizeRow agora já devolve o PAYLOAD FINAL do banco (mais rápido)
 // =====================================================================
 function normalizeRow(rowRaw: Record<string, any>) {
@@ -125,27 +154,24 @@ function normalizeRow(rowRaw: Record<string, any>) {
     return key ? row[key] : undefined;
   };
 
-  const codigo = findKey(["Código", "codigo", "code"]);
-  if (!codigo || String(codigo).trim() === "") return null;
+  const codigoRaw = findKey(["Código", "codigo", "code"]);
+  const codigo = normalizeCodigo(codigoRaw);
+  if (!codigo) return null;
 
   const marcaRaw = findKey(["Marca", "marca", "brand"]);
-  const produtoRaw = findKey(["Produto", "produto", "product"]); // ✅ NOVO
+  const produtoRaw = findKey(["Produto", "produto", "product"]);
   const custoAtualRaw = findKey(["Custo Atual", "custo atual"]);
   const custoAntigoRaw = findKey(["Custo Antigo", "custo antigo"]);
   const ncmRaw = findKey(["NCM", "ncm"]);
 
   const custoAtual = parseCurrency(custoAtualRaw);
   const custoAntigo = parseCurrency(custoAntigoRaw);
-
-  const marca =
-    marcaRaw === null || marcaRaw === undefined || marcaRaw === ""
-      ? null
-      : String(marcaRaw).trim();
+  const marca = normalizeMarca(marcaRaw);
 
   return {
-    Código: String(codigo).trim(),
+    Código: codigo,
     Marca: marca,
-    Produto: normalizeProduto(produtoRaw), // ✅ NOVO
+    Produto: normalizeProduto(produtoRaw),
     "Custo Atual": typeof custoAtual === "number" ? custoAtual : 0,
     "Custo Antigo": typeof custoAntigo === "number" ? custoAntigo : 0,
     NCM: normalizeNcm(ncmRaw),
@@ -272,7 +298,7 @@ async function upsertInBatches(
       const { error } = await supabase.from("custos").upsert(batch, upsertArgs);
 
       if (!error) {
-        i += batch.length; // só avança se sucesso
+        i += batch.length;
         break;
       }
 
@@ -288,7 +314,6 @@ async function upsertInBatches(
         progress: `${i}/${rows.length}`,
       });
 
-      // Timeout -> reduz batch e tenta novamente
       if (isLikelyTimeout(error) && batchSize > minBatchSize) {
         batchSize = Math.max(minBatchSize, Math.floor(batchSize / 2));
         console.warn(
@@ -298,14 +323,12 @@ async function upsertInBatches(
         continue;
       }
 
-      // Retry com backoff para erros de rede/5xx/intermitência
       if (attempt <= maxRetries) {
-        const backoff = Math.min(8000, 400 * 2 ** (attempt - 1)); // 400, 800, 1600, 3200...
+        const backoff = Math.min(8000, 400 * 2 ** (attempt - 1));
         await sleep(backoff);
         continue;
       }
 
-      // estourou tentativas
       console.error("📦 Batch (amostra):", batch.slice(0, 5));
       console.error("📦 Batch[0] (primeiro item):", batch[0]);
       throw error;
@@ -385,7 +408,7 @@ export async function importFromXlsxOrCsv(
 
   if (totalValidas < totalLidas) {
     warnings.push(
-      `Foram lidas ${totalLidas} linhas do arquivo, mas apenas ${totalValidas} tinham "Código" válido (linhas sem Código foram ignoradas).`
+      `Foram lidas ${totalLidas} linhas do arquivo, mas apenas ${totalValidas} tinham "Código" válido (linhas sem Código ou com código inválido foram ignoradas).`
     );
   }
 

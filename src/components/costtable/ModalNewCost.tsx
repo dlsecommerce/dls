@@ -17,7 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 export type Custo = {
   ["Código"]: string;
   ["Marca"]: string;
-  ["Produto"]: string; // ✅ NOVO
+  ["Produto"]: string;
   ["Custo Atual"]: string;
   ["Custo Antigo"]: string;
   ["NCM"]: string;
@@ -41,7 +41,6 @@ function normalize(s: string) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-/* Dropdown estilo "na unha" */
 type BrandDropdownProps = {
   isActive: boolean;
   sugestoes: SugestaoMarca[];
@@ -78,7 +77,6 @@ const BrandDropdown: React.FC<BrandDropdownProps> = ({
                 : "hover:bg-[#22c55e]/20"
             }`}
             onMouseDown={(e) => {
-              // onMouseDown pra não perder foco antes de selecionar
               e.preventDefault();
               onSelect(s.marca);
             }}
@@ -113,10 +111,6 @@ export default function ModalNewCost({
     type: null,
   });
 
-  /* ============================================================
-     🔥 SUPER CONVERSOR FINAL — EXCEL (126.97) + PT-BR (126,97)
-     + MILHAR PT-BR (25.000 / 125.000 / 1.250.000)
-     ============================================================ */
   const toNumber = (value: any): string => {
     if (value === null || value === undefined) return "0,00";
 
@@ -152,16 +146,12 @@ export default function ModalNewCost({
     return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
   };
 
-  // Captura código antigo ao abrir modal
   useEffect(() => {
     if (open && mode === "edit") {
       setOldCodigo(form["Código"]);
     }
   }, [open, mode, form]);
 
-  /* ============================================================
-     ✅ AUTOCOMPLETE DE MARCAS
-     ============================================================ */
   const marcaWrapRef = useRef<HTMLDivElement>(null);
   const listaRef = useRef<HTMLDivElement>(null);
 
@@ -169,7 +159,6 @@ export default function ModalNewCost({
   const [marcaFocus, setMarcaFocus] = useState(false);
   const [indiceSelecionado, setIndiceSelecionado] = useState(0);
 
-  // carrega marcas 1x ao abrir o modal
   useEffect(() => {
     if (!open) return;
 
@@ -203,7 +192,6 @@ export default function ModalNewCost({
   const sugestoesMarca: SugestaoMarca[] = useMemo(() => {
     const q = normalize(form["Marca"]);
 
-    // se vazio: mostra as primeiras (se houver)
     if (!q) return marcas.slice(0, 9).map((m) => ({ marca: m }));
 
     return marcas
@@ -212,10 +200,8 @@ export default function ModalNewCost({
       .map((m) => ({ marca: m }));
   }, [form, marcas]);
 
-  // ✅ Agora o dropdown abre mesmo sem sugestões
   const isDropdownActive = marcaFocus;
 
-  // garante índice válido quando sugestões mudam
   useEffect(() => {
     if (!isDropdownActive) return;
     setIndiceSelecionado((prev) => {
@@ -234,7 +220,6 @@ export default function ModalNewCost({
     [form, setForm]
   );
 
-  // clicar fora fecha dropdown
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (!marcaWrapRef.current) return;
@@ -253,14 +238,12 @@ export default function ModalNewCost({
       return;
     }
 
-    // Quando não tem sugestões, Enter só "confirma" o texto (deixa como está)
     if (!sugestoesMarca.length) {
       if (e.key === "Enter") {
         e.preventDefault();
         setMarcaFocus(false);
         return;
       }
-      // Tab deixa seguir normal
       return;
     }
 
@@ -284,7 +267,6 @@ export default function ModalNewCost({
     }
 
     if (e.key === "Tab") {
-      // Seleciona o 1º item se existir e segue pro próximo campo
       const item = sugestoesMarca[0];
       if (item) selectMarca(item.marca);
       return;
@@ -308,9 +290,22 @@ export default function ModalNewCost({
   };
 
   const handleSave = async () => {
-    if (!form["Código"] || !form["Marca"]) {
+    const codigoLimpo = String(form["Código"] || "").trim();
+    const marcaLimpa = String(form["Marca"] || "").trim();
+    const produtoLimpo = String(form["Produto"] || "").trim();
+    const ncmLimpo = String(form["NCM"] || "").trim();
+
+    if (!codigoLimpo) {
       setToast({
-        message: "Preencha Código e Marca antes de salvar.",
+        message: "Preencha um Código válido antes de salvar.",
+        type: "error",
+      });
+      return;
+    }
+
+    if (!marcaLimpa) {
+      setToast({
+        message: "Preencha uma Marca válida antes de salvar.",
         type: "error",
       });
       return;
@@ -320,14 +315,14 @@ export default function ModalNewCost({
       setSaving(true);
 
       const payload = {
-        ["Código"]: form["Código"],
-        ["Marca"]: form["Marca"],
-        ["Produto"]: form["Produto"] || null, // ✅ NOVO
+        ["Código"]: codigoLimpo,
+        ["Marca"]: marcaLimpa,
+        ["Produto"]: produtoLimpo || null,
         ["Custo Atual"]: Number(toNumber(form["Custo Atual"]).replace(",", ".")),
         ["Custo Antigo"]: Number(
           toNumber(form["Custo Antigo"]).replace(",", ".")
         ),
-        ["NCM"]: form["NCM"] || null,
+        ["NCM"]: ncmLimpo || null,
       };
 
       let error = null;
@@ -338,7 +333,12 @@ export default function ModalNewCost({
           .insert([payload]);
         error = insertError;
       } else {
-        const codigoParaBuscar = oldCodigo || form["Código"];
+        const codigoParaBuscar = String(oldCodigo || form["Código"] || "").trim();
+
+        if (!codigoParaBuscar) {
+          throw new Error("Código original inválido para atualização.");
+        }
+
         const { error: updateError } = await supabase
           .from("custos")
           .update(payload)
@@ -359,8 +359,11 @@ export default function ModalNewCost({
       onOpenChange(false);
       onSave();
     } catch (err: any) {
-      console.error("Erro ao salvar custo:", err.message || err);
-      setToast({ message: "Erro ao salvar custo.", type: "error" });
+      console.error("Erro ao salvar custo:", err?.message || err);
+      setToast({
+        message: err?.message || "Erro ao salvar custo.",
+        type: "error",
+      });
     } finally {
       setSaving(false);
       setTimeout(() => setToast({ message: "", type: null }), 3000);
@@ -369,7 +372,6 @@ export default function ModalNewCost({
 
   return (
     <>
-      {/* Toast */}
       {toast.type && (
         <div
           className={`fixed bottom-6 right-6 px-4 py-3 rounded-xl shadow-lg text-white text-sm transition-all duration-300 ${
@@ -395,7 +397,6 @@ export default function ModalNewCost({
             </div>
           </DialogHeader>
 
-          {/* Inputs */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
             <div>
               <Label className="text-neutral-300">Código</Label>
@@ -410,7 +411,6 @@ export default function ModalNewCost({
               />
             </div>
 
-            {/* Marca com dropdown absoluto */}
             <div ref={marcaWrapRef} className="relative">
               <Label className="text-neutral-300">Marca</Label>
               <Input
@@ -437,7 +437,6 @@ export default function ModalNewCost({
               />
             </div>
 
-            {/* ✅ NOVO: Produto grande (igual NCM), logo abaixo de Código e Marca */}
             <div className="md:col-span-2">
               <Label className="text-neutral-300">Produto</Label>
               <Input
