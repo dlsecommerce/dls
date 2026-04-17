@@ -16,6 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/context/ProfileContext";
@@ -38,26 +39,21 @@ export function UserProfileDropdown() {
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-
-  // ✅ AJUSTE: controla loading do clique de status (opcional, mas ajuda a não clicar várias vezes)
   const [changingStatus, setChangingStatus] = useState(false);
 
-  // Atualiza o campo de mensagem quando o perfil muda
   useEffect(() => {
     if (profile?.status_message) setMessage(profile.status_message);
   }, [profile]);
 
-  // Atualiza presença no Supabase (chat realtime)
   useEffect(() => {
     if (profile?.id && profile?.status && profile?.name) {
       supabaseChatService.upsertStatus(profile.id, profile.name, profile.status);
     }
   }, [profile?.id, profile?.status, profile?.name]);
 
-  // Força atualização do perfil se ainda não carregou
   useEffect(() => {
     if (!loading && !profile) refreshProfile();
-  }, [loading, profile]);
+  }, [loading, profile, refreshProfile]);
 
   if (loading) {
     return (
@@ -73,15 +69,6 @@ export function UserProfileDropdown() {
     );
   }
 
-  const initials =
-    profile.name
-      ?.split(" ")
-      .filter(Boolean)
-      .map((n) => n[0]?.toUpperCase())
-      .join("")
-      .slice(0, 2) || "?";
-
-  // ✅ Fallback remoto para avatar (sem gerar 404)
   const avatarUrl =
     profile.avatar_url ||
     `https://ui-avatars.com/api/?name=${encodeURIComponent(
@@ -98,27 +85,20 @@ export function UserProfileDropdown() {
     }
   };
 
-  // ✅ AJUSTE NECESSÁRIO:
-  // Sempre que mudar o status no dropdown, atualiza:
-  // 1) profiles.status (via setStatus do context)
-  // 2) status_usuario (via supabaseChatService.upsertStatus) -> compat/uso externo
   const handleChangeStatus = async (nextStatus: string) => {
     if (!profile?.id) return;
     if (profile.status === nextStatus) return;
 
     setChangingStatus(true);
     try {
-      // 1) isso já faz UPDATE em profiles
       await setStatus(nextStatus);
 
-      // 2) mantém status_usuario em sync (se você ainda usa essa tabela)
       await supabaseChatService.upsertStatus(
         profile.id,
         profile.name || "Usuário",
         nextStatus as any
       );
 
-      // opcional: fecha o menu ao selecionar
       setMenuOpen(false);
     } catch (e) {
       console.error("[status] erro ao alterar status:", e);
@@ -127,7 +107,6 @@ export function UserProfileDropdown() {
     }
   };
 
-  // ✅ Logout funcional via Supabase
   const handleSignOut = async () => {
     try {
       await supabase.auth.signOut();
@@ -177,136 +156,134 @@ export function UserProfileDropdown() {
 
       <DropdownMenuContent
         align="end"
-        className="w-72 bg-[#111]/90 border border-white/10 rounded-xl shadow-xl backdrop-blur-md p-2"
+        className="w-72 border-0 bg-transparent p-0 shadow-none"
       >
-        {/* Header com avatar e status colorido */}
-        <div className="flex items-center gap-3 px-3 py-2 border-b border-white/10 relative">
-          <div className="relative">
-            <Image
-              src={avatarUrl}
-              alt="avatar"
-              width={40}
-              height={40}
-              className="rounded-full object-cover"
-              unoptimized
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).src =
-                  `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                    profile.name || "Usuário"
-                  )}&background=1a1a1a&color=ffffff&size=128`;
-              }}
-            />
-            <span
-              className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-[#111] ${
-                profile.status === "disponivel"
-                  ? "bg-green-500"
-                  : profile.status === "ausente"
-                  ? "bg-yellow-500"
-                  : profile.status === "ocupado"
-                  ? "bg-red-500"
-                  : "bg-neutral-500"
-              }`}
-            />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-white text-sm">{profile.name}</span>
-            <span className="text-xs text-neutral-400">{profile.email}</span>
-            {profile.status_message && !editMessage && (
-              <span className="text-[11px] italic text-neutral-500 line-clamp-1">
-                “{profile.status_message}”
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Opções de status */}
-        <DropdownMenuItem
-          disabled
-          className="text-[11px] uppercase text-neutral-400 mt-2"
-        >
-          Status
-        </DropdownMenuItem>
-
-        {statusOptions.map((opt) => (
-          <DropdownMenuItem
-            key={opt.key}
-            // ✅ AJUSTE: usa handler que sincroniza com o chat
-            onClick={() => handleChangeStatus(opt.key)}
-            // ✅ opcional: bloqueia clique enquanto está mudando
-            disabled={changingStatus}
-            className="flex items-center justify-between cursor-pointer hover:bg-white/5 rounded-md"
-          >
-            <div className="flex items-center gap-2">
-              <span className={`w-3 h-3 rounded-full ${opt.color}`} />
-              <span>{opt.label}</span>
+        <GlassmorphicCard className="rounded-xl p-2">
+          <div className="flex items-center gap-3 px-3 py-2 border-b border-white/10 relative">
+            <div className="relative">
+              <Image
+                src={avatarUrl}
+                alt="avatar"
+                width={40}
+                height={40}
+                className="rounded-full object-cover"
+                unoptimized
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src =
+                    `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                      profile.name || "Usuário"
+                    )}&background=1a1a1a&color=ffffff&size=128`;
+                }}
+              />
+              <span
+                className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-[#111] ${
+                  profile.status === "disponivel"
+                    ? "bg-green-500"
+                    : profile.status === "ausente"
+                    ? "bg-yellow-500"
+                    : profile.status === "ocupado"
+                    ? "bg-red-500"
+                    : "bg-neutral-500"
+                }`}
+              />
             </div>
-            {profile.status === opt.key && (
-              <Check className="w-4 h-4 text-neutral-400" />
-            )}
-          </DropdownMenuItem>
-        ))}
-
-        {!editMessage ? (
-          <DropdownMenuItem
-            onSelect={(e) => e.preventDefault()}
-            onClick={() => setEditMessage(true)}
-            className="flex items-center gap-2 hover:bg-white/5 rounded-md cursor-pointer mt-1"
-          >
-            <MessageSquare className="w-4 h-4 text-neutral-400" />
-            <span>Definir mensagem de status</span>
-          </DropdownMenuItem>
-        ) : (
-          <div className="p-3 bg-[#1a1a1a] border border-white/10 rounded-md flex flex-col gap-2 mt-2">
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Digite sua mensagem..."
-              maxLength={120}
-              className="w-full h-20 text-sm p-2 rounded-md bg-[#111] border border-white/10 text-white focus:ring-2 focus:ring-[#2699fe] resize-none"
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setEditMessage(false)}
-                className="text-xs text-neutral-400 flex items-center gap-1 hover:text-neutral-300"
-              >
-                <X className="w-3 h-3" /> Cancelar
-              </button>
-              <button
-                onClick={handleSaveMessage}
-                disabled={saving}
-                className="text-xs text-[#2699fe] flex items-center gap-1 hover:text-[#58b1ff]"
-              >
-                <Check className="w-3 h-3" />{" "}
-                {saving ? "Salvando..." : "Salvar"}
-              </button>
+            <div className="flex flex-col">
+              <span className="text-white text-sm">{profile.name}</span>
+              <span className="text-xs text-neutral-400">{profile.email}</span>
+              {profile.status_message && !editMessage && (
+                <span className="text-[11px] italic text-neutral-500 line-clamp-1">
+                  “{profile.status_message}”
+                </span>
+              )}
             </div>
           </div>
-        )}
 
-        <DropdownMenuSeparator className="my-2 bg-white/10" />
+          <DropdownMenuItem
+            disabled
+            className="text-[11px] uppercase text-neutral-400 mt-2"
+          >
+            Status
+          </DropdownMenuItem>
 
-        <DropdownMenuItem
-          onClick={() => router.push("/dashboard/configuracao?tab=perfil")}
-          className="cursor-pointer hover:bg-white/5"
-        >
-          <User className="w-4 h-4 mr-2" /> Perfil
-        </DropdownMenuItem>
+          {statusOptions.map((opt) => (
+            <DropdownMenuItem
+              key={opt.key}
+              onClick={() => handleChangeStatus(opt.key)}
+              disabled={changingStatus}
+              className="flex items-center justify-between cursor-pointer hover:bg-white/5 rounded-md"
+            >
+              <div className="flex items-center gap-2">
+                <span className={`w-3 h-3 rounded-full ${opt.color}`} />
+                <span>{opt.label}</span>
+              </div>
+              {profile.status === opt.key && (
+                <Check className="w-4 h-4 text-neutral-400" />
+              )}
+            </DropdownMenuItem>
+          ))}
 
-        <DropdownMenuItem
-          onClick={() => router.push("/dashboard/configuracao")}
-          className="cursor-pointer hover:bg-white/5"
-        >
-          <Settings className="w-4 h-4 mr-2" /> Configurações
-        </DropdownMenuItem>
+          {!editMessage ? (
+            <DropdownMenuItem
+              onSelect={(e) => e.preventDefault()}
+              onClick={() => setEditMessage(true)}
+              className="flex items-center gap-2 hover:bg-white/5 rounded-md cursor-pointer mt-1"
+            >
+              <MessageSquare className="w-4 h-4 text-neutral-400" />
+              <span>Definir mensagem de status</span>
+            </DropdownMenuItem>
+          ) : (
+            <div className="p-3 bg-[#1a1a1a] border border-white/10 rounded-md flex flex-col gap-2 mt-2">
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Digite sua mensagem..."
+                maxLength={120}
+                className="w-full h-20 text-sm p-2 rounded-md bg-[#111] border border-white/10 text-white focus:ring-2 focus:ring-[#2699fe] resize-none"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setEditMessage(false)}
+                  className="text-xs text-neutral-400 flex items-center gap-1 hover:text-neutral-300"
+                >
+                  <X className="w-3 h-3" /> Cancelar
+                </button>
+                <button
+                  onClick={handleSaveMessage}
+                  disabled={saving}
+                  className="text-xs text-[#2699fe] flex items-center gap-1 hover:text-[#58b1ff]"
+                >
+                  <Check className="w-3 h-3" />
+                  {saving ? "Salvando..." : "Salvar"}
+                </button>
+              </div>
+            </div>
+          )}
 
-        <DropdownMenuSeparator className="my-2 bg-white/10" />
+          <DropdownMenuSeparator className="my-2 bg-white/10" />
 
-        <DropdownMenuItem
-          onClick={handleSignOut}
-          className="text-red-500 hover:bg-red-500/10 cursor-pointer"
-        >
-          <LogOut className="w-4 h-4 mr-2" /> Sair
-        </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => router.push("/dashboard/configuracao?tab=perfil")}
+            className="cursor-pointer hover:bg-white/5"
+          >
+            <User className="w-4 h-4 mr-2" /> Perfil
+          </DropdownMenuItem>
+
+          <DropdownMenuItem
+            onClick={() => router.push("/dashboard/configuracao")}
+            className="cursor-pointer hover:bg-white/5"
+          >
+            <Settings className="w-4 h-4 mr-2" /> Configurações
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator className="my-2 bg-white/10" />
+
+          <DropdownMenuItem
+            onClick={handleSignOut}
+            className="text-red-500 hover:bg-red-500/10 cursor-pointer"
+          >
+            <LogOut className="w-4 h-4 mr-2" /> Sair
+          </DropdownMenuItem>
+        </GlassmorphicCard>
       </DropdownMenuContent>
     </DropdownMenu>
   );
