@@ -1,0 +1,36 @@
+export interface RowShape {
+  ID: string | number;
+  Loja?: string;
+  "ID Bling"?: string;
+  "ID Tray"?: string;
+  "Referência"?: string;
+  "ID Var"?: string;
+  "OD"?: string;
+  "Nome"?: string;
+  "Marca"?: string;
+  "Categoria"?: string;
+  "Peso"?: string;
+  "Altura"?: string;
+  "Largura"?: string;
+  "Comprimento"?: string;
+  "Código 1"?: string;
+  "Quantidade 1"?: string;
+  "Código 2"?: string;
+  "Quantidade 2"?: string;
+  "Código 3"?: string;
+  "Quantidade 3"?: string;
+  "Código 4"?: string;
+  "Quantidade 4"?: string;
+  "Código 5"?: string;
+  "Quantidade 5"?: string;
+  "Código 6"?: string;
+  "Quantidade 6"?: string;
+  "Código 7"?: string;
+  "Quantidade 7"?: string;
+  "Código 8"?: string;
+  "Quantidade 8"?: string;
+  "Código 9"?: string;
+  "Quantidade 9"?: string;
+  "Código 10"?: string;
+  "Quantidade 10"?: string;
+}

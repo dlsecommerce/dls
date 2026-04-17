@@ -1,0 +1,220 @@
+@import "tailwindcss";
+
+/* =========================================================
+  🌑 DARK THEME (ÚNICO)
+========================================================= */
+
+:root {
+  --background: radial-gradient(circle at 30% 30%, #0c0c0c 0%, #0a0a0a 50%, #080808 100%);
+  --foreground: #ededed;
+  --blur: 20px;
+  --card-bg: rgba(10, 10, 10, 0.55);
+  --border-color: rgba(255, 255, 255, 0.08);
+  --shadow-color: rgba(0, 0, 0, 0.4);
+  color-scheme: dark;
+}
+
+/* =========================================================
+  🌍 BASE GLOBAL
+========================================================= */
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Inter", Arial, Helvetica, sans-serif;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  isolation: isolate;
+}
+
+#__next,
+#root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+  isolation: isolate;
+}
+
+/* =========================================================
+  RESET GLOBAL
+========================================================= */
+
+* {
+  box-sizing: border-box;
+  backface-visibility: hidden;
+}
+
+input:focus,
+textarea:focus,
+select:focus,
+button:focus,
+a:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* =========================================================
+  LAYOUT PRINCIPAL
+========================================================= */
+
+.AppContainer {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  background: var(--background);
+  overflow: hidden;
+}
+
+.AppSidebar {
+  flex-shrink: 0;
+  width: 260px;
+  height: 100%;
+  background: var(--background);
+  color: var(--foreground);
+  border-right: 1px solid var(--border-color);
+  overflow-y: auto;
+  overflow-x: hidden;
+  transition: width 0.3s ease-in-out;
+}
+
+.AppSidebar.collapsed {
+  width: 80px !important;
+}
+
+.AppContent {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: 100%;
+  background: var(--background);
+  overflow: hidden;
+}
+
+/* =========================================================
+  HEADER FIXO
+========================================================= */
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  width: 100%;
+  backdrop-filter: blur(var(--blur));
+  -webkit-backdrop-filter: blur(var(--blur));
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: 0 4px 20px var(--shadow-color);
+}
+
+/* =========================================================
+  MAIN
+========================================================= */
+
+main {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--background);
+  margin: 0;
+  padding: 0;
+}
+
+/* background fixo suave */
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: var(--background);
+  z-index: -1;
+}
+
+/* =========================================================
+  CORREÇÕES DE BACKGROUND
+========================================================= */
+
+html,
+body,
+.AppContainer,
+.AppContent,
+main {
+  background-clip: border-box;
+  background-origin: border-box;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+/* =========================================================
+  TRANSIÇÕES
+========================================================= */
+
+body,
+header,
+main,
+.AppSidebar,
+.AppContent,
+button,
+input,
+textarea,
+select,
+a {
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease,
+    border-color 0.25s ease;
+}
+
+/* =========================================================
+  CHAT FAB
+========================================================= */
+
+.chat-fab-draggable {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.chat-fab-draggable:active {
+  cursor: grabbing;
+}
+
+/* =========================================================
+  SCROLLBAR (DARK)
+========================================================= */
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+}

@@ -1,0 +1,65 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "DLS Ecommerce",
+  "version": "0.1.1",
+  "identifier": "com.dlsecommerce",
+
+  "build": {
+    "frontendDist": "../.next",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "DLS Ecommerce",
+        "url": "http://localhost:3000",
+        "width": 1000,
+        "height": 700,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "visible": true,
+        "backgroundColor": "#090909"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+
+  "bundle": {
+    "active": true,
+    "targets": "nsis",
+    "category": "Productivity",
+    "shortDescription": "Aplicativo Desktop Oficial do DLS Ecommerce",
+    "longDescription": "Aplicativo oficial do DLS Ecommerce para desktop.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installMode": "perMachine"
+      }
+    }
+  },
+
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/dlsecommerce/dls/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJFMjE0ODk0QTIwN0Q5OEUKUldTTzJRZWlsRWdoTHRqeG1oRG9DalFHanJxTHBtWXQ4aFB6RXh4VlFBTkJ3VkRsQkxQcUN5aWoK"
+    }
+  }
+}

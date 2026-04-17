@@ -1,0 +1,17 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/dashboard/layout,_N_T_/dashboard/automacoes/layout,_N_T_/dashboard/automacoes/automacao-planilhas/layout,_N_T_/dashboard/automacoes/automacao-planilhas/page,_N_T_/dashboard/automacoes/automacao-planilhas"
+  },
+  "segmentPaths": [
+    "/_tree",
+    "/_full",
+    "/dashboard/automacoes/automacao-planilhas/__PAGE__",
+    "/dashboard/automacoes/automacao-planilhas",
+    "/dashboard/automacoes",
+    "/dashboard",
+    "/_index",
+    "/_head"
+  ]
+}

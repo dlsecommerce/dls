@@ -1,0 +1,946 @@
+"use client";
+
+import React, {
+  useEffect,
+  useState,
+  useCallback,
+  useTransition,
+  useMemo,
+  useRef,
+} from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { supabase } from "@/integrations/supabase/client";
+import { useTrayImportExport } from "@/components/marketplaces/tray/hooks/useTrayImportExport";
+import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
+import { Table, TableBody, TableHeader } from "@/components/ui/table";
+import { TableControls } from "@/components/announce/AnnounceTable/TableControls";
+import { FloatingEditor } from "./FloatingEditor";
+import TopBarLite from "@/components/marketplaces/tray/TopBar";
+import { TableRows } from "@/components/marketplaces/tray/TableRows";
+import { toBR, parseBR } from "@/components/marketplaces/tray/hooks/helpers";
+import { calcPrecoVenda } from "@/components/marketplaces/tray/hooks/calcPrecoVenda";
+import { Row } from "@/components/marketplaces/tray/hooks/types";
+import { Check as CheckIcon, X as XIcon } from "lucide-react";
+import PricingMassEditionModal from "@/components/marketplaces/tray/PricingMassEditionModal";
+import PricingHeaderRow from "@/components/marketplaces/tray/PricingHeaderRow";
+
+// ⚠️ se você já tem toast importado em outro lugar, mantenha o seu.
+// Se NÃO tiver, descomente uma das opções abaixo conforme seu projeto:
+// import { toast } from "sonner";
+// import { toast } from "@/components/ui/use-toast";
+
+type CacheEntry = {
+  rows: Row[];
+  totalItems: number;
+  savedAt: number;
+};
+
+const CACHE_TTL_MS = 10 * 60_000; // 10 minutos
+const CACHE_MAX_KEYS = 25;
+const TRAY_CACHE = new Map<string, CacheEntry>();
+
+function makeCacheKey(params: {
+  currentPage: number;
+  itemsPerPage: number;
+  selectedLoja: string[];
+  selectedBrands: string[];
+  debouncedSearch: string;
+  sortColumn: string | null;
+  sortDirection: "asc" | "desc";
+}) {
+  const loja = [...params.selectedLoja].sort().join("|");
+  const brands = [...params.selectedBrands].sort().join("|");
+  return [
+    "tray",
+    `p=${params.currentPage}`,
+    `pp=${params.itemsPerPage}`,
+    `loja=${loja}`,
+    `brands=${brands}`,
+    `q=${params.debouncedSearch}`,
+    `sort=${params.sortColumn ?? ""}`,
+    `dir=${params.sortDirection}`,
+  ].join("&");
+}
+
+function setCache(key: string, entry: CacheEntry) {
+  if (TRAY_CACHE.size >= CACHE_MAX_KEYS) {
+    let oldestKey: string | null = null;
+    let oldestAt = Infinity;
+    for (const [k, v] of TRAY_CACHE.entries()) {
+      if (v.savedAt < oldestAt) {
+        oldestAt = v.savedAt;
+        oldestKey = k;
+      }
+    }
+    if (oldestKey) TRAY_CACHE.delete(oldestKey);
+  }
+  TRAY_CACHE.set(key, entry);
+}
+
+function getCache(key: string) {
+  const entry = TRAY_CACHE.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.savedAt > CACHE_TTL_MS) {
+    TRAY_CACHE.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+function clearTrayCache() {
+  TRAY_CACHE.clear();
+}
+
+/**
+ * ✅ Anti “linhas fantasma”
+ */
+function isValidRow(r: any) {
+  const idHuman = r?.ID;
+  const idPk = r?.id;
+
+  const pick = (v: any) => {
+    if (v === null || v === undefined) return "";
+    return String(v).trim();
+  };
+
+  const sHuman = pick(idHuman);
+  const sPk = pick(idPk);
+
+  const hasSomeId =
+    (sHuman && sHuman !== "0" && sHuman !== "-") ||
+    (sPk && sPk !== "0" && sPk !== "-");
+
+  if (!hasSomeId) return false;
+
+  return true;
+}
+
+/**
+ * ✅ Helpers de URL
+ */
+function parsePositiveInt(value: string | null, fallback: number) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function parseArrayParam(value: string | null) {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function arraysEqual(a: string[], b: string[]) {
+  if (a.length !== b.length) return false;
+  return a.every((item, idx) => item === b[idx]);
+}
+
+/**
+ * ✅ Helpers de busca
+ */
+function sanitizeTerm(input: string) {
+  return input.replace(/[%_]/g, "").replace(/"/g, "").trim();
+}
+
+function parseSearchTokens(q: string) {
+  return q
+    .split(",")
+    .map((s) => sanitizeTerm(s))
+    .filter(Boolean);
+}
+
+function isOnlyDigits(s: string) {
+  return /^[0-9]+$/.test(s);
+}
+
+function escapeForOrValue(v: string) {
+  return `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function buildOrSearchParts(tokens: string[]) {
+  const orParts: string[] = [];
+
+  for (const term of tokens) {
+    if (!term) continue;
+
+    const variants = Array.from(
+      new Set([
+        term,
+        term.replace(/\s+/g, " "),
+        term.replace(/\s+/g, "-"),
+        term.replace(/\s+/g, ""),
+      ])
+    );
+
+    for (const v of variants) {
+      const pattern = escapeForOrValue(`%${v}%`);
+      orParts.push(`Nome.ilike.${pattern}`);
+      orParts.push(`"Marca".ilike.${pattern}`);
+      orParts.push(`"Referência".ilike.${pattern}`);
+      orParts.push(`"ID Var".ilike.${pattern}`);
+      orParts.push(`"ID Tray".ilike.${pattern}`);
+      orParts.push(`"ID Bling".ilike.${pattern}`);
+    }
+
+    if (isOnlyDigits(term)) {
+      orParts.push(`ID.eq.${term}`);
+      orParts.push(`"ID Tray".eq.${term}`);
+      orParts.push(`"ID Bling".eq.${term}`);
+    }
+  }
+
+  return orParts;
+}
+
+export default function PricingTable() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const initialSearch = searchParams.get("search") ?? "";
+  const initialPage = parsePositiveInt(searchParams.get("page"), 1);
+  const initialPerPage = parsePositiveInt(searchParams.get("perPage"), 50);
+  const initialLojas = parseArrayParam(searchParams.get("lojas"));
+  const initialBrands = parseArrayParam(searchParams.get("brands"));
+  const initialSortColumn = searchParams.get("sortColumn") || null;
+  const initialSortDirection =
+    searchParams.get("sortDirection") === "desc" ? "desc" : "asc";
+
+  const [rows, setRows] = useState<Row[]>([]);
+  const [filteredRows, setFilteredRows] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [selectedLoja, setSelectedLoja] = useState<string[]>(initialLojas);
+  const [selectedBrands, setSelectedBrands] = useState<string[]>(initialBrands);
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  const [currentPage, setCurrentPage] = useState(initialPage);
+  const [itemsPerPage, setItemsPerPage] = useState(initialPerPage);
+  const [totalItems, setTotalItems] = useState(0);
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<any>(null);
+
+  const [openPricingModal, setOpenPricingModal] = useState(false);
+
+  const [search, setSearch] = useState(initialSearch);
+  const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
+
+  const [sortColumn, setSortColumn] = useState<string | null>(initialSortColumn);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">(
+    initialSortDirection
+  );
+
+  const [isPending, startTransition] = useTransition();
+  const [exporting, setExporting] = useState(false);
+
+  const impExp = useTrayImportExport(filteredRows, selectedLoja, selectedBrands);
+
+  const reqIdRef = useRef(0);
+  const didHydrateFromUrlRef = useRef(false);
+  const lastUrlRef = useRef("");
+
+  const PREC_FIELDS: Array<keyof Row> = useMemo(
+    () => [
+      "Custo",
+      "Desconto",
+      "Embalagem",
+      "Frete",
+      "Comissão",
+      "Imposto",
+      "Marketing",
+      "Margem de Lucro",
+    ],
+    []
+  );
+
+  /**
+   * ✅ Hidrata estado a partir da URL
+   */
+  useEffect(() => {
+    const urlSearch = searchParams.get("search") ?? "";
+    const urlPage = parsePositiveInt(searchParams.get("page"), 1);
+    const urlPerPage = parsePositiveInt(searchParams.get("perPage"), 50);
+    const urlLojas = parseArrayParam(searchParams.get("lojas"));
+    const urlBrands = parseArrayParam(searchParams.get("brands"));
+    const urlSortColumn = searchParams.get("sortColumn") || null;
+    const urlSortDirection =
+      searchParams.get("sortDirection") === "desc" ? "desc" : "asc";
+
+    setSearch((prev) => (prev !== urlSearch ? urlSearch : prev));
+    setDebouncedSearch((prev) => (prev !== urlSearch ? urlSearch : prev));
+    setCurrentPage((prev) => (prev !== urlPage ? urlPage : prev));
+    setItemsPerPage((prev) => (prev !== urlPerPage ? urlPerPage : prev));
+    setSelectedLoja((prev) => (arraysEqual(prev, urlLojas) ? prev : urlLojas));
+    setSelectedBrands((prev) => (arraysEqual(prev, urlBrands) ? prev : urlBrands));
+    setSortColumn((prev) => (prev !== urlSortColumn ? urlSortColumn : prev));
+    setSortDirection((prev) =>
+      prev !== urlSortDirection ? urlSortDirection : prev
+    );
+
+    didHydrateFromUrlRef.current = true;
+  }, [searchParams]);
+
+  /**
+   * ✅ Debounce da busca
+   */
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(timeout);
+  }, [search]);
+
+  /**
+   * ✅ Quando busca/filtros mudam, volta para página 1
+   */
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, selectedLoja, selectedBrands]);
+
+  /**
+   * ✅ Sincroniza estado -> URL
+   */
+  useEffect(() => {
+    if (!didHydrateFromUrlRef.current) return;
+
+    const params = new URLSearchParams();
+
+    if (search.trim()) params.set("search", search.trim());
+    if (currentPage > 1) params.set("page", String(currentPage));
+    if (itemsPerPage !== 50) params.set("perPage", String(itemsPerPage));
+    if (selectedLoja.length) params.set("lojas", selectedLoja.join(","));
+    if (selectedBrands.length) params.set("brands", selectedBrands.join(","));
+    if (sortColumn) params.set("sortColumn", sortColumn);
+    if (sortDirection !== "asc") params.set("sortDirection", sortDirection);
+
+    const nextUrl = params.toString() ? `?${params.toString()}` : "?";
+
+    if (lastUrlRef.current === nextUrl) return;
+    lastUrlRef.current = nextUrl;
+
+    router.replace(nextUrl, { scroll: false });
+  }, [
+    search,
+    currentPage,
+    itemsPerPage,
+    selectedLoja,
+    selectedBrands,
+    sortColumn,
+    sortDirection,
+    router,
+  ]);
+
+  const cacheKey = useMemo(
+    () =>
+      makeCacheKey({
+        currentPage,
+        itemsPerPage,
+        selectedLoja,
+        selectedBrands,
+        debouncedSearch,
+        sortColumn,
+        sortDirection,
+      }),
+    [
+      currentPage,
+      itemsPerPage,
+      selectedLoja,
+      selectedBrands,
+      debouncedSearch,
+      sortColumn,
+      sortDirection,
+    ]
+  );
+
+  useEffect(() => {
+    const cached = getCache(cacheKey);
+    if (cached) {
+      const safe = (cached.rows || []).filter(isValidRow);
+      setRows(safe);
+      setFilteredRows(safe);
+      setTotalItems(cached.totalItems);
+      setLoading(false);
+    }
+  }, [cacheKey]);
+
+  const loadData = useCallback(async () => {
+    const myReqId = ++reqIdRef.current;
+
+    const cached = getCache(cacheKey);
+    if (cached) {
+      startTransition(() => {
+        const safe = (cached.rows || []).filter(isValidRow);
+        setRows(safe);
+        setFilteredRows(safe);
+        setTotalItems(cached.totalItems);
+        setLoading(false);
+      });
+      return;
+    }
+
+    setLoading(true);
+
+    const { data: sess } = await supabase.auth.getSession();
+    if (!sess.session) {
+      if (myReqId !== reqIdRef.current) return;
+      setRows([]);
+      setFilteredRows([]);
+      setTotalItems(0);
+      setLoading(false);
+      return;
+    }
+
+    const start = (currentPage - 1) * itemsPerPage;
+    const end = start + itemsPerPage - 1;
+
+    let query = supabase
+      .from("marketplace_tray_all")
+      .select(
+        `
+        id,
+        anuncio_id,
+        ID,
+        Loja,
+        "ID Tray",
+        "ID Var",
+        "ID Bling",
+        Nome,
+        Marca,
+        Referência,
+        Categoria,
+        Desconto,
+        Embalagem,
+        Frete,
+        Comissão,
+        Imposto,
+        Marketing,
+        "Margem de Lucro",
+        Custo,
+        "Preço de Venda",
+        "Atualizado em"
+      `,
+        { count: "exact" }
+      );
+
+    if (selectedLoja.length) query = query.in("Loja", selectedLoja);
+    if (selectedBrands.length) query = query.in("Marca", selectedBrands);
+
+    if (debouncedSearch) {
+      const tokens = parseSearchTokens(debouncedSearch);
+      const orParts = buildOrSearchParts(tokens);
+
+      if (orParts.length) query = query.or(orParts.join(","));
+    }
+
+    if (sortColumn) {
+      query = query
+        .order(sortColumn, {
+          ascending: sortDirection === "asc",
+          nullsFirst: true,
+        })
+        .order("Atualizado em", { ascending: false })
+        .order("id", { ascending: false });
+    } else {
+      query = query
+        .order("Atualizado em", { ascending: false })
+        .order("id", { ascending: false });
+    }
+
+    const { data, error, count } = await query.range(start, end);
+
+    if (myReqId !== reqIdRef.current) return;
+
+    if (error) {
+      console.error("❌ Supabase error:", error.message, error.details, error.hint);
+      setRows([]);
+      setFilteredRows([]);
+      setTotalItems(0);
+      setLoading(false);
+      return;
+    }
+
+    const safeData = (data || []).filter(isValidRow);
+
+    const normalized = safeData.map((r: any) => {
+      let OD = 3;
+      const ref = String(r.Referência || "").trim();
+      if (ref.startsWith("PAI -")) OD = 1;
+      else if (ref.startsWith("VAR -")) OD = 2;
+
+      return {
+        ...r,
+        id: r.id,
+        anuncio_id: r.anuncio_id,
+        OD,
+        Desconto: parseBR(r.Desconto),
+        Embalagem: parseBR(r.Embalagem),
+        Frete: parseBR(r.Frete),
+        Comissão: parseBR(r.Comissão),
+        Imposto: parseBR(r.Imposto),
+        Marketing: parseBR(r.Marketing),
+        "Margem de Lucro": parseBR(r["Margem de Lucro"]),
+        Custo: parseBR(r.Custo),
+        "Preço de Venda": parseBR(r["Preço de Venda"]),
+      };
+    });
+
+    setCache(cacheKey, {
+      rows: normalized,
+      totalItems: count || 0,
+      savedAt: Date.now(),
+    });
+
+    startTransition(() => {
+      setRows(normalized);
+      setFilteredRows(normalized);
+      setTotalItems(count || 0);
+      setLoading(false);
+    });
+  }, [
+    cacheKey,
+    currentPage,
+    itemsPerPage,
+    sortColumn,
+    sortDirection,
+    selectedLoja,
+    selectedBrands,
+    debouncedSearch,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
+      if (!cancelled) loadData();
+    }
+
+    run();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) loadData();
+    });
+
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+  }, [loadData]);
+
+  const handleSort = (col: string) => {
+    if (sortColumn === col) {
+      setSortDirection((p) => (p === "asc" ? "desc" : "asc"));
+    } else {
+      setSortColumn(col);
+      setSortDirection("asc");
+    }
+  };
+
+  const handleCopy = useCallback((text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(key);
+    setTimeout(() => setCopiedId(null), 1200);
+  }, []);
+
+  const openEditor = useCallback(
+    (row: Row, field: keyof Row, isMoney: boolean, e: React.MouseEvent) => {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const rawValue = parseBR(row[field]);
+      const formatted = toBR(rawValue);
+
+      setEditing({
+        dbId: row.id,
+        loja: row.Loja,
+        field,
+        value: formatted,
+        isMoney,
+        anchorRect: rect,
+      });
+    },
+    []
+  );
+
+  const confirmEdit = useCallback(async () => {
+    if (!editing) return;
+
+    const { dbId, loja, field, value } = editing;
+    const newVal = parseBR(value);
+
+    const shouldRecalcPV = PREC_FIELDS.includes(field);
+
+    let newRowUpdated: Row | undefined;
+
+    const updatedRows = rows.map((r) => {
+      if (r.id === dbId) {
+        const updated: Row = { ...r, [field]: newVal };
+        if (shouldRecalcPV) updated["Preço de Venda"] = calcPrecoVenda(updated);
+        newRowUpdated = updated;
+        return updated;
+      }
+      return r;
+    });
+
+    setRows(updatedRows);
+    setFilteredRows(updatedRows);
+    setEditing(null);
+
+    const cached = getCache(cacheKey);
+    if (cached && newRowUpdated) {
+      setCache(cacheKey, {
+        ...cached,
+        rows: cached.rows.map((r) => (r.id === dbId ? newRowUpdated! : r)),
+        savedAt: Date.now(),
+      });
+    }
+
+    const table = loja === "PK" ? "marketplace_tray_pk" : "marketplace_tray_sb";
+
+    const payload: any = { [String(field)]: newVal };
+    if (shouldRecalcPV) payload["Preço de Venda"] = newRowUpdated?.["Preço de Venda"];
+
+    const { error } = await supabase.from(table).update(payload).eq("id", dbId);
+
+    if (error) console.error("❌ Erro ao salvar:", error);
+  }, [editing, rows, cacheKey, PREC_FIELDS]);
+
+  const cancelEdit = () => setEditing(null);
+
+  // ============================================================
+  // ✅ IMPORT via RPC em lote (PK/SB)
+  // ============================================================
+  const BATCH_SIZE = 1000;
+
+  const toNumberBRLocal = (v: any) => {
+    if (v === null || v === undefined) return null;
+    if (typeof v === "number") return v;
+    let s = String(v).replace(/\u00A0/g, " ").trim();
+    if (!s) return null;
+
+    s = s
+      .replace(/\s+/g, " ")
+      .replace(/R\$\s?/gi, "")
+      .replace(/%/g, "")
+      .trim();
+
+    if (s.includes(",") && s.includes(".")) s = s.replace(/\./g, "").replace(",", ".");
+    else if (s.includes(",")) s = s.replace(",", ".");
+
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const normalizeLoja = (v: any) => {
+    const raw = String(v ?? "").trim();
+    if (!raw) return "";
+    const norm = raw
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    if (norm === "PK" || norm.includes("PIKOT")) return "PK";
+    if (norm === "SB" || norm.includes("SOBAQUETAS") || norm.includes("SO BAQUETAS"))
+      return "SB";
+    return norm;
+  };
+
+  const buildRpcRow = (row: any) => {
+    const id = String(row["ID"] ?? "").trim();
+    const loja = normalizeLoja(row["Loja"]);
+    if (!id || !loja) return null;
+
+    const percentCols = ["Desconto", "Comissão", "Imposto", "Margem de Lucro", "Marketing"];
+    const moneyCols = ["Embalagem", "Frete", "Custo", "Preço de Venda"];
+
+    const out: any = {
+      id,
+      loja,
+      desconto: null,
+      embalagem: null,
+      frete: null,
+      comissao: null,
+      imposto: null,
+      margem_de_lucro: null,
+      marketing: null,
+      custo: null,
+      preco_de_venda: null,
+    };
+
+    for (const col of percentCols) {
+      const num = toNumberBRLocal(row[col]);
+      if (num !== null) {
+        const fixed = num > 0 && num <= 1 ? num * 100 : num;
+        if (col === "Desconto") out.desconto = fixed;
+        if (col === "Comissão") out.comissao = fixed;
+        if (col === "Imposto") out.imposto = fixed;
+        if (col === "Margem de Lucro") out.margem_de_lucro = fixed;
+        if (col === "Marketing") out.marketing = fixed;
+      }
+    }
+
+    for (const col of moneyCols) {
+      const num = toNumberBRLocal(row[col]);
+      if (num !== null) {
+        const fixedMoney = col === "Preço de Venda" ? Number(num.toFixed(2)) : num;
+        if (col === "Embalagem") out.embalagem = fixedMoney;
+        if (col === "Frete") out.frete = fixedMoney;
+        if (col === "Custo") out.custo = fixedMoney;
+        if (col === "Preço de Venda") out.preco_de_venda = fixedMoney;
+      }
+    }
+
+    const hasAny =
+      out.desconto !== null ||
+      out.embalagem !== null ||
+      out.frete !== null ||
+      out.comissao !== null ||
+      out.imposto !== null ||
+      out.margem_de_lucro !== null ||
+      out.marketing !== null ||
+      out.custo !== null ||
+      out.preco_de_venda !== null;
+
+    return hasAny ? out : null;
+  };
+
+  const handlePricingImport = async (data: any[]) => {
+    const rpcRows = (data || []).map(buildRpcRow).filter(Boolean) as any[];
+
+    const pk = rpcRows.filter((r) => r.loja === "PK");
+    const sb = rpcRows.filter((r) => r.loja === "SB");
+
+    if (rpcRows.length === 0) {
+      toast.warning("Nenhuma linha válida para atualizar", {
+        description: 'Confira se o arquivo tem "ID", "Loja" e valores válidos.',
+      });
+      setOpenPricingModal(false);
+      return;
+    }
+
+    let updatedCount = 0;
+
+    const runBatches = async (
+      arr: any[],
+      rpcName: "update_tray_pricing_batch_pk" | "update_tray_pricing_batch_sb"
+    ) => {
+      for (let i = 0; i < arr.length; i += BATCH_SIZE) {
+        const batch = arr.slice(i, i + BATCH_SIZE);
+        const { data, error } = await supabase.rpc(rpcName, { payload: batch });
+        if (error) throw error;
+        if (typeof data === "number") updatedCount += data;
+      }
+    };
+
+    try {
+      await runBatches(pk, "update_tray_pricing_batch_pk");
+      await runBatches(sb, "update_tray_pricing_batch_sb");
+
+      toast.success("Importação concluída!", {
+        description: `${updatedCount} item(ns) atualizado(s).`,
+      });
+    } catch (e: any) {
+      console.error("Erro import Tray RPC:", e);
+      toast.error("Erro ao importar (RPC)", {
+        description: e?.message || "Veja o console.",
+      });
+    } finally {
+      setOpenPricingModal(false);
+      clearTrayCache();
+      loadData();
+    }
+  };
+
+  const handleExportAll = useCallback(async () => {
+  setExporting(true);
+
+  try {
+    // 🔊 libera áudio no clique do botão exportar
+    await impExp.unlockAudio();
+
+    const { data: sess } = await supabase.auth.getSession();
+    if (!sess.session) {
+      alert("Você precisa estar logado para exportar.");
+      return;
+    }
+
+    const pageSize = 1000;
+    let page = 0;
+    let all: any[] = [];
+
+    while (true) {
+      let exportQuery = supabase
+        .from("marketplace_tray_all")
+        .select(`
+          id,
+          anuncio_id,
+          ID,
+          Loja,
+          "ID Tray",
+          "ID Var",
+          "ID Bling",
+          Nome,
+          Marca,
+          Referência,
+          Categoria,
+          Desconto,
+          Embalagem,
+          Frete,
+          Comissão,
+          Imposto,
+          Marketing,
+          "Margem de Lucro",
+          Custo,
+          "Preço de Venda",
+          "Atualizado em"
+        `)
+        .order("Atualizado em", { ascending: false })
+        .order("id", { ascending: false })
+        .range(page * pageSize, (page + 1) * pageSize - 1);
+
+      if (selectedLoja.length) exportQuery = exportQuery.in("Loja", selectedLoja);
+      if (selectedBrands.length) exportQuery = exportQuery.in("Marca", selectedBrands);
+
+      if (debouncedSearch) {
+        const tokens = parseSearchTokens(debouncedSearch);
+        const orParts = buildOrSearchParts(tokens);
+
+        if (orParts.length) {
+          exportQuery = exportQuery.or(orParts.join(","));
+        }
+      }
+
+      const { data, error } = await exportQuery;
+
+      if (error) throw error;
+      if (!data?.length) break;
+
+      all = all.concat(data);
+
+      if (data.length < pageSize) break;
+
+      page++;
+    }
+
+    all = all.filter(isValidRow);
+
+    await impExp.handleExport(all);
+  } catch (e) {
+    console.error("ERRO EXPORT:", e);
+    alert("Erro ao exportar. Veja o console.");
+  } finally {
+    setExporting(false);
+  }
+}, [selectedLoja, selectedBrands, debouncedSearch, impExp]);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-8">
+      <div className="mx-auto space-y-6 w-full">
+        <GlassmorphicCard>
+          <TopBarLite
+            search={search}
+            setSearch={setSearch}
+            onExport={handleExportAll}
+            exporting={exporting}
+            onMassEditOpen={() => setOpenPricingModal(true)}
+            allBrands={[]}
+            allLojas={[]}
+            allCategorias={[]}
+            selectedBrands={selectedBrands}
+            setSelectedBrands={setSelectedBrands}
+            selectedLoja={selectedLoja}
+            setSelectedLoja={setSelectedLoja}
+            selectedCategoria={[]}
+            setSelectedCategoria={() => {}}
+            filterOpen={filterOpen}
+            setFilterOpen={setFilterOpen}
+            selectedCount={0}
+            onDeleteSelected={() => {}}
+            onClearSelection={() => {}}
+          />
+
+          <div className="w-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-700 scrollbar-track-transparent">
+            <Table>
+              <TableHeader>
+                <PricingHeaderRow
+                  sortColumn={sortColumn}
+                  sortDirection={sortDirection}
+                  onSort={handleSort}
+                />
+              </TableHeader>
+              <TableBody>
+                <TableRows
+                  rows={filteredRows}
+                  loading={loading || isPending}
+                  copiedId={copiedId}
+                  editedId={null}
+                  handleCopy={handleCopy}
+                  openEditor={openEditor}
+                  handleEditFull={() => {}}
+                />
+              </TableBody>
+            </Table>
+          </div>
+        </GlassmorphicCard>
+
+        <TableControls
+          currentPage={currentPage}
+          totalPages={Math.max(1, Math.ceil(totalItems / itemsPerPage))}
+          itemsPerPage={itemsPerPage}
+          totalItems={totalItems}
+          onPageChange={setCurrentPage}
+          onItemsPerPageChange={setItemsPerPage}
+          selectedCount={0}
+        />
+
+        <PricingMassEditionModal
+          open={openPricingModal}
+          onOpenChange={setOpenPricingModal}
+          onImportComplete={handlePricingImport}
+        />
+
+        {editing && (
+          <FloatingEditor anchorRect={editing.anchorRect} onClose={cancelEdit}>
+            <div className="relative flex items-center rounded-md border border-neutral-700 bg-black/30 px-2 py-1.5">
+              <span className="text-xs px-1 py-0.5 rounded bg-black/60 border border-neutral-700 mr-1">
+                {editing.isMoney ? "R$" : "%"}
+              </span>
+
+              <input
+                autoFocus
+                inputMode="decimal"
+                className="flex-1 bg-transparent outline-none text-sm text-white pr-10"
+                value={editing.value}
+                onChange={(e) =>
+                  setEditing((p: any) => (p ? { ...p, value: e.target.value } : p))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") confirmEdit();
+                  if (e.key === "Escape") cancelEdit();
+                }}
+              />
+
+              <div className="absolute right-1 flex items-center gap-1">
+                <button
+                  title="Cancelar"
+                  onClick={cancelEdit}
+                  className="text-red-400 hover:text-red-300"
+                >
+                  <XIcon className="w-4 h-4" />
+                </button>
+
+                <button
+                  title="Confirmar"
+                  onClick={confirmEdit}
+                  className="text-green-400 hover:text-green-300"
+                >
+                  <CheckIcon className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </FloatingEditor>
+        )}
+      </div>
+    </div>
+  );
+}

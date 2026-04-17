@@ -1,0 +1,22 @@
+{
+  "/_global-error/page": "app/_global-error/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/auth/callback/route": "app/auth/callback/route.js",
+  "/cadastro/page": "app/cadastro/page.js",
+  "/dashboard/anuncios/edit/page": "app/dashboard/anuncios/edit/page.js",
+  "/dashboard/anuncios/page": "app/dashboard/anuncios/page.js",
+  "/dashboard/automacoes/automacao-planilhas/page": "app/dashboard/automacoes/automacao-planilhas/page.js",
+  "/dashboard/configuracao/page": "app/dashboard/configuracao/page.js",
+  "/dashboard/hub/page": "app/dashboard/hub/page.js",
+  "/dashboard/marketplaces/bling/page": "app/dashboard/marketplaces/bling/page.js",
+  "/dashboard/marketplaces/tray/details/page": "app/dashboard/marketplaces/tray/details/page.js",
+  "/dashboard/marketplaces/tray/page": "app/dashboard/marketplaces/tray/page.js",
+  "/dashboard/page": "app/dashboard/page.js",
+  "/dashboard/precificacao/custos/page": "app/dashboard/precificacao/custos/page.js",
+  "/dashboard/precificacao/decomposicao/page": "app/dashboard/precificacao/decomposicao/page.js",
+  "/dashboard/precificacao/precificacao-individual/page": "app/dashboard/precificacao/precificacao-individual/page.js",
+  "/login/page": "app/login/page.js",
+  "/page": "app/page.js",
+  "/recuperar-senha/page": "app/recuperar-senha/page.js",
+  "/redefinir-senha/page": "app/redefinir-senha/page.js"
+}

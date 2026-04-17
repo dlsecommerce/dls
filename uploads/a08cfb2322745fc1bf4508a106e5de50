@@ -1,0 +1,620 @@
+﻿IdProduto;ID na Loja;Nome;Código;Preco;Preco Promocional;ID do Fornecedor;ID da Marca;Link Externo;Nome Loja (Multilojas)
+16597188491;"16997	";Caixa de Bateria 14x8 Tennessee By Liverpool Vermelho Cor:Vermelho;"VAR - LIV-8081V	";457,99;0;;;;Loja Tray
+16597188486;"16999	";Caixa de Bateria 14x8 Tennessee By Liverpool Madeira Cor:Madeira;"VAR - LIV-8080M	";457,99;0;;;;Loja Tray
+16597188483;"17001	";Caixa de Bateria 14x8 Tennessee By Liverpool Branco Cor:Branco;"VAR - LIV-8082B	";457,99;0;;;;Loja Tray
+16597188478;"17003	";Caixa de Bateria 14x8 Tennessee By Liverpool Preto Cor:Preto;"VAR - LIV-8079P	";457,99;0;;;;Loja Tray
+16597188473;"17011	";Caixa de Bateria 14x8 Tennessee By Liverpool em Poplar Cor:Vermelho;"VAR - LIV-8081	";457,99;0;;;;Loja Tray
+16597188461;"17009	";Caixa de Bateria 14x8 Tennessee By Liverpool em Poplar Cor:Madeira;"VAR - LIV-8080	";457,99;0;;;;Loja Tray
+16597188449;"17007	";Caixa de Bateria 14x8 Tennessee By Liverpool em Poplar Cor:Branco;"VAR - LIV-8082	";457,99;0;;;;Loja Tray
+16597188437;"17005	";Caixa de Bateria 14x8 Tennessee By Liverpool em Poplar Cor:Preto;"VAR - LIV-8079	";457,99;0;;;;Loja Tray
+16597188431;"2940515	";Caixa de Bateria 14x8 Tennessee By Liverpool Vermelho;"PAI - LIV-8081V	";457,99;0;;;;Loja Tray
+16597188422;"2940517	";Caixa de Bateria 14x8 Tennessee By Liverpool Madeira;"PAI - LIV-8080M	";457,99;0;;;;Loja Tray
+16597188419;"2940519	";Caixa de Bateria 14x8 Tennessee By Liverpool Branco;"PAI - LIV-8082B	";457,99;0;;;;Loja Tray
+16597188417;"2940521	";Caixa de Bateria 14x8 Tennessee By Liverpool Preto;"PAI - LIV-8079P	";457,99;0;;;;Loja Tray
+16597188412;"2940523	";Caixa de Bateria 14x8 Tennessee By Liverpool em Poplar;"PAI - LIV-8079/8082/8080/8081	";457,99;0;;;;Loja Tray
+16596681500;"16995	";Toalha de Microfibra Vonder 40 cm x 60 cm 400 g/m² Cor:Verde;"VAR - 6364406001	";31,99;0;;;;Loja Tray
+16596681490;"16993	";Toalha de Microfibra Vonder 40 cm x 60 cm 400 g/m² Cor:Roxa;"VAR - 6364406004	";31,99;0;;;;Loja Tray
+16596681484;"16991	";Toalha de Microfibra Vonder 40 cm x 60 cm 400 g/m² Cor:Rosa;"VAR - 6364406002	";31,99;0;;;;Loja Tray
+16596681478;"16989	";Toalha de Microfibra Vonder 40 cm x 60 cm 400 g/m² Cor:Preta;"VAR - 6364406007	";31,99;0;;;;Loja Tray
+16596681466;"16987	";Toalha de Microfibra Vonder 40 cm x 60 cm 400 g/m² Cor:Laranja;"VAR - 6364406003	";31,99;0;;;;Loja Tray
+16596681455;"16985	";Toalha de Microfibra Vonder 40 cm x 60 cm 400 g/m² Cor:Branco;"VAR - 6364406005	";31,99;0;;;;Loja Tray
+16596681448;"16983	";Toalha de Microfibra Vonder 40 cm x 60 cm 400 g/m² Cor:Amarelo;"VAR - 6364406006	";31,99;0;;;;Loja Tray
+16596681436;"16981	";Carrinho para Carga Dobrável com Bolsa 60 Kgf CDV 060 Vonder Cor:Preto;"VAR - 6160060060	";284,99;0;;;;Loja Tray
+16596681429;"2940513	";Toalha de Microfibra Vonder 40 cm x 60 cm 400 g/m²;"PAI - VD-TOALHA MF	";31,99;0;;;;Loja Tray
+16596681424;"2940511	";Carrinho para Carga Dobrável com Bolsa 60 Kgf CDV 060 Vonder;"PAI - VD-6160060060	";284,99;0;;;;Loja Tray
+16594815391;"16979	";Pad Digital Eletronic Drum One Aroma Cor:Preto;"VAR -PAD-ELETRONIC	";139,99;0;;;;Loja Tray
+16594815386;"2940509	";Pad Digital Eletronic Drum One Aroma;"PAI -PAD-ELETRONIC	";139,99;0;;;;Loja Tray
+16594484489;"16977	";Kit Fit Line Fischer: Forno Preto Cooktop 4B e Micro-ondas Voltagem:220;"VAR - 34915-98444/36310-102671/34493-95482	";3.151,99;0;;;;Loja Tray
+16594484485;"16975	";Kit Fit Line Fischer: Forno Preto Cooktop 4B e Micro-ondas Voltagem:127;"VAR - 34915-98445/36310-102671/34493-95481	";3.151,99;0;;;;Loja Tray
+16594484480;"2940507	";Kit Fit Line Fischer: Forno Preto Cooktop 4B e Micro-ondas;"PAI - 34915-B/36310/34493-B	";3.151,99;0;;;;Loja Tray
+16594447786;"6871	";"Baqueta Rock Shock Marfim 12 Pares Liverpool Ro Sho Cor:Marfim;DRUMSTICK_MALLET_AND_BRUSH_SIZ:43,5cm";"VAR - 12-RO SHO	";0;0;;;;Loja Tray
+16594447783;;Kit 8 Talabartes 2 Ganchos Para Caixa TAL 2GAN Liverpool Cor:Branco;"VAR - 8-TAL 2GANB	";;;;;;
+16594447778;"6023	";KIT 6 Talabarte 2 Ganchos Para Caixa TAL 2GAN Liverpool Cor:Preto;"VAR - 6-TAL 2GANP	";0;0;;;;Loja Tray
+16594447775;"6021	";KIT 6 Talabarte 2 Ganchos Para Caixa TAL 2GAN Liverpool Cor:Branco;"VAR - 6-TAL 2GANB	";0;0;;;;Loja Tray
+16594447771;"6845	";Cortador De Grama LF 600RM + Aparador Master 1000 Plus Trapp Cor:Verde;"VAR - 931353-T/2931597-T	";0;0;;;;Loja Tray
+16594447768;;"Baqueta 5B Marfim Ponta Barril Par LL 5BC Liverpool Cor:Marfim;Tamanho:5B";"VAR - 1-LL 5BC	";;;;;;
+16594447766;;"Baqueta 7A Longa Marfim P. Madeira Par LL 7AJ Liverpool Cor:Mocassim;Tamanho:7A";"VAR - 1-LL 7AJ	";;;;;;
+16594447763;;"Baqueta 5A Marfim Ponta Flecha LL 5AP Liverpool Cor:Mocassim;Tamanho:5A";"VAR - 1-LL 5AP	";;;;;;
+16594447758;"5085	";Baquetas 5A Tennessee Jatobá 12 Pares TNJAT 5AM Liverpool Cor:jatobá;"VAR - 12-TNJAT 5AM (3)	";0;0;;;;Loja Tray
+16594447754;"2932951	";Baqueta Rock Shock Marfim 12 Pares Liverpool Ro Sho;"PAI - 12-RO SHO	";0;0;;;;Loja Tray
+16594447751;"2932179	";KIT 6 Talabarte 2 Ganchos Para Caixa TAL 2GAN Liverpool;"PAI - 6-TAL 2GANB/TAL 2GANP	";0;0;;;;Loja Tray
+16594447746;"2931767	";Afoxe Com Tampa Preta Afuche AF PR + Brinde Liverpool;"1-AF PR/BRINDE	";0;0;;;;Loja Tray
+16594447743;;Cortador De Grama LF 600RM + Aparador Master 1000 Plus Trapp;"PAI - 2931353-T/2931597-T	";;;;;;
+16594447740;"1063	";Baquetas 5A Tennessee Jatobá 12 Pares TNJAT 5AM Liverpool;"PAI - 12-TNJAT 5AM (3)	";0;0;;;;Loja Tray
+16594043677;"16965	";Acordeon 24 Baixos Minuano All Black na Madeira Preta Musicamento Italiano Cor:Preto Brilho;"VAR - 4025	";5.575,99;0;;;;Loja Tray
+16594043675;"2940503	";Acordeon 24 Baixos Minuano All Black na Madeira Preta Musicamento Italiano;"PAI - ALLBLACK-24BX	";5.575,99;0;;;;Loja Tray
+16593631344;"16963	";Castanhola Liverpool Madeira Par Verniz Escuro Cor:Marrom;"VAR - 5542	";59,99;0;;;;Loja Tray
+16593631339;"2940501	";Castanhola Liverpool Madeira Par Verniz Escuro;"PAI - 5542	";59,99;0;;;;Loja Tray
+16593586247;"16961	";Batuta de Regência Liverpool 38cm Madeira Jatobá Cor:Natural;"VAR - 5541	";39,99;0;;;;Loja Tray
+16593586239;"2940499	";Batuta de Regência Liverpool 38cm Madeira Jatobá;"PAI - 5541	";39,99;0;;;;Loja Tray
+16593498826;"16959	";Microfone De Mão Com Fio Devox Dx-58s Dinâmico Profisssional Preto Cor:Preto;"VAR - DEVOX-58S	";90,99;0;;;;Loja Tray
+16593498817;"2940497	";Microfone De Mão Com Fio Devox Dx-58s Dinâmico Profisssional Preto;"PAI - DEVOX-58S	";90,99;0;;;;Loja Tray
+16593057371;"16957	";Kit Infinity Fischer Coifa Parede Forno Cooktop 5B Micro-ondas Voltagem:220;"VAR - 19902-22550/15740-27309/23678-54121/25378-55522	";10.003,56;0;;;;Loja Tray
+16593057362;"16955	";Kit Infinity Fischer Coifa Parede Forno Cooktop 5B Micro-ondas Voltagem:127;"VAR - 19902-22549/15740-27308/23678-54121/25378-55520	";10.003,56;0;;;;Loja Tray
+16593057358;"2940495	";Kit Infinity Fischer Coifa Parede Forno Cooktop 5B Micro-ondas;"PAI - 19902/15740/23678/25378	";10.003,56;0;;;;Loja Tray
+16592763755;"16953	";Maçaneta para Surdo em Aluminio Liverpool MC 65 Cor: Preto;"VAR -MC 65	";43,99;0;;;;Loja Tray
+16592763752;"2940493	";Maçaneta para Surdo em Aluminio Liverpool MC 65;"PAI -MC 65	";43,99;0;;;;Loja Tray
+16592250950;"16951	";Par de Maçaneta para Surdo em Aluminio Liverpool MC 65 Cor: Preto;"VAR - 2-MC 65	";82,99;0;;;;Loja Tray
+16592250947;"2940491	";Par de Maçaneta para Surdo em Aluminio Liverpool MC 65;"PAI - 2-MC 65	";82,99;0;;;;Loja Tray
+16590973109;"16949	";Banco Para Bateria em Selim Rosca Fdt300 Ferragens Dupla Preto Cor:Preto;"VAR -   LIV-11050	";549,99;0;;;;Loja Tray
+16590973104;"2940489	";Banco Para Bateria em Selim Rosca Fdt300 Ferragens Dupla Preto;"PAI - LIV-11050	";549,99;0;;;;Loja Tray
+16590486611;"16947	";Fita Dupla Face 3m Profissional Extra Forte 19mm X 33m Vermelho Cor:Transparente;"VAR -  GRANDE-3M	";59,99;0;;;;Loja Tray
+16590486606;"2940487	";Fita Dupla Face 3m Profissional Extra Forte 19mm X 33m Vermelho;"PAI - FITA-GRANDE-3M	";59,99;0;;;;Loja Tray
+16590214921;"16945	";Super Fita Mágica Nano Adesiva Dupla Face Transparente Extra Forte Lavável 3M Cor:Transparente;"VAR -  FITA-PIQUENA-3M	";17,99;0;;;;Loja Tray
+16590214912;"2940485	";Super Fita Mágica Nano Adesiva Dupla Face Transparente Extra Forte Lavável 3M;"PAI - FITA-PIQUENA-3M	";17,99;0;;;;Loja Tray
+16589129916;"16921	";Micro-ondas de Embutir Fischer Infinity 25 litros com Grill Branco Voltagem:220;"VAR - 25378-55526	";3.479,99;0;;;;Loja Tray
+16589129909;"16919	";Micro-ondas de Embutir Fischer Infinity 25 litros com Grill Branco Voltagem:127;"VAR - 25378-55524	";3.479,99;0;;;;Loja Tray
+16589129899;"16925	";Forno Elétrico de Bancada Fischer Grill Black 44 litros Voltagem:220;"VAR - 34312-94807	";808,99;0;;;;Loja Tray
+16589129891;"16923	";Forno Elétrico de Bancada Fischer Grill Black 44 litros Voltagem:127;"VAR - 34312-94806	";808,99;0;;;;Loja Tray
+16589129884;"16927	";Forno a Gás de Embutir Fischer Infinity 50 litros com Grill Voltagem:Gás;"VAR - 31000-79709	";1.558,99;0;;;;Loja Tray
+16589129872;"16931	";Depurador ou Exaustor de Embutir Fischer Slim 60 cm Frontal Inox Voltagem:220;"VAR - 5760-10336	";871,99;0;;;;Loja Tray
+16589129861;"16929	";Depurador ou Exaustor de Embutir Fischer Slim 60 cm Frontal Inox Voltagem:127;"VAR - 5760-10334	";871,99;0;;;;Loja Tray
+16589129853;"16935	";Depurador ou Exaustor de Parede Fischer Power Steel 60 cm Voltagem:220;"VAR - 16655-17635	";491,99;0;;;;Loja Tray
+16589129847;"16933	";Depurador ou Exaustor de Parede Fischer Power Steel 60 cm Voltagem:127;"VAR - 16655-17615	";491,99;0;;;;Loja Tray
+16589129836;"16937	";Depurador ou Exaustor de Parede Fischer Classic New 80 cm Voltagem:220;"VAR - 14570-16256	";965,99;0;;;;Loja Tray
+16589129825;"16939	";Cooktop a Gás Fischer 5 Bocas Tripla Chama Infinity Branco Voltagem:Bivolt;"VAR - 26298-62470	";1.321,99;0;;;;Loja Tray
+16589129811;"16941	";Cooktop a Gás Fischer 5 Bocas Tripla Chama Mesa Vidro Vermelho Voltagem:Bivolt;"VAR - 1743-15738	";876,99;0;;;;Loja Tray
+16589129800;"16943	";Cooktop a Gás Fischer 5 Bocas Tripla Chama Mesa Vidro Preto Voltagem:Bivolt;"VAR - 1743-5733	";812,99;0;;;;Loja Tray
+16589129792;"16917	";Cooktop a Gás Fischer 5 Bocas Mesa Vidro Branco Voltagem:Bivolt;"VAR - 1642-6986	";659,99;0;;;;Loja Tray
+16589129782;"16915	";Cooktop a Gás Fischer 5 Bocas Mesa Vidro Preto Voltagem:Bivolt;"VAR - 1642-6985	";659,99;0;;;;Loja Tray
+16589129774;"16913	";Cooktop a Gás Fischer 4 Bocas Platinium com Trempe de Ferro Voltagem:Bivolt;"VAR - 20874-51521	";1.739,99;0;;;;Loja Tray
+16589129766;"16911	";Churrasqueira Elétrica Cooktop Fischer Ranch com Pedras Vulcânicas Voltagem:220;"VAR - 31613-81800	";1.406,99;0;;;;Loja Tray
+16589129759;"2940465	";Micro-ondas de Embutir Fischer Infinity 25 litros com Grill Branco;"PAI - FIS-25378	";3.826,99;0;;;;Loja Tray
+16589129748;"2940467	";Micro-ondas de Embutir Fischer Infinity 25 litros com Grill Preto;"PAI - FIS-25378-PRETO	";3.479,99;0;;;;Loja Tray
+16589129741;"2940469	";Forno Elétrico de Bancada Fischer Grill Black 44 litros;"PAI - FIS-34312	";808,99;0;;;;Loja Tray
+16589129738;"2940471	";Forno a Gás de Embutir Fischer Infinity 50 litros com Grill;"PAI - FIS-31000	";1.558,99;0;;;;Loja Tray
+16589129734;"2940473	";Depurador ou Exaustor de Embutir Fischer Slim 60 cm Frontal Inox;"PAI - FIS-5760	";871,99;0;;;;Loja Tray
+16589129730;"2940475	";Depurador ou Exaustor de Parede Fischer Power Steel 60 cm;"PAI - FIS-16655	";491,99;0;;;;Loja Tray
+16589129725;"2940477	";Depurador ou Exaustor de Parede Fischer Classic New 80 cm;"PAI - FIS-14570	";965,99;0;;;;Loja Tray
+16589129719;"2940479	";Cooktop a Gás Fischer 5 Bocas Tripla Chama Infinity Branco;"PAI - FIS-26298-BRANCO	";1.321,99;0;;;;Loja Tray
+16589129716;"2940481	";Cooktop a Gás Fischer 5 Bocas Tripla Chama Mesa Vidro Vermelho;"PAI - FIS-1743-VERMELHO	";876,99;0;;;;Loja Tray
+16589129711;"2940483	";Cooktop a Gás Fischer 5 Bocas Tripla Chama Mesa Vidro Preto;"PAI - FIS-1743-PRETO	";812,99;0;;;;Loja Tray
+16589129705;"2940463	";Cooktop a Gás Fischer 5 Bocas Mesa Vidro Branco;"PAI - FIS-1642-BRANCO	";659,99;0;;;;Loja Tray
+16589129698;"2940461	";Cooktop a Gás Fischer 5 Bocas Mesa Vidro Preto;"PAI - FIS-1642-PRETO	";659,99;0;;;;Loja Tray
+16589129693;"2940459	";Cooktop a Gás Fischer 4 Bocas Platinium com Trempe de Ferro;"PAI - FIS-20874	";1.739,99;0;;;;Loja Tray
+16589129688;"2940457	";Churrasqueira Elétrica Cooktop Fischer Ranch com Pedras Vulcânicas;"PAI - FIS-31613	";1.406,99;0;;;;Loja Tray
+16589005628;"16909	";Baqueta Sem Logo Marfim Liverpool 36 Pares Para Fanfarra Cor:Natural;"VAR - LIV-36-FFSL	";135,99;0;;;;Loja Tray
+16589005626;"16907	";Baqueta Sem Logo Marfim Liverpool 24 Pares Para Fanfarra Cor:Natural;"VAR - LIV-24-FFSL	";123,99;0;;;;Loja Tray
+16589005624;"16905	";Baqueta Sem Logo Marfim Liverpool 12 Pares Para Fanfarra Cor:Natural;"VAR - LIV-12-FFSL	";64,99;0;;;;Loja Tray
+16589005621;"16903	";Baqueta Sem Logo Marfim Liverpool Para Fanfarra Cor:Natural;"VAR - LIV-FFSL	";9,99;0;;;;Loja Tray
+16589005620;"2940455	";Baqueta Sem Logo Marfim Liverpool 36 Pares Para Fanfarra;"PAI - LIV-36-FFSL	";135,99;0;;;;Loja Tray
+16589005617;"2940453	";Baqueta Sem Logo Marfim Liverpool 24 Pares Para Fanfarra;"PAI - LIV-24-FFSL	";123,99;0;;;;Loja Tray
+16589005616;"2940451	";Baqueta Sem Logo Marfim Liverpool 12 Pares Para Fanfarra;"PAI - LIV-12-FFSL	";64,99;0;;;;Loja Tray
+16589005614;"2940449	";Baqueta Sem Logo Marfim Liverpool Para Fanfarra;"PAI - LIV-FFSL	";9,99;0;;;;Loja Tray
+16588383999;"16901	";Baqueta Sem Logo Marfim Liverpool 36 Pares Para Repique Cor:Natural;"VAR - LIV-36-RPQSL	";135,99;0;;;;Loja Tray
+16588383995;"16899	";Baqueta Sem Logo Marfim Liverpool 24 Pares Para Repique Cor:Natural;"VAR - LIV-24-RPQSL	";123,99;0;;;;Loja Tray
+16588383989;"16897	";Baqueta Sem Logo Marfim Liverpool 12 Pares Para Repique Cor:Natural;"VAR - LIV-12-RPQSL	";64,99;0;;;;Loja Tray
+16588383980;"16895	";Baqueta Sem Logo Marfim Liverpool Para Repique Cor:Natural;"VAR - LIV-RPQSL	";9,99;0;;;;Loja Tray
+16588383975;"2940447	";Baqueta Sem Logo Marfim Liverpool 36 Pares Para Repique;"PAI - LIV-36-RPQSL	";135,99;0;;;;Loja Tray
+16588383970;"2940445	";Baqueta Sem Logo Marfim Liverpool 24 Pares Para Repique;"PAI - LIV-24-RPQSL	";123,99;0;;;;Loja Tray
+16588383966;"2940443	";Baqueta Sem Logo Marfim Liverpool 12 Pares Para Repique;"PAI - LIV-12-RPQSL	";64,99;0;;;;Loja Tray
+16588383965;"2940441	";Baqueta Sem Logo Marfim Liverpool Para Repique;"PAI - LIV-RPQSL	";9,99;0;;;;Loja Tray
+16588153102;"16877	";"Kit 7 Parafusos de Afinação 10"" Pandeiro Premium Liverpool Cor:Prata";"VAR - LIV-8031	";77,99;0;;;;Loja Tray
+16588153095;"16875	";"Kit 7 Parafusos de Afinação 10"" e 8"" Pandeiro Standard Liverpool Cor:Prata";"VAR - LIV-8030	";40,99;0;;;;Loja Tray
+16588153087;"2940423	";"Kit 7 Parafusos de Afinação 10"" Pandeiro Premium Liverpool";"PAI - LIV-8031	";77,99;0;;;;Loja Tray
+16588153081;"2940421	";"Kit 7 Parafusos de Afinação 10"" e 8"" Pandeiro Standard Liverpool";"PAI - LIV-8030	";40,99;0;;;;Loja Tray
+16587909167;"16873	";Tom Holder com Giro 180° e 2,22cm Liverpool Tamanho:Direito;"VAR - 5671	";122,99;0;;;;Loja Tray
+16587909166;"16871	";Tom Holder com Giro 180° e 2,22cm Liverpool Tamanho:Esquerdo;"VAR - 5670	";122,99;0;;;;Loja Tray
+16585805383;"16869	";Picadeira Ensiladeira Elétrica 3CV Trifásico Trapp ES 450 Trapp Cor:Verde;"VAR - 2932612-T	";5.981,99;0;;;;Loja Tray
+16585805379;"2940419	";Picadeira Ensiladeira Elétrica 3CV Trifásico Trapp ES 450 Trapp;"PAI - 2932612-T	";5.981,99;0;;;;Loja Tray
+16580961631;"16867	";Baqueta Liverpool Diferencial Tatuagem 6 Pares Ponta Madeira Tamanho:2BM;"VAR - 6-LIV-LE 2BM	";132,99;0;;;;Loja Tray
+16580961626;"16865	";Baqueta Liverpool Diferencial Tatuagem 6 Pares Ponta Madeira Tamanho:7AM;"VAR - 6-LIV-LE 7AM	";132,99;0;;;;Loja Tray
+16580961620;"16863	";Baqueta Liverpool Diferencial Tatuagem 6 Pares Ponta Madeira Tamanho:5BM;"VAR - 6-LIV-LE 5BM	";132,99;0;;;;Loja Tray
+16580961614;"16861	";Baqueta Liverpool Diferencial Tatuagem 6 Pares Ponta Madeira Tamanho:5AM;"VAR - 6-LIV-LE 5AM	";132,99;0;;;;Loja Tray
+16580961604;"16859	";Baqueta Liverpool Diferencial Tatuagem 4 Pares Ponta Madeira Tamanho:2BM;"VAR - 4-LIV-LE 2BM	";89,99;0;;;;Loja Tray
+16580961596;"16857	";Baqueta Liverpool Diferencial Tatuagem 4 Pares Ponta Madeira Tamanho:7AM;"VAR - 4-LIV-LE 7AM	";89,99;0;;;;Loja Tray
+16580961588;"16855	";Baqueta Liverpool Diferencial Tatuagem 4 Pares Ponta Madeira Tamanho:5BM;"VAR - 4-LIV-LE 5BM	";89,99;0;;;;Loja Tray
+16580961583;"16853	";Baqueta Liverpool Diferencial Tatuagem 4 Pares Ponta Madeira Tamanho:5AM;"VAR - 4-LIV-LE 5AM	";89,99;0;;;;Loja Tray
+16580961575;"16851	";Baqueta Liverpool Diferencial Tatuagem 2 Pares Ponta Madeira Tamanho:2BM;"VAR - 2-LIV-LE 2BM	";46,99;0;;;;Loja Tray
+16580961568;"16849	";Baqueta Liverpool Diferencial Tatuagem 2 Pares Ponta Madeira Tamanho:7AM;"VAR - 2-LIV-LE 7AM	";46,99;0;;;;Loja Tray
+16580961562;"16847	";Baqueta Liverpool Diferencial Tatuagem 2 Pares Ponta Madeira Tamanho:5BM;"VAR - 2-LIV-LE 5BM	";46,99;0;;;;Loja Tray
+16580961552;"16845	";Baqueta Liverpool Diferencial Tatuagem 2 Pares Ponta Madeira Tamanho:5AM;"VAR - 2-LIV-LE 5AM	";46,99;0;;;;Loja Tray
+16580961544;"16843	";Baqueta Liverpool Diferencial Tatuagem Ponta Madeira Tamanho:2BM;"VAR - LIV-LE 2BM	";25,99;0;;;;Loja Tray
+16580961533;"16841	";Baqueta Liverpool Diferencial Tatuagem Ponta Madeira Tamanho:7AM;"VAR - LIV-LE 7AM	";25,99;0;;;;Loja Tray
+16580961522;"16839	";Baqueta Liverpool Diferencial Tatuagem Ponta Madeira Tamanho:5BM;"VAR - LIV-LE 5BM	";25,99;0;;;;Loja Tray
+16580961512;"16837	";Baqueta Liverpool Diferencial Tatuagem Ponta Madeira Tamanho:5AM;"VAR - LIV-LE 5AM	";25,99;0;;;;Loja Tray
+16580961503;"2940417	";Baqueta Liverpool Diferencial Tatuagem 6 Pares Ponta Madeira;"PAI - 6-LIV-LE 5BM/LE 5AM/LE 7AM/LE 2BM	";132,99;0;;;;Loja Tray
+16580961497;"2940415	";Baqueta Liverpool Diferencial Tatuagem 4 Pares Ponta Madeira;"PAI - 4-LIV-LE 5BM/LE 5AM/LE 7AM/LE 2BM	";89,99;0;;;;Loja Tray
+16580961491;"2940413	";Baqueta Liverpool Diferencial Tatuagem 2 Pares Ponta Madeira;"PAI - 2-LIV-LE 5BM/LE 5AM/LE 7AM/LE 2BM	";46,99;0;;;;Loja Tray
+16580961482;"2940411	";Baqueta Liverpool Diferencial Tatuagem Ponta Madeira;"PAI - LIV-LE 5BM/LE 5AM/LE 7AM/LE 2BM	";25,99;0;;;;Loja Tray
+16580533441;"16797	";Martelo Demolidor Vonder 45 Joules 1700W MDV 1745 Voltagem:220;"VAR - 6001174520	";1.695,99;0;;;;Loja Tray
+16580533434;"16795	";Martelete Perfurador Vonder a Bateria Intercambiável IMV 1815 Voltagem:Bateria;"VAR - 6004181500	";633,99;0;;;;Loja Tray
+16580533427;"16801	";Parafusadeira a Bateria Vonder Aperto Rápido Bivolt PFV 112QR Voltagem:Bivolt;"VAR - 6001112000	";299,99;0;;;;Loja Tray
+16580533424;"16799	";Parafusadeira de Impacto Vonder Aperto Rápido Bivolt PFV 074 Voltagem:Bivolt;"VAR - 6001074000	";449,99;0;;;;Loja Tray
+16580533414;"16803	";Parafusadeira de Impacto Vonder Aperto Rápido Bivolt PFV 012I Voltagem:Bivolt;"VAR - 6001000012	";339,99;0;;;;Loja Tray
+16580533407;"16829	";Parafusadeira a Bateria Vonder Aperto Rápido Bivolt IPFV 1852 Voltagem:Bivolt;"VAR - 6004185200	";494,99;0;;;;Loja Tray
+16580533398;"16831	";Parafusadeira de Impacto Vonder Aperto Rápido Bivolt PFV 078 Voltagem:Bivolt;"VAR - 6001078000	";760,99;0;;;;Loja Tray
+16580533394;"16833	";Parafusadeira a Bateria Vonder Aperto Rápido Bivolt IPFV 1851 Voltagem:Bivolt;"VAR - 6004185100	";146,99;0;;;;Loja Tray
+16580533390;"16835	";Parafusadeira de Impacto Vonder Aperto Rápido Bivolt IPFV 1819I Voltagem:Bivolt;"VAR - 6004181900	";558,99;0;;;;Loja Tray
+16580533384;"16827	";Parafusadeira a Bateria Vonder Aperto Rápido Bivolt PFV 012 Voltagem:Bivolt;"VAR - 6001012000	";312,99;0;;;;Loja Tray
+16580533381;"16825	";Parafusadeira de Impacto Vonder Aperto Rápido Bivolt PFV 200I Voltagem:Bivolt;"VAR - 6001100200	";828,99;0;;;;Loja Tray
+16580533374;"16823	";Parafusadeira de Impacto Vonder Aperto Rápido Bivolt IPFV 1820 Voltagem:Bivolt;"VAR - 6001000200	";659,99;0;;;;Loja Tray
+16580533369;"16821	";Parafusadeira a Bateria Vonder Aperto Rápido Bivolt IPFV 1820 Voltagem:Bivolt;"VAR - 6004182000	";218,99;0;;;;Loja Tray
+16580533364;"16819	";Parafusadeira a Bateria Vonder Aperto Rápido Bivolt PFV 238 Voltagem:Bivolt;"VAR - 6001238000	";355,99;0;;;;Loja Tray
+16580533358;"16817	";Parafusadeira a Bateria Vonder Aperto Rápido Bivolt PFV 120 Voltagem:Bivolt;"VAR - 6001100120	";255,99;0;;;;Loja Tray
+16580533351;"16813	";Chave de Impacto Pneumática Vonder 3,3 m/s² CIV 012 Cor:Cinza;"VAR - 6256012000	";540,99;0;;;;Loja Tray
+16580533347;"16815	";Chave de Impacto Vonder 3 Velcoidades Bivolt CIV 180B Voltagem:Bivolt;"VAR - 6001180100	";1.959,99;0;;;;Loja Tray
+16580533340;"16811	";Chave de Impacto Vonder 280 N.m Bivolt ICIV 1807 Voltagem:Bivolt;"VAR - 6004180700	";524,99;0;;;;Loja Tray
+16580533337;"16809	";Chave de Impacto Vonder 1.080 N.m Bivolt CIV 212B Voltagem:Bivolt;"VAR - 6001212000	";2.436,99;0;;;;Loja Tray
+16580533332;"16807	";Parafusadeira de Impacto Vonder Aperto Rápido Bivolt PFV 238I Voltagem:Bivolt;"VAR - 6001000238	";406,99;0;;;;Loja Tray
+16580533323;"16805	";Parafusadeira de Impacto Vonder Aperto Rápido Bivolt PFV 212IB Voltagem:Bivolt;"VAR - 6001100212	";934,99;0;;;;Loja Tray
+16580533319;"2940371	";Martelo Demolidor Vonder 45 Joules 1700W MDV 1745;"PAI - VD-6001174520	";1.695,99;0;;;;Loja Tray
+16580533316;"2940369	";Martelete Perfurador Vonder a Bateria Intercambiável IMV 1815;"PAI - VD-6004181500	";633,99;0;;;;Loja Tray
+16580533312;"2940375	";Parafusadeira a Bateria Vonder Aperto Rápido Bivolt PFV 112QR;"PAI - VD-6001112000	";299,99;0;;;;Loja Tray
+16580533310;"2940373	";Parafusadeira de Impacto Vonder Aperto Rápido Bivolt PFV 074;"PAI - VD-6001074000	";449,99;0;;;;Loja Tray
+16580533306;"2940377	";Parafusadeira de Impacto Vonder Aperto Rápido Bivolt PFV 012I;"PAI - VD-6001000012	";339,99;0;;;;Loja Tray
+16580533299;"2940403	";Parafusadeira a Bateria Vonder Aperto Rápido Bivolt IPFV 1852;"PAI - VD-6004185200	";494,99;0;;;;Loja Tray
+16580533295;"2940405	";Parafusadeira de Impacto Vonder Aperto Rápido Bivolt PFV 078;"PAI - VD-6001078000	";760,99;0;;;;Loja Tray
+16580533292;"2940407	";Parafusadeira a Bateria Vonder Aperto Rápido Bivolt IPFV 1851;"PAI - VD-6004185100	";146,99;0;;;;Loja Tray
+16580533289;"2940409	";Parafusadeira de Impacto Vonder Aperto Rápido Bivolt IPFV 1819I;"PAI - VD-6004181900	";558,99;0;;;;Loja Tray
+16580533286;"2940401	";Parafusadeira a Bateria Vonder Aperto Rápido Bivolt PFV 012;"PAI - VD-6001012000	";312,99;0;;;;Loja Tray
+16580533284;"2940399	";Parafusadeira de Impacto Vonder Aperto Rápido Bivolt PFV 200I;"PAI - VD-6001100200	";828,99;0;;;;Loja Tray
+16580533282;"2940397	";Parafusadeira de Impacto Vonder Aperto Rápido Bivolt IPFV 1820;"PAI - VD-6001000200	";659,99;0;;;;Loja Tray
+16580533279;"2940395	";Parafusadeira a Bateria Vonder Aperto Rápido Bivolt IPFV 1820;"PAI - VD-6004182000	";218,99;0;;;;Loja Tray
+16580533277;"2940393	";Parafusadeira a Bateria Vonder Aperto Rápido Bivolt PFV 238;"PAI - VD-6001238000	";355,99;0;;;;Loja Tray
+16580533273;"2940391	";Parafusadeira a Bateria Vonder Aperto Rápido Bivolt PFV 120;"PAI - VD-6001100120	";255,99;0;;;;Loja Tray
+16580533267;"2940387	";Chave de Impacto Pneumática Vonder 3,3 m/s² CIV 012;"PAI - VD-6256012000	";540,99;0;;;;Loja Tray
+16580533264;"2940389	";Chave de Impacto Vonder 3 Velcoidades Bivolt CIV 180B;"PAI - VD-6001180100	";1.959,99;0;;;;Loja Tray
+16580533260;"2940385	";Chave de Impacto Vonder 280 N.m Bivolt ICIV 1807;"PAI - VD-6004180700	";524,99;0;;;;Loja Tray
+16580533256;"2940383	";Chave de Impacto Vonder 1.080 N.m Bivolt CIV 212B;"PAI - VD-6001212000	";2.436,99;0;;;;Loja Tray
+16580533253;"2940381	";Parafusadeira de Impacto Vonder Aperto Rápido Bivolt PFV 238I;"PAI - VD-6001000238	";406,99;0;;;;Loja Tray
+16580533249;"2940379	";Parafusadeira de Impacto Vonder Aperto Rápido Bivolt PFV 212IB;"PAI - VD-6001100212	";934,99;0;;;;Loja Tray
+16579192042;"16791	";Claves Diversas Sortidas Liverpool 94 Pares Sem Logo 170mm Cor:Natural;"VAR - 94-CL-SROTIDAS	";569,99;0;;;;Loja Tray
+16579192031;"16793	";Claves Diversas Sortidas Liverpool 64 Pares Sem Logo 170mm Cor:Natural;"VAR - 64-CL-SROTIDAS	";389,99;0;;;;Loja Tray
+16579192020;"16789	";Claves Diversas Sortidas Liverpool 48 Pares Sem Logo 170mm Cor:Natural;"VAR - 48-CL-SROTIDAS	";293,99;0;;;;Loja Tray
+16579192009;"16787	";Claves Diversas Sortidas Liverpool 24 Pares Sem Logo 170mm Cor:Natural;"VAR - 24-CL-SROTIDAS	";149,99;0;;;;Loja Tray
+16579191997;"16785	";Claves Diversas Sortidas Liverpool 16 Pares Sem Logo 170mm Cor:Natural;"VAR - 16-CL-SROTIDAS	";101,99;0;;;;Loja Tray
+16579191987;"16783	";Claves Diversas Sortidas Liverpool 8 Pares Sem Logo 170mm Cor:Natural;"VAR - 8-CL-SROTIDAS	";53,99;0;;;;Loja Tray
+16579191974;"16781	";Claves Diversas Sortidas Liverpool 4 Pares Sem Logo 170mm Cor:Natural;"VAR - 4-CL-SROTIDAS	";29,99;0;;;;Loja Tray
+16579191961;"2940365	";Claves Diversas Sortidas Liverpool 94 Pares Sem Logo 170mm;"PAI - 94-CL-SORTIDAS	";569,99;0;;;;Loja Tray
+16579191951;"2940367	";Claves Diversas Sortidas Liverpool 64 Pares Sem Logo 170mm;"PAI - 64-CL-SORTIDAS	";389,99;0;;;;Loja Tray
+16579191943;"2940363	";Claves Diversas Sortidas Liverpool 48 Pares Sem Logo 170mm;"PAI - 48-CL-SORTIDAS	";293,99;0;;;;Loja Tray
+16579191936;"2940361	";Claves Diversas Sortidas Liverpool 24 Pares Sem Logo 170mm;"PAI - 24-CL-SORTIDAS	";149,99;0;;;;Loja Tray
+16579191932;"2940359	";Claves Diversas Sortidas Liverpool 16 Pares Sem Logo 170mm;"PAI - 16-CL-SORTIDAS	";101,99;0;;;;Loja Tray
+16579191928;"2940357	";Claves Diversas Sortidas Liverpool 8 Pares Sem Logo 170mm;"PAI - 8-CL-SORTIDAS	";53,99;0;;;;Loja Tray
+16579191922;"2940355	";Claves Diversas Sortidas Liverpool 4 Pares Sem Logo 170mm;"PAI - 4-CL-SORTIDAS	";29,99;0;;;;Loja Tray
+16577500162;"16779	";Pad de Estudo Pratice 12 Liverpool Para Baterista Cor:Natural;"VAR -LIV-PAD020	";399,99;0;;;;Loja Tray
+16577500156;"2940353	";Pad de Estudo Pratice 12 Liverpool Para Baterista;"PAI -LIV-PAD020	";399,99;0;;;;Loja Tray
+16577182318;"16777	";Lira Marcial Profissional 29 Teclas Cromáticas Alumínio Natural Cor:Natural;"VAR -LIV-LIRA29NOTAS	";1.099,99;0;;;;Loja Tray
+16577182309;"2940351	";Lira Marcial Profissional 29 Teclas Cromáticas Alumínio Natural;"PAI -LIV-LIRA29NOTAS	";1.099,99;0;;;;Loja Tray
+16576600164;"16775	";Chocalho Rocar em Madeira Liverpool Cor:Natural;"VAR -RC-MAD	";204,99;0;;;;Loja Tray
+16576600161;"2940349	";Chocalho Rocar em Madeira Liverpool;"PAI -RC-MAD	";204,99;0;;;;Loja Tray
+16575856789;"16753	";Grade Defletor ITC 150 mm Tampa de Saída de Ventilação Cor:Preto;"VAR - DI200P	";200,99;0;;;;Loja Tray
+16575856786;"16751	";Grade Defletor ITC 150 mm Tampa de Saída de Ventilação Cor:Branco;"VAR - DI200B	";200,99;0;;;;Loja Tray
+16575856782;"16755	";Grade Defletor ITC Inox 200 mm Tampa de Saída de Ventilação Cor:Inox;"VAR - DI200	";171,99;0;;;;Loja Tray
+16575856780;"16773	";Grade Defletor ITC 150 mm Tampa de Saída de Ventilação Cor:Preto;"VAR - DI150P	";114,99;0;;;;Loja Tray
+16575856775;"16771	";Grade Defletor ITC 150 mm Tampa de Saída de Ventilação Cor:Branco;"VAR - DI150B	";114,99;0;;;;Loja Tray
+16575856770;"16769	";Grade Defletor ITC Inox 150 mm Tampa de Saída de Ventilação Cor:Inox;"VAR - DI150	";97,99;0;;;;Loja Tray
+16575856766;"16767	";Grade Defletor ITC 125 mm Tampa de Saída de Ventilação Cor:Preto;"VAR - DI125P	";84,99;0;;;;Loja Tray
+16575856763;"16765	";Grade Defletor ITC 125 mm Tampa de Saída de Ventilação Cor:Branco;"VAR - DI125B	";84,99;0;;;;Loja Tray
+16575856760;"16763	";Grade Defletor ITC Inox 125 mm Tampa de Saída de Ventilação Cor:Inox;"VAR - DI125	";74,99;0;;;;Loja Tray
+16575856753;"16759	";Grade Defletor ITC 100 mm Tampa de Saída de Ventilação Cor:Preto;"VAR - DI100P	";80,99;0;;;;Loja Tray
+16575856749;"16757	";Grade Defletor ITC 100 mm Tampa de Saída de Ventilação Cor:Branco;"VAR - DI100B	";80,99;0;;;;Loja Tray
+16575856744;"16761	";Grade Defletor ITC Inox 100 mm Tampa de Saída de Ventilação Cor:Inox;"VAR - DI100	";65,99;0;;;;Loja Tray
+16575856736;"16729	";Kit Exaustor para Banheiro ITC 150 mm Elimina Mau Cheiro Branco Voltagem:220;"VAR - KITFAN150	";176,99;0;;;;Loja Tray
+16575856732;"16727	";Kit Exaustor para Banheiro ITC 150 mm Elimina Mau Cheiro Branco Voltagem:127;"VAR - KITFAN151	";176,99;0;;;;Loja Tray
+16575856727;"16733	";Kit Exaustor de Ambientes ITC 100 mm Renovador de Ar Preto Voltagem:220;"VAR - KITFAN100P	";160,99;0;;;;Loja Tray
+16575856723;"16731	";Kit Exaustor de Ambientes ITC 100 mm Renovador de Ar Preto Voltagem:127;"VAR - KITFAN101P	";160,99;0;;;;Loja Tray
+16575856718;"16737	";Kit Exaustor de Ambientes ITC 100 mm Renovador de Ar Branco Voltagem:220;"VAR - KITFAN100	";153,99;0;;;;Loja Tray
+16575856714;"16735	";Kit Exaustor de Ambientes ITC 100 mm Renovador de Ar Branco Voltagem:127;"VAR - KITFAN101	";153,99;0;;;;Loja Tray
+16575856712;"16741	";Exaustor de Ambientes ITC 150 mm Renovador de Ar Branco Voltagem:220;"VAR - FAN150	";129,99;0;;;;Loja Tray
+16575856705;"16739	";Exaustor de Ambientes ITC 150 mm Renovador de Ar Branco Voltagem:127;"VAR - FAN151	";129,99;0;;;;Loja Tray
+16575856702;"16745	";Exaustor de Ambientes ITC 100 mm Renovador de Ar Preto Voltagem:220;"VAR - FAN100P	";119,99;0;;;;Loja Tray
+16575856696;"16743	";Exaustor de Ambientes ITC 100 mm Renovador de Ar Preto Voltagem:127;"VAR - FAN101P	";119,99;0;;;;Loja Tray
+16575856691;"16749	";Exaustor de Ambientes ITC 100 mm Renovador de Ar Branco Voltagem:220;"VAR - FAN100	";113,99;0;;;;Loja Tray
+16575856688;"16747	";Exaustor de Ambientes ITC 100 mm Renovador de Ar Branco Voltagem:127;"VAR - FAN101	";113,99;0;;;;Loja Tray
+16575856687;"2940333	";Grade Defletor ITC 150 mm Tampa de Saída de Ventilação;"PAI - ITC-DI200B/DI200P	";200,99;0;;;;Loja Tray
+16575856685;"2940335	";Grade Defletor ITC Inox 200 mm Tampa de Saída de Ventilação;"PAI - ITC-DI200	";171,99;0;;;;Loja Tray
+16575856683;"2940347	";Grade Defletor ITC 150 mm Tampa de Saída de Ventilação;"PAI - ITC-DI150B/DI150P	";114,99;0;;;;Loja Tray
+16575856681;"2940345	";Grade Defletor ITC Inox 150 mm Tampa de Saída de Ventilação;"PAI - ITC-DI150	";97,99;0;;;;Loja Tray
+16575856677;"2940343	";Grade Defletor ITC 125 mm Tampa de Saída de Ventilação;"PAI - ITC-DI125B/DI125P	";84,99;0;;;;Loja Tray
+16575856674;"2940341	";Grade Defletor ITC Inox 125 mm Tampa de Saída de Ventilação;"PAI - ITC-DI125	";74,99;0;;;;Loja Tray
+16575856672;"2940337	";Grade Defletor ITC 100 mm Tampa de Saída de Ventilação;"PAI - ITC-DI100B/DI100P	";80,99;0;;;;Loja Tray
+16575856670;"2940339	";Grade Defletor ITC Inox 100 mm Tampa de Saída de Ventilação;"PAI - ITC-DI100	";65,99;0;;;;Loja Tray
+16575856668;"2940321	";Kit Exaustor para Banheiro ITC 150 mm Elimina Mau Cheiro Branco;"PAI - ITC-KITFAN150/KITFAN151	";176,99;0;;;;Loja Tray
+16575856667;"2940323	";Kit Exaustor de Ambientes ITC 100 mm Renovador de Ar Preto;"PAI - ITC-KITFAN100P/KITFAN101P	";160,99;0;;;;Loja Tray
+16575856666;"2940325	";Kit Exaustor de Ambientes ITC 100 mm Renovador de Ar Branco;"PAI - ITC-KITFAN100/KITFAN101	";153,99;0;;;;Loja Tray
+16575856663;"2940327	";Exaustor de Ambientes ITC 150 mm Renovador de Ar Branco;"PAI - ITC-FAN150/FAN151	";129,99;0;;;;Loja Tray
+16575856660;"2940329	";Exaustor de Ambientes ITC 100 mm Renovador de Ar Preto;"PAI - ITC-FAN100P/FAN101P	";119,99;0;;;;Loja Tray
+16575856658;"2940331	";Exaustor de Ambientes ITC 100 mm Renovador de Ar Branco;"PAI - ITC-FAN100/FAN101	";113,99;0;;;;Loja Tray
+16575781667;"16725	";Kit Fischer: Forno a Gás Infinity 50 Litros e Cooktop 5B Mesa Vidro Voltagem:220;"VAR - 31000-79709/1642-6985	";2.214,99;0;;;;Loja Tray
+16575781662;"16723	";Kit Fischer: Forno a Gás Infinity 50 Litros e Cooktop 5B Mesa Vidro Voltagem:127;"VAR - 31000-79710/1642-6985	";2.214,99;0;;;;Loja Tray
+16575781660;"2940319	";Kit Fischer: Forno a Gás Infinity 50 Litros e Cooktop 5B Mesa Vidro;"PAI - FIS-1642/31000	";2.214,99;0;;;;Loja Tray
+16575140833;"16721	";Metalofone Metal 15 Teclas Retas Profissional Cor:Preto;"VAR -LIV-28	";87,99;87,99;;;;Loja Tray
+16575140826;"2940317	";Metalofone Metal 15 Teclas Retas Profissional;"PAI -LIV-28	";87,99;87,99;;;;Loja Tray
+16574703130;"16717	";Kit Caixa de Som Ativa Pro Bass Elevate 112 + Mic + Pedestal Voltagem:Bivolt;"VAR - PB-ELEVATE 112/UF 224	";1.674,99;0;;;;Loja Tray
+16574703125;"16715	";Caixa de Som Ativa Pro Bass Elevate 112 com Bluetooth Voltagem:Bivolt;"VAR - PB-ELEVATE 112	";1.310,99;0;;;;Loja Tray
+16574703123;"2940313	";Kit Caixa de Som Ativa Pro Bass Elevate 112 + Mic + Pedestal;"PAI - PB-ELEVATE 112/UF 224	";1.674,99;0;;;;Loja Tray
+16574703121;"2940311	";Caixa de Som Ativa Pro Bass Elevate 112 com Bluetooth;"PAI - PB-ELEVATE 112	";1.310,99;0;;;;Loja Tray
+16574640852;"16713	";Baqueta Liverpool 10 Pares Sem Logo Marfim Infantil Cor:Natural;"VAR - 20- INFANTIL-SL	";99,99;0;;;;Loja Tray
+16574640844;"16711	";Baqueta Liverpool 8 Pares Sem Logo Marfim Infantil Cor:Natural;"VAR - 16- INFANTIL-SL	";79,99;0;;;;Loja Tray
+16574640837;"16709	";Baqueta Liverpool 4 Pares Sem Logo Marfim Infantil Cor:Natural;"VAR - 8- INFANTIL-SL	";39,99;0;;;;Loja Tray
+16574640828;"16707	";Baqueta Liverpool 2 Pares Sem Logo Marfim Infantil Cor:Natural;"VAR - 4- INFANTIL-SL	";19,99;0;;;;Loja Tray
+16574640822;"16705	";Baqueta Liverpool Par Sem Logo Marfim Infantil Cor:Natural;"VAR - 2- INFANTIL-SL	";9,99;0;;;;Loja Tray
+16574640814;"2940309	";Baqueta Liverpool 10 Pares Sem Logo Marfim Infantil;"PAI - 20- INFANTIL-SL	";99,99;0;;;;Loja Tray
+16574640808;"2940307	";Baqueta Liverpool 8 Pares Sem Logo Marfim Infantil;"PAI - 16- INFANTIL-SL	";79,99;0;;;;Loja Tray
+16574640800;"2940305	";Baqueta Liverpool 4 Pares Sem Logo Marfim Infantil;"PAI - 8- INFANTIL-SL	";39,99;0;;;;Loja Tray
+16574640790;"2940303	";Baqueta Liverpool 2 Pares Sem Logo Marfim Infantil;"PAI - 4- INFANTIL-SL	";19,99;0;;;;Loja Tray
+16574640782;"2940301	";Baqueta Liverpool Par Sem Logo Marfim Infantil;"PAI - 2- INFANTIL-SL	";9,99;0;;;;Loja Tray
+16573488245;"16703	";Baqueta Liverpool Tattoo Series e 40 Pares Ponta de Estoque Cor:Natural;"VAR - 80-SORTIDAS/LE 5AM/LE 5BM	";254,99;0;;;;Loja Tray
+16573488240;"16701	";Baqueta Liverpool Tattoo Series e 30 Pares Ponta de Estoque Cor:Natural;"VAR - 60-SORTIDAS/LE 5AM/LE 5BM	";204,99;0;;;;Loja Tray
+16573488229;"2940299	";Baqueta Liverpool Tattoo Series e 40 Pares Ponta de Estoque;"PAI - 80-SORTIDAS/LE 5AM/LE 5BM	";254,99;0;;;;Loja Tray
+16573488223;"2940297	";Baqueta Liverpool Tattoo Series e 30 Pares Ponta de Estoque;"PAI - 60-SORTIDAS/LE 5AM/LE 5BM	";204,99;0;;;;Loja Tray
+16573215840;"16699	";Baqueta Liverpool Tattoo Series e 20 Pares Ponta de Estoque Cor:Natural;"VAR - 40-SORTIDAS/LE 5AM/LE 5BM	";154,99;0;;;;Loja Tray
+16573215835;"2940295	";Baqueta Liverpool Tattoo Series e 20 Pares Ponta de Estoque;"PAI - 40-SORTIDAS/LE 5AM/LE 5BM	";154,99;0;;;;Loja Tray
+16572620591;"16673	";Molho de Baquetas Liverpool Chaveiros em Marfim Cor:Natural;"VAR - 13640	";220,99;0;;;;Loja Tray
+16572620586;"16679	";Strap Lock para Guitarra Violão Liverpool Profissional Cor:Preto;"VAR - 1031	";35,99;0;;;;Loja Tray
+16572620579;"16677	";Strap Lock para Guitarra Violão Liverpool Profissional Cor:Prata;"VAR - 1028	";35,99;0;;;;Loja Tray
+16572620573;"16675	";Strap Lock para Guitarra Violão Liverpool Profissional Cor:Dourado;"VAR - 1029	";35,99;0;;;;Loja Tray
+16572620568;"16681	";Traste para Violão Aço Liverpool Inox 20 Peças 30,5 cm Cor:Natural;"VAR - 1267	";43,99;0;;;;Loja Tray
+16572620563;"16683	";Traste de Guitarra Liverpool Cromado 20 Peças 2,9mm Cor:Natural;"VAR - 1198	";30,99;0;;;;Loja Tray
+16572620557;"16685	";Rastilho para Violão Aço Liverpool 6 Unidades 72mm Cor:Natural;"VAR - 1180	";65,99;0;;;;Loja Tray
+16572620544;"16687	";Nut e Rastilho para Violão Aço Liverpool em Osso Cor:Natural;"VAR - 1179	";25,99;0;;;;Loja Tray
+16572620537;"16689	";Pestana para Violão Liverpool em Osso 6 Unidades 48mm Cor:Natural;"VAR - 1151	";65,99;0;;;;Loja Tray
+16572620524;"16697	";Kalimba Liverpool 17 Teclas Madeira Mahohany Cor:Natural;"VAR - 1032	";142,99;0;;;;Loja Tray
+16572620516;"16691	";Feltro para Base Presilha Chimbal Liverpool Cinza Cor:Cinza;"VAR - 1073	";18,99;0;;;;Loja Tray
+16572620505;"16693	";Feltro para Base Chimbal Liverpool 520 mm Cor:Preto;"VAR - 1076	";18,99;0;;;;Loja Tray
+16572620498;"16695	";Fita para Esteria Liverpool em Poliéster 240mm Cor:Preto;"VAR - 1089	";27,99;0;;;;Loja Tray
+16572620495;"2940273	";Molho de Baquetas Liverpool Chaveiros em Marfim;"PAI - LIV-13640	";220,99;0;;;;Loja Tray
+16572620490;"2940275	";Strap Lock para Guitarra Violão Liverpool Profissional;"PAI - LIV-1028-PA/1029-OU/1031-PR	";35,99;0;;;;Loja Tray
+16572620487;"2940277	";Traste para Violão Aço Liverpool Inox 20 Peças 30,5 cm;"PAI - LIV-1267	";43,99;0;;;;Loja Tray
+16572620484;"2940279	";Traste de Guitarra Liverpool Cromado 20 Peças 2,9mm;"PAI - LIV-1198	";30,99;0;;;;Loja Tray
+16572620481;"2940281	";Rastilho para Violão Aço Liverpool 6 Unidades 72mm;"PAI - LIV-1180	";65,99;0;;;;Loja Tray
+16572620477;"2940283	";Nut e Rastilho para Violão Aço Liverpool em Osso;"PAI - LIV-1179	";25,99;0;;;;Loja Tray
+16572620475;"2940285	";Pestana para Violão Liverpool em Osso 6 Unidades 48mm;"PAI - LIV-1151	";65,99;0;;;;Loja Tray
+16572620473;"2940293	";Kalimba Liverpool 17 Teclas Madeira Mahohany;"PAI - LIV-1032	";142,99;0;;;;Loja Tray
+16572620469;"2940287	";Feltro para Base Presilha Chimbal Liverpool Cinza;"PAI - LIV-1073	";18,99;0;;;;Loja Tray
+16572620467;"2940289	";Feltro para Base Chimbal Liverpool 520 mm;"PAI - LIV-1076	";18,99;0;;;;Loja Tray
+16572620460;"2940291	";Fita para Esteria Liverpool em Poliéster 240mm;"PAI - LIV-1089	";27,99;0;;;;Loja Tray
+16571726945;"16667	";Kit Exaustor para Banheiro ITC 150mm Elimina Mau Cheiro e Vapor Voltagem:220;"VAR - KITFAN150P	";199,99;0;;;;Loja Tray
+16571726934;"16665	";Kit Exaustor para Banheiro ITC 150mm Elimina Mau Cheiro e Vapor Voltagem:127;"VAR - KITFAN151P	";199,99;0;;;;Loja Tray
+16571726932;"16671	";Kit Infinity Fischer: Coifa de Parede Touch Screen 90 cm e Microondas 25L Voltagem:220;"VAR - 19902-22552/25378-75147	";6.141,99;0;;;;Loja Tray
+16571726927;"16669	";Kit Infinity Fischer: Coifa de Parede Touch Screen 90 cm e Microondas 25L Voltagem:127;"VAR - 19902-22551/25378-75148	";6.141,99;0;;;;Loja Tray
+16571726916;"2940269	";Kit Exaustor para Banheiro ITC 150mm Elimina Mau Cheiro e Vapor;"PAI - ITC-KITFAN150P/KITFAN151P	";199,99;0;;;;Loja Tray
+16571726909;"2940271	";Kit Infinity Fischer: Coifa de Parede Touch Screen 90 cm e Microondas 25L;"PAI - FIS-19902/25378	";6.141,99;0;;;;Loja Tray
+16567923106;"16655	";Coifa de Parede Fischer Depurador ou Exaustor Talent Fit 60 cm Vidro Voltagem:220;"VAR - 28017-63481	";1.215,99;0;;;;Loja Tray
+16567923098;"16653	";Coifa de Parede Fischer Depurador ou Exaustor Talent Fit 60 cm Vidro Voltagem:127;"VAR - 28017-63480	";1.215,99;0;;;;Loja Tray
+16567923082;"16651	";Cooktop a Gás Fischer 4 Bocas Fit Line Trempe Aramado Voltagem:Bivolt;"VAR - 36350-102675	";457,99;0;;;;Loja Tray
+16567923075;"16649	";Cooktop a Gás Fischer 4 Bocas Fit Line Trempe Iron Voltagem:Bivolt;"VAR - 36310-102671	";584,99;0;;;;Loja Tray
+16567923065;"16647	";Cooktop a Gás Fischer 4 Bocas Fit Line Tripla Chama Trempe Iron Voltagem:Bivolt;"VAR - 36330-102673	";743,99;0;;;;Loja Tray
+16567923058;"16645	";Cooktop a Gás Fischer 5 Bocas Fit Line Trempe Aramado Voltagem:Bivolt;"VAR - 36360-102676	";584,99;0;;;;Loja Tray
+16567923049;"16643	";Cooktop a Gás Fischer 5 Bocas Fit Line Trempe Iron Voltagem:Bivolt;"VAR - 36325-102672	";707,99;0;;;;Loja Tray
+16567923045;"16641	";Cooktop a Gás Fischer 5 Bocas Fit Line Tripla Chama Trempe Iron Voltagem:Bivolt;"VAR - 36340-102674	";853,99;0;;;;Loja Tray
+16567923038;"2940263	";Coifa de Parede Fischer Depurador ou Exaustor Talent Fit 60 cm Vidro;"PAI - FIS-28017	";1.215,99;0;;;;Loja Tray
+16567923036;"2940261	";Cooktop a Gás Fischer 4 Bocas Fit Line Trempe Aramado;"PAI - FIS-36350	";457,99;0;;;;Loja Tray
+16567923033;"2940259	";Cooktop a Gás Fischer 4 Bocas Fit Line Trempe Iron;"PAI - FIS-36310	";584,99;0;;;;Loja Tray
+16567923028;"2940257	";Cooktop a Gás Fischer 4 Bocas Fit Line Tripla Chama Trempe Iron;"PAI - FIS-36330	";743,99;0;;;;Loja Tray
+16567923025;"2940255	";Cooktop a Gás Fischer 5 Bocas Fit Line Trempe Aramado;"PAI - FIS-36360	";584,99;0;;;;Loja Tray
+16567923022;"2940253	";Cooktop a Gás Fischer 5 Bocas Fit Line Trempe Iron;"PAI - FIS-36325	";707,99;0;;;;Loja Tray
+16567923020;"2940251	";Cooktop a Gás Fischer 5 Bocas Fit Line Tripla Chama Trempe Iron;"PAI - FIS-36340	";853,99;0;;;;Loja Tray
+16567484259;"16639	";Cooktop a Gás Fischer 5 Bocas Tripla Chama Infinity Duo Voltagem:Bivolt;"VAR - 31800-82260	";1.587,99;0;;;;Loja Tray
+16567484253;"16635	";Cooktop a Gás Fischer 5 Bocas Tripla Chama Infinity Mesa Inox Voltagem:Bivolt;"VAR - 23678-54121	";1.275,99;0;;;;Loja Tray
+16567484241;"16637	";Cooktop a Gás Fischer Infinity 5 Bocas Tripla Chama Vermelho Voltagem:Bivolt;"VAR - 26298-62471	";1.160,99;0;;;;Loja Tray
+16567484230;"16633	";Cooktop a Gás Fischer Infinity 5 Bocas Tripla Chama Preto Voltagem:Bivolt;"VAR - 26298-57077	";1.160,99;0;;;;Loja Tray
+16567484216;"16631	";Cooktop a Gás Fischer Infinity 4 Bocas Tripla Chama Trempe de Ferro Voltagem:Bivolt;"VAR - 26297-57076	";991,99;0;;;;Loja Tray
+16567484209;"16629	";Forno a Gás de Embutir Fischer Infinity 78 litros com Grill Preto Voltagem:220;"VAR - 36450-104431	";1.965,99;0;;;;Loja Tray
+16567484197;"16627	";Forno a Gás de Embutir Fischer Infinity 78 litros com Grill Preto Voltagem:127;"VAR - 36450-104455	";1.965,99;0;;;;Loja Tray
+16567484188;"16625	";Forno de Embutir Fischer Infinity Touch 82 litros Air Fryer Voltagem:220;"VAR - 28607-65779	";2.667,99;0;;;;Loja Tray
+16567484182;"2940249	";Cooktop a Gás Fischer 5 Bocas Tripla Chama Infinity Duo;"PAI - FIS-31800	";1.587,99;0;;;;Loja Tray
+16567484173;"2940245	";Cooktop a Gás Fischer 5 Bocas Tripla Chama Infinity Mesa Inox;"PAI - FIS-23678-INOX	";1.275,99;0;;;;Loja Tray
+16567484169;"2940247	";Cooktop a Gás Fischer Infinity 5 Bocas Tripla Chama Vermelho;"PAI - FIS-26298-VERMELHO	";1.160,99;0;;;;Loja Tray
+16567484163;"2940243	";Cooktop a Gás Fischer Infinity 5 Bocas Tripla Chama Preto;"PAI - FIS-26298-PRETO	";1.160,99;0;;;;Loja Tray
+16567484156;"2940241	";Cooktop a Gás Fischer Infinity 4 Bocas Tripla Chama Trempe de Ferro;"PAI - FIS-26297	";991,99;0;;;;Loja Tray
+16567484151;"2940239	";Forno a Gás de Embutir Fischer Infinity 78 litros com Grill Preto;"PAI - FIS-36450-PRETO	";1.965,99;0;;;;Loja Tray
+16567484147;"2940237	";Forno de Embutir Fischer Infinity Touch 82 litros Air Fryer;"PAI - FIS-28607	";2.667,99;0;;;;Loja Tray
+16565856675;;FORNO MEDIO DE EMBUTIR C/ INOX 430(INTERNO) - Serie: 448386;"60003003-03	";;;;;;
+16565009125;"16623	";Forno de Bancada Fischer Turbo 2.4 New 48 litros com Air Fryer Voltagem:220;"VAR - 26573-58032	";1.660,99;0;;;;Loja Tray
+16565009119;"16621	";Forno de Bancada Fischer Turbo 2.4 New 48 litros com Air Fryer Voltagem:127;"VAR - 26573-58033	";1.660,99;0;;;;Loja Tray
+16565009116;"2940235	";Forno de Bancada Fischer Turbo 2.4 New 48 litros com Air Fryer;"PAI - FIS-26573	";1.660,99;0;;;;Loja Tray
+16564189752;"16619	";Kit Platinium Fischer: Forno Coifa Cooktop 5B Churrasqueira e Micro-ondas Voltagem:220;"VAR - 17419-18936/17789-19176/33810-92122/31613-81800/17411-	";15.599,9;0;;;;Loja Tray
+16564189746;"2940233	";Kit Platinium Fischer: Forno Coifa Cooktop 5B Churrasqueira e Micro-ondas;"PAI - FIS-17419/17789/33810/31613/17411	";15.599,9;0;;;;Loja Tray
+16563345993;"16617	";Coifa de Parede Fischer Depurador ou Exaustor Talent Fit 90 cm Vidro Voltagem:220;"VAR -  28019-63485	";1.404,99;0;;;;Loja Tray
+16563345988;"16615	";Coifa de Parede Fischer Depurador ou Exaustor Talent Fit 90 cm Vidro Voltagem:127;"VAR -  28019-63484	";1.404,99;0;;;;Loja Tray
+16563345976;"2940231	";Coifa de Parede Fischer Depurador ou Exaustor Talent Fit 90 cm Vidro;"PAI - FIS-28019	";1.404,99;0;;;;Loja Tray
+16559953742;"16613	";Trator Cortador de Grama Trapp 546cc Automático Voltagem:Gasolina;"VAR - 3935044-T	";24.695,99;0;;;;Loja Tray
+16559953733;"2940229	";Trator Cortador de Grama Trapp 546cc Automático;"PAI - 3935044-T	";24.695,99;0;;;;Loja Tray
+16558794870;"16611	";Coifa de Ilha Fischer Depurador ou Exaustor Tradition Line 90 cm Voltagem:220;"VAR - 17789-18176	";2.973,99;0;;;;Loja Tray
+16558794865;"16609	";Coifa de Ilha Fischer Depurador ou Exaustor Tradition Line 90 cm Voltagem:127;"VAR - 17789-18175	";2.973,99;0;;;;Loja Tray
+16558794858;"16607	";Coifa de Embutir Fischer Depurador ou Exaustor Infinity 90 cm Voltagem:220;"VAR - 29565-69510	";2.663,99;0;;;;Loja Tray
+16558794853;"16605	";Coifa de Embutir Fischer Depurador ou Exaustor Infinity 90 cm Voltagem:127;"VAR - 29565-69511	";2.663,99;0;;;;Loja Tray
+16558794845;"2940227	";Coifa de Ilha Fischer Depurador ou Exaustor Tradition Line 90 cm;"PAI - FIS-17789	";2.973,99;0;;;;Loja Tray
+16558794840;"2940225	";Coifa de Embutir Fischer Depurador ou Exaustor Infinity 90 cm;"PAI - FIS-29565	";2.663,99;0;;;;Loja Tray
+16558205065;"16603	";Cooktop a Gás Fischer 1 Bocas Tripla Chama Platinium Voltagem:Bivolt;"VAR - 33790-92104	";795,99;0;;;;Loja Tray
+16558205055;"16601	";Cooktop a Gás Fischer 2 Bocas Tripla Chama Platinium Voltagem:Bivolt;"VAR - 33795-92120	";945,99;0;;;;Loja Tray
+16558205050;"16599	";Cooktop a Gás Fischer 4 Bocas Tripla Chama Platinium Voltagem:Bivolt;"VAR - 33800-92121	";1.526,99;0;;;;Loja Tray
+16558205041;"16597	";Cooktop a Gás Fischer 5 Bocas Tripla Chama Platinium Voltagem:Bivolt;"VAR - 33810-92122	";1.884,99;0;;;;Loja Tray
+16558205035;"2940223	";Cooktop a Gás Fischer 1 Bocas Tripla Chama Platinium;"PAI - FIS- 33790	";795,99;0;;;;Loja Tray
+16558205032;"2940221	";Cooktop a Gás Fischer 2 Bocas Tripla Chama Platinium;"PAI - FIS-33795	";945,99;0;;;;Loja Tray
+16558205027;"2940219	";Cooktop a Gás Fischer 4 Bocas Tripla Chama Platinium;"PAI - FIS-33800	";1.526,99;0;;;;Loja Tray
+16558205024;"2940217	";Cooktop a Gás Fischer 5 Bocas Tripla Chama Platinium;"PAI - FIS-33810	";1.884,99;0;;;;Loja Tray
+16552476021;"16591	";Kit Infinity Fischer: Coifa de Parede 90 cm e Cooktop 5B Inox Voltagem:220;"VAR - 19902-22550/23678-54121	";3.599,99;0;;;;Loja Tray
+16552476016;"16589	";Kit Infinity Fischer: Coifa de Parede 90 cm e Cooktop 5B Inox Voltagem:127;"VAR - 19902-22549/23678-54121	";3.599,99;0;;;;Loja Tray
+16552476015;"2940215	";Kit Infinity Fischer: Coifa de Parede 90 cm e Cooktop 5B Inox;"PAI - FIS-19902/23678-I	";3.599,99;0;;;;Loja Tray
+16551025677;"16551	";Churrasqueira a Gás Fischer Embutir Ranch Grill 5 Espetos Preto Voltagem:Bivolt/GN;"VAR - 33925-103295-PRETO	";3.570,99;0;;;;Loja Tray
+16551025672;"16549	";Churrasqueira a Gás Fischer Embutir Ranch Grill 5 Espetos Preto Voltagem:Bivolt/GLP;"VAR - 33925-102432-PRETO	";3.570,99;0;;;;Loja Tray
+16551025666;"16555	";Churrasqueira a Gás Fischer Embutir Ranch Grill 5 Espetos Inox Voltagem:Bivolt/GN;"VAR - 33925-103294-INOX	";3.715,99;0;;;;Loja Tray
+16551025664;"16553	";Churrasqueira a Gás Fischer Embutir Ranch Grill 5 Espetos Inox Voltagem:Bivolt/GLP;"VAR - 33925-92964-INOX	";3.715,99;0;;;;Loja Tray
+16551025659;"16559	";Churrasqueira a Gás Fischer Embutir Ranch Grill 3 Espetos Preto Voltagem:Bivolt/GN;"VAR - 36170-103291-PRETO	";3.103,99;0;;;;Loja Tray
+16551025654;"16557	";Churrasqueira a Gás Fischer Embutir Ranch Grill 3 Espetos Preto Voltagem:Bivolt/GLP;"VAR - 36170-101658-PRETO	";3.103,99;0;;;;Loja Tray
+16551025651;"16563	";Churrasqueira a Gás Fischer Embutir Ranch Grill 3 Espetos Inox Voltagem:Bivolt/GN;"VAR - 36170-103290-INOX	";3.239,99;0;;;;Loja Tray
+16551025644;"16561	";Churrasqueira a Gás Fischer Embutir Ranch Grill 3 Espetos Inox Voltagem:Bivolt/GLP;"VAR - 36170-101659-INOX	";3.239,99;0;;;;Loja Tray
+16551025636;"16567	";Churrasqueira a Gás Fischer Bancada Ranch Grill 3 Espetos Preto Voltagem:Bivolt/GN;"VAR - 36160-103293-PRETO	";3.041,99;0;;;;Loja Tray
+16551025626;"16565	";Churrasqueira a Gás Fischer Bancada Ranch Grill 3 Espetos Preto Voltagem:Bivolt/GLP;"VAR - 36160-101656-PRETO	";3.041,99;0;;;;Loja Tray
+16551025625;"16571	";Kit Ranch Fischer: Cervejeira Multi 92L e Churrasqueira Embutir 5 Espetos Voltagem:Bivolt/GN;"VAR - 37200-105350/33925-103295-PRETO	";5.891,99;0;;;;Loja Tray
+16551025623;"16569	";Kit Ranch Fischer: Cervejeira Multi 92L e Churrasqueira Embutir 5 Espetos Voltagem:Bivolt/GLP;"VAR - 37200-105351/33925-102432-PRETO	";5.891,99;0;;;;Loja Tray
+16551025621;"16575	";Kit Ranch Fischer: Cervejeira Multi 92L e Churrasqueira Embutir 5 Espetos Voltagem:Bivolt/GN;"VAR - 37200-105350/33925-103294-INOX	";6.035,99;0;;;;Loja Tray
+16551025616;"16573	";Kit Ranch Fischer: Cervejeira Multi 92L e Churrasqueira Embutir 5 Espetos Voltagem:Bivolt/GLP;"VAR - 37200-105351/33925-92964-INOX	";6.035,99;0;;;;Loja Tray
+16551025611;"16579	";Kit Ranch Fischer: Cervejeira Multi 92L e Churrasqueira Embutir 3 Espetos Voltagem:Bivolt/GN;"VAR - 37200-105350/36170-103291-PRETO	";5.424,99;0;;;;Loja Tray
+16551025608;"16577	";Kit Ranch Fischer: Cervejeira Multi 92L e Churrasqueira Embutir 3 Espetos Voltagem:Bivolt/GLP;"VAR - 37200-105351/36170-101658-PRETO	";5.424,99;0;;;;Loja Tray
+16551025605;"16583	";Kit Ranch Fischer: Cervejeira Multi 92L e Churrasqueira Embutir 3 Espetos Voltagem:Bivolt/GN;"VAR - 37200-105350/36170-103290-INOX	";5.559,99;0;;;;Loja Tray
+16551025601;"16581	";Kit Ranch Fischer: Cervejeira Multi 92L e Churrasqueira Embutir 3 Espetos Voltagem:Bivolt/GLP;"VAR - 37200-105351/36170-101659-INOX	";5.559,99;0;;;;Loja Tray
+16551025598;"16587	";Kit Ranch Fischer: Cervejeira Multi 92L e Churrasqueira 3 Espetos Voltagem:Bivolt/GN;"VAR - 37200-105350/36160-103293-PRETO	";5.361,99;0;;;;Loja Tray
+16551025595;"16585	";Kit Ranch Fischer: Cervejeira Multi 92L e Churrasqueira 3 Espetos Voltagem:Bivolt/GLP;"VAR - 37200-105351/36160-101656-PRETO	";5.361,99;0;;;;Loja Tray
+16551025592;"2940195	";Churrasqueira a Gás Fischer Embutir Ranch Grill 5 Espetos Preto;"PAI - 33925-PRETO	";3.570,99;0;;;;Loja Tray
+16551025590;"2940197	";Churrasqueira a Gás Fischer Embutir Ranch Grill 5 Espetos Inox;"PAI - FIS-33925-INOX	";3.715,99;0;;;;Loja Tray
+16551025588;"2940199	";Churrasqueira a Gás Fischer Embutir Ranch Grill 3 Espetos Preto;"PAI - FIS-36170-PRETO	";3.103,99;0;;;;Loja Tray
+16551025585;"2940201	";Churrasqueira a Gás Fischer Embutir Ranch Grill 3 Espetos Inox;"PAI - FIS-36170-INOX	";3.239,99;0;;;;Loja Tray
+16551025582;"2940203	";Churrasqueira a Gás Fischer Bancada Ranch Grill 3 Espetos Preto;"PAI - FIS-36160-PRETO	";3.041,99;0;;;;Loja Tray
+16551025579;"2940205	";Kit Ranch Fischer: Cervejeira Multi 92L e Churrasqueira Embutir 5 Espetos;"PAI - FIS-37200/33925-PRETO	";5.891,99;0;;;;Loja Tray
+16551025576;"2940207	";Kit Ranch Fischer: Cervejeira Multi 92L e Churrasqueira Embutir 5 Espetos;"PAI - FIS-37200/33925-INOX	";6.035,99;0;;;;Loja Tray
+16551025571;"2940209	";Kit Ranch Fischer: Cervejeira Multi 92L e Churrasqueira Embutir 3 Espetos;"PAI - FIS-37200/36170-PRETO	";5.424,99;0;;;;Loja Tray
+16551025568;"2940211	";Kit Ranch Fischer: Cervejeira Multi 92L e Churrasqueira Embutir 3 Espetos;"PAI - FIS-37200/36170-INOX	";5.559,99;0;;;;Loja Tray
+16551025566;"2940213	";Kit Ranch Fischer: Cervejeira Multi 92L e Churrasqueira 3 Espetos;"PAI - FIS-37200/36160-PRETO	";5.361,99;0;;;;Loja Tray
+16549849602;;Baqueta 7A Liverpool Luminous Series Par Neon Fluorescente Cor:Branco;"VAR - 5565	";;;;;;
+16549849413;;Baqueta 7A Liverpool Luminous Series Par Neon Fluorescente Cor:Azul;"VAR - 5567	";;;;;;
+16547542570;"16543	";Kit Pratos Hat Crash 14 16 Hammer Tennessee Rookie Liverpool Cor:Natural;"VAR - 11476-HI-11477-CR	";289,99;0;;;;Loja Tray
+16547542564;"2940189	";Kit Pratos Hat Crash 14 16 Hammer Tennessee Rookie Liverpool;"PAI - LIV-11476-HI-11477-CR	";289,99;0;;;;Loja Tray
+16547455721;;Baqueta 5A Liverpool Luminous Series Par Neon Fluorescente Cor:Azul;"VAR - 5568	";;;;;;
+16547455452;;Baqueta 5A Liverpool Luminous Series Par Neon Fluorescente Cor:Branco;"VAR - 5569	";;;;;;
+16544461309;;Barril De Carvalho 5 Litros Artesanal Aros Aço Inox Barril De Carvalho 5 Litros Artesanal Aros Aço Inox;"VAR - STEI-BARRIL-05L	";;;;;;
+16544461294;;Barril De Carvalho 2 Litros Artesanal Aros Aço Inox Barril De Carvalho 2 Litros Artesanal Aros Aço Inox;"VAR - STEI-BARRIL-02L	";;;;;;
+16544461282;;Barril De Carvalho 5 Litros Artesanal Aros Aço Inox;"PAI - STEI-BARRIL-05L	";;;;;;
+16544461279;;Barril De Carvalho 2 Litros Artesanal Aros Aço Inox;"PAI - STEI-BARRIL-02L	";;;;;;
+16544458893;;Barril De Carvalho 5 Litros Artesanal Aros Aço Inox;"VAR - LIV-BARRIL-05L	";;;;;;
+16544458890;;Barril De Carvalho 5 Litros Artesanal Aros Aço Inox;"PAI - LIV-BARRIL-05L	";;;;;;
+16544458886;;Barril De Carvalho 2 Litros Artesanal Aros Aço Inox;"VAR - LIV-BARRIL-02L	";;;;;;
+16544458880;;Barril De Carvalho 2 Litros Artesanal Aros Aço Inox;"PAI - LIV-BARRIL-02L	";;;;;;
+16542744730;"16541	";Baquetas para Bateria Roxinhas 10 Pares Liverpool Tamanho: 7A;"VAR - TNROX 7AMSL-10P	";54,99;0;;;;Loja Tray
+16542744724;"16539	";Baquetas para Bateria Roxinhas 10 Pares Liverpool Tamanho: 5B;"VAR - TNROX 5BMSL-10P	";54,99;0;;;;Loja Tray
+16542744716;"16537	";Baquetas para Bateria Roxinhas 10 Pares Liverpool Tamanho: 5A;"VAR - TNROX 5AMSL-10P	";54,99;0;;;;Loja Tray
+16542744711;"2940187	";Baquetas para Bateria Roxinhas 10 Pares Liverpool;"PAI - LIV-TN-ROXSL-10P	";54,99;0;;;;Loja Tray
+16542557386;"16535	";Kit Platinium Fischer: Forno Elétrico Coifa Cooktop 2B 5B e Micro-ondas Voltagem:220;"VAR - 17419-18936/17789-19176/33810-92122/33795-9212017411-1	";15.099,99;0;;;;Loja Tray
+16542557380;"16533	";Kit Platinium Fischer: Forno Elétrico Coifa Cooktop 2B 5B e Micro-ondas Voltagem:127;"VAR - 17419-18935/17789-19175/33810-92122/33795-92120/17411-	";15.099,99;0;;;;Loja Tray
+16542557373;"2940185	";Kit Platinium Fischer: Forno Elétrico Coifa Cooktop 2B 5B e Micro-ondas;"PAI - FIS-17419/17789/33810/33795/17411	";15.099,99;0;;;;Loja Tray
+16541399105;"16489	";Baqueta 7A Liverpool Luminous Series 2 Pares Neon Fluorescente Cor:Azul/Branco;"VAR - 5567-AZ-2P/5565-AZ-2P	";69,99;0;;;;Loja Tray
+16541399097;"16499	";Baqueta 7A Liverpool Luminous Series 3 Pares Neon Fluorescente Cor:Azul;"VAR - 5565-AZ-3P	";102,99;0;;;;Loja Tray
+16541399093;"16497	";Baqueta 7A Liverpool Luminous Series 3 Pares Neon Fluorescente Cor:Branco;"VAR - 5567-AZ-3P	";102,99;0;;;;Loja Tray
+16541399089;"16495	";Baqueta 7A Liverpool Luminous Series 3 Pares Neon Fluorescente Cor:Roxo;"VAR - 11666-RX-3P	";102,99;0;;;;Loja Tray
+16541399086;"16493	";Baqueta 7A Liverpool Luminous Series 3 Pares Neon Fluorescente Cor:Verde;"VAR - 11665-VD-3P	";102,99;0;;;;Loja Tray
+16541399079;"16491	";Baqueta 7A Liverpool Luminous Series 3 Pares Neon Fluorescente Cor:Pink;"VAR - 11664-PNK-3P	";102,99;0;;;;Loja Tray
+16541399077;"16509	";Baqueta 7A Liverpool Luminous Series Par Neon Fluorescente Cor:Azul;"VAR - 5565-AZ-1P	";36,99;0;;;;Loja Tray
+16541399074;"16507	";Baqueta 7A Liverpool Luminous Series Par Neon Fluorescente Cor:Branco;"VAR - 5567-AZ-1P	";36,99;0;;;;Loja Tray
+16541399067;"16505	";Baqueta 7A Liverpool Luminous Series Par Neon Fluorescente Cor:Roxo;"VAR - 11666-RX-1P	";36,99;0;;;;Loja Tray
+16541399062;"16503	";Baqueta 7A Liverpool Luminous Series Par Neon Fluorescente Cor:Verde;"VAR - 11665-VD-1P	";36,99;0;;;;Loja Tray
+16541399060;"16501	";Baqueta 7A Liverpool Luminous Series Par Neon Fluorescente Cor:Pink;"VAR - 11664-PNK-1P	";36,99;0;;;;Loja Tray
+16541399053;"16511	";Baqueta 5A Liverpool Luminous Series 2 Pares Neon Fluorescente Cor:Azul/Branco;"VAR - 5569-BR-2P/5568-AZ-2P	";69,99;0;;;;Loja Tray
+16541399046;"16521	";Baqueta 5A Liverpool Luminous Series 3 Pares Neon Fluorescente Cor:Azul;"VAR - 5568-AZ-3P	";102,99;0;;;;Loja Tray
+16541399038;"16519	";Baqueta 5A Liverpool Luminous Series 3 Pares Neon Fluorescente Cor:Branco;"VAR - 5569-BR-3P	";102,99;0;;;;Loja Tray
+16541399032;"16517	";Baqueta 5A Liverpool Luminous Series 3 Pares Neon Fluorescente Cor:Roxo;"VAR - 11669-RX-3P	";102,99;0;;;;Loja Tray
+16541399029;"16515	";Baqueta 5A Liverpool Luminous Series 3 Pares Neon Fluorescente Cor:Verde;"VAR - 11668-VD-3P	";102,99;0;;;;Loja Tray
+16541399026;"16513	";Baqueta 5A Liverpool Luminous Series 3 Pares Neon Fluorescente Cor:Pink;"VAR - 11667-PNK-3P	";102,99;0;;;;Loja Tray
+16541399019;"16531	";Baqueta 5A Liverpool Luminous Series Par Neon Fluorescente Cor:Azul;"VAR - 5568-AZ-1P	";36,99;0;;;;Loja Tray
+16541399013;"16529	";Baqueta 5A Liverpool Luminous Series Par Neon Fluorescente Cor:Branco;"VAR - 5569-BR-1P	";36,99;0;;;;Loja Tray
+16541399009;"16527	";Baqueta 5A Liverpool Luminous Series Par Neon Fluorescente Cor:Roxo;"VAR - 11669-RX-1P	";36,99;0;;;;Loja Tray
+16541399005;"16525	";Baqueta 5A Liverpool Luminous Series Par Neon Fluorescente Cor:Verde;"VAR - 11668-VD-1P	";36,99;0;;;;Loja Tray
+16541398998;"16523	";Baqueta 5A Liverpool Luminous Series Par Neon Fluorescente Cor:Pink;"VAR - 11667-PNK-1P	";36,99;0;;;;Loja Tray
+16541398993;"2940173	";Baqueta 7A Liverpool Luminous Series 2 Pares Neon Fluorescente;"PAI - LIV-NEON-7A-CRS2P	";69,99;0;;;;Loja Tray
+16541398989;"2940175	";Baqueta 7A Liverpool Luminous Series 3 Pares Neon Fluorescente;"PAI - LIV-NEON-7A-CRS3P	";102,99;0;;;;Loja Tray
+16541398986;"2940177	";Baqueta 7A Liverpool Luminous Series Par Neon Fluorescente;"PAI - LIV-NEON-7A-CRS1P	";36,99;0;;;;Loja Tray
+16541398984;"2940179	";Baqueta 5A Liverpool Luminous Series 2 Pares Neon Fluorescente;"PAI - LIV-NEON-5A-CRS2P	";69,99;0;;;;Loja Tray
+16541398982;"2940181	";Baqueta 5A Liverpool Luminous Series 3 Pares Neon Fluorescente;"PAI - LIV-NEON-5A-CRS3P	";102,99;0;;;;Loja Tray
+16541398979;"2940183	";Baqueta 5A Liverpool Luminous Series Par Neon Fluorescente;"PAI - LIV-NEON-5A-CRS1P	";36,99;0;;;;Loja Tray
+16541109064;;Fogão Elétrico 2 Placas Portátil Inox Safanelli;"2317-1897	";;;;;;
+16540437849;"16467	";Tapete Antiderrapante Liverpool Para Bateria 1,60 x 1,20 m Modelo:In Your Head;"VAR - LIV-5654-IN-TAM1-6	";252,99;0;;;;Loja Tray
+16540437832;"16465	";Tapete Antiderrapante Liverpool Para Bateria 1,60 x 1,20 m Modelo:Laranja;"VAR - LIV-5653-LA-TAM1-6	";252,99;0;;;;Loja Tray
+16540437817;"16463	";Tapete Antiderrapante Liverpool Para Bateria 1,60 x 1,20 m Modelo:Oriental;"VAR - LIV-5655-OR-TAM1-6	";252,99;0;;;;Loja Tray
+16540437807;"16461	";Tapete Antiderrapante Liverpool Para Bateria 1,80 x 1,40 m Modelo:In Your Head;"VAR - LIV-5651-IN-TAM1-8	";301,99;0;;;;Loja Tray
+16540437788;"16459	";Tapete Antiderrapante Liverpool Para Bateria 1,80 x 1,40 m Modelo:Laranja;"VAR - LIV-5650-LA-TAM1-8	";301,99;0;;;;Loja Tray
+16540437759;"16457	";Tapete Antiderrapante Liverpool Para Bateria 1,80 x 1,40 m Modelo:Oriental;"VAR - LIV-5652-OR-TAM1-8	";301,99;0;;;;Loja Tray
+16540437744;"16455	";Tapete Antiderrapante Liverpool Para Bateria 2,00 x 1,60 m Modelo:In Your Head;"VAR - LIV-5648-IN-TAM2-0	";324,99;0;;;;Loja Tray
+16540437735;"16453	";Tapete Antiderrapante Liverpool Para Bateria 2,00 x 1,60 m Modelo:Laranja;"VAR - LIV-5647-LA-TAM2-0	";324,99;0;;;;Loja Tray
+16540437725;"16451	";Tapete Antiderrapante Liverpool Para Bateria 2,00 x 1,60 m Modelo:Oriental;"VAR - LIV-5649-OR-TAM2-0	";324,99;0;;;;Loja Tray
+16540437708;"16469	";Pica Pau Liverpool Percusivo Infantil em Madeira Cor:Natural;"VAR - LIV-5642	";66,99;0;;;;Loja Tray
+16540437684;"16471	";Catraca Liverpool de Madeira 18,8  x 3,4 cm Cor:Natural;"VAR - LIV-5643	";29,99;0;;;;Loja Tray
+16540437666;"16447	";Captador Magnético de Boca Tennessee By Liverpool Cor:Preto;"VAR - LIV-1043	";82,99;0;;;;Loja Tray
+16540437656;"16449	";Anti-Feedback Tennessee 10 cm By Liverpool Cor:Preto;"VAR - LIV-5678	";29,99;0;;;;Loja Tray
+16540437638;"16445	";Copo Liverpol Termico Inox 1.2 Litros Laranja Cor:Laranja;"VAR - LIV-5677	";79,99;0;;;;Loja Tray
+16540437623;"16483	";Pandeiro Liverpool Premium Sambrasil Pele Animal 10 Pol. Cor:Branco;"VAR - LIV-5638-BR	";110,99;0;;;;Loja Tray
+16540437610;"16481	";Pandeiro Liverpool Premium Sambrasil Pele Animal 10 Pol. Cor:Marrom;"VAR - LIV-5637-M	";110,99;0;;;;Loja Tray
+16540437594;"16479	";Pandeiro Liverpool Premium Sambrasil Pele Animal 10 Pol. Cor:Preto;"VAR - LIV-5636-PR	";110,99;0;;;;Loja Tray
+16540437571;"16477	";Pandeiro Liverpool Bastão Plástico ABS 5 x 2 6 cm Cor:Azul;"VAR - LIV-5682-AZ	";25,99;0;;;;Loja Tray
+16540437562;"16475	";Pandeiro Liverpool Bastão Plástico ABS 5 x 2 6 cm Cor:Vermelho;"VAR - LIV-5681-VM	";25,99;0;;;;Loja Tray
+16540437549;"16473	";Pandeiro Liverpool Bastão Plástico ABS 5 x 2 6 cm Cor:Preto;"VAR - LIV-5683-PR	";25,99;0;;;;Loja Tray
+16540437536;"16485	";Apito Liverpool de Samba Metal 46mm Cor:Metal;"VAR - LIV-5685	";14,99;0;;;;Loja Tray
+16540437531;"16487	";Apito Liverpool Mestre de Samba Plástico ABS Cor:Preto;"VAR - LIV-5644	";19,99;0;;;;Loja Tray
+16540437517;;Ganza Liverpool de Dedo Preto em Plástico ABS Cor:Preto;"VAR - LIV-5680	";;;;;;
+16540437489;"16443	";Pente Liverpool para Guiro Aço 220 mm Cor:Preto;"VAR - LIV-5641	";49,99;0;;;;Loja Tray
+16540437473;"16441	";Anel Abafador Liverpol para Caixa 14 Polegadas Cor:Branco;"VAR - LIV- 5959	";28,99;0;;;;Loja Tray
+16540437459;"16439	";Kit de Anéis Abafadores Liverpool 10, 12, 14, 16 Polegadas Cor:Branco;"VAR - LIV-5656	";50,99;0;;;;Loja Tray
+16540437449;"16437	";Polia Liverpool para Pedal de Bumbo Cor:Preto;"VAR - LIV-1381	";35,99;0;;;;Loja Tray
+16540437436;"16435	";Kit Reparo Liverpool para Pedal de Bumbo Cor:Natural;"VAR - LIV-1405	";53,99;0;;;;Loja Tray
+16540437409;"16433	";Fita Transparente Liverpool para Esteira em Nylon Cor:Natural;"VAR - LIV-5646	";11,99;0;;;;Loja Tray
+16540437393;"16431	";Tom Holder Liverpool em L com Esfera Cor:Prata;"VAR - LIV-5662	";159,99;0;;;;Loja Tray
+16540437373;"16429	";Clamp Liverpool para Extensor e Holder Cor:Prata;"VAR - LIV-5663	";106,99;0;;;;Loja Tray
+16540437362;"	";Pedal Simples Liverpool Trava Anti-deslizante Feltro Cor:Preto;"VAR - LIV-1406	";0;0;;;;Loja Tray
+16540437348;"2940159	";Tapete Antiderrapante Liverpool Para Bateria 1,60 x 1,20 m;"PAI - LIV-TAPETES-TAM1-6	";252,99;0;;;;Loja Tray
+16540437337;"2940157	";Tapete Antiderrapante Liverpool Para Bateria 1,80 x 1,40 m;"PAI - LIV-TAPETES-TAM1-8	";301,99;0;;;;Loja Tray
+16540437320;"2940155	";Tapete Antiderrapante Liverpool Para Bateria 2,00 x 1,60 m;"PAI - LIV-TAPETES-TAM2-0	";66,99;0;;;;Loja Tray
+16540437312;"2940161	";Pica Pau Liverpool Percusivo Infantil em Madeira;"PAI - LIV-5642	";66,99;0;;;;Loja Tray
+16540437303;"2940163	";Catraca Liverpool de Madeira 18,8  x 3,4 cm;"PAI - LIV-5643	";29,99;0;;;;Loja Tray
+16540437293;"2940151	";Captador Magnético de Boca Tennessee By Liverpool;"PAI - LIV-1043	";82,99;0;;;;Loja Tray
+16540437283;"2940153	";Anti-Feedback Tennessee 10 cm By Liverpool;"PAI - LIV-5678	";29,99;0;;;;Loja Tray
+16540437277;"2940149	";Copo Liverpol Termico Inox 1.2 Litros Laranja;"PAI - LIV-5677	";79,99;0;;;;Loja Tray
+16540437267;"2940167	";Pandeiro Liverpool Premium Sambrasil Pele Animal 10 Pol.;"PAI - LIV-5636-PR/LIV-5637-M/LIV-5638-BR	";110,99;0;;;;Loja Tray
+16540437263;"2940165	";Pandeiro Liverpool Bastão Plástico ABS 5 x 2 6 cm;"PAI - LIV-5683-PR-LIV-5681-VM/LIV-5682-AZ	";23,99;0;;;;Loja Tray
+16540437255;"2940169	";Apito Liverpool de Samba Metal 46mm;"PAI - LIV-5685	";14,99;0;;;;Loja Tray
+16540437250;"2940171	";Apito Liverpool Mestre de Samba Plástico ABS;"PAI - LIV-5644	";19,99;0;;;;Loja Tray
+16540437233;;Ganza Liverpool de Dedo Preto em Plástico ABS;"PAI - LIV-5680	";;;;;;
+16540437226;"2940147	";Pente Liverpool para Guiro Aço 220 mm;"PAI - LIV-5641	";49,99;0;;;;Loja Tray
+16540437218;"2940145	";Anel Abafador Liverpol para Caixa 14 Polegadas;"PAI - LIV- 5959	";28,99;0;;;;Loja Tray
+16540437203;"2940143	";Kit de Anéis Abafadores Liverpool 10, 12, 14, 16 Polegadas;"PAI - LIV-5656	";50,99;0;;;;Loja Tray
+16540437197;"2940141	";Polia Liverpool para Pedal de Bumbo;"PAI - LIV-1381	";35,99;0;;;;Loja Tray
+16540437192;"2940139	";Kit Reparo Liverpool para Pedal de Bumbo;"PAI - LIV-1405	";53,99;0;;;;Loja Tray
+16540437186;"2940137	";Fita Transparente Liverpool para Esteira em Nylon;"PAI - LIV-5646	";11,99;0;;;;Loja Tray
+16540437180;"2940135	";Tom Holder Liverpool em L com Esfera;"PAI - LIV-5662	";159,99;0;;;;Loja Tray
+16540437170;"2940133	";Clamp Liverpool para Extensor e Holder;"PAI - LIV-5663	";106,99;0;;;;Loja Tray
+16540437165;;Pedal Simples Liverpool Trava Anti-deslizante Feltro;"PAI - LIV-1406	";;;;;;
+16538638684;;Kit Forno Embutir Depurador + Cooktop Tripla Chama Safanelli;"2930375-3047	";;;;;;
+16538178135;"16427	";Mangueira de pulverização VPT 700 1/2 VONDER Cor: Laranja;"VAR - 8010000120	";581,99;0;;;;Loja Tray
+16538178132;"2940131	";Mangueira de pulverização VPT 700 1/2 VONDER;"PAI - 8010000120	";581,99;0;;;;Loja Tray
+16538157474;;Kit Forno Embutir 45l + Coifa Ilha 90 + Cooktop 5b Safanelli;"2932475-6417	";;;;;;
+16538153390;;Kit Infinity Fischer: Forno Elétrico Inox E Cooktop 5b Inox;"2939441-15209	";;;;;;
+16537311826;"16425	";Kas-Kas Infantil Liverpool Par Percussão Rítmica Asalato Cor:Vermelho;"VAR - 8033	";84,99;0;;;;Loja Tray
+16537311821;"16423	";Kas-Kas Infantil Liverpool Par Percussão Rítmica Asalato Cor:Azul;"VAR - 8032	";114,99;0;;;;Loja Tray
+16537311814;"16421	";Kas-Kas Infantil Liverpool Par Percussão Rítmica Asalato Cor:Amarelo;"VAR - 8031	";84,99;0;;;;Loja Tray
+16537311811;"2940129	";Kas-Kas Infantil Liverpool Par Percussão Rítmica Asalato;"PAI - 8031/8032/8033	";84,99;0;;;;Loja Tray
+16537234390;"16419	";Kit Fischer: Coifa 90 cm Forno a Gás e Cooktop 5B Aramado Voltagem:220;"VAR - 31000-79709/28019-63485/36360-102676-PRETO	";3.535,99;0;;;;Loja Tray
+16537234379;"16417	";Kit Fischer: Coifa 90 cm Forno a Gás e Cooktop 5B Aramado Voltagem:127;"VAR - 31000-79710/28019-63484/36360-102676-PRETO	";3.535,99;0;;;;Loja Tray
+16537234370;"2940127	";Kit Fischer: Coifa 90 cm Forno a Gás e Cooktop 5B Aramado;"PAI - FIS-31000/28019/36360-PRETO	";3.535,99;0;;;;Loja Tray
+16537201778;;Forno De Embutir 45l + Cooktop 5b Preto + Depurador;"1905-1579	";;;;;;
+16536549290;;Coifa de Parede Fischer INFINITY DIG TOUCH 90cm Preta 220V;"19902-22550	";;;;;;
+16536549286;;Fogão Cooktop Fischer 4Q Elétrico Mesa Vitrocerâmica Touch Preto 220V;"30006-73476	";;;;;;
+16535591534;;Fogão de Embutir Fischer 5Q TC GRAN CHEFF Gás c/Grill 220V;"28550-65541	";;;;;;
+16535099647;;Mesa Hidráulica Pantográfica 0,50 Toneladas Mmp 500 Vonder;"2938991-14469	";;;;;;
+16535093533;;Forno Elétrico Fischer Fit Line Embutir 48L Inox 220V;"34493-95486	";;;;;;
+16535093531;;Micro-ondas Fischer Embutir 25L Fit Line Moldura Inox 220V;"34900-98440	";;;;;;
+16535086323;;Kit Fit Line Fischer: Micro-ondas 25l E Forno Elétrico Inox;"2939491-15305	";;;;;;
+16535078596;;Kit Gran Cheff Fischer Coifa Ilha 90 Cm E Fogão Embutir 5b;"2939869-16033	";;;;;;
+16533801192;;Mesa Pantográfica Mmp 500 Menegotti;"3403-3867	";;;;;;
+16533585620;;Baqueta Liverpool Tennesse Jatobá Par Sem Logo Tamanho:5B;"VAR - TNJAT-5BMSL	";;;;;;
+16533298220;;Kit Forno Embutir 45l E Cooktop 5 Bocas Preto Safanelli;"2321-1903	";;;;;;
+16532292679;"16371	";"Kit Pratos Hi-Hat e Crash 14, 18"" Hammer Tennessee Rookie By Liverpool Cor:Natural";"VAR - 11891-HI-CR	";289,99;0;;;;Loja Tray
+16532292678;"16373	";Prato Splash 12 Polegadas Bronze Hammer Trial By Liverpool Cor:Natural;"VAR - 11892-SPL	";214,99;0;;;;Loja Tray
+16532292676;"16375	";Prato Ride 22 Polegadas Bronze Hammer LIT By Liverpool Cor:Natural;"VAR - 11899-RD	";1.551,99;0;;;;Loja Tray
+16532292672;"16377	";Prato Crash 19 Polegadas Bronze Hammer LIT By Liverpool Cor:Natural;"VAR - 11898-HI	";937,99;0;;;;Loja Tray
+16532292669;"16383	";Prato Crash 17 Polegadas Bronze Hammer LIT By Liverpool Cor:Natural;"VAR - 11897-HI	";624,99;0;;;;Loja Tray
+16532292667;"16379	";Prato Hi-Hat 15 Polegadas Bronze Hammer LIT By Liverpool Cor:Natural;"VAR - 11896-HI	";1.071,99;0;;;;Loja Tray
+16532292666;"16381	";Prato Splash 12 Polegadas Bronze Hammer LIT By Liverpool Cor:Natural;"VAR - 11900-SPL	";272,99;0;;;;Loja Tray
+16532292664;"16385	";Prato Ride 22 Polegadas Bronze Hammer Cross By Liverpool Cor:Natural;"VAR - 11905-RD	";1.458,99;0;;;;Loja Tray
+16532292663;"16387	";Prato Crash 20 Polegadas Bronze Hammer Cross By Liverpool Cor:Natural;"VAR - 11904-CR	";1.099,99;0;;;;Loja Tray
+16532292659;"16389	";Prato Crash 19 Polegadas Bronze Hammer Cross By Liverpool Cor:Natural;"VAR - 11903-CR	";937,99;0;;;;Loja Tray
+16532292657;"16391	";Prato Crash 18 Polegadas Bronze Hammer Cross By Liverpool Cor:Natural;"VAR - 11523-CR	";696,99;0;;;;Loja Tray
+16532292653;"16393	";Prato HI-Hat 15 Polegadas Bronze Hammer Cross By Liverpool Cor:Natural;"VAR - 11901-HI	";1.030,99;0;;;;Loja Tray
+16532292651;"16395	";Prato Ride 24 Polegadas Bronze Hammer System By Liverpool Cor:Natural;"VAR - 11910-RD	";1.903,99;0;;;;Loja Tray
+16532292650;"16397	";Prato Ride 22 Polegadas Bronze Hammer System By Liverpool Cor:Natural;"VAR - 11909-RD	";1.601,99;0;;;;Loja Tray
+16532292644;"16399	";Prato Ride 20 Polegadas Bronze Hammer System By Liverpool Cor:Natural;"VAR - 11509-RD	";1.086,99;0;;;;Loja Tray
+16532292642;"16401	";Prato China 18 Polegadas Bronze Hammer System By Liverpool Cor:Natural;"VAR - 11912-CH	";860,99;0;;;;Loja Tray
+16532292638;"16415	";Prato China 16 Polegadas Bronze Hammer System By Liverpool Cor:Natural;"VAR - 11516-CH	";563,99;0;;;;Loja Tray
+16532292633;"16413	";Prato China 14 Polegadas Bronze Hammer System By Liverpool Cor:Natural;"VAR - 11515-CH	";489,99;0;;;;Loja Tray
+16532292628;"16411	";Prato Crash 20 Polegadas Bronze Hammer System By Liverpool Cor:Natural;"VAR - 11908-CR	";1.122,99;0;;;;Loja Tray
+16532292622;"16409	";Prato Crash 19 Polegadas Bronze Hammer System By Liverpool Cor:Natural;"VAR - 11907-CR	";902,99;0;;;;Loja Tray
+16532292617;"16407	";Prato Crash 17 Polegadas Bronze Hammer System By Liverpool Cor:Natural;"VAR - 11895-CR	";602,99;0;;;;Loja Tray
+16532292610;"16405	";Prato Hi-Hat 15 Polegadas Bronze Hammer System By Liverpool Cor:Natural;"VAR - 11894-HI	";1.140,99;0;;;;Loja Tray
+16532292599;"16403	";Prato Splash 12 Polegadas Bronze Hammer System By Liverpool Cor:Natural;"VAR - 11911-SPL	";267,99;0;;;;Loja Tray
+16532292592;"2940081	";"Kit Pratos Hi-Hat e Crash 14, 18"" Hammer Tennessee Rookie By Liverpool";"PAI - LIV-11891-HI-CR	";289,99;0;;;;Loja Tray
+16532292587;"2940083	";Prato Splash 12 Polegadas Bronze Hammer Trial By Liverpool;"PAI - LIV-11892-SPL	";214,99;0;;;;Loja Tray
+16532292583;"2940085	";Prato Ride 22 Polegadas Bronze Hammer LIT By Liverpool;"PAI - LIV-11899-RD	";1.551,99;0;;;;Loja Tray
+16532292577;"2940087	";Prato Crash 19 Polegadas Bronze Hammer LIT By Liverpool;"PAI - LIV-11898-HI	";937,99;0;;;;Loja Tray
+16532292569;"2940093	";Prato Crash 17 Polegadas Bronze Hammer LIT By Liverpool;"PAI - LIV-11897-HI	";624,99;0;;;;Loja Tray
+16532292564;"2940089	";Prato Hi-Hat 15 Polegadas Bronze Hammer LIT By Liverpool;"PAI - LIV-11896-HI	";1.071,99;0;;;;Loja Tray
+16532292556;"2940091	";Prato Splash 12 Polegadas Bronze Hammer LIT By Liverpool;"PAI - LIV-11900-SPL	";272,99;0;;;;Loja Tray
+16532292554;"2940095	";Prato Ride 22 Polegadas Bronze Hammer Cross By Liverpool;"PAI - LIV-11905-RD	";1.458,99;0;;;;Loja Tray
+16532292546;"2940097	";Prato Crash 20 Polegadas Bronze Hammer Cross By Liverpool;"PAI - LIV-11904-CR	";1.099,99;0;;;;Loja Tray
+16532292538;"2940099	";Prato Crash 19 Polegadas Bronze Hammer Cross By Liverpool;"PAI - LIV-11903-CR	";937,99;0;;;;Loja Tray
+16532292533;"2940101	";Prato Crash 18 Polegadas Bronze Hammer Cross By Liverpool;"PAI - LIV-11523-CR	";696,99;0;;;;Loja Tray
+16532292530;"2940103	";Prato HI-Hat 15 Polegadas Bronze Hammer Cross By Liverpool;"PAI - LIV-11901-HI	";1.030,99;0;;;;Loja Tray
+16532292527;"2940105	";Prato Ride 24 Polegadas Bronze Hammer System By Liverpool;"PAI - LIV-11910-RD	";1.903,99;0;;;;Loja Tray
+16532292525;"2940107	";Prato Ride 22 Polegadas Bronze Hammer System By Liverpool;"PAI - LIV-11909-RD	";1.601,99;0;;;;Loja Tray
+16532292523;"2940109	";Prato Ride 20 Polegadas Bronze Hammer System By Liverpool;"PAI - LIV-11509-RD	";1.086,99;0;;;;Loja Tray
+16532292521;"2940111	";Prato China 18 Polegadas Bronze Hammer System By Liverpool;"PAI - LIV-11912-CH	";860,99;0;;;;Loja Tray
+16532292517;"2940125	";Prato China 16 Polegadas Bronze Hammer System By Liverpool;"PAI - LIV-11516-CH	";563,99;0;;;;Loja Tray
+16532292515;"2940123	";Prato China 14 Polegadas Bronze Hammer System By Liverpool;"PAI - LIV-11515-CH	";489,99;0;;;;Loja Tray
+16532292514;"2940121	";Prato Crash 20 Polegadas Bronze Hammer System By Liverpool;"PAI - LIV-11908-CR	";1.122,99;0;;;;Loja Tray
+16532292512;"2940119	";Prato Crash 19 Polegadas Bronze Hammer System By Liverpool;"PAI - LIV-11907-CR	";902,99;0;;;;Loja Tray
+16532292509;"2940117	";Prato Crash 17 Polegadas Bronze Hammer System By Liverpool;"PAI - LIV-11895-CR	";602,99;0;;;;Loja Tray
+16532292503;"2940115	";Prato Hi-Hat 15 Polegadas Bronze Hammer System By Liverpool;"PAI - LIV-11894-HI	";1.140,99;0;;;;Loja Tray
+16532292501;"2940113	";Prato Splash 12 Polegadas Bronze Hammer System By Liverpool;"PAI - LIV-11911-SPL	";267,99;0;;;;Loja Tray
+16531938269;;Gerador A Gasolina 7.100w Ggv 7100 Vonder;"2933719	";;;;;;
+16530650541;;1.24244E+11;"	";;;;;;
+16530647795;;13124234354;"	";;;;;;
+16530610209;;teste;"sdfgdgh	";;;;;;
+16530258593;"16369	";Kit Infinity Fischer: Forno Coifa Cooktop 4B Micro-ondas e Churrasqueira Voltagem:220;"VAR - 15740-27309/17789-19176/20874-51521/25378-55522/31613-	";11.865,99;0;;;;Loja Tray
+16530258590;"16367	";Kit Infinity Fischer: Forno Coifa Cooktop 4B Micro-ondas e Churrasqueira Voltagem:127;"VAR - 15740-27308/17789-19175/20874-51521/25378-55520/31613-	";11.865,99;0;;;;Loja Tray
+16530258588;"16365	";Kit Infinity Fischer: Forno Coifa Cooktop 5B Micro-ondas e Churrasqueira Voltagem:220;"VAR - 15740-27309/17789-19176/23678-54121/25378-55522/31613-	";11.085,99;0;;;;Loja Tray
+16530258581;"16363	";Kit Infinity Fischer: Forno Coifa Cooktop 5B Micro-ondas e Churrasqueira Voltagem:127;"VAR - 15740-27308/17789-19175/23678-54121/25378-55520/31613-	";11.085,99;0;;;;Loja Tray
+16530258575;"2940079	";Kit Infinity Fischer: Forno Coifa Cooktop 4B Micro-ondas e Churrasqueira;"PAI - FIS-15740/17789/20874/25378/31613-INOX	";11.865,99;0;;;;Loja Tray
+16530258573;"2940077	";Kit Infinity Fischer: Forno Coifa Cooktop 5B Micro-ondas e Churrasqueira;"PAI - FIS-15740/17789/23678/25378/31613-INOX	";11.085,99;0;;;;Loja Tray
+16530054932;;Coifa de Parede Fischer INFINITY DIG TOUCH 90cm Branca 220V;"19902-22552	";;;;;;
+16529500847;"16353	";Coifa de Parede Fischer Depurador ou Exaustor Talent Touch 60 cm Voltagem:220;"VAR - 16741-17916-INOX	";1.894,99;0;;;;Loja Tray
+16529500838;"16351	";Coifa de Parede Fischer Depurador ou Exaustor Talent Touch 60 cm Voltagem:127;"VAR - 16741-17915-INOX	";1.894,99;0;;;;Loja Tray
+16529500830;"16349	";Coifa de Parede Fischer Depurador ou Exaustor Talent Touch 90 cm Voltagem:220;"VAR - 16740-17897-INOX	";2.111,99;0;;;;Loja Tray
+16529500823;"16347	";Coifa de Parede Fischer Depurador ou Exaustor Talent Touch 90 cm Voltagem:127;"VAR - 16740-17895-INOX	";2.111,99;0;;;;Loja Tray
+16529500817;"16357	";Forno Elétrico Fischer de Embutir Platinium 43 litros com Air Fryer Voltagem:220;"VAR - 17419-18936-INOX	";3.761,99;0;;;;Loja Tray
+16529500810;"16355	";Forno Elétrico Fischer de Embutir Platinium 43 litros com Air Fryer Voltagem:127;"VAR - 17419-18935-INOX	";3.761,99;0;;;;Loja Tray
+16529500806;"16361	";Micro-ondas Fischer de Embutir Platinium 35 litros com Grill Voltagem:220;"VAR - 17411-18916-INOX	";5.287,99;0;;;;Loja Tray
+16529500800;"16359	";Micro-ondas Fischer de Embutir Platinium 35 litros com Grill Voltagem:127;"VAR - 17411-18915-INOX	";5.287,99;0;;;;Loja Tray
+16529500793;"2940071	";Coifa de Parede Fischer Depurador ou Exaustor Talent Touch 60 cm;"PAI - FIS-16741-INOX	";1.894,99;0;;;;Loja Tray
+16529500787;"2940069	";Coifa de Parede Fischer Depurador ou Exaustor Talent Touch 90 cm;"PAI - FIS-16740-INOX	";2.111,99;0;;;;Loja Tray
+16529500782;"2940073	";Forno Elétrico Fischer de Embutir Platinium 43 litros com Air Fryer;"PAI - FIS-17419-INOX	";3.761,99;0;;;;Loja Tray
+16529500778;"2940075	";Micro-ondas Fischer de Embutir Platinium 35 litros com Grill;"PAI - FIS-17411-INOX	";5.287,99;0;;;;Loja Tray
+16529486785;;Cooktop Fischer 5Q TC INFINITY Gás Mesa Vidro Branco;"26298-62470	";;;;;;
+16529486783;;Forno Elétrico Fischer Infinity embutir 50 L com Turbo Convection 220v Branco;"15740-19297	";;;;;;
+16529472958;;Kit Infinity Fischer: Forno Elétrico Branco E Cooktop 5b;"2939451-15229	";;;;;;
+16529467842;;Forno Elétrico Fischer INFINITY TOUCH Embutir 82L Branco 220V;"28607-75727	";;;;;;
+16529467840;;Forno Micro-ondas Fischer Embutir INFINITY 25L c/Dourador Branco 220V;"25378-75147	";;;;;;
+16529455651;;Micro-ondas Fischer Embutir 25L Com Dourador Preto 127V;"25378-55524	";;;;;;
+16529444805;;Cooktop Fischer 5Q TC Infinity Duo Gás Mesa Vidro Eiger;"31800-82261	";;;;;;
+16529444803;;Coifa de Parede Fischer Infinity Dig. Touch 90 cm 220V Eiger;"19902-82060	";;;;;;
+16529444801;;Forno Elétrico Fischer Infinity embutir 50 L com Turbo Convection 220V Eiger;"15740-82006	";;;;;;
+16529426714;;Kit Infinity Fischer Forno Azul Coifa Cooktop 5b Duo;"2939421-15169	";;;;;;
+16529405687;;Coifa de Ilha Fischer TRADITION LINE 90 cm Inox 220v;"17789-19176	";;;;;;
+16529177786;"16345	";Forno Elétrico Fischer de Embutir Infinity 50 litros Azul Voltagem:220;"VAR - 15740-82006-AZUL	";2.170,99;0;;;;Loja Tray
+16529177773;"16343	";Forno Elétrico Fischer de Embutir Infinity 50 litros Azul Voltagem:127;"VAR - 15740-82007-AZUL	";2.170,99;0;;;;Loja Tray
+16529177763;"16341	";Forno Elétrico Fischer de Embutir Infinity 50 litros Branco Voltagem:220;"VAR - 15740-19297-BRANCO	";2.131,99;0;;;;Loja Tray
+16529177759;"16339	";Forno Elétrico Fischer de Embutir Infinity 50 litros Branco Voltagem:127;"VAR - 15740-19296-BRANCO	";2.131,99;0;;;;Loja Tray
+16529177751;"16337	";Forno Elétrico Fischer de Embutir Infinity 50 litros Preto Voltagem:220;"VAR - 15740-17056-PRETO	";2.135,99;0;;;;Loja Tray
+16529177741;"16335	";Forno Elétrico Fischer de Embutir Infinity 50 litros Preto Voltagem:127;"VAR - 15740-17055-PRETO	";2.135,99;0;;;;Loja Tray
+16529177734;"16333	";Forno Elétrico Fischer de Embutir Infinity 50 litros Inox Voltagem:220;"VAR - 15740-27309-INOX	";2.218,99;0;;;;Loja Tray
+16529177728;"16331	";Forno Elétrico Fischer de Embutir Infinity 50 litros Inox Voltagem:127;"VAR - 15740-27308-INOX	";2.218,99;0;;;;Loja Tray
+16529177724;"2940067	";Forno Elétrico Fischer de Embutir Infinity 50 litros Azul;"PAI - FIS-15740-AZUL	";2.170,99;0;;;;Loja Tray
+16529177720;"2940065	";Forno Elétrico Fischer de Embutir Infinity 50 litros Branco;"PAI - FIS-15740-BRANCO	";2.131,99;0;;;;Loja Tray
+16529177715;"2940063	";Forno Elétrico Fischer de Embutir Infinity 50 litros Preto;"PAI - FIS-15740-PRETO	";2.135,99;0;;;;Loja Tray
+16527709260;"2940059	";Micro-ondas de Embutir Fischer Infinity 25 litros Inox;"PAI - FIS-25378-INOX	";3.476,99;0;;;;Loja Tray
+16527709262;"2940193	";Baqueta 5A Liverpool Luminous Series 3 Pares Neon Fluorescente;"PAI - LIV-NEON-5A-CRS-3P	";87,99;0;;;;Loja Tray
+16527709263;"2940191	";Baqueta 7A Liverpool Luminous Series 3 Pares Neon Fluorescente;"PAI - LIV-NEON-7A-CRS-3P	";87,99;0;;;;Loja Tray
+16527709264;"16327	";Micro-ondas de Embutir Fischer Infinity 25 litros Inox Voltagem:127;"VAR - 25378-55520-INOX	";3.476,99;0;;;;Loja Tray
+16527709265;"16329	";Micro-ondas de Embutir Fischer Infinity 25 litros Inox Voltagem:220;"VAR - 25378-55522-INOX	";3.476,99;0;;;;Loja Tray
+16527709269;"16547	";Baqueta 5A Liverpool Luminous Series 3 Pares Neon Fluorescente Cor:Variadas;"VAR - 11667-CRS-3P-PNK/11668-CRS-3P-VD/11669-CRS-3P-RX	";87,99;0;;;;Loja Tray
+16527709273;"16545	";Baqueta 7A Liverpool Luminous Series 3 Pares Neon Fluorescente Cor:Variadas;"VAR - 11664-CRS-3P-PNK/11665-CRS-3P-VD/11666-CRS-3P-RX	";87,99;0;;;;Loja Tray
+16527807398;"2940049	";Caixa Ativa com Bateria Pro Bass Underground 15;"PAI - UNDERGROUND15	";1.624,97;0;;;;Loja Tray
+16527807409;"16317	";Caixa Ativa com Bateria Pro Bass Underground 15 Cor: Preta;"VAR - UNDERGROUND15	";1.624,97;0;;;;Loja Tray
+16528910938;"2940051	";Kit 3 Baqueta Liverpool Mais Procurados 5A 5B 7A Ponta de Madeira;"PAI - LIV-KIT-NTJ-3P	";39,99;0;;;;Loja Tray
+16528910940;"2940053	";Kit 3 Baqueta Liverpool Nirvana 5A 5B 7A Ponta de Madeira;"PAI - LIV-KIT-NIR-3P	";39,99;0;;;;Loja Tray
+16528910944;"2940055	";Kit 3 Baqueta Liverpool Tennessee 5A 5B 7A Ponta de Madeira;"PAI - LIV-KIT-TEN-3P	";39,99;0;;;;Loja Tray
+16528910947;"2940057	";Kit 3 Baqueta Liverpool Jatobá 5A 5B 7A Ponta de Madeira;"PAI - LIV-KIT-TNJ-3P	";68,96;0;;;;Loja Tray
+16528910952;"16319	";Kit 3 Baqueta Liverpool Mais Procurados 5A 5B 7A Ponta de Madeira Cor:Natural;"VAR - TN 5AM-NTJ/NI 7AM-NTJ/TNJAT 5BM-NTJ	";39,99;0;;;;Loja Tray
+16528910958;"16321	";Kit 3 Baqueta Liverpool Nirvana 5A 5B 7A Ponta de Madeira Cor:Natural;"VAR - NI 5AM-3P/NI 5BM-3P/NI 7AM-3P	";39,99;0;;;;Loja Tray
+16528910965;"16323	";Kit 3 Baqueta Liverpool Tennessee 5A 5B 7A Ponta de Madeira Cor:Natural;"VAR - TN 5AM-3P/TN 5BM-3P/TN 7AM-3P	";39,99;0;;;;Loja Tray
+16528910970;"16325	";Kit 3 Baqueta Liverpool Jatobá 5A 5B 7A Ponta de Madeira Cor:Natural;"VAR - TNJAT 5AM-3P/TNJAT 5BM-3P/TNJAT 7AM-3P	";68,96;0;;;;Loja Tray
+16529153556;;Kit Infinity Fischer: Coifa Ilha E Cooktop A Gás 5b Inox;"2939457-15241	";;;;;;
+16529177712;"2940061	";Forno Elétrico Fischer de Embutir Infinity 50 litros Inox;"PAI - FIS-15740-INOX	";2.218,99;0;;;;Loja Tray
