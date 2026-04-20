@@ -30,7 +30,6 @@ export function SearchBar({ expanded }: SearchBarProps) {
     width: 0,
   });
 
-  // Apenas controla fechamento se não estiver expandido
   useEffect(() => {
     if (!expanded) {
       setDropdownOpen(false);
@@ -164,12 +163,12 @@ export function SearchBar({ expanded }: SearchBarProps) {
 
   return (
     <>
-      <div ref={wrapperRef} className="relative w-full max-w-md">
+      <div ref={wrapperRef} className="relative w-full max-w-full sm:max-w-md">
         <div
           ref={inputContainerRef}
-          className="flex items-center w-full bg-[#111111]/80 backdrop-blur-xl border border-white/10 rounded-md shadow-lg px-3 py-2 transition-all"
+          className="flex min-h-[40px] w-full min-w-0 items-center rounded-md border border-white/10 bg-[#111111]/80 px-3 py-2 shadow-lg backdrop-blur-xl transition-all sm:min-h-0"
         >
-          <Search className="w-4 h-4 text-dashboard-text-muted mr-2" />
+          <Search className="mr-2 h-4 w-4 flex-shrink-0 text-dashboard-text-muted" />
 
           <input
             ref={inputRef}
@@ -183,20 +182,22 @@ export function SearchBar({ expanded }: SearchBarProps) {
               }
             }}
             placeholder={t("Pesquisar")}
-            className="flex-1 bg-transparent outline-none text-sm text-dashboard-text-primary placeholder-dashboard-text-muted"
+            className="min-w-0 flex-1 bg-transparent text-sm text-dashboard-text-primary outline-none placeholder-dashboard-text-muted"
           />
 
-          <button
-            type="button"
-            onClick={() => {
-              setQuery("");
-              setDropdownOpen(false);
-              inputRef.current?.blur();
-            }}
-            className="p-1 text-dashboard-text-muted hover:text-red-500 cursor-pointer transition"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {query.trim().length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery("");
+                setDropdownOpen(false);
+                inputRef.current?.blur();
+              }}
+              className="ml-2 flex-shrink-0 cursor-pointer p-1 text-dashboard-text-muted transition hover:text-red-500"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 

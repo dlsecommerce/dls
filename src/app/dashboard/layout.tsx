@@ -16,8 +16,8 @@ export default function DashboardLayout({
   const loadingRef = useRef<LoadingBarRef | null>(null);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#0a0a0a] relative">
-      <div className="flex flex-col flex-1 min-h-screen relative w-full">
+    <div className="relative flex h-screen w-screen overflow-hidden bg-[#0a0a0a]">
+      <div className="relative flex min-h-screen w-full flex-1 flex-col">
         <header
           className="
             sticky top-0 z-40 border-b border-white/10
@@ -28,7 +28,9 @@ export default function DashboardLayout({
           <DashboardHeader />
         </header>
 
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto px-3 py-4 sm:p-6">
+          {children}
+        </main>
 
         <ChatBubble />
       </div>

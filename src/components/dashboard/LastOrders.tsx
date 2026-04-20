@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 const MarketplaceLogo = ({ marketplace }) => {
   if (marketplace === "mercado_livre") {
     return (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
         <rect width="24" height="24" rx="4" fill="#FFE600"/>
         <path d="M8 16C8 17.1046 8.89543 18 10 18C11.1046 18 12 17.1046 12 16C12 14.8954 11.1046 14 10 14C8.89543 14 8 14.8954 8 16Z" fill="#2D3277"/>
         <path d="M14 16C14 17.1046 14.8954 18 16 18C17.1046 18 18 17.1046 18 16C18 14.8954 17.1046 14 16 14C14.8954 14 14 14.8954 14 16Z" fill="#2D3277"/>
@@ -16,10 +16,10 @@ const MarketplaceLogo = ({ marketplace }) => {
       </svg>
     );
   }
-  
+
   if (marketplace === "shopee") {
     return (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
         <rect width="24" height="24" rx="4" fill="#EE4D2D"/>
         <path d="M12 6L14.5 11H9.5L12 6Z" fill="white"/>
         <path d="M8 12L10 16H14L16 12H8Z" fill="white"/>
@@ -27,10 +27,9 @@ const MarketplaceLogo = ({ marketplace }) => {
       </svg>
     );
   }
-  
-  // Loja Virtual
+
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
       <rect width="24" height="24" rx="4" fill="#8b5cf6"/>
       <path d="M5 10H19V18C19 18.5523 18.5523 19 18 19H6C5.44772 19 5 18.5523 5 18V10Z" fill="white"/>
       <path d="M3 6C3 5.44772 3.44772 5 4 5H20C20.5523 5 21 5.44772 21 6V10H3V6Z" fill="white"/>
@@ -63,28 +62,34 @@ export default function UltimosPedidosWidget({ pedidos }) {
   };
 
   return (
-    <GlassmorphicCard className="p-6">
+    <GlassmorphicCard className="p-4 sm:p-6">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.4 }}
       >
-        <div className="flex items-center justify-between mb-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4 sm:mb-6">
           <div>
-            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-              <ShoppingBag className="w-5 h-5 text-[#2699fe]" />
+            <h3 className="text-base sm:text-xl font-bold text-white flex items-center gap-2">
+              <ShoppingBag className="w-4 h-4 sm:w-5 sm:h-5 text-[#2699fe]" />
               Últimos Pedidos
             </h3>
-            <p className="text-sm text-neutral-400 mt-1">Pedidos mais recentes</p>
+            <p className="text-xs sm:text-sm text-neutral-400 mt-1">
+              Pedidos mais recentes
+            </p>
           </div>
-          <Clock className="w-5 h-5 text-neutral-500" />
+          <Clock className="w-4 h-4 sm:w-5 sm:h-5 text-neutral-500" />
         </div>
 
-        <div className="space-y-3">
+        {/* Lista */}
+        <div className="space-y-2 sm:space-y-3">
           {pedidos.length === 0 ? (
-            <div className="text-center py-12">
-              <ShoppingBag className="w-12 h-12 text-neutral-600 mx-auto mb-3" />
-              <p className="text-neutral-400 text-sm">Nenhum pedido ainda</p>
+            <div className="text-center py-10 sm:py-12">
+              <ShoppingBag className="w-10 h-10 sm:w-12 sm:h-12 text-neutral-600 mx-auto mb-3" />
+              <p className="text-neutral-400 text-xs sm:text-sm">
+                Nenhum pedido ainda
+              </p>
             </div>
           ) : (
             pedidos.slice(0, 5).map((pedido, idx) => (
@@ -95,28 +100,33 @@ export default function UltimosPedidosWidget({ pedidos }) {
                 transition={{ delay: 0.1 * idx }}
                 className="group"
               >
-                <div className="flex items-center gap-4 p-4 rounded-xl bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 hover:border-white/10 transition-all duration-300">
+                <div className="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl bg-white/[0.02] hover:bg-white/[0.05] border border-white/5 hover:border-white/10 transition-all duration-300">
+
+                  {/* Logo */}
                   <div className="flex-shrink-0">
                     <MarketplaceLogo marketplace={pedido.marketplace} />
                   </div>
-                  
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-white truncate text-sm">
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <p className="font-semibold text-white truncate text-xs sm:text-sm">
                       #{pedido.numero_pedido}
                     </p>
-                    <p className="text-xs text-neutral-500 truncate">
+                    <p className="text-[11px] sm:text-xs text-neutral-500 truncate">
                       {pedido.produto_nome || 'Produto'}
                     </p>
                   </div>
 
-                  <div className="text-right flex-shrink-0">
-                    <p className="font-bold text-[#2699fe] text-sm mb-1">
+                  {/* Valor + Status */}
+                  <div className="flex flex-col items-end flex-shrink-0 gap-1">
+                    <p className="font-bold text-[#2699fe] text-xs sm:text-sm">
                       R$ {(pedido.valor || 0).toFixed(2)}
                     </p>
-                    <Badge className={`text-xs ${getStatusColor(pedido.status)}`}>
+                    <Badge className={`text-[10px] sm:text-xs ${getStatusColor(pedido.status)}`}>
                       {getStatusLabel(pedido.status)}
                     </Badge>
                   </div>
+
                 </div>
               </motion.div>
             ))

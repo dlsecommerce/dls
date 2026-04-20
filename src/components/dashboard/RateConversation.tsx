@@ -11,47 +11,61 @@ export default function TaxaConversaoWidget() {
   ];
 
   return (
-    <GlassmorphicCard className="p-6">
+    <GlassmorphicCard className="p-4 sm:p-6">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.5 }}
       >
-        <div className="flex items-center gap-3 mb-6">
-          <TrendingUp className="w-6 h-6 text-[#10b981]" />
-          <div>
-            <h3 className="text-xl font-bold text-white">Taxa de Conversão</h3>
-            <p className="text-sm text-neutral-400">Performance por canal de venda</p>
+        <div className="flex items-start sm:items-center gap-3 mb-4 sm:mb-6">
+          <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-[#10b981] flex-shrink-0 mt-0.5 sm:mt-0" />
+          
+          <div className="min-w-0">
+            <h3 className="text-base sm:text-xl font-bold text-white">
+              Taxa de Conversão
+            </h3>
+            <p className="text-xs sm:text-sm text-neutral-400 mt-1">
+              Performance por canal de venda
+            </p>
           </div>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
           {taxas.map((item, idx) => (
             <motion.div
               key={idx}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.6 + idx * 0.1 }}
-              className="relative p-6 rounded-xl border border-white/10 hover:border-white/20 transition-all duration-300 overflow-hidden group"
+              className="relative overflow-hidden rounded-xl border border-white/10 p-4 sm:p-6 hover:border-white/20 transition-all duration-300 group"
               style={{
                 background: `linear-gradient(135deg, ${item.cor}15 0%, ${item.cor}05 100%)`
               }}
             >
-              <div className="absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl opacity-20 group-hover:opacity-30 transition-opacity"
-                   style={{ background: item.cor }}
+              <div
+                className="absolute top-0 right-0 w-24 h-24 sm:w-32 sm:h-32 rounded-full blur-3xl opacity-15 sm:opacity-20 group-hover:opacity-30 transition-opacity"
+                style={{ background: item.cor }}
               />
-              
+
               <div className="relative z-10">
-                <p className="text-sm text-neutral-400 mb-2">{item.marketplace}</p>
-                <p className="text-4xl font-bold text-white mb-2">{item.taxa}%</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-green-400 font-semibold">
+                <p className="text-xs sm:text-sm text-neutral-400 mb-2 truncate">
+                  {item.marketplace}
+                </p>
+
+                <p className="text-3xl sm:text-4xl font-bold text-white mb-2 leading-none">
+                  {item.taxa}%
+                </p>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs sm:text-sm text-green-400 font-semibold">
                     ↑ {item.crescimento}
                   </span>
-                  <span className="text-xs text-neutral-500">vs. mês anterior</span>
+                  <span className="text-[11px] sm:text-xs text-neutral-500">
+                    vs. mês anterior
+                  </span>
                 </div>
 
-                <div className="mt-4 h-2 bg-white/10 rounded-full overflow-hidden">
+                <div className="mt-4 sm:mt-5 h-2 bg-white/10 rounded-full overflow-hidden">
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: `${item.taxa * 10}%` }}

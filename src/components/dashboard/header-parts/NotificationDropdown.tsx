@@ -312,6 +312,7 @@ export function NotificationDropdown() {
           className="relative cursor-pointer rounded-md p-2 transition-all text-dashboard-text-muted hover:text-dashboard-text-primary hover:bg-white/5"
         >
           <Bell className="w-5 h-5" />
+
           {!isInitializing && unreadCount > 0 && (
             <Badge className="absolute -top-1 -right-1 z-50 flex h-5 w-5 items-center justify-center bg-red-500 p-0 text-xs text-white">
               {unreadCount}
@@ -321,11 +322,14 @@ export function NotificationDropdown() {
       </DropdownMenuTrigger>
 
       <DropdownMenuContent
-        align="end"
-        className="w-80 border-0 bg-transparent p-0 shadow-none z-50"
+        align="center"
+        side="bottom"
+        sideOffset={10}
+        collisionPadding={12}
+        className="z-50 w-[min(340px,calc(100vw-24px))] border-0 bg-transparent p-0 shadow-none sm:w-80"
       >
         <GlassmorphicCard className="max-h-96 overflow-hidden rounded-lg border border-white/10 bg-[#111111]/80 backdrop-blur-xl shadow-lg">
-          <div className="flex items-center justify-between border-b border-white/10 p-3 sm:p-4">
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 p-3 sm:p-4">
             <h3 className="text-sm font-semibold text-white sm:text-base">
               Notificações
             </h3>
@@ -334,7 +338,7 @@ export function NotificationDropdown() {
               <button
                 type="button"
                 onClick={markAllAsRead}
-                className="cursor-pointer text-xs font-medium text-[#2799fe] hover:underline sm:text-sm"
+                className="cursor-pointer text-right text-[11px] font-medium text-[#2799fe] hover:underline sm:text-sm"
               >
                 Marcar todas como lidas
               </button>
@@ -357,13 +361,17 @@ export function NotificationDropdown() {
 
                 const content = (
                   <>
-                    <h4 className="text-sm font-medium text-white">{n.title}</h4>
+                    <h4 className="text-sm font-medium text-white break-words">
+                      {n.title}
+                    </h4>
 
-                    <p className="mt-1 text-[11px] font-medium text-[#2799fe]">
+                    <p className="mt-1 text-[11px] font-medium text-[#2799fe] break-words">
                       {actorDisplayName}
                     </p>
 
-                    <p className="mt-1 text-xs text-neutral-400">{n.message}</p>
+                    <p className="mt-1 text-xs leading-5 text-neutral-400 break-words">
+                      {n.message}
+                    </p>
 
                     <p className="mt-1 text-[10px] text-neutral-500">
                       {formatDate(n.created_at)}
@@ -379,12 +387,12 @@ export function NotificationDropdown() {
                     } hover:bg-white/5`}
                   >
                     <div
-                      className={`mt-2 h-2 w-2 rounded-full ${
+                      className={`mt-2 h-2 w-2 flex-shrink-0 rounded-full ${
                         isRead ? "bg-neutral-500" : "bg-blue-500"
                       }`}
                     />
 
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 pr-1">
                       {n.link ? (
                         <Link
                           href={n.link}
@@ -407,7 +415,7 @@ export function NotificationDropdown() {
                       type="button"
                       onClick={(e) => hideNotification(e, n.id)}
                       disabled={closingIds.includes(n.id)}
-                      className="mt-0.5 cursor-pointer rounded p-1 text-neutral-400 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      className="mt-0.5 flex-shrink-0 cursor-pointer rounded p-1.5 text-neutral-400 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                       title="Ocultar notificação"
                     >
                       <X className="h-4 w-4" />

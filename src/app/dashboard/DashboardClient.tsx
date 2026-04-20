@@ -72,18 +72,19 @@ export default function DashboardClient() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-4 md:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] px-3 py-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Cabeçalho com filtros */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="mb-8 flex flex-col md:flex-row md:items-center md:justify-end gap-4"
+          className="mb-6 flex items-center gap-3 md:mb-8 md:flex-row md:items-center md:justify-end md:gap-4"
         >
-          <Calendar className="w-5 h-5 text-neutral-400" />
+          <Calendar className="h-5 w-5 flex-shrink-0 text-neutral-400" />
+
           <Select value={periodo} onValueChange={handlePeriodoChange}>
-            <SelectTrigger className="w-48 bg-white/5 border-white/10 text-white rounded-xl hover:bg-white/10 transition-all">
+            <SelectTrigger className="h-10 flex-1 bg-white/5 border-white/10 text-white rounded-xl hover:bg-white/10 transition-all md:w-48 md:flex-none md:h-auto">
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-[#1a1a1a] border-white/10">
@@ -101,7 +102,7 @@ export default function DashboardClient() {
                 variant="outline"
                 size="icon"
                 onClick={handleFiltroClick}
-                className={`border-white/10 hover:bg-white/5 rounded-xl transition-all ${
+                className={`h-10 w-10 flex-shrink-0 border-white/10 hover:bg-white/5 rounded-xl transition-all cursor-pointer md:h-10 md:w-10 ${
                   filtroMarketplace !== "todos"
                     ? "bg-[#2699fe]/20 border-[#2699fe]/50"
                     : "text-neutral-400 hover:text-white"
@@ -110,7 +111,7 @@ export default function DashboardClient() {
                 <Filter className="w-4 h-4" />
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="bg-[#1a1a1a] border-white/10 w-64">
+            <PopoverContent className="bg-[#1a1a1a] border-white/10 w-[calc(100vw-32px)] max-w-64">
               <p className="text-sm font-semibold text-white mb-3">
                 Filtrar por Marketplace
               </p>
@@ -118,7 +119,7 @@ export default function DashboardClient() {
                 <button
                   key={v}
                   onClick={() => setFiltroMarketplace(v)}
-                  className={`w-full text-left px-3 py-2 rounded-lg transition-all ${
+                  className={`w-full text-left px-3 py-2 rounded-lg transition-all cursor-pointer ${
                     filtroMarketplace === v
                       ? "bg-[#2699fe]/20 text-[#2699fe] border border-[#2699fe]/30"
                       : "text-neutral-400 hover:bg-white/5 hover:text-white"
@@ -132,7 +133,7 @@ export default function DashboardClient() {
         </motion.div>
 
         {/* Cards principais */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 gap-4 mb-6 md:grid-cols-3 md:gap-6 md:mb-8">
           <AnimatedMetricCard
             title="Total de Vendas"
             value={`R$ ${totalVendas.toFixed(2)}`}
@@ -160,48 +161,60 @@ export default function DashboardClient() {
         </div>
 
         {/* Gráfico e widgets */}
-        <div className="grid lg:grid-cols-3 gap-6 mb-8">
+        <div className="grid gap-4 mb-6 lg:grid-cols-3 md:gap-6 md:mb-8">
           <div className="lg:col-span-2">
             <SalesChart />
           </div>
           <QuickActions />
         </div>
 
-        <div className="mb-8">
+        <div className="mb-6 md:mb-8">
           <TaxaConversaoWidget />
         </div>
 
-        <div className="grid lg:grid-cols-2 gap-6 mb-8">
+        <div className="grid gap-4 mb-6 lg:grid-cols-2 md:gap-6 md:mb-8">
           <TopProductsWidget produtos={[]} />
           <UltimosPedidosWidget pedidos={[]} />
         </div>
 
         {/* Cards finais */}
-        <div className="grid md:grid-cols-3 gap-6">
-          <GlassmorphicCard className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">Crescimento Mensal</h3>
+        <div className="grid gap-4 md:grid-cols-3 md:gap-6">
+          <GlassmorphicCard className="p-5 md:p-6">
+            <div className="flex items-center justify-between mb-3 md:mb-4">
+              <h3 className="text-base font-bold text-white md:text-lg">
+                Crescimento Mensal
+              </h3>
               <ArrowUpRight className="w-5 h-5 text-green-400" />
             </div>
-            <p className="text-3xl font-bold text-white mb-2">+24.5%</p>
+            <p className="text-2xl font-bold text-white mb-2 md:text-3xl">
+              +24.5%
+            </p>
             <p className="text-sm text-neutral-400">Comparado ao mês anterior</p>
           </GlassmorphicCard>
 
-          <GlassmorphicCard className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">Ticket Médio</h3>
+          <GlassmorphicCard className="p-5 md:p-6">
+            <div className="flex items-center justify-between mb-3 md:mb-4">
+              <h3 className="text-base font-bold text-white md:text-lg">
+                Ticket Médio
+              </h3>
               <DollarSign className="w-5 h-5 text-[#2699fe]" />
             </div>
-            <p className="text-3xl font-bold text-white mb-2">R$ 156,80</p>
+            <p className="text-2xl font-bold text-white mb-2 md:text-3xl">
+              R$ 156,80
+            </p>
             <p className="text-sm text-neutral-400">Por pedido realizado</p>
           </GlassmorphicCard>
 
-          <GlassmorphicCard className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">Estoque Total</h3>
+          <GlassmorphicCard className="p-5 md:p-6">
+            <div className="flex items-center justify-between mb-3 md:mb-4">
+              <h3 className="text-base font-bold text-white md:text-lg">
+                Estoque Total
+              </h3>
               <Package className="w-5 h-5 text-[#8b5cf6]" />
             </div>
-            <p className="text-3xl font-bold text-white mb-2">872</p>
+            <p className="text-2xl font-bold text-white mb-2 md:text-3xl">
+              872
+            </p>
             <p className="text-sm text-neutral-400">Unidades disponíveis</p>
           </GlassmorphicCard>
         </div>

@@ -156,11 +156,11 @@ export function UserProfileDropdown() {
 
       <DropdownMenuContent
         align="end"
-        className="w-72 border-0 bg-transparent p-0 shadow-none"
+        className="w-[calc(100vw-24px)] max-w-72 border-0 bg-transparent p-0 shadow-none sm:w-72"
       >
         <GlassmorphicCard className="rounded-xl p-2">
-          <div className="flex items-center gap-3 px-3 py-2 border-b border-white/10 relative">
-            <div className="relative">
+          <div className="relative flex items-center gap-3 border-b border-white/10 px-3 py-2">
+            <div className="relative flex-shrink-0">
               <Image
                 src={avatarUrl}
                 alt="avatar"
@@ -187,11 +187,14 @@ export function UserProfileDropdown() {
                 }`}
               />
             </div>
-            <div className="flex flex-col">
-              <span className="text-white text-sm">{profile.name}</span>
-              <span className="text-xs text-neutral-400">{profile.email}</span>
+
+            <div className="flex min-w-0 flex-col">
+              <span className="truncate text-sm text-white">{profile.name}</span>
+              <span className="truncate text-xs text-neutral-400">
+                {profile.email}
+              </span>
               {profile.status_message && !editMessage && (
-                <span className="text-[11px] italic text-neutral-500 line-clamp-1">
+                <span className="line-clamp-1 text-[11px] italic text-neutral-500">
                   “{profile.status_message}”
                 </span>
               )}
@@ -200,7 +203,7 @@ export function UserProfileDropdown() {
 
           <DropdownMenuItem
             disabled
-            className="text-[11px] uppercase text-neutral-400 mt-2"
+            className="mt-2 text-[11px] uppercase text-neutral-400"
           >
             Status
           </DropdownMenuItem>
@@ -210,14 +213,14 @@ export function UserProfileDropdown() {
               key={opt.key}
               onClick={() => handleChangeStatus(opt.key)}
               disabled={changingStatus}
-              className="flex items-center justify-between cursor-pointer hover:bg-white/5 rounded-md"
+              className="flex items-center justify-between cursor-pointer rounded-md hover:bg-white/5"
             >
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <span className={`w-3 h-3 rounded-full ${opt.color}`} />
                 <span>{opt.label}</span>
               </div>
               {profile.status === opt.key && (
-                <Check className="w-4 h-4 text-neutral-400" />
+                <Check className="w-4 h-4 text-neutral-400 flex-shrink-0" />
               )}
             </DropdownMenuItem>
           ))}
@@ -226,31 +229,31 @@ export function UserProfileDropdown() {
             <DropdownMenuItem
               onSelect={(e) => e.preventDefault()}
               onClick={() => setEditMessage(true)}
-              className="flex items-center gap-2 hover:bg-white/5 rounded-md cursor-pointer mt-1"
+              className="mt-1 flex items-center gap-2 rounded-md cursor-pointer hover:bg-white/5"
             >
-              <MessageSquare className="w-4 h-4 text-neutral-400" />
+              <MessageSquare className="w-4 h-4 text-neutral-400 flex-shrink-0" />
               <span>Definir mensagem de status</span>
             </DropdownMenuItem>
           ) : (
-            <div className="p-3 bg-[#1a1a1a] border border-white/10 rounded-md flex flex-col gap-2 mt-2">
+            <div className="mt-2 flex flex-col gap-2 rounded-md border border-white/10 bg-[#1a1a1a] p-3">
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="Digite sua mensagem..."
                 maxLength={120}
-                className="w-full h-20 text-sm p-2 rounded-md bg-[#111] border border-white/10 text-white focus:ring-2 focus:ring-[#2699fe] resize-none"
+                className="w-full h-20 rounded-md border border-white/10 bg-[#111] p-2 text-sm text-white resize-none focus:ring-2 focus:ring-[#2699fe]"
               />
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end sm:gap-2">
                 <button
                   onClick={() => setEditMessage(false)}
-                  className="text-xs text-neutral-400 flex items-center gap-1 hover:text-neutral-300"
+                  className="flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-300 cursor-pointer"
                 >
                   <X className="w-3 h-3" /> Cancelar
                 </button>
                 <button
                   onClick={handleSaveMessage}
                   disabled={saving}
-                  className="text-xs text-[#2699fe] flex items-center gap-1 hover:text-[#58b1ff]"
+                  className="flex items-center gap-1 text-xs text-[#2699fe] hover:text-[#58b1ff] cursor-pointer"
                 >
                   <Check className="w-3 h-3" />
                   {saving ? "Salvando..." : "Salvar"}
@@ -265,14 +268,14 @@ export function UserProfileDropdown() {
             onClick={() => router.push("/dashboard/configuracao?tab=perfil")}
             className="cursor-pointer hover:bg-white/5"
           >
-            <User className="w-4 h-4 mr-2" /> Perfil
+            <User className="w-4 h-4 mr-2 flex-shrink-0" /> Perfil
           </DropdownMenuItem>
 
           <DropdownMenuItem
             onClick={() => router.push("/dashboard/configuracao")}
             className="cursor-pointer hover:bg-white/5"
           >
-            <Settings className="w-4 h-4 mr-2" /> Configurações
+            <Settings className="w-4 h-4 mr-2 flex-shrink-0" /> Configurações
           </DropdownMenuItem>
 
           <DropdownMenuSeparator className="my-2 bg-white/10" />
@@ -281,7 +284,7 @@ export function UserProfileDropdown() {
             onClick={handleSignOut}
             className="text-red-500 hover:bg-red-500/10 cursor-pointer"
           >
-            <LogOut className="w-4 h-4 mr-2" /> Sair
+            <LogOut className="w-4 h-4 mr-2 flex-shrink-0" /> Sair
           </DropdownMenuItem>
         </GlassmorphicCard>
       </DropdownMenuContent>

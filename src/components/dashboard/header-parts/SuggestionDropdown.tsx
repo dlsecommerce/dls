@@ -45,12 +45,12 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
     if (!mounted) return;
 
     const updateSafeWidth = () => {
+      const isMobile = window.innerWidth < 640;
       const availableWidth = window.innerWidth - position.left - 24;
 
-      const calculatedWidth = Math.min(
-        Math.max(position.width + 100, 560),
-        availableWidth
-      );
+      const calculatedWidth = isMobile
+        ? Math.min(position.width, availableWidth)
+        : Math.min(Math.max(position.width + 100, 560), availableWidth);
 
       setSafeWidth(calculatedWidth);
     };
@@ -87,14 +87,14 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
           shadow-[0_18px_50px_rgba(0,0,0,0.35)]
         "
       >
-        <div className="border-b border-white/5 px-4 py-3">
-          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.08em] text-white/45">
+        <div className="border-b border-white/5 px-3 py-3 sm:px-4">
+          <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.08em] text-white/45 sm:text-xs">
             <Search className="h-4 w-4" />
             Sugestões de pesquisa
           </div>
         </div>
 
-        <div className="max-h-[420px] overflow-y-auto py-2">
+        <div className="max-h-[420px] overflow-y-auto py-1 sm:py-2">
           {sugestoes.map((s, i) => {
             const isSelected = i === indiceSelecionado;
 
@@ -105,8 +105,9 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => onSelect(s.href)}
                 className={`
-                  group relative flex w-full cursor-pointer items-start justify-between gap-5
-                  px-4 py-4 text-left transition-all duration-150
+                  group relative flex w-full cursor-pointer flex-col items-start gap-3
+                  px-3 py-3 text-left transition-all duration-150
+                  sm:flex-row sm:items-start sm:justify-between sm:gap-5 sm:px-4 sm:py-4
                   ${isSelected ? "bg-[#1a8ceb]/12" : "hover:bg-[#1a8ceb]/8"}
                 `}
               >
@@ -124,7 +125,7 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
                 <div className="min-w-0 flex-1 pl-2">
                   <div
                     className={`
-                      text-base font-semibold transition-colors
+                      text-sm font-semibold transition-colors sm:text-base
                       ${
                         isSelected
                           ? "text-white"
@@ -138,7 +139,7 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
                   {s.description && (
                     <div
                       className={`
-                        mt-1 text-sm leading-relaxed transition-colors
+                        mt-1 text-xs leading-5 transition-colors sm:text-sm sm:leading-relaxed
                         ${
                           isSelected
                             ? "text-white/75"
@@ -151,11 +152,11 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
                   )}
                 </div>
 
-                <div className="shrink-0 self-center">
+                <div className="shrink-0 self-start sm:self-center">
                   <span
                     className={`
-                      inline-flex items-center rounded-lg border px-3 py-1.5
-                      text-xs font-medium uppercase tracking-wide transition-all
+                      inline-flex items-center rounded-lg border px-2.5 py-1 text-[10px]
+                      font-medium uppercase tracking-wide transition-all sm:px-3 sm:py-1.5 sm:text-xs
                       ${
                         isSelected
                           ? "border-[#1a8ceb]/30 bg-[#1a8ceb]/10 text-[#58b7ff]"

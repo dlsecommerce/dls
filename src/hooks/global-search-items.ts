@@ -11,7 +11,7 @@ export const GLOBAL_SEARCH_ITEMS: GlobalSearchItem[] = [
   {
     id: "1",
     label: "Precificação Individual",
-    href: "/dashboard/precificacao-individual",
+    href: "/dashboard/precificacao/precificacao-individual",
     category: "Precificação",
     description: "Acessar tela de precificação individual",
     keywords: ["precificação individual", "individual", "preço individual"],

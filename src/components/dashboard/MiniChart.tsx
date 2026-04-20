@@ -13,16 +13,16 @@ export default function MiniChart({ data, color = "#2699fe" }) {
   ];
 
   return (
-    <div className="h-16 w-full">
+    <div className="w-full h-14 sm:h-16 px-1">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={chartData}>
           <Line 
             type="monotone" 
             dataKey="value" 
             stroke={color}
-            strokeWidth={2}
+            strokeWidth={2.5} // mais visível no mobile
             dot={false}
-            animationDuration={2000}
+            animationDuration={800} // mais rápido = mais fluido
           />
         </LineChart>
       </ResponsiveContainer>

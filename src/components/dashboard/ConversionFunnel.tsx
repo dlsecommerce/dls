@@ -1,3 +1,5 @@
+"use client";
+
 import React from 'react';
 import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 import { motion } from 'framer-motion';
@@ -12,18 +14,22 @@ export default function ConversionFunnel() {
   ];
 
   return (
-    <GlassmorphicCard className="p-6">
+    <GlassmorphicCard className="p-4 md:p-6">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.5 }}
       >
-        <div className="flex items-center gap-3 mb-8">
-          <TrendingUp className="w-6 h-6 text-[#2699fe]" />
-          <h3 className="text-xl font-bold text-white">Funil de Conversão</h3>
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-6 md:mb-8">
+          <TrendingUp className="w-5 h-5 md:w-6 md:h-6 text-[#2699fe]" />
+          <h3 className="text-lg md:text-xl font-bold text-white">
+            Funil de Conversão
+          </h3>
         </div>
 
-        <div className="space-y-4">
+        {/* Etapas */}
+        <div className="space-y-3 md:space-y-4">
           {stages.map((stage, idx) => (
             <motion.div
               key={idx}
@@ -32,16 +38,28 @@ export default function ConversionFunnel() {
               transition={{ delay: 0.6 + idx * 0.1 }}
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-neutral-400">{stage.label}</span>
+                <span className="text-xs md:text-sm text-neutral-400">
+                  {stage.label}
+                </span>
+
                 <div className="text-right">
-                  <span className="text-lg font-bold text-white">{stage.value.toLocaleString()}</span>
-                  <span className="text-sm text-neutral-500 ml-2">({stage.percent}%)</span>
+                  <span className="text-base md:text-lg font-bold text-white">
+                    {stage.value.toLocaleString()}
+                  </span>
+
+                  <span className="text-xs md:text-sm text-neutral-500 ml-2">
+                    ({stage.percent}%)
+                  </span>
                 </div>
               </div>
-              <div className="relative h-12 rounded-xl overflow-hidden" style={{ backgroundColor: `${stage.color}20` }}>
+
+              <div
+                className="relative h-10 md:h-12 rounded-xl overflow-hidden"
+                style={{ backgroundColor: `${stage.color}20` }}
+              >
                 <motion.div
                   className="absolute inset-0 rounded-xl"
-                  style={{ 
+                  style={{
                     backgroundColor: stage.color,
                     width: `${stage.percent}%`
                   }}
@@ -49,8 +67,9 @@ export default function ConversionFunnel() {
                   animate={{ width: `${stage.percent}%` }}
                   transition={{ duration: 1, delay: 0.7 + idx * 0.1 }}
                 />
+
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-sm font-semibold text-white z-10">
+                  <span className="text-xs md:text-sm font-semibold text-white z-10">
                     {stage.percent}%
                   </span>
                 </div>
@@ -59,20 +78,29 @@ export default function ConversionFunnel() {
           ))}
         </div>
 
+        {/* Resultado final */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 1 }}
-          className="mt-6 p-4 rounded-xl bg-gradient-to-r from-[#10b981]/20 to-[#059669]/10 border border-[#10b981]/30"
+          className="mt-5 md:mt-6 p-3 md:p-4 rounded-xl bg-gradient-to-r from-[#10b981]/20 to-[#059669]/10 border border-[#10b981]/30"
         >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-neutral-400">Taxa de Conversão Global</p>
-              <p className="text-2xl font-bold text-[#10b981]">3.2%</p>
+              <p className="text-xs md:text-sm text-neutral-400">
+                Taxa de Conversão Global
+              </p>
+
+              <p className="text-xl md:text-2xl font-bold text-[#10b981]">
+                3.2%
+              </p>
             </div>
+
             <div className="flex items-center gap-2 text-[#10b981]">
-              <TrendingUp className="w-5 h-5" />
-              <span className="font-semibold">+0.8%</span>
+              <TrendingUp className="w-4 h-4 md:w-5 md:h-5" />
+              <span className="text-sm md:text-base font-semibold">
+                +0.8%
+              </span>
             </div>
           </div>
         </motion.div>

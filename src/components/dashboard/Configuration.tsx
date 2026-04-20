@@ -145,15 +145,15 @@ export default function Configuration() {
 
   return (
     <div className="min-h-[100dvh] w-full text-white">
-      <div className="w-full p-6 lg:p-8 mt-6">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <div className="w-full px-3 py-4 mt-4 sm:p-6 md:mt-6 lg:p-8">
+        <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-4">
           {/* Sidebar */}
-          <GlassmorphicCard className="lg:col-span-1 p-6">
-            <nav className="space-y-2">
+          <GlassmorphicCard className="p-4 lg:col-span-1 md:p-6">
+            <nav className="space-y-1 md:space-y-2">
               {tabs.map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+                  className={`w-full flex items-center gap-3 px-3 md:px-4 py-2.5 md:py-3 rounded-lg transition-all min-h-[44px] ${
                     tab === id
                       ? "bg-[#2699fe]/10 text-[#2699fe] border-l-2 border-[#2699fe]"
                       : "text-neutral-400 hover:bg-white/5"
@@ -165,25 +165,25 @@ export default function Configuration() {
                     });
                   }}
                 >
-                  <Icon className="w-4 h-4" />
-                  <span className="text-[14px]">{label}</span>
+                  <Icon className="w-4 h-4 flex-shrink-0" />
+                  <span className="text-[13px] md:text-[14px]">{label}</span>
                 </button>
               ))}
             </nav>
 
-            <div className="mt-8 pt-8 border-t border-white/10 space-y-2">
+            <div className="mt-6 space-y-2 border-t border-white/10 pt-6 md:mt-8 md:pt-8">
               <button
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-400 hover:bg-red-500/10 transition-all"
+                className="w-full flex items-center gap-3 px-3 md:px-4 py-2.5 md:py-3 rounded-lg text-red-400 hover:bg-red-500/10 transition-all min-h-[44px]"
                 onClick={handleLogout}
               >
-                <LogOut className="w-4 h-4" />
-                <span className="text-[14px]">Sair</span>
+                <LogOut className="w-4 h-4 flex-shrink-0" />
+                <span className="text-[13px] md:text-[14px]">Sair</span>
               </button>
             </div>
           </GlassmorphicCard>
 
           {/* Conteúdo principal */}
-          <GlassmorphicCard className="lg:col-span-3 p-6">
+          <GlassmorphicCard className="p-4 lg:col-span-3 md:p-6">
             <AnimatePresence mode="wait">
               {tab === "perfil" && (
                 <motion.div
