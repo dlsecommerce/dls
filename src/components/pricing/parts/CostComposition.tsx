@@ -65,10 +65,12 @@ export const CostComposition: React.FC<CostCompositionProps> = ({
   return (
     <>
       <div
-        className={`space-y-1.5 ${
+        className={`space-y-2 sm:space-y-1.5 ${
           composicao.length > 10
-            ? "max-h-[360px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#1a8ceb]/30 scrollbar-track-transparent"
-            : ""
+            ? campoAtivo !== null
+              ? "max-h-[360px] overflow-visible pr-1 sm:pr-1 pb-1"
+              : "max-h-[360px] overflow-y-auto pr-1 sm:pr-1 pb-1 overscroll-contain scrollbar-thin scrollbar-thumb-[#1a8ceb]/30 scrollbar-track-transparent"
+            : "overflow-visible"
         }`}
       >
         {composicao.map((item, idx) => (

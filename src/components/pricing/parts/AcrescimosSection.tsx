@@ -39,27 +39,28 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
   };
 
   return (
-    <div className="p-3 rounded-lg bg-black/30 border border-white/10">
-      <h4 className="font-bold text-white text-xs mb-2 flex items-center gap-2">
+    <div className="p-3 sm:p-3 rounded-lg bg-black/30 border border-white/10">
+      <h4 className="font-bold text-sm sm:text-xs text-white mb-3 sm:mb-2 flex items-center gap-2">
         <Calculator className="w-4 h-4 text-[#1a8ceb]" />
         Cálculo de Acréscimos
         <HelpTooltip text="Calculo de Acréscimo." />
       </h4>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-3">
 
         {/* ============================
              PREÇO LOJA
            ============================ */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3 sm:gap-2">
           <div>
-            <Label className="text-neutral-400 text-[10px] mb-1 block">
+            <Label className="text-neutral-400 text-[11px] sm:text-[10px] mb-1.5 sm:mb-1 block">
               Preço Loja (R$)
             </Label>
 
             <Input
               ref={(el) => (acrescimosRefs.current[0] = el!)}
               type="text"
+              inputMode="decimal"
               value={
                 isEditing("a-precoLoja")
                   ? acrescimos.precoLoja
@@ -80,7 +81,7 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
                 })
               }
               onKeyDown={(e) => handleLinearNav(e, 0, acrescimosRefs, 5)}
-              className="bg-black/50 border border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+              className="bg-black/50 border border-white/10 text-white text-sm sm:text-xs rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
             />
           </div>
         </div>
@@ -88,17 +89,18 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
         {/* ============================
              PREÇOS + FRETES
            ============================ */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3 sm:gap-2">
 
           {/* PREÇOS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-2">
             <div>
-              <Label className="text-neutral-400 text-[10px] mb-1 block">
+              <Label className="text-neutral-400 text-[11px] sm:text-[10px] mb-1.5 sm:mb-1 block">
                 Preço Mercado Livre Clássico (R$)
               </Label>
               <Input
                 ref={(el) => (acrescimosRefs.current[1] = el!)}
                 type="text"
+                inputMode="decimal"
                 value={
                   isEditing("a-precoMLClassico")
                     ? acrescimos.precoMercadoLivreClassico
@@ -119,17 +121,18 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
                   })
                 }
                 onKeyDown={(e) => handleLinearNav(e, 1, acrescimosRefs, 5)}
-                className="bg-black/50 border border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                className="bg-black/50 border border-white/10 text-white text-sm sm:text-xs rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
               />
             </div>
 
             <div>
-              <Label className="text-neutral-400 text-[10px] mb-1 block">
+              <Label className="text-neutral-400 text-[11px] sm:text-[10px] mb-1.5 sm:mb-1 block">
                 Preço Mercado Livre Premium (R$)
               </Label>
               <Input
                 ref={(el) => (acrescimosRefs.current[2] = el!)}
                 type="text"
+                inputMode="decimal"
                 value={
                   isEditing("a-precoMLPremium")
                     ? acrescimos.precoMercadoLivrePremium
@@ -150,20 +153,21 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
                   })
                 }
                 onKeyDown={(e) => handleLinearNav(e, 2, acrescimosRefs, 5)}
-                className="bg-black/50 border border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                className="bg-black/50 border border-white/10 text-white text-sm sm:text-xs rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
               />
             </div>
           </div>
 
           {/* FRETES */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-2">
             <div>
-              <Label className="text-neutral-400 text-[10px] mb-1 block">
+              <Label className="text-neutral-400 text-[11px] sm:text-[10px] mb-1.5 sm:mb-1 block">
                 Frete Clássico (R$)
               </Label>
               <Input
                 ref={(el) => (acrescimosRefs.current[3] = el!)}
                 type="text"
+                inputMode="decimal"
                 value={
                   isEditing("a-freteClassico")
                     ? acrescimos.freteMercadoLivreClassico
@@ -184,17 +188,18 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
                   })
                 }
                 onKeyDown={(e) => handleLinearNav(e, 3, acrescimosRefs, 5)}
-                className="bg-black/50 border border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                className="bg-black/50 border border-white/10 text-white text-sm sm:text-xs rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
               />
             </div>
 
             <div>
-              <Label className="text-neutral-400 text-[10px] mb-1 block">
+              <Label className="text-neutral-400 text-[11px] sm:text-[10px] mb-1.5 sm:mb-1 block">
                 Frete Premium (R$)
               </Label>
               <Input
                 ref={(el) => (acrescimosRefs.current[4] = el!)}
                 type="text"
+                inputMode="decimal"
                 value={
                   isEditing("a-fretePremium")
                     ? acrescimos.freteMercadoLivrePremium
@@ -215,7 +220,7 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
                   })
                 }
                 onKeyDown={(e) => handleLinearNav(e, 4, acrescimosRefs, 5)}
-                className="bg-black/50 border border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                className="bg-black/50 border border-white/10 text-white text-sm sm:text-xs rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
               />
             </div>
           </div>
@@ -223,11 +228,11 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
           {/* ============================
                BLOCOS DE ACRÉSCIMO
              ============================ */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-2 mt-3 sm:mt-2">
 
             {/* CLÁSSICO */}
             <div
-              className={`group flex flex-col justify-center items-center text-[11px] rounded-md p-3 transition-all duration-300 ${
+              className={`group flex flex-col justify-center items-center text-[12px] sm:text-[11px] rounded-md p-4 sm:p-3 transition-all duration-300 ${
                 acrescimos.acrescimoClassico > 0
                   ? "bg-green-500/10 border border-green-500/30"
                   : acrescimos.acrescimoClassico < 0
@@ -240,7 +245,7 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
               </span>
 
               <span
-                className={`font-semibold text-base inline-flex items-center gap-0 ${
+                className={`font-semibold text-lg sm:text-base inline-flex items-center gap-1 sm:gap-0 ${
                   acrescimos.acrescimoClassico > 0
                     ? "text-green-400"
                     : acrescimos.acrescimoClassico < 0
@@ -252,17 +257,18 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
                 <button
                   type="button"
                   onClick={() => copyPercent(acrescimos.acrescimoClassico)}
-                  className="ml-[3px] opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
+                  className="ml-1 sm:ml-[3px] inline-flex h-8 w-8 sm:h-auto sm:w-auto items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer transition-opacity"
                   title="Copiar"
+                  aria-label="Copiar acréscimo clássico"
                 >
-                  <Copy className="w-3 h-3" />
+                  <Copy className="w-4 h-4 sm:w-3 sm:h-3" />
                 </button>
               </span>
             </div>
 
             {/* PREMIUM */}
             <div
-              className={`group flex flex-col justify-center items-center text-[11px] rounded-md p-3 transition-all duration-300 ${
+              className={`group flex flex-col justify-center items-center text-[12px] sm:text-[11px] rounded-md p-4 sm:p-3 transition-all duration-300 ${
                 acrescimos.acrescimoPremium > 0
                   ? "bg-green-500/10 border border-green-500/30"
                   : acrescimos.acrescimoPremium < 0
@@ -275,7 +281,7 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
               </span>
 
               <span
-                className={`font-semibold text-base inline-flex items-center gap-0 ${
+                className={`font-semibold text-lg sm:text-base inline-flex items-center gap-1 sm:gap-0 ${
                   acrescimos.acrescimoPremium >  0
                     ? "text-green-400"
                     : acrescimos.acrescimoPremium < 0
@@ -287,10 +293,11 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
                 <button
                   type="button"
                   onClick={() => copyPercent(acrescimos.acrescimoPremium)}
-                  className="ml-[3px] opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
+                  className="ml-1 sm:ml-[3px] inline-flex h-8 w-8 sm:h-auto sm:w-auto items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer transition-opacity"
                   title="Copiar"
+                  aria-label="Copiar acréscimo premium"
                 >
-                  <Copy className="w-3 h-3" />
+                  <Copy className="w-4 h-4 sm:w-3 sm:h-3" />
                 </button>
               </span>
             </div>

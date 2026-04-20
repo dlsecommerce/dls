@@ -65,10 +65,10 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
   setCampoAtivo,
 }) => {
   return (
-    <div className="relative grid grid-cols-3 gap-2 mb-1 p-1.5 rounded-lg bg-black/30 border border-white/10">
+    <div className="relative grid grid-cols-3 gap-2 mb-1 p-2 sm:p-1.5 rounded-lg bg-black/30 border border-white/10">
       {/* Código */}
-      <div className="relative">
-        <Label className="text-neutral-400 text-[10px] block mb-1">
+      <div className="relative min-w-0">
+        <Label className="text-neutral-400 text-[11px] sm:text-[10px] block mb-1.5 sm:mb-1">
           Código
         </Label>
 
@@ -78,6 +78,7 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
             inputRefs.current[idx][0] = el!;
           }}
           type="text"
+          inputMode="text"
           placeholder="SKU"
           value={item.codigo}
           onChange={(e) => {
@@ -90,7 +91,7 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
 
             // 🔥 FECHAR DROPDOWN AO APAGAR O INPUT
             if (value.trim() === "") {
-              buscarSugestoesDebounced.cancel?.(); // cancela debounce se existir
+              buscarSugestoesDebounced.cancel?.();
               setSugestoes?.([]);
               setCampoAtivo?.(null);
               return;
@@ -104,7 +105,7 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
             handleSugestoesKeys(e, idx);
             handleGridNav(e, idx, 0);
           }}
-          className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+          className="bg-black/50 border-white/10 text-white text-sm sm:text-xs rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
         />
 
         <SuggestionDropdown
@@ -117,8 +118,8 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
       </div>
 
       {/* Quantidade */}
-      <div>
-        <Label className="text-neutral-400 text-[10px] block mb-1">
+      <div className="min-w-0">
+        <Label className="text-neutral-400 text-[11px] sm:text-[10px] block mb-1.5 sm:mb-1">
           Quantidade
         </Label>
 
@@ -128,6 +129,7 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
             inputRefs.current[idx][1] = el!;
           }}
           type="text"
+          inputMode="decimal"
           placeholder="1"
           value={
             isEditing(`q-${idx}`) ? item.quantidade : toDisplay(item.quantidade)
@@ -145,13 +147,13 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
             setComposicao(novo);
           }}
           onKeyDown={(e) => handleGridNav(e, idx, 1)}
-          className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb]"
+          className="bg-black/50 border-white/10 text-white text-sm sm:text-xs rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
         />
       </div>
 
       {/* Custo */}
-      <div>
-        <Label className="text-neutral-400 text-[10px] block mb-1">
+      <div className="min-w-0">
+        <Label className="text-neutral-400 text-[11px] sm:text-[10px] block mb-1.5 sm:mb-1">
           Custo (R$)
         </Label>
 
@@ -161,6 +163,7 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
             inputRefs.current[idx][2] = el!;
           }}
           type="text"
+          inputMode="decimal"
           placeholder="100"
           value={isEditing(`c-${idx}`) ? item.custo : toDisplay(item.custo)}
           onFocus={() => setEditing(`c-${idx}`, true)}
@@ -176,7 +179,7 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
             setComposicao(novo);
           }}
           onKeyDown={(e) => handleGridNav(e, idx, 2)}
-          className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb]"
+          className="bg-black/50 border-white/10 text-white text-sm sm:text-xs rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
         />
       </div>
 
@@ -187,7 +190,7 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
           size="sm"
           variant="ghost"
           className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2
-                     w-5 h-5 p-0 flex items-center justify-center 
+                     w-6 h-6 sm:w-5 sm:h-5 p-0 flex items-center justify-center 
                      bg-red-500/20 hover:bg-red-500/40 text-red-400 
                      border border-red-500/30 rounded-full shadow-sm 
                      transition-all cursor-pointer"

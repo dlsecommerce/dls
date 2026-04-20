@@ -223,12 +223,12 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
 
   // ✅ Grid dinâmico
   const gridClass = React.useMemo(() => {
-    if (visibleCount <= 1) return "grid grid-cols-1 gap-2 mb-2";
+    if (visibleCount <= 1) return "grid grid-cols-1 gap-3 sm:gap-2 mb-2";
     if (visibleCount === 2)
-      return "grid grid-cols-1 md:grid-cols-2 gap-2 mb-2";
+      return "grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-2 mb-2";
     if (visibleCount === 3)
-      return "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 mb-2";
-    return "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 mb-2";
+      return "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-2 mb-2";
+    return "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-2 mb-2";
   }, [visibleCount]);
 
   const shortLabel = (key: BlockKey) => {
@@ -255,17 +255,17 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
 
   return (
     <motion.div
-      className="lg:col-span-6 p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg flex flex-col"
+      className="relative z-0 lg:col-span-6 p-3 sm:p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg flex flex-col"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
     >
-      <div data-layout-dropdown>
+      <div data-layout-dropdown className="relative z-0">
         {/* Header */}
-        <div className="flex items-center justify-between mb-2 gap-2">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-[#1a8ceb]" />
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              Cálculo de Preço
+        <div className="flex items-start sm:items-center justify-between mb-3 sm:mb-2 gap-3 sm:gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <TrendingUp className="w-5 h-5 text-[#1a8ceb] flex-shrink-0" />
+            <h3 className="text-base font-bold text-white flex items-center gap-2 min-w-0">
+              <span className="truncate">Cálculo de Preço</span>
               <HelpTooltip text="Preços de Venda." />
             </h3>
           </div>
@@ -288,7 +288,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 6, scale: 0.98 }}
               transition={{ duration: 0.14 }}
-              className="absolute right-0 mt-2 w-[260px] rounded-xl border border-white/10 bg-black/70 backdrop-blur-xl shadow-xl p-2 z-50"
+              className="absolute right-0 mt-2 w-[min(260px,calc(100vw-24px))] sm:w-[260px] rounded-xl border border-white/10 bg-black/70 backdrop-blur-xl shadow-xl p-2 z-50"
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs text-white/80 font-semibold">
@@ -313,18 +313,18 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                       type="button"
                       onClick={() => toggleBlock(b.key)}
                       className={[
-                        "h-9 px-2 rounded-lg",
+                        "h-10 sm:h-9 px-2 rounded-lg",
                         "border border-white/10",
                         checked ? "bg-white/10" : "bg-white/5",
                         "hover:bg-white/10 transition",
                         "flex items-center justify-between",
                       ].join(" ")}
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-white/85">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-xs text-white/85 truncate">
                           {b.nome}
                         </span>
-                        <span className="text-[10px] text-white/50">
+                        <span className="text-[10px] text-white/50 shrink-0">
                           ({shortLabel(b.key)})
                         </span>
                       </div>
@@ -332,7 +332,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                       <div
                         className={[
                           "w-6 h-6 rounded-md border border-white/10",
-                          "flex items-center justify-center",
+                          "flex items-center justify-center shrink-0",
                           checked ? "bg-white/10" : "bg-white/0",
                         ].join(" ")}
                       >
@@ -351,7 +351,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                   onClick={() =>
                     setVisible(ensureAtLeastOneVisible(defaultVisible))
                   }
-                  className="h-9 px-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-xs text-white/80 transition"
+                  className="h-10 sm:h-9 px-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-xs text-white/80 transition"
                 >
                   Mostrar todos
                 </button>
@@ -390,7 +390,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 18 }}
                 transition={{ duration: 0.18 }}
-                className="w-full"
+                className="w-full min-w-0"
               >
                 <PriceBlock
                   nome="Preço Loja"
@@ -439,7 +439,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 18 }}
                 transition={{ duration: 0.18 }}
-                className="w-full"
+                className="w-full min-w-0"
               >
                 <PriceBlock
                   nome="Preço Shopee"
@@ -500,7 +500,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 18 }}
                 transition={{ duration: 0.18 }}
-                className="w-full"
+                className="w-full min-w-0"
               >
                 <PriceBlock
                   nome="Preço ML Clássico"
@@ -529,7 +529,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 18 }}
                 transition={{ duration: 0.18 }}
-                className="w-full"
+                className="w-full min-w-0"
               >
                 <PriceBlock
                   nome="Preço ML Premium"
@@ -584,7 +584,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                       key={b.key}
                       type="button"
                       onClick={() => restore(b.key)}
-                      className="h-8 px-3 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white text-xs flex items-center gap-2 transition"
+                      className="h-9 sm:h-8 px-3 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white text-xs flex items-center gap-2 transition"
                       title={`Restaurar ${b.nome}`}
                     >
                       <ArrowUpCircle className="w-4 h-4" />
@@ -597,7 +597,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
               <button
                 type="button"
                 onClick={() => hiddenBlocks.forEach((b) => restore(b.key))}
-                className="h-8 px-3 rounded-lg border border-white/10 bg-white/0 hover:bg-white/5 text-xs text-white/60 hover:text-white transition"
+                className="h-9 sm:h-8 px-3 rounded-lg border border-white/10 bg-white/0 hover:bg-white/5 text-xs text-white/60 hover:text-white transition"
                 title="Restaurar todos"
               >
                 Restaurar todos

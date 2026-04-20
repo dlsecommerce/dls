@@ -95,7 +95,7 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
   };
 
   return (
-    <div className="group relative p-2 rounded-lg bg-black/30 border border-white/10 flex flex-col justify-center items-center">
+    <div className="group relative p-3 sm:p-2 rounded-lg bg-black/30 border border-white/10 flex flex-col justify-center items-center">
       {/* ✅ Hotspot invisível no canto superior direito (bordinha) */}
       <div className="absolute top-0 right-0 z-20">
         {/* Área pequena para “encostar o mouse” e revelar o ícone */}
@@ -105,10 +105,8 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
             onClick={onMinimize}
             // 🔥 Só aparece quando o cursor entra nessa bordinha
             className={[
-              "opacity-0 group-hover:opacity-0", // mantém escondido normalmente
+              "opacity-100 sm:opacity-0 sm:group-hover:opacity-100",
               "transition-opacity duration-150",
-              // o hover REAL é aqui: quando o mouse entra no canto (botão)
-              "hover:opacity-100",
               "p-1",
               "pointer-events-auto",
             ].join(" ")}
@@ -120,13 +118,13 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
       </div>
 
       {/* Header (título) */}
-      <h4 className="text-white font-semibold text-xs mb-1 text-center">
+      <h4 className="text-white font-semibold text-sm sm:text-xs mb-2 sm:mb-1 text-center">
         {nome}
       </h4>
 
       {keys.map((key, i) => (
-        <div key={key} className="mb-1 w-full">
-          <Label className="text-neutral-400 text-[10px] block">
+        <div key={key} className="mb-2 sm:mb-1 w-full">
+          <Label className="text-neutral-400 text-[11px] sm:text-[10px] block">
             {key === "margem"
               ? "Margem de Lucro (%)"
               : key === "frete"
@@ -137,6 +135,7 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
           <Input
             ref={(el) => (refs.current[i] = el!)}
             type="text"
+            inputMode="decimal"
             value={
               isEditing(`${blocoIndex}-${key}`)
                 ? (state as any)[key]
@@ -149,16 +148,17 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
             }}
             onChange={(e) => handleFieldChange(key, e.target.value)}
             onKeyDown={(e) => handleLinearNav(e, i, refs, keys.length)}
-            className="bg-black/50 border border-white/10 text-white text-[11px] rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+            className="bg-black/50 border border-white/10 text-white text-sm sm:text-[11px] rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
           />
 
           {key === "desconto" && (
-            <div className="mt-1">
-              <Label className="text-neutral-400 text-[10px] block">
+            <div className="mt-2 sm:mt-1">
+              <Label className="text-neutral-400 text-[11px] sm:text-[10px] block">
                 Embalagem (R$)
               </Label>
               <Input
                 type="text"
+                inputMode="decimal"
                 value={
                   isEditing(`emb-${blocoIndex}`)
                     ? state.embalagem ?? ""
@@ -170,7 +170,7 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
                   handleEmbalagemBlur(e.target.value);
                 }}
                 onChange={(e) => handleEmbalagemChange(e.target.value)}
-                className="bg-black/50 border border-white/10 text-white text-[11px] rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                className="bg-black/50 border border-white/10 text-white text-sm sm:text-[11px] rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
               />
             </div>
           )}
@@ -180,21 +180,21 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
       {/* ============================
            PREÇO DE VENDA + COPY
          ============================ */}
-      <div className="mt-1 flex flex-col items-center justify-center py-1">
-        <span className="text-neutral-300 text-[10px]">Preço de Venda</span>
+      <div className="mt-2 sm:mt-1 flex flex-col items-center justify-center py-2 sm:py-1">
+        <span className="text-neutral-300 text-xs sm:text-[10px]">Preço de Venda</span>
 
         <div className="flex items-center gap-2">
-          <div className="text-lg font-bold text-[#1a8ceb] leading-tight">
+          <div className="text-xl sm:text-lg font-bold text-[#1a8ceb] leading-tight">
             R$ <AnimatedNumber value={preco} />
           </div>
 
           <button
             type="button"
             onClick={copyPreco}
-            className="-ml-[3px] opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
+            className="-ml-[3px] opacity-100 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer transition-opacity"
             title="Copiar"
           >
-            <Copy className="w-3 h-3 text-white" />
+            <Copy className="w-4 h-4 sm:w-3 sm:h-3 text-white" />
           </button>
         </div>
       </div>

@@ -432,7 +432,7 @@ export default function PricingCalculatorModern() {
 
   const handleEmbalagemBlurShopee = (raw: string) => {
     const internal = toInternal(raw || "");
-    if (!internal) setUserEditedShopeeEmbalagem(false); // se apagar, volta pro automático
+    if (!internal) setUserEditedShopeeEmbalagem(false);
     const v = internal || "3";
     setCalculoShopee((p) => ({ ...p, embalagem: v }));
   };
@@ -472,7 +472,6 @@ export default function PricingCalculatorModern() {
   // ✅ REGRA SHOPEE POR FAIXA DE PREÇO (AUTOMÁTICA)
   // =====================
   useEffect(() => {
-    // Defaults: até 79,99
     let regras = {
       embalagem: "3",
       frete: "4",
@@ -513,14 +512,10 @@ export default function PricingCalculatorModern() {
 
     setCalculoShopee((prev) => ({
       ...prev,
-
-      // ✅ agora também respeitam edição manual (editáveis)
       embalagem: userEditedShopeeEmbalagem ? prev.embalagem : regras.embalagem,
       imposto: userEditedShopeeImposto ? prev.imposto : regras.imposto,
       margem: userEditedShopeeMargem ? prev.margem : regras.margem,
       marketing: userEditedShopeeMarketing ? prev.marketing : regras.marketing,
-
-      // estes já respeitavam edição manual do usuário
       comissao: userEditedShopeeComissao ? prev.comissao : regras.comissao,
       frete: userEditedShopeeFrete ? prev.frete : regras.frete,
     }));
@@ -578,7 +573,6 @@ export default function PricingCalculatorModern() {
           embalagem: "3",
         });
 
-        // ✅ Shopee reset já alinhado com a regra base (até 79,99)
         setCalculoShopee({
           desconto: "",
           imposto: "12",
@@ -750,18 +744,20 @@ export default function PricingCalculatorModern() {
   // RENDER
   // =====================
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-4 md:p-8 pt-24">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+    <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-3 sm:p-4 md:p-8 pt-24">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
         {/* COMPOSIÇÃO */}
         <motion.div
-          className="lg:col-span-6 p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg h-full relative"
+          className={`lg:col-span-6 p-3 sm:p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg h-full relative ${
+            campoAtivo !== null ? "z-[120]" : "z-0"
+          }`}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <div className="flex items-center gap-2 mb-2">
-            <Layers className="w-5 h-5 text-[#1a8ceb]" />
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              Composição
+          <div className="flex items-center gap-2 mb-3 sm:mb-2 min-w-0">
+            <Layers className="w-5 h-5 text-[#1a8ceb] flex-shrink-0" />
+            <h3 className="text-base font-bold text-white flex items-center gap-2 min-w-0">
+              <span className="truncate">Composição</span>
               <HelpTooltip text="Composição de Custos." />
             </h3>
           </div>
@@ -829,7 +825,6 @@ export default function PricingCalculatorModern() {
           setUserEditedShopeeComissao={setUserEditedShopeeComissao}
           userEditedShopeeFrete={userEditedShopeeFrete}
           setUserEditedShopeeFrete={setUserEditedShopeeFrete}
-          // ✅ NOVOS PROPS Shopee editável
           userEditedShopeeImposto={userEditedShopeeImposto}
           setUserEditedShopeeImposto={setUserEditedShopeeImposto}
           userEditedShopeeMargem={userEditedShopeeMargem}

@@ -17,7 +17,7 @@ export const ClearAndDownloadActions: React.FC<ClearAndDownloadActionsProps> = (
   clicks,
   onToggleLayout,
 }) => (
-  <div className="flex items-center justify-end gap-1.5 sm:gap-2 flex-wrap">
+  <div className="flex items-center justify-end gap-2 sm:gap-2 flex-nowrap">
     {/* CONFIGURAR LAYOUT */}
     <motion.button
       whileTap={{ scale: 0.92 }}

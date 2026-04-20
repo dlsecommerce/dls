@@ -8,6 +8,7 @@ type AnimatedNumberProps = {
 
 export const AnimatedNumber: React.FC<AnimatedNumberProps> = ({ value }) => {
   const motionValue = useMotionValue(0);
+
   const formatted = useTransform(motionValue, (latest) =>
     latest.toLocaleString("pt-BR", {
       minimumFractionDigits: 2,
@@ -17,11 +18,16 @@ export const AnimatedNumber: React.FC<AnimatedNumberProps> = ({ value }) => {
 
   useEffect(() => {
     const controls = animate(motionValue, value, {
-      duration: 1.0,
-      ease: "easeInOut",
+      duration: 0.8,
+      ease: "easeOut",
     });
-    return controls.stop;
+
+    return () => controls.stop();
   }, [value, motionValue]);
 
-  return <motion.span>{formatted}</motion.span>;
+  return (
+    <motion.span className="tabular-nums">
+      {formatted}
+    </motion.span>
+  );
 };
