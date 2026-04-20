@@ -41,7 +41,7 @@ const HowItWorksSection = () => {
   ];
 
   return (
-    <section className="py-20 md:py-36 bg-gray-50 relative overflow-hidden">
+    <section className="relative overflow-hidden bg-gray-50 py-14 md:py-36">
       <motion.div
         initial={{ opacity: 0, y: 60 }}
         whileInView={{ opacity: 1, y: 0 }}
@@ -51,18 +51,19 @@ const HowItWorksSection = () => {
       >
         <div className="container mx-auto">
           {/* Título */}
-          <div className="text-center mb-12 md:mb-16">
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-neutral-800 mb-4 md:mb-6">
+          <div className="mb-10 text-center md:mb-16">
+            <h2 className="mb-4 text-2xl font-bold text-neutral-800 sm:text-3xl md:mb-6 md:text-4xl">
               Como funciona o{" "}
               <span className="text-neutral-800">DLS Ecommerce?</span>
             </h2>
-            <p className="text-base sm:text-lg text-neutral-800 max-w-2xl mx-auto">
+
+            <p className="mx-auto max-w-2xl text-sm text-neutral-800 sm:text-lg">
               Em apenas 3 passos simples, você se conecta ao dashboard
             </p>
           </div>
 
           {/* Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-12 max-w-6xl mx-auto">
+          <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3 lg:gap-12">
             {steps.map((step, index) => (
               <motion.div
                 key={index}
@@ -70,34 +71,36 @@ const HowItWorksSection = () => {
                 whileInView={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: index * 0.2 }}
                 viewport={{ once: true }}
-                className="group flex flex-col items-center lg:items-start rounded-2xl px-6 py-8 bg-gray-50 border border-gray-200 shadow-sm transition-all duration-300 hover:bg-gray-100 hover:border-[#2699fe] hover:shadow-lg"
+                className="group flex flex-col items-center rounded-2xl border border-gray-200 bg-gray-50 px-5 py-6 shadow-sm transition-all duration-300 hover:border-[#2699fe] hover:bg-gray-100 hover:shadow-lg lg:items-start"
               >
                 {/* número do passo */}
-                <div className="inline-flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 bg-gray-200 text-gray-800 rounded-full font-bold text-base sm:text-lg mb-6 transition-colors duration-300 group-hover:bg-[#2699fe] group-hover:text-white">
+                <div className="mb-5 inline-flex h-10 w-10 items-center justify-center rounded-full bg-gray-200 text-base font-bold text-gray-800 transition-colors duration-300 group-hover:bg-[#2699fe] group-hover:text-white sm:h-12 sm:w-12 sm:text-lg">
                   {step.step}
                 </div>
 
                 {/* ícone */}
                 <step.icon
-                  size={32}
-                  className="sm:size-9 mb-6 text-gray-600 transition-colors duration-300 group-hover:text-[#2699fe]"
+                  size={28}
+                  className="mb-5 text-gray-600 transition-colors duration-300 group-hover:text-[#2699fe] sm:size-9"
                 />
 
                 {/* texto */}
                 <div className="space-y-3 text-center lg:text-left">
-                  <h3 className="text-lg sm:text-xl font-semibold text-neutral-800 transition-colors duration-300 group-hover:text-[#2699fe]">
+                  <h3 className="text-lg font-semibold text-neutral-800 transition-colors duration-300 group-hover:text-[#2699fe] sm:text-xl">
                     {step.title}
                   </h3>
-                  <p className="text-sm sm:text-base text-neutral-600 leading-relaxed">
+
+                  <p className="text-sm leading-6 text-neutral-600 sm:text-base">
                     {step.description}
                   </p>
-                  <ul className="space-y-2 text-sm sm:text-base text-neutral-600">
+
+                  <ul className="space-y-2 text-sm text-neutral-600 sm:text-base">
                     {step.details.map((detail, detailIndex) => (
                       <li
                         key={detailIndex}
-                        className="flex items-center justify-center lg:justify-start space-x-2"
+                        className="flex items-center justify-center space-x-2 lg:justify-start"
                       >
-                        <div className="w-1.5 h-1.5 bg-gray-400 rounded-full flex-shrink-0 transition-colors duration-300 group-hover:bg-[#2699fe]"></div>
+                        <div className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-gray-400 transition-colors duration-300 group-hover:bg-[#2699fe]"></div>
                         <span className="transition-colors duration-300 group-hover:text-[#2699fe]">
                           {detail}
                         </span>

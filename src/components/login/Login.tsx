@@ -7,16 +7,15 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Eye, EyeOff, ShoppingCart, LogIn } from "lucide-react";
 import Link from "next/link";
-import { useAuth } from "@/hooks/useAuth"; // ✅ Hook unificado e funcional
+import { useAuth } from "@/hooks/useAuth";
 import { LoadingBar, LoadingBarRef } from "@/components/ui/loading-bar";
 
 export default function Login() {
-  const { login, loginWithGoogle, loading } = useAuth(); // ✅ usa o hook unificado
+  const { login, loginWithGoogle, loading } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [capsLock, setCapsLock] = useState(false);
   const loadingBarRef = useRef<LoadingBarRef>(null);
 
-  // Campos de formulário
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -28,33 +27,35 @@ export default function Login() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!email || !password) return;
-    await login(email, password); // ✅ chama o hook corretamente
+    await login(email, password);
   }
 
   const cardColor = "#090909";
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center p-4">
+    <div className="relative flex min-h-screen items-center justify-center p-4 sm:p-4">
       <LoadingBar ref={loadingBarRef} />
 
-      <div className="w-[500px] animate-enter relative z-10">
+      <div className="relative z-10 w-full max-w-md sm:w-[500px]">
         <Card
-          className="border border-neutral-700 rounded-2xl shadow-xl scale-90"
+          className="scale-100 rounded-2xl border border-neutral-700 shadow-xl sm:scale-90"
           style={{ backgroundColor: cardColor }}
         >
-          <CardHeader className="space-y-2 text-center pb-0">
+          <CardHeader className="space-y-2 px-5 pb-0 pt-6 text-center sm:px-6 sm:pt-6">
             <div className="flex flex-col items-center gap-3">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-xl bg-gradient-to-r from-[#2799fe] to-[#1780d4] text-white shadow-lg cursor-pointer">
-                <ShoppingCart className="w-8 h-8" />
+              <div className="inline-flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-r from-[#2799fe] to-[#1780d4] text-white shadow-lg cursor-pointer sm:h-16 sm:w-16">
+                <ShoppingCart className="h-7 w-7 sm:h-8 sm:w-8" />
               </div>
-              <h1 className="text-3xl font-bold tracking-tight text-white">
+
+              <h1 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
                 DLS Ecommerce
               </h1>
+
               <p className="text-sm text-neutral-400">Bem-vindo de volta!</p>
             </div>
           </CardHeader>
 
-          <CardContent className="space-y-6 px-8 py-6">
+          <CardContent className="space-y-5 px-5 py-5 sm:space-y-6 sm:px-8 sm:py-6">
             <form onSubmit={handleSubmit} className="space-y-4" noValidate>
               {/* E-mail */}
               <div className="space-y-2">
@@ -69,9 +70,7 @@ export default function Login() {
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={loading}
                   style={{ backgroundColor: cardColor }}
-                  className="text-white placeholder:text-neutral-400 rounded-md px-3 h-12 
-                             border border-neutral-700 
-                             focus:border-[#2799fe] focus:ring-0 focus:outline-none focus:shadow-none"
+                  className="h-12 rounded-md border border-neutral-700 px-3 text-white placeholder:text-neutral-400 focus:border-[#2799fe] focus:ring-0 focus:outline-none focus:shadow-none"
                 />
               </div>
 
@@ -89,13 +88,12 @@ export default function Login() {
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={loading}
                     style={{ backgroundColor: cardColor }}
-                    className="text-white placeholder:text-neutral-400 rounded-md px-3 h-12 
-                               border border-neutral-700 
-                               focus:border-[#2799fe] focus:ring-0 focus:outline-none focus:shadow-none"
+                    className="h-12 rounded-md border border-neutral-700 px-3 pr-10 text-white placeholder:text-neutral-400 focus:border-[#2799fe] focus:ring-0 focus:outline-none focus:shadow-none"
                     onKeyUp={(e) =>
                       setCapsLock(
-                        (e as React.KeyboardEvent<HTMLInputElement>)
-                          .getModifierState?.("CapsLock") ?? false
+                        (e as React.KeyboardEvent<HTMLInputElement>).getModifierState?.(
+                          "CapsLock"
+                        ) ?? false
                       )
                     }
                   />
@@ -112,16 +110,17 @@ export default function Login() {
                     )}
                   </button>
                 </div>
+
                 {capsLock && (
                   <p className="text-xs text-yellow-500">Caps Lock ligado</p>
                 )}
               </div>
 
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 text-sm text-neutral-400 cursor-pointer">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-neutral-400">
                   <input
                     type="checkbox"
-                    className="rounded border-gray-300 cursor-pointer"
+                    className="cursor-pointer rounded border-gray-300"
                   />
                   Lembrar de mim
                 </label>
@@ -136,23 +135,21 @@ export default function Login() {
 
               <Button
                 type="submit"
-                className="w-full flex items-center justify-center gap-2 rounded-lg px-3 h-12 py-2 text-white 
-                           bg-gradient-to-r from-[#1780d4] via-[#2799fe] to-[#3ba9ff] 
-                           hover:from-[#0f6bb7] hover:via-[#1780d4] hover:to-[#2799fe] 
-                           transition-all duration-300 cursor-pointer
-                           focus:outline-none focus:ring-0 focus:shadow-none"
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#1780d4] via-[#2799fe] to-[#3ba9ff] px-3 py-2 text-white transition-all duration-300 cursor-pointer hover:from-[#0f6bb7] hover:via-[#1780d4] hover:to-[#2799fe] focus:outline-none focus:ring-0 focus:shadow-none"
                 disabled={loading}
               >
-                <LogIn className="w-4 h-4" />
+                <LogIn className="h-4 w-4" />
                 {loading ? "Entrando..." : "Entrar"}
               </Button>
             </form>
 
             {/* Separador */}
-            <div className="flex items-center gap-4">
-              <div className="flex-1 h-px bg-neutral-700" />
-              <span className="text-xs uppercase text-white">Ou acesse via</span>
-              <div className="flex-1 h-px bg-neutral-700" />
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="h-px flex-1 bg-neutral-700" />
+              <span className="text-[11px] uppercase text-white sm:text-xs">
+                Ou acesse via
+              </span>
+              <div className="h-px flex-1 bg-neutral-700" />
             </div>
 
             {/* Login com Google */}
@@ -160,14 +157,8 @@ export default function Login() {
               <Button
                 onClick={() => loginWithGoogle()}
                 type="button"
-                className="flex-1 flex items-center justify-center gap-2 border border-neutral-300 rounded-md px-3 h-12 
-                           transition-all duration-300 cursor-pointer 
-                           text-gray-900 
-                           bg-gradient-to-r from-[#f5f5f5] via-[#ffffff] to-[#f5f5f5]
-                           hover:from-[#e5e5e5] hover:via-[#f0f0f0] hover:to-[#e5e5e5]
-                           focus:outline-none focus:ring-0 focus:shadow-none"
+                className="flex h-12 flex-1 items-center justify-center gap-2 rounded-md border border-neutral-300 px-3 text-gray-900 transition-all duration-300 cursor-pointer bg-gradient-to-r from-[#f5f5f5] via-[#ffffff] to-[#f5f5f5] hover:from-[#e5e5e5] hover:via-[#f0f0f0] hover:to-[#e5e5e5] focus:outline-none focus:ring-0 focus:shadow-none"
               >
-                {/* Ícone Google */}
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   viewBox="0 0 48 48"
@@ -195,12 +186,12 @@ export default function Login() {
               </Button>
             </div>
 
-            <div className="text-center pt-0">
+            <div className="pt-0 text-center">
               <p className="text-sm text-neutral-400">
                 Ainda não tem cadastro?{" "}
                 <Link
                   href="/cadastro"
-                  className="text-[#2799fe] font-medium hover:underline cursor-pointer"
+                  className="font-medium text-[#2799fe] hover:underline cursor-pointer"
                 >
                   Crie uma conta
                 </Link>

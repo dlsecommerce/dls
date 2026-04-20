@@ -35,45 +35,49 @@ const Footer = () => {
       <div className="absolute inset-0 bg-[url('/dots.png')] opacity-10 pointer-events-none"></div>
 
       {/* Logo + Links */}
-      <div className="relative container mx-auto px-4 sm:px-6 lg:px-8 py-12 flex flex-col items-center">
-        <div className="flex flex-col md:flex-row items-center justify-center md:justify-between w-full gap-8 md:gap-10">
+      <div className="relative container mx-auto flex flex-col items-center px-4 py-10 sm:px-6 sm:py-12 lg:px-8">
+        <div className="flex w-full flex-col items-center justify-center gap-6 sm:gap-8 md:flex-row md:justify-between md:gap-10">
+          
           {/* Logo */}
           <button
             onClick={() => handleRoute("/")}
-            className="block cursor-pointer flex-shrink-0"
+            className="block flex-shrink-0 cursor-pointer"
+            aria-label="Ir para a página inicial"
           >
             <Image
               src="/dls.svg"
               alt="Logo DLS"
               width={128}
               height={128}
-              className="w-24 h-24 sm:w-32 sm:h-32 hover:opacity-90 transition-opacity"
+              className="h-20 w-20 transition-opacity hover:opacity-90 sm:h-32 sm:w-32"
               priority
             />
           </button>
 
           {/* Links */}
-          <ul className="flex flex-col sm:flex-row gap-6 sm:gap-10 text-center">
-            <li>
+          <ul className="flex flex-col items-center gap-2 text-center sm:flex-row sm:gap-10">
+            <li className="w-full sm:w-auto">
               <button
                 onClick={() => handleRoute("/dashboard")}
-                className="text-neutral-400 hover:text-white transition-colors cursor-pointer text-base sm:text-lg"
+                className="min-h-[44px] px-2 text-base text-neutral-400 transition-colors hover:text-white cursor-pointer sm:text-lg"
               >
                 Dashboard
               </button>
             </li>
-            <li>
+
+            <li className="w-full sm:w-auto">
               <button
                 onClick={() => handleScrollTo("#precificacao")}
-                className="text-neutral-400 hover:text-white transition-colors cursor-pointer text-base sm:text-lg"
+                className="min-h-[44px] px-2 text-base text-neutral-400 transition-colors hover:text-white cursor-pointer sm:text-lg"
               >
                 Precificação
               </button>
             </li>
-            <li>
+
+            <li className="w-full sm:w-auto">
               <button
                 onClick={() => handleScrollTo("#sobre-nos")}
-                className="text-neutral-400 hover:text-white transition-colors cursor-pointer text-base sm:text-lg"
+                className="min-h-[44px] px-2 text-base text-neutral-400 transition-colors hover:text-white cursor-pointer sm:text-lg"
               >
                 Sobre nós
               </button>
@@ -82,7 +86,7 @@ const Footer = () => {
         </div>
 
         {/* Copyright */}
-        <div className="mt-10 text-center text-neutral-500 text-xs sm:text-sm">
+        <div className="mt-8 px-4 text-center text-[11px] leading-5 text-neutral-500 sm:mt-10 sm:text-sm">
           © 2025 DLS Multimarcas. Todos os direitos reservados.
         </div>
       </div>

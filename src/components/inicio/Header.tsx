@@ -74,20 +74,18 @@ const Header = () => {
       <LoadingBar ref={loadingBarRef} />
 
       <header
-        className={`flex justify-center w-full z-50 fixed top-0 transition-all duration-500 ease-in-out ${
+        className={`fixed top-0 z-50 flex w-full justify-center transition-all duration-500 ease-in-out ${
           show
-            ? "opacity-100 translate-y-0"
-            : "opacity-0 -translate-y-6 pointer-events-none"
+            ? "translate-y-0 opacity-100"
+            : "pointer-events-none -translate-y-6 opacity-0"
         }`}
       >
         <nav
-          className={`grid grid-cols-3 items-center gap-x-6 w-full max-w-7xl mx-auto mt-4 sm:mt-6 px-4 sm:px-6 lg:px-8 py-3 sm:py-4 
-            rounded-xl shadow-sm transition-all duration-500
-            ${
-              isTop
-                ? "border border-neutral-800 bg-transparent"
-                : "border border-neutral-800 bg-neutral-900/40 backdrop-blur-md"
-            }`}
+          className={`grid w-full max-w-7xl grid-cols-3 items-center gap-x-6 mx-auto mt-3 sm:mt-6 px-4 sm:px-6 lg:px-8 py-3 sm:py-4 rounded-xl shadow-sm transition-all duration-500 ${
+            isTop
+              ? "border border-neutral-800 bg-transparent"
+              : "border border-neutral-800 bg-neutral-900/40 backdrop-blur-md"
+          }`}
         >
           {/* Logo */}
           <div className="flex items-center">
@@ -104,7 +102,7 @@ const Header = () => {
                 width={180}
                 height={45}
                 priority
-                className="cursor-pointer hover:opacity-90 transition w-32 sm:w-40 md:w-48"
+                className="w-28 cursor-pointer transition hover:opacity-90 sm:w-40 md:w-48"
               />
             </Link>
           </div>
@@ -152,16 +150,17 @@ const Header = () => {
 
           {/* Botão Mobile */}
           <button
-            className="md:hidden text-[#d4d4d4] hover:text-white transition absolute right-6 cursor-pointer"
+            className="absolute right-4 md:hidden text-[#d4d4d4] transition hover:text-white cursor-pointer sm:right-6"
             onClick={() => setOpen(!open)}
+            aria-label={open ? "Fechar menu" : "Abrir menu"}
           >
             {open ? <X size={24} /> : <Menu size={24} />}
           </button>
 
           {/* Menu Mobile */}
           {open && (
-            <div className="absolute top-20 left-0 w-full bg-neutral-900/95 border-t border-neutral-700 md:hidden px-6 py-6 space-y-6 rounded-b-2xl">
-              <div className="flex flex-col space-y-4 text-[#d4d4d4] font-medium text-sm sm:text-base">
+            <div className="absolute left-0 top-[calc(100%+10px)] w-full rounded-2xl border border-neutral-800 bg-neutral-900/95 px-4 py-5 shadow-xl backdrop-blur-md md:hidden sm:px-6 sm:py-6">
+              <div className="flex flex-col space-y-2 text-[#d4d4d4] font-medium text-sm sm:text-base">
                 {menuItems.map((item, idx) => (
                   <Link
                     key={idx}
@@ -175,20 +174,20 @@ const Header = () => {
                         handleRoute(item.href);
                       }
                     }}
-                    className="hover:text-white transition cursor-pointer"
+                    className="flex min-h-[44px] items-center rounded-lg px-3 transition hover:bg-white/5 hover:text-white cursor-pointer"
                   >
                     {item.label}
                   </Link>
                 ))}
               </div>
 
-              <div className="flex flex-col space-y-3">
+              <div className="mt-4 flex flex-col space-y-3">
                 <button
                   onClick={() => {
                     setOpen(false);
                     handleRoute("/login");
                   }}
-                  className="flex items-center justify-center px-4 py-2 border border-neutral-700 rounded-lg text-[#d4d4d4] hover:text-white transition cursor-pointer text-sm"
+                  className="flex min-h-[44px] items-center justify-center rounded-lg border border-neutral-700 px-4 py-2 text-sm text-[#d4d4d4] transition hover:text-white cursor-pointer"
                 >
                   Entrar
                   <LogIn size={16} className="ml-2" />
@@ -199,7 +198,7 @@ const Header = () => {
                     setOpen(false);
                     handleRoute("/cadastro");
                   }}
-                  className="px-5 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition flex items-center justify-center cursor-pointer text-sm"  
+                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-sky-600 px-5 py-2 text-sm text-white transition hover:bg-sky-700 cursor-pointer"
                 >
                   Criar conta
                   <ArrowUpRight size={16} className="ml-2" />
