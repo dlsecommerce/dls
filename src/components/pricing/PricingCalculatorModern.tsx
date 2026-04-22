@@ -705,7 +705,7 @@ export default function PricingCalculatorModern() {
   };
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] px-2 pt-8 pb-6 sm:p-4 md:p-8 sm:pt-24">
+    <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] px-2 pt-8 pb-24 sm:pb-4 sm:p-4 md:p-8 sm:pt-24">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-4 min-w-0">
         <motion.div
           className={`lg:col-span-6 min-w-0 p-3 sm:p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg h-full relative ${
