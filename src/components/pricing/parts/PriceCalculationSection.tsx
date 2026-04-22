@@ -138,7 +138,6 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
     return !isFinite(n) || n === 0;
   };
 
-  // ✅ estado padrão
   const defaultVisible: Record<BlockKey, boolean> = React.useMemo(
     () => ({
       loja: true,
@@ -149,15 +148,12 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
     []
   );
 
-  // ✅ Blocos visíveis
   const [visible, setVisible] = React.useState<Record<BlockKey, boolean>>(
     defaultVisible
   );
 
-  // ✅ Dropdown “Configurar layout”
   const [isLayoutOpen, setIsLayoutOpen] = React.useState(false);
 
-  // ✅ Carrega do localStorage 1x
   React.useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -175,7 +171,6 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
     }
   }, [defaultVisible]);
 
-  // ✅ Salva no localStorage sempre que mudar
   React.useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(visible));
@@ -184,7 +179,6 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
     }
   }, [visible]);
 
-  // 🔒 mantém pelo menos 1 visível
   const ensureAtLeastOneVisible = React.useCallback(
     (next: Record<BlockKey, boolean>) => {
       const count = Object.values(next).filter(Boolean).length;
@@ -221,7 +215,6 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
     [visible]
   );
 
-  // ✅ Grid dinâmico
   const gridClass = React.useMemo(() => {
     if (visibleCount <= 1) return "grid grid-cols-1 gap-3 sm:gap-2 mb-2";
     if (visibleCount === 2)
@@ -238,7 +231,6 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
     return "Premium";
   };
 
-  // ✅ Fecha dropdown ao clicar fora
   const closeLayoutOnOutside = React.useCallback((e: MouseEvent) => {
     const target = e.target as HTMLElement | null;
     if (!target) return;
@@ -255,13 +247,12 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
 
   return (
     <motion.div
-      className="relative z-0 lg:col-span-6 p-3 sm:p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg flex flex-col"
+      className="relative z-0 lg:col-span-6 min-w-0 p-3 sm:p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg flex flex-col"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
     >
-      <div data-layout-dropdown className="relative z-0">
-        {/* Header */}
-        <div className="flex items-start sm:items-center justify-between mb-3 sm:mb-2 gap-3 sm:gap-2">
+      <div data-layout-dropdown className="relative z-0 min-w-0">
+        <div className="flex items-start sm:items-center justify-between mb-3 sm:mb-2 gap-3 sm:gap-2 min-w-0">
           <div className="flex items-center gap-2 min-w-0">
             <TrendingUp className="w-5 h-5 text-[#1a8ceb] flex-shrink-0" />
             <h3 className="text-base font-bold text-white flex items-center gap-2 min-w-0">
@@ -270,7 +261,6 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
             </h3>
           </div>
 
-          {/* ✅ Ações + botão layout agora aqui */}
           <ClearAndDownloadActions
             handleDownload={handleDownload}
             handleClearAll={handleClearAll}
@@ -280,7 +270,6 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
           />
         </div>
 
-        {/* ✅ Dropdown flutuante (ancorado no topo direito do bloco) */}
         <AnimatePresence>
           {isLayoutOpen && (
             <motion.div
@@ -288,7 +277,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 6, scale: 0.98 }}
               transition={{ duration: 0.14 }}
-              className="absolute right-0 mt-2 w-[min(260px,calc(100vw-24px))] sm:w-[260px] rounded-xl border border-white/10 bg-black/70 backdrop-blur-xl shadow-xl p-2 z-50"
+              className="absolute right-0 mt-2 w-full max-w-[260px] sm:w-[260px] rounded-xl border border-white/10 bg-black/70 backdrop-blur-xl shadow-xl p-2 z-50"
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs text-white/80 font-semibold">
@@ -368,8 +357,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                       })
                     )
                   }
-                >
-                </button>
+                />
               </div>
 
               <div className="mt-2 text-[10px] text-white/40">
@@ -379,7 +367,6 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
           )}
         </AnimatePresence>
 
-        {/* GRID */}
         <div className={gridClass}>
           <AnimatePresence initial={false}>
             {visible.loja && (
@@ -552,7 +539,6 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
           </AnimatePresence>
         </div>
 
-        {/* RESTAURAR DOCK */}
         <AnimatePresence>
           {hiddenBlocks.length > 0 && (
             <motion.div

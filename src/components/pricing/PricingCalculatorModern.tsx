@@ -84,7 +84,6 @@ export default function PricingCalculatorModern() {
     embalagem: "3",
   });
 
-  // ✅ Shopee já inicia alinhada à regra base (até 79,99)
   const [calculoShopee, setCalculoShopee] = useState<Calculo>({
     desconto: "",
     imposto: "12",
@@ -124,7 +123,6 @@ export default function PricingCalculatorModern() {
     useState(false);
   const [userEditedShopeeFrete, setUserEditedShopeeFrete] = useState(false);
 
-  // ✅ NOVO: permitir editar também imposto/margem/marketing/embalagem na Shopee
   const [userEditedShopeeImposto, setUserEditedShopeeImposto] =
     useState(false);
   const [userEditedShopeeMargem, setUserEditedShopeeMargem] = useState(false);
@@ -133,9 +131,6 @@ export default function PricingCalculatorModern() {
   const [userEditedShopeeEmbalagem, setUserEditedShopeeEmbalagem] =
     useState(false);
 
-  // =====================
-  // ✅ OPÇÃO B: ao mudar COMPOSIÇÃO (custos), Shopee volta pro automático
-  // =====================
   useEffect(() => {
     setUserEditedShopeeComissao(false);
     setUserEditedShopeeFrete(false);
@@ -204,11 +199,6 @@ export default function PricingCalculatorModern() {
     }
   }, [indiceSelecionado]);
 
-  // ============================================================
-  // 🔥 BUSCA REFINADA (EXATO → COMEÇA COM → CONTÉM)
-  // ============================================================
-
-  // ✅ FIX: não pode ser "let" local porque reseta a cada render
   const ultimaBuscaRef = useRef("");
 
   const buscarSugestoes = async (termo: string, idx: number) => {
@@ -220,7 +210,6 @@ export default function PricingCalculatorModern() {
       return;
     }
 
-    // 1 — EXATA
     const exact = await supabase
       .from("custos")
       .select('"Código", "Custo Atual"')
@@ -241,7 +230,6 @@ export default function PricingCalculatorModern() {
       return;
     }
 
-    // 2 — COMEÇA COM
     const starts = await supabase
       .from("custos")
       .select('"Código", "Custo Atual"')
@@ -262,7 +250,6 @@ export default function PricingCalculatorModern() {
       return;
     }
 
-    // 3 — CONTÉM (fallback)
     const partial = await supabase
       .from("custos")
       .select('"Código", "Custo Atual"')
@@ -305,7 +292,6 @@ export default function PricingCalculatorModern() {
     }, 50);
   };
 
-  // Navegação
   const handleSugestoesKeys = (
     e: React.KeyboardEvent<HTMLInputElement>,
     idx: number
@@ -389,9 +375,6 @@ export default function PricingCalculatorModern() {
     }
   };
 
-  // =====================
-  // SINCRONIZAÇÃO DE DESCONTO
-  // =====================
   const syncDescontoFromLoja = (descontoInternal: string) => {
     setCalculoLoja((prev) => ({ ...prev, desconto: descontoInternal }));
     setCalculoShopee((prev) => ({ ...prev, desconto: descontoInternal }));
@@ -405,9 +388,6 @@ export default function PricingCalculatorModern() {
     }));
   };
 
-  // =====================
-  // EMBALAGEM COMPARTILHADA (menos Shopee)
-  // =====================
   const handleEmbalagemChangeShared = (raw: string) => {
     const v = toInternal(raw);
     setCalculoLoja((p) => ({ ...p, embalagem: v }));
@@ -423,7 +403,6 @@ export default function PricingCalculatorModern() {
     setCalculoMarketplacePremium((p) => ({ ...p, embalagem: v }));
   };
 
-  // ✅ Shopee: Embalagem editável + trava automático ao editar
   const handleEmbalagemChangeShopee = (raw: string) => {
     setUserEditedShopeeEmbalagem(true);
     const v = toInternal(raw);
@@ -437,9 +416,6 @@ export default function PricingCalculatorModern() {
     setCalculoShopee((p) => ({ ...p, embalagem: v }));
   };
 
-  // =====================
-  // Cálculo de preço por canal
-  // =====================
   const calcularPreco = (dados: Calculo) => {
     const custo = composicao.reduce(
       (sum, item) =>
@@ -468,9 +444,6 @@ export default function PricingCalculatorModern() {
   const precoMLClassico = calcularPreco(calculoMarketplaceClassico);
   const precoMLPremium = calcularPreco(calculoMarketplacePremium);
 
-  // =====================
-  // ✅ REGRA SHOPEE POR FAIXA DE PREÇO (AUTOMÁTICA)
-  // =====================
   useEffect(() => {
     let regras = {
       embalagem: "3",
@@ -529,9 +502,6 @@ export default function PricingCalculatorModern() {
     userEditedShopeeEmbalagem,
   ]);
 
-  // =============================
-  // SINCRONIZAR PREÇOS PARA A SEÇÃO DE ACRÉSCIMOS
-  // =============================
   useEffect(() => {
     setAcrescimos((prev) => ({
       ...prev,
@@ -549,9 +519,6 @@ export default function PricingCalculatorModern() {
     calculoMarketplacePremium.frete,
   ]);
 
-  // =====================
-  // LIMPAR TUDO
-  // =====================
   const [isClearing, setIsClearing] = useState(false);
   const [clicks, setClicks] = useState(0);
 
@@ -636,9 +603,6 @@ export default function PricingCalculatorModern() {
     return () => clearTimeout(timer);
   }, [clicks]);
 
-  // =====================
-  // DOWNLOAD XLSX
-  // =====================
   const handleDownload = () => {
     const now = new Date();
     const dataFormatada = now.toLocaleDateString("pt-BR").replace(/\//g, "-");
@@ -740,15 +704,11 @@ export default function PricingCalculatorModern() {
     saveAs(blob, fileName);
   };
 
-  // =====================
-  // RENDER
-  // =====================
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] px-2 pt-8 pb-6 sm:p-4 md:p-8 sm:pt-24">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-4">
-        {/* COMPOSIÇÃO */}
+    <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] px-2 pt-8 pb-6 sm:p-4 md:p-8 sm:pt-24">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-4 min-w-0">
         <motion.div
-          className={`lg:col-span-6 p-3 sm:p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg h-full relative ${
+          className={`lg:col-span-6 min-w-0 p-3 sm:p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg h-full relative ${
             campoAtivo !== null ? "z-[120]" : "z-0"
           }`}
           initial={{ opacity: 0, y: 20 }}
@@ -785,7 +745,6 @@ export default function PricingCalculatorModern() {
           />
         </motion.div>
 
-        {/* CÁLCULO DE PREÇO + ACRÉSCIMOS */}
         <PriceCalculationSection
           calculoLoja={calculoLoja}
           setCalculoLoja={setCalculoLoja}

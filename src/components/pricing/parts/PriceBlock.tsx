@@ -27,7 +27,6 @@ type PriceBlockProps = {
   onFieldChange?: (key: keyof Calculo, internalValue: string) => void;
   onFieldBlur?: (key: keyof Calculo, internalValue: string) => void;
 
-  // ✅ NOVO: minimizar o bloco (remove do grid no pai)
   onMinimize?: () => void;
 };
 
@@ -82,9 +81,6 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
     }
   };
 
-  /* ============================
-     COPY PREÇO (SÓ VALOR PT-BR)
-     ============================ */
   const copyPreco = async () => {
     const valorSemSimbolo = preco.toLocaleString("pt-BR", {
       minimumFractionDigits: 2,
@@ -95,15 +91,12 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
   };
 
   return (
-    <div className="group relative p-3 sm:p-2 rounded-lg bg-black/30 border border-white/10 flex flex-col justify-center items-center">
-      {/* ✅ Hotspot invisível no canto superior direito (bordinha) */}
+    <div className="group relative w-full min-w-0 p-3 sm:p-2 rounded-lg bg-black/30 border border-white/10 flex flex-col justify-center items-center">
       <div className="absolute top-0 right-0 z-20">
-        {/* Área pequena para “encostar o mouse” e revelar o ícone */}
         <div className="w-8 h-8 flex items-start justify-end">
           <button
             type="button"
             onClick={onMinimize}
-            // 🔥 Só aparece quando o cursor entra nessa bordinha
             className={[
               "opacity-100 sm:opacity-0 sm:group-hover:opacity-100",
               "transition-opacity duration-150",
@@ -117,13 +110,12 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
         </div>
       </div>
 
-      {/* Header (título) */}
-      <h4 className="text-white font-semibold text-sm sm:text-xs mb-2 sm:mb-1 text-center">
+      <h4 className="text-white font-semibold text-sm sm:text-xs mb-2 sm:mb-1 text-center w-full min-w-0">
         {nome}
       </h4>
 
       {keys.map((key, i) => (
-        <div key={key} className="mb-2 sm:mb-1 w-full">
+        <div key={key} className="mb-2 sm:mb-1 w-full min-w-0">
           <Label className="text-neutral-400 text-[11px] sm:text-[10px] block">
             {key === "margem"
               ? "Margem de Lucro (%)"
@@ -148,11 +140,11 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
             }}
             onChange={(e) => handleFieldChange(key, e.target.value)}
             onKeyDown={(e) => handleLinearNav(e, i, refs, keys.length)}
-            className="bg-black/50 border border-white/10 text-white text-sm sm:text-[11px] rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+            className="w-full min-w-0 bg-black/50 border border-white/10 text-white text-sm sm:text-[11px] rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
           />
 
           {key === "desconto" && (
-            <div className="mt-2 sm:mt-1">
+            <div className="mt-2 sm:mt-1 w-full min-w-0">
               <Label className="text-neutral-400 text-[11px] sm:text-[10px] block">
                 Embalagem (R$)
               </Label>
@@ -170,28 +162,27 @@ export const PriceBlock: React.FC<PriceBlockProps> = ({
                   handleEmbalagemBlur(e.target.value);
                 }}
                 onChange={(e) => handleEmbalagemChange(e.target.value)}
-                className="bg-black/50 border border-white/10 text-white text-sm sm:text-[11px] rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                className="w-full min-w-0 bg-black/50 border border-white/10 text-white text-sm sm:text-[11px] rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
               />
             </div>
           )}
         </div>
       ))}
 
-      {/* ============================
-           PREÇO DE VENDA + COPY
-         ============================ */}
-      <div className="mt-2 sm:mt-1 flex flex-col items-center justify-center py-2 sm:py-1">
-        <span className="text-neutral-300 text-xs sm:text-[10px]">Preço de Venda</span>
+      <div className="mt-2 sm:mt-1 w-full min-w-0 flex flex-col items-center justify-center py-2 sm:py-1 overflow-hidden">
+        <span className="text-neutral-300 text-xs sm:text-[10px]">
+          Preço de Venda
+        </span>
 
-        <div className="flex items-center gap-2">
-          <div className="text-xl sm:text-lg font-bold text-[#1a8ceb] leading-tight">
+        <div className="flex w-full min-w-0 items-center justify-center gap-2 overflow-hidden sm:w-auto sm:overflow-visible">
+          <div className="min-w-0 max-w-full truncate text-xl font-bold leading-tight text-[#1a8ceb] sm:max-w-none sm:text-lg sm:truncate-none">
             R$ <AnimatedNumber value={preco} />
           </div>
 
           <button
             type="button"
             onClick={copyPreco}
-            className="-ml-[3px] opacity-100 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer transition-opacity"
+            className="-ml-[3px] shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer transition-opacity"
             title="Copiar"
           >
             <Copy className="w-4 h-4 sm:w-3 sm:h-3 text-white" />
