@@ -1,114 +1,47 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
 
 import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-
-import {
-  ArrowUpDown,
-  Download,
-  Edit as EditIcon,
-  Loader,
-  Layers,
-  Search,
-  Trash2 as TrashIcon,
-  CopyIcon,
-} from "lucide-react";
-
 import { TableControls } from "@/components/costtable/TableControls";
-import FilterBrandsPopover from "@/components/costtable/FilterBrandsPopover";
-import ModalNewCost, {
-  Custo as CustoType,
-} from "@/components/costtable/ModalNewCost";
-import MassEditionModal from "@/components/costtable/MassEditionModal";
+import ModalNewCost from "@/components/costtable/ModalNewCost";
 import ConfirmDeleteModal from "@/components/costtable/ConfirmDeleteModal";
 import ConfirmImportModal from "@/components/costtable/ConfirmImportModal";
+import CostFiltersSidebar from "@/components/costtable/CostFiltersSidebar";
+import CostActionsSidebar from "@/components/costtable/CostActionsSidebar";
+import CostDataTable from "@/components/costtable/CostDataTable";
+import CostTableHeaderBar from "@/components/costtable/CostTableHeaderBar";
+import { FloatingEditor } from "@/components/costtable/FloatingEditor";
 
 import { exportFilteredToXlsx } from "@/components/costtable/helpers/exportFilteredToXlsx";
 import { importFromXlsxOrCsv } from "@/components/costtable/helpers/importFromXlsx";
 import { playImportSuccessSound } from "@/utils/sound";
 import { toastCustom } from "@/utils/toastCustom";
 
-// ✅ Ajuste: garante que "Produto" exista no tipo mesmo que o Modal ainda não tenha sido atualizado
-type Custo = CustoType & { ["Produto"]?: string };
+import {
+  CostFilters,
+  Custo,
+  DEFAULT_COST_FILTERS,
+} from "@/components/costtable/types";
+import {
+  arraysEqual,
+  buildOrSearchParts,
+  parseArrayParam,
+  parsePositiveInt,
+  parseSearchTokens,
+} from "@/components/costtable/utils";
 
-function parsePositiveInt(value: string | null, fallback: number) {
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
-
-function parseArrayParam(value: string | null) {
-  if (!value) return [];
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function arraysEqual(a: string[], b: string[]) {
-  if (a.length !== b.length) return false;
-  return a.every((item, idx) => item === b[idx]);
-}
-
-function sanitizeTerm(input: string) {
-  return input.replace(/[%_]/g, "").replace(/"/g, "").trim();
-}
-
-function parseSearchTokens(q: string) {
-  return q
-    .split(",")
-    .map((s) => sanitizeTerm(s))
-    .filter(Boolean);
-}
-
-function escapeForOrValue(v: string) {
-  return `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
-
-function buildOrSearchParts(tokens: string[]) {
-  const orParts: string[] = [];
-
-  for (const term of tokens) {
-    if (!term) continue;
-
-    const variants = Array.from(
-      new Set([
-        term,
-        term.replace(/\s+/g, " "),
-        term.replace(/\s+/g, "-"),
-        term.replace(/\s+/g, ""),
-      ])
-    );
-
-    for (const v of variants) {
-      const pattern = escapeForOrValue(`%${v}%`);
-      orParts.push(`Código.ilike.${pattern}`);
-      orParts.push(`Marca.ilike.${pattern}`);
-      orParts.push(`Produto.ilike.${pattern}`);
-      orParts.push(`NCM.ilike.${pattern}`);
-    }
-  }
-
-  return orParts;
-}
+import * as XLSX from "xlsx-js-style";
+import { Check as CheckIcon, X as XIcon } from "lucide-react";
 
 export default function CostTable() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const initialSearch = searchParams.get("search") ?? "";
+  const initialMarca = searchParams.get("marca") ?? "";
   const initialPage = parsePositiveInt(searchParams.get("page"), 1);
   const initialPerPage = parsePositiveInt(searchParams.get("perPage"), 50);
   const initialBrands = parseArrayParam(searchParams.get("brands"));
@@ -116,7 +49,6 @@ export default function CostTable() {
   const initialSortDirection =
     searchParams.get("sortDirection") === "desc" ? "desc" : "asc";
 
-  /* ================= ESTADOS ================= */
   const [rows, setRows] = useState<Custo[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -127,7 +59,10 @@ export default function CostTable() {
   const [search, setSearch] = useState(initialSearch);
   const [allBrands, setAllBrands] = useState<string[]>([]);
   const [selectedBrands, setSelectedBrands] = useState<string[]>(initialBrands);
-  const [filterOpen, setFilterOpen] = useState(false);
+  const [filters, setFilters] = useState<CostFilters>({
+    ...DEFAULT_COST_FILTERS,
+    marca: initialMarca,
+  });
 
   const [sortColumn, setSortColumn] = useState<string | null>(initialSortColumn);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">(
@@ -145,8 +80,6 @@ export default function CostTable() {
     ["NCM"]: "",
   });
 
-  const [openMass, setOpenMass] = useState(false);
-
   const [openImport, setOpenImport] = useState(false);
   const [importCount, setImportCount] = useState(0);
   const [previewRows, setPreviewRows] = useState<any[]>([]);
@@ -160,22 +93,13 @@ export default function CostTable() {
   const [selectedRows, setSelectedRows] = useState<Custo[]>([]);
   const [openDelete, setOpenDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const didHydrateFromUrlRef = useRef(false);
-  const lastUrlRef = useRef("");
-
-  /* ================= HELPERS ================= */
-
-  const formatBR = (v: any) => {
-    const n = Number(v);
-    if (!Number.isFinite(n)) return "0,00";
-    return new Intl.NumberFormat("pt-BR", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(n);
-  };
+  const [editing, setEditing] = useState<{
+    codigo: string;
+    value: string;
+    anchorRect: DOMRect;
+  } | null>(null);
 
   const handleCopy = (text: string, key: string) => {
     if (!text) return;
@@ -184,11 +108,23 @@ export default function CostTable() {
     setTimeout(() => setCopiedId(null), 1500);
   };
 
-  /* ================= LOAD ================= */
+  const handleSort = (column: string) => {
+    if (sortColumn !== column) {
+      setSortColumn(column);
+      setSortDirection("asc");
+    } else if (sortDirection === "asc") {
+      setSortDirection("desc");
+    } else {
+      setSortColumn(null);
+      setSortDirection("asc");
+    }
+
+    setCurrentPage(1);
+  };
+
   const loadAllBrands = async () => {
     const pageSize = 1000;
     let from = 0;
-
     const setBrands = new Set<string>();
 
     while (true) {
@@ -215,7 +151,6 @@ export default function CostTable() {
     setAllBrands(Array.from(setBrands).sort((a, b) => a.localeCompare(b)));
   };
 
-  /* ================= QUERY BUILDER ================= */
   const buildQuery = (countOnly = false) => {
     let q = supabase
       .from("custos")
@@ -232,6 +167,32 @@ export default function CostTable() {
 
     if (selectedBrands.length) {
       q = q.in("Marca", selectedBrands);
+    }
+
+    if (filters.marca.trim()) {
+      const marcaTokens = parseSearchTokens(filters.marca);
+      const marcaParts: string[] = [];
+
+      for (const term of marcaTokens) {
+        if (!term) continue;
+
+        const escaped = term.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        marcaParts.push(`Marca.ilike."%${escaped}%"`);
+      }
+
+      if (marcaParts.length === 1) {
+        q = q.ilike("Marca", `%${marcaTokens[0]}%`);
+      } else if (marcaParts.length > 1) {
+        q = q.or(marcaParts.join(","));
+      }
+    }
+
+    if (filters.ncm === "Com NCM") {
+      q = q.not("NCM", "is", null).neq("NCM", "");
+    }
+
+    if (filters.ncm === "Sem NCM") {
+      q = q.or('NCM.is.null,NCM.eq.""');
     }
 
     if (sortColumn) {
@@ -265,20 +226,9 @@ export default function CostTable() {
     setLoading(false);
   };
 
-  /* ================= SORT ================= */
-  const handleSort = (col: string) => {
-    if (sortColumn === col) {
-      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortColumn(col);
-      setSortDirection("asc");
-    }
-  };
-
-  /* ================= URL <-> STATE ================= */
-
   useEffect(() => {
     const urlSearch = searchParams.get("search") ?? "";
+    const urlMarca = searchParams.get("marca") ?? "";
     const urlPage = parsePositiveInt(searchParams.get("page"), 1);
     const urlPerPage = parsePositiveInt(searchParams.get("perPage"), 50);
     const urlBrands = parseArrayParam(searchParams.get("brands"));
@@ -294,30 +244,29 @@ export default function CostTable() {
     setSortDirection((prev) =>
       prev !== urlSortDirection ? urlSortDirection : prev
     );
-
-    didHydrateFromUrlRef.current = true;
+    setFilters((prev) =>
+      prev.marca !== urlMarca ? { ...prev, marca: urlMarca } : prev
+    );
   }, [searchParams]);
 
   useEffect(() => {
-    if (!didHydrateFromUrlRef.current) return;
-
     const params = new URLSearchParams();
 
-    if (search.trim()) params.set("search", search.trim());
+    if (search !== "") params.set("search", search);
+    if (filters.marca !== "") params.set("marca", filters.marca);
     if (currentPage > 1) params.set("page", String(currentPage));
     if (itemsPerPage !== 50) params.set("perPage", String(itemsPerPage));
     if (selectedBrands.length) params.set("brands", selectedBrands.join(","));
     if (sortColumn) params.set("sortColumn", sortColumn);
-    if (sortDirection !== "asc") params.set("sortDirection", sortDirection);
+    if (sortColumn && sortDirection !== "asc") {
+      params.set("sortDirection", sortDirection);
+    }
 
     const nextUrl = params.toString() ? `?${params.toString()}` : "?";
-
-    if (lastUrlRef.current === nextUrl) return;
-    lastUrlRef.current = nextUrl;
-
     router.replace(nextUrl, { scroll: false });
   }, [
     search,
+    filters.marca,
     currentPage,
     itemsPerPage,
     selectedBrands,
@@ -326,7 +275,6 @@ export default function CostTable() {
     router,
   ]);
 
-  /* ================= EFFECTS ================= */
   useEffect(() => {
     loadAllBrands();
   }, []);
@@ -338,13 +286,12 @@ export default function CostTable() {
   useEffect(() => {
     setSelectedRows([]);
     setCurrentPage(1);
-  }, [search, selectedBrands]);
+  }, [search, selectedBrands, filters.marca, filters.ncm, filters.situacao]);
 
   useEffect(() => {
     loadData(1, itemsPerPage);
-  }, [search, selectedBrands]);
+  }, [search, selectedBrands, filters.marca, filters.ncm, filters.situacao]);
 
-  /* ================= EXPORTAÇÃO ================= */
   const handleExport = async () => {
     const now = new Date();
     const date = now.toLocaleDateString("pt-BR").replace(/\//g, "-");
@@ -376,7 +323,6 @@ export default function CostTable() {
 
       while (true) {
         const to = from + pageSize - 1;
-
         const { data, error } = await buildQuery(false).range(from, to);
         if (error) throw error;
 
@@ -397,6 +343,57 @@ export default function CostTable() {
     } finally {
       setExporting(false);
     }
+  };
+
+  const handleExportModeloInclusao = () => {
+    const headers = [
+      "Código",
+      "Marca",
+      "Produto",
+      "Custo Atual",
+      "Custo Antigo",
+      "NCM",
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([headers]);
+
+    const style = {
+      font: { bold: true, color: { rgb: "FFFFFF" } },
+      fill: { fgColor: { rgb: "1A8CEB" } },
+      alignment: { horizontal: "center", vertical: "center" },
+    };
+
+    headers.forEach((_, idx) => {
+      const cell = XLSX.utils.encode_cell({ r: 0, c: idx });
+      (ws as any)[cell] = (ws as any)[cell] || {};
+      (ws as any)[cell].s = style;
+    });
+
+    (ws as any)["!cols"] = [
+      { wch: 15 },
+      { wch: 20 },
+      { wch: 34 },
+      { wch: 15 },
+      { wch: 15 },
+      { wch: 12 },
+    ];
+
+    XLSX.utils.sheet_add_aoa(
+      ws,
+      [["12345", "Liverpool", "Baqueta 7A Liverpool", "250.00", "240.00", "851821"]],
+      { origin: -1 }
+    );
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inclusão");
+
+    const now = new Date();
+    const nomeArquivo = `INCLUSÃO - ${now
+      .toLocaleDateString("pt-BR")
+      .replace(/\//g, "-")} ${now
+      .toLocaleTimeString("pt-BR")
+      .replace(/:/g, "-")}.xlsx`;
+
+    XLSX.writeFile(wb, nomeArquivo);
   };
 
   const handleExportModeloAlteracao = async () => {
@@ -420,7 +417,6 @@ export default function CostTable() {
     }
   };
 
-  /* ================= CRUD ================= */
   const openCreate = () => {
     setMode("create");
     setForm({
@@ -438,6 +434,57 @@ export default function CostTable() {
     setMode("edit");
     setForm({ ...row });
     setOpenNew(true);
+  };
+
+  const openCostEditor = (row: Custo, e: React.MouseEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+
+    setEditing({
+      codigo: row["Código"],
+      value: String(row["Custo Atual"] ?? ""),
+      anchorRect: rect,
+    });
+  };
+
+  const confirmCostEdit = async () => {
+    if (!editing) return;
+
+    const codigo = editing.codigo;
+    const novoCusto = editing.value.trim();
+    const prevRows = rows;
+
+    const updatedRows = rows.map((r) =>
+      r["Código"] === codigo
+        ? {
+            ...r,
+            ["Custo Atual"]: novoCusto,
+          }
+        : r
+    );
+
+    setRows(updatedRows);
+    setEditing(null);
+
+    try {
+      const { error } = await supabase
+        .from("custos")
+        .update({ ["Custo Atual"]: novoCusto })
+        .eq("Código", codigo);
+
+      if (error) throw error;
+
+      toastCustom.success("Custo atualizado!", "Alteração salva com sucesso.");
+    } catch (err: any) {
+      setRows(prevRows);
+      toastCustom.error(
+        "Erro ao atualizar custo",
+        err?.message || "Falha ao salvar alteração."
+      );
+    }
+  };
+
+  const cancelCostEdit = () => {
+    setEditing(null);
   };
 
   const saveForm = async () => {
@@ -472,7 +519,6 @@ export default function CostTable() {
     }
   };
 
-  /* ================= IMPORTAÇÃO ================= */
   const handleImportInclusao = async (file: File) => {
     try {
       toastCustom.message("Lendo arquivo...", "Gerando prévia da inclusão.");
@@ -550,313 +596,90 @@ export default function CostTable() {
     }
   };
 
-  /* === UI === */
+  const allSelected = rows.length > 0 && selectedRows.length === rows.length;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <GlassmorphicCard>
-          <div className="flex flex-wrap justify-between items-center border-b border-neutral-700 p-4 gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 w-5 h-5" />
-              <Input
-                placeholder="Buscar por código, marca, produto ou NCM..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-10 bg-white/5 border-neutral-700 text-white rounded-xl"
+    <div className="min-h-screen bg-[#0b0b0c] p-0">
+      <div className="grid min-h-screen grid-cols-[220px_minmax(0,1fr)_300px]">
+        <aside>
+          <div className="fixed left-0 top-24 h-screen w-[220px] overflow-y-auto bg-[#0b0b0c]">
+            <CostFiltersSidebar
+              search={search}
+              setSearch={setSearch}
+              filters={filters}
+              setFilters={setFilters}
+            />
+          </div>
+        </aside>
+
+        <section className="min-w-0 bg-[#0b0b0c]">
+          <div className="px-4 py-4">
+            <CostTableHeaderBar
+              allSelected={allSelected}
+              hasRows={rows.length > 0}
+              situacao={filters.situacao}
+              sortColumn={sortColumn}
+              sortDirection={sortDirection}
+              selectedCount={selectedRows.length}
+              onSituacaoChange={(value) =>
+                setFilters((prev) => ({ ...prev, situacao: value }))
+              }
+              onToggleSelectAll={(checked) => {
+                if (checked) setSelectedRows(rows);
+                else setSelectedRows([]);
+              }}
+              onRefresh={() => loadData(currentPage, itemsPerPage)}
+              onSort={handleSort}
+              onDeleteSelected={() => setOpenDelete(true)}
+            />
+
+            <GlassmorphicCard className="overflow-hidden rounded-none border border-neutral-700 bg-[#101010] shadow-none border-t-0">
+              <CostDataTable
+                rows={rows}
+                loading={loading}
+                selectedRows={selectedRows}
+                setSelectedRows={setSelectedRows}
+                copiedId={copiedId}
+                handleCopy={handleCopy}
+                openEdit={openEdit}
+                openCostEditor={openCostEditor}
+                openDeleteOne={(row) => {
+                  setSelectedRows([row]);
+                  setOpenDelete(true);
+                }}
+              />
+            </GlassmorphicCard>
+
+            <div className="mt-2 px-2 pb-4">
+              <TableControls
+                currentPage={currentPage}
+                totalPages={Math.max(1, Math.ceil(totalItems / itemsPerPage))}
+                itemsPerPage={itemsPerPage}
+                totalItems={totalItems}
+                onPageChange={(p) => setCurrentPage(p)}
+                onItemsPerPageChange={(v) => {
+                  setItemsPerPage(v);
+                  setCurrentPage(1);
+                }}
+                selectedCount={selectedRows.length}
               />
             </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <FilterBrandsPopover
-                allBrands={allBrands}
-                selectedBrands={selectedBrands}
-                setSelectedBrands={setSelectedBrands}
-                open={filterOpen}
-                onOpenChange={setFilterOpen}
-              />
-
-              <Button
-                variant="outline"
-                className="border-neutral-700 hover:scale-105 transition-all text-white rounded-xl cursor-pointer"
-                onClick={handleExport}
-                disabled={exporting}
-              >
-                {exporting ? (
-                  <>
-                    <Loader className="w-4 h-4 mr-2 animate-spin" /> Exportando...
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4 mr-2" /> Exportar
-                  </>
-                )}
-              </Button>
-
-              {selectedRows.length > 0 && (
-                <>
-                  <Button
-                    variant="outline"
-                    className="border-neutral-700 hover:scale-105 transition-all text-white rounded-xl cursor-pointer"
-                    onClick={() => setOpenDelete(true)}
-                  >
-                    <TrashIcon className="w-4 h-4 mr-2" /> Excluir Selecionados
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="border-neutral-700 hover:scale-105 transition-all text-white rounded-xl cursor-pointer"
-                    onClick={() => setSelectedRows([])}
-                  >
-                    Desmarcar Todos
-                  </Button>
-                </>
-              )}
-
-              <Button
-                className="bg-gradient-to-r from-[#1A8CEB] to-[#0d64ab] hover:scale-105 transition-all rounded-xl text-white cursor-pointer"
-                onClick={() => setOpenMass(true)}
-              >
-                <Layers className="w-4 h-4 mr-2" /> Edição em Massa
-              </Button>
-
-              <Button
-                className="bg-gradient-to-r from-green-500 to-green-600 hover:scale-105 transition-all rounded-xl text-white cursor-pointer"
-                onClick={openCreate}
-              >
-                + Novo Custo
-              </Button>
-            </div>
           </div>
+        </section>
 
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-neutral-700">
-                  <TableHead className="w-[40px] text-center">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4 cursor-pointer accent-[#1A8CEB]"
-                      style={{ accentColor: "#1A8CEB" }}
-                      checked={
-                        selectedRows.length === rows.length && rows.length > 0
-                      }
-                      onChange={(e) => {
-                        if (e.target.checked) setSelectedRows(rows);
-                        else setSelectedRows([]);
-                      }}
-                    />
-                  </TableHead>
-
-                  {[
-                    "Código",
-                    "Marca",
-                    "Produto",
-                    "Custo Atual",
-                    "Custo Antigo",
-                    "NCM",
-                  ].map((col) => (
-                    <TableHead
-                      key={col}
-                      onClick={() => handleSort(col)}
-                      className={`font-semibold cursor-pointer transition-colors select-none 
-                      hover:text-white ${
-                        sortColumn === col ? "text-white" : "text-neutral-400"
-                      }`}
-                    >
-                      <div className="flex items-center gap-1">
-                        {col}
-                        <ArrowUpDown
-                          className={`h-3 w-3 transition-colors ${
-                            sortColumn === col
-                              ? "text-white"
-                              : "text-neutral-500"
-                          }`}
-                        />
-                      </div>
-                    </TableHead>
-                  ))}
-
-                  <TableHead className="w-[120px] text-neutral-400 font-semibold text-center">
-                    Ações
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-
-              <TableBody>
-                {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={8}>
-                      <div className="flex justify-center items-center py-16">
-                        <Loader className="animate-spin h-8 w-8 text-neutral-400" />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : rows.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={8}
-                      className="text-center text-neutral-400 py-8"
-                    >
-                      Nenhum registro encontrado
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  rows.map((c, i) => {
-                    const isSelected = selectedRows.some(
-                      (r) => r["Código"] === c["Código"]
-                    );
-                    return (
-                      <TableRow
-                        key={`${c["Código"]}-${i}`}
-                        className={`border-b border-neutral-700 transition-colors ${
-                          isSelected
-                            ? "bg-white/10 hover:bg-white/20"
-                            : "hover:bg-white/5"
-                        }`}
-                      >
-                        <TableCell className="text-center">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={(e) => {
-                              if (e.target.checked)
-                                setSelectedRows([...selectedRows, c]);
-                              else
-                                setSelectedRows(
-                                  selectedRows.filter(
-                                    (r) => r["Código"] !== c["Código"]
-                                  )
-                                );
-                            }}
-                            className="w-4 h-4 cursor-pointer accent-[#1A8CEB]"
-                            style={{ accentColor: "#1A8CEB" }}
-                          />
-                        </TableCell>
-
-                        <TableCell className="text-white text-center">
-                          <div className="flex justify-center items-center gap-1 group">
-                            {c["Código"]}
-                            <button
-                              onClick={() =>
-                                handleCopy(c["Código"] || "", `codigo-${i}`)
-                              }
-                              title="Copiar"
-                              className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
-                            >
-                              <CopyIcon
-                                className={`w-3 h-3 transition-all duration-300 ${
-                                  copiedId === `codigo-${i}`
-                                    ? "text-blue-500 scale-110"
-                                    : "text-white group-hover:text-blue-400"
-                                }`}
-                              />
-                            </button>
-                          </div>
-                        </TableCell>
-
-                        <TableCell className="text-neutral-300">
-                          {c["Marca"]}
-                        </TableCell>
-
-                        <TableCell className="text-neutral-300">
-                          {c["Produto"]}
-                        </TableCell>
-
-                        <TableCell className="text-neutral-300 text-center">
-                          <div className="flex justify-center items-center gap-1 group">
-                            R$ {formatBR(c["Custo Atual"])}
-                            <button
-                              onClick={() =>
-                                handleCopy(
-                                  `R$ ${formatBR(c["Custo Atual"])}`,
-                                  `custo-${i}`
-                                )
-                              }
-                              title="Copiar"
-                              className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
-                            >
-                              <CopyIcon
-                                className={`w-3 h-3 transition-all duration-300 ${
-                                  copiedId === `custo-${i}`
-                                    ? "text-blue-500 scale-110"
-                                    : "text-white group-hover:text-blue-400"
-                                }`}
-                              />
-                            </button>
-                          </div>
-                        </TableCell>
-
-                        <TableCell className="text-neutral-300 text-center">
-                          R$ {formatBR(c["Custo Antigo"])}
-                        </TableCell>
-
-                        <TableCell className="text-neutral-300 text-center">
-                          <div className="flex justify-center items-center gap-1 group">
-                            {c["NCM"]}
-                            <button
-                              onClick={() =>
-                                handleCopy(c["NCM"] || "", `ncm-${i}`)
-                              }
-                              title="Copiar"
-                              className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
-                            >
-                              <CopyIcon
-                                className={`w-3 h-3 transition-all duration-300 ${
-                                  copiedId === `ncm-${i}`
-                                    ? "text-blue-500 scale-110"
-                                    : "text-white group-hover:text-blue-400"
-                                }`}
-                              />
-                            </button>
-                          </div>
-                        </TableCell>
-
-                        <TableCell className="flex gap-2 justify-center">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-white hover:text-[#1a8ceb] hover:scale-105 transition-all cursor-pointer"
-                            onClick={() => openEdit(c)}
-                            title="Editar"
-                          >
-                            <EditIcon className="h-4 w-4" />
-                          </Button>
-
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-white hover:text-[#ef4444] hover:scale-105 transition-all cursor-pointer"
-                            onClick={() => {
-                              setSelectedRows([c]);
-                              setOpenDelete(true);
-                            }}
-                            title="Excluir"
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
+        <aside className="relative">
+          <div className="fixed right-5 top-23 h-screen w-[300px] overflow-y-auto bg-[#0b0b0c]">
+            <CostActionsSidebar
+              exporting={exporting}
+              handleExport={handleExport}
+              onOpenCreate={openCreate}
+              onExportModeloInclusao={handleExportModeloInclusao}
+              onExportModeloAlteracao={handleExportModeloAlteracao}
+              onImportInclusao={handleImportInclusao}
+              onImportAlteracao={handleImportAlteracao}
+            />
           </div>
-        </GlassmorphicCard>
-
-        <div className="mt-2">
-          <TableControls
-            currentPage={currentPage}
-            totalPages={Math.max(1, Math.ceil(totalItems / itemsPerPage))}
-            itemsPerPage={itemsPerPage}
-            totalItems={totalItems}
-            onPageChange={(p) => setCurrentPage(p)}
-            onItemsPerPageChange={(v) => {
-              setItemsPerPage(v);
-              setCurrentPage(1);
-            }}
-            selectedCount={selectedRows.length}
-          />
-        </div>
+        </aside>
       </div>
 
       <ModalNewCost
@@ -876,14 +699,6 @@ export default function CostTable() {
         loading={deleting}
       />
 
-      <MassEditionModal
-        open={openMass}
-        onOpenChange={setOpenMass}
-        onExportModeloAlteracao={handleExportModeloAlteracao}
-        onImportInclusao={handleImportInclusao}
-        onImportAlteracao={handleImportAlteracao}
-      />
-
       <ConfirmImportModal
         open={openImport}
         onOpenChange={setOpenImport}
@@ -894,6 +709,50 @@ export default function CostTable() {
         warnings={warnings}
         tipo={importTipo}
       />
+
+      {editing && (
+        <FloatingEditor anchorRect={editing.anchorRect} onClose={cancelCostEdit}>
+          <div className="relative flex items-center rounded-md border border-neutral-700 bg-black/30 px-2 py-1.5">
+            <span className="text-xs px-1 py-0.5 rounded bg-black/60 border border-neutral-700 mr-1">
+              R$
+            </span>
+
+            <input
+              autoFocus
+              inputMode="decimal"
+              className="flex-1 bg-transparent outline-none text-sm text-white pr-10"
+              value={editing.value}
+              onChange={(e) =>
+                setEditing((prev) =>
+                  prev ? { ...prev, value: e.target.value } : prev
+                )
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmCostEdit();
+                if (e.key === "Escape") cancelCostEdit();
+              }}
+            />
+
+            <div className="absolute right-1 flex items-center gap-1">
+              <button
+                title="Cancelar"
+                onClick={cancelCostEdit}
+                className="text-red-400 hover:text-red-300"
+              >
+                <XIcon className="w-4 h-4" />
+              </button>
+
+              <button
+                title="Confirmar"
+                onClick={confirmCostEdit}
+                className="text-green-400 hover:text-green-300"
+              >
+                <CheckIcon className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </FloatingEditor>
+      )}
     </div>
   );
 }
