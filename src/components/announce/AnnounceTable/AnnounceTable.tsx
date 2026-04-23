@@ -7,38 +7,48 @@ import { supabase } from "@/integrations/supabase/client";
 import { createNotification } from "@/lib/createNotification";
 
 import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
-import { Table, TableBody, TableHeader } from "@/components/ui/table";
 import { TableControls } from "@/components/announce/AnnounceTable/TableControls";
 
 import ConfirmDeleteModal from "@/components/announce/AnnounceTable/ConfirmDeleteModal";
 import ConfirmImportModal from "@/components/announce/AnnounceTable/ConfirmImportModal";
-import MassEditionModal from "@/components/announce/AnnounceTable/MassEditionModal";
 
 import { useAnunciosData } from "@/components/announce/hooks/useAnunciosData";
 import { useImportExport } from "@/components/announce/hooks/useImportExport";
 
-import TopBar from "@/components/announce/AnnounceTable/TopBar";
-import TableHeaderRow from "@/components/announce/AnnounceTable/TableHeader";
+import AnnounceTableHeaderBar from "@/components/announce/AnnounceTable/AnnounceTableHeaderBar";
 import TableBodyRows from "@/components/announce/AnnounceTable/TableBodyRows";
+import AnunciosFiltersSidebar from "@/components/announce/AnnounceTable/AnunciosFiltersSidebar";
+import AnunciosActionsSidebar from "@/components/announce/AnnounceTable/AnunciosActionsSidebar";
+
+import {
+  AnuncioFilters,
+  DEFAULT_ANUNCIO_FILTERS,
+} from "@/components/announce/AnnounceTable/types";
 
 export default function AnnounceTable() {
   const router = useRouter();
-  const data = useAnunciosData();
 
   const [loadingDelete, setLoadingDelete] = React.useState(false);
+  const [filters, setFilters] =
+    React.useState<AnuncioFilters>(DEFAULT_ANUNCIO_FILTERS);
 
-  const safeSelectedLoja = data.selectedLoja ?? [];
-  const safeSelectedBrands = data.selectedBrands ?? [];
-  const safeSelectedCategoria = data.selectedCategoria ?? [];
+  const data = useAnunciosData(filters);
 
   const impExp = useImportExport(
     data.loadAnuncios,
     data.currentPage,
     {
       search: data.search,
-      selectedStores: safeSelectedLoja,
-      selectedBrands: safeSelectedBrands,
-      selectedCategorias: safeSelectedCategoria,
+      selectedStores:
+        filters.lojasVirtuais && filters.lojasVirtuais !== "Todos"
+          ? [filters.lojasVirtuais]
+          : [],
+      selectedBrands:
+        filters.marca && filters.marca.trim() ? [filters.marca] : [],
+      selectedCategorias:
+        filters.categoria && filters.categoria !== "Todos"
+          ? [filters.categoria]
+          : [],
     },
     data.selectedRows as any
   );
@@ -46,10 +56,7 @@ export default function AnnounceTable() {
   const totalPages = Math.max(1, Math.ceil(data.totalItems / data.itemsPerPage));
 
   const normalize = (s: string) =>
-    s
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/\p{Diacritic}/gu, "");
+    s.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
 
   const resolveTabelaELojaCodigo = (lojaRaw: string) => {
     const lojaz = normalize(String(lojaRaw || "").trim());
@@ -57,6 +64,7 @@ export default function AnnounceTable() {
     if (lojaz.includes("pikot") || lojaz === "pk") {
       return { tabela: "anuncios_pk", lojaCodigo: "PK" as const };
     }
+
     if (lojaz.includes("sobaquetas") || lojaz === "sb") {
       return { tabela: "anuncios_sb", lojaCodigo: "SB" as const };
     }
@@ -169,58 +177,76 @@ export default function AnnounceTable() {
     }
   };
 
+  const allSelected =
+    data.rows.length > 0 && data.selectedRows.length === data.rows.length;
+
+  const handleToggleSelectAll = (checked: boolean) => {
+    if (checked) {
+      data.setSelectedRows(data.rows as any);
+    } else {
+      data.setSelectedRows([]);
+    }
+  };
+
+  const handleSituacaoChange = (value: string) => {
+    setFilters((prev) => ({ ...prev, situacao: value }));
+  };
+
+  const handleRefresh = () => {
+    data.loadAnuncios(data.currentPage);
+  };
+
+  const handleDeleteFromHeader = () => {
+    if (data.selectedRows.length === 0) return;
+    data.setOpenDelete(true);
+  };
+
+  const handleSort = (column: string) => {
+    if (data.sortColumn !== column) {
+      data.setSortColumn(column);
+      data.setSortDirection("asc");
+    } else if (data.sortDirection === "asc") {
+      data.setSortDirection("desc");
+    } else {
+      data.setSortColumn(null);
+      data.setSortDirection("asc");
+    }
+
+    data.setCurrentPage(1);
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <GlassmorphicCard>
-          <TopBar
-            search={data.search}
-            setSearch={data.setSearch}
-            allBrands={data.allBrands}
-            allLojas={data.allLojas}
-            allCategorias={data.allCategorias}
-            selectedBrands={safeSelectedBrands}
-            selectedLoja={safeSelectedLoja}
-            selectedCategoria={safeSelectedCategoria}
-            setSelectedBrands={data.setSelectedBrands}
-            setSelectedLoja={data.setSelectedLoja}
-            setSelectedCategoria={data.setSelectedCategoria}
-            filterOpen={data.filterOpen}
-            setFilterOpen={data.setFilterOpen}
-            fileInputRef={impExp.fileInputRef}
-            onFileSelect={impExp.handleFileSelect}
-            onExport={() => impExp.handleExport()}
-            selectedCount={data.selectedRows.length}
-            onDeleteSelected={() => {
-              if (data.selectedRows.length === 0) return;
-              data.setOpenDelete(true);
-            }}
-            onClearSelection={() => data.setSelectedRows([])}
-            onMassEditOpen={() => {
-              data.setOpenDelete(false);
-              impExp.setOpenMassEdition(true);
-            }}
-            onImportOpen={() => {
-              if (typeof (impExp as any).setImportMode === "function") {
-                (impExp as any).setImportMode("inclusao");
-              }
-              impExp.fileInputRef.current?.click();
-            }}
-            onNew={() => router.push("/dashboard/anuncios/edit")}
-          />
+    <div className="min-h-screen bg-[#0b0b0c] p-0">
+      <div className="grid min-h-screen grid-cols-[220px_minmax(0,1fr)_300px]">
+        <aside>
+          <div className="fixed left-0 top-24 w-[220px] bg-[#0b0b0c]">
+            <AnunciosFiltersSidebar
+              search={data.search}
+              setSearch={data.setSearch}
+              filters={filters}
+              setFilters={setFilters}
+              allCategorias={data.allCategorias}
+            />
+          </div>
+        </aside>
 
-          <Table>
-            <TableHeader>
-              <TableHeaderRow
-                sortColumn={data.sortColumn}
-                sortDirection={data.sortDirection}
-                onSort={data.handleSort}
-                allVisibleSelected={data.allVisibleSelected}
-                toggleSelectAllVisible={data.toggleSelectAllVisible}
-              />
-            </TableHeader>
+        <section className="min-w-0 bg-[#0b0b0c]">
+          <div className="px-4 py-4">
+            <AnnounceTableHeaderBar
+              allSelected={allSelected}
+              hasRows={data.rows.length > 0}
+              situacao={filters.situacao}
+              sortColumn={data.sortColumn}
+              sortDirection={data.sortDirection}
+              selectedCount={data.selectedRows.length}
+              onToggleSelectAll={handleToggleSelectAll}
+              onSituacaoChange={handleSituacaoChange}
+              onRefresh={handleRefresh}
+              onSort={handleSort}
+              onDeleteSelected={handleDeleteFromHeader}
+            />
 
-            <TableBody>
+            <GlassmorphicCard className="overflow-hidden rounded-none border border-neutral-700 bg-[#101010] shadow-none border-t-0">
               <TableBodyRows
                 rows={data.rows}
                 loading={data.loading}
@@ -242,26 +268,42 @@ export default function AnnounceTable() {
                   data.setOpenDelete(true);
                 }}
               />
-            </TableBody>
-          </Table>
-        </GlassmorphicCard>
+            </GlassmorphicCard>
 
-        <div className="mt-2">
-          <TableControls
-            currentPage={data.currentPage}
-            totalPages={totalPages}
-            itemsPerPage={data.itemsPerPage}
-            totalItems={data.totalItems}
-            onPageChange={(p) =>
-              data.setCurrentPage(Math.max(1, Math.min(totalPages, p)))
-            }
-            onItemsPerPageChange={(n) => {
-              data.setItemsPerPage(n);
-              data.setCurrentPage(1);
-            }}
-            selectedCount={data.selectedRows.length}
-          />
-        </div>
+            <div className="mt-2 px-2 pb-4">
+              <TableControls
+                currentPage={data.currentPage}
+                totalPages={totalPages}
+                itemsPerPage={data.itemsPerPage}
+                totalItems={data.totalItems}
+                onPageChange={(p) =>
+                  data.setCurrentPage(Math.max(1, Math.min(totalPages, p)))
+                }
+                onItemsPerPageChange={(n) => {
+                  data.setItemsPerPage(n);
+                  data.setCurrentPage(1);
+                }}
+                selectedCount={data.selectedRows.length}
+              />
+            </div>
+          </div>
+        </section>
+
+        <aside className="relative">
+          <div className="fixed right-5 top-23 w-[300px] bg-[#0b0b0c]">
+            <AnunciosActionsSidebar
+              exporting={Boolean((impExp as any).exporting)}
+              onOpenCreate={() => router.push("/dashboard/anuncios/edit")}
+              onExport={() => impExp.handleExport()}
+              onImportInclusao={(file) => {
+                impExp.handleFileDirect(file, "inclusao");
+              }}
+              onImportAlteracao={(file) => {
+                impExp.handleFileDirect(file, "alteracao");
+              }}
+            />
+          </div>
+        </aside>
       </div>
 
       <ConfirmDeleteModal
@@ -270,22 +312,6 @@ export default function AnnounceTable() {
         count={data.selectedRows.length}
         loading={loadingDelete}
         onConfirm={handleDeleteSelected}
-      />
-
-      <MassEditionModal
-        open={impExp.openMassEdition}
-        onOpenChange={(v) => {
-          if (v) data.setOpenDelete(false);
-          impExp.setOpenMassEdition(v);
-        }}
-        onImportInclusao={(file) => {
-          data.setOpenDelete(false);
-          impExp.handleFileDirect(file, "inclusao");
-        }}
-        onImportAlteracao={(file) => {
-          data.setOpenDelete(false);
-          impExp.handleFileDirect(file, "alteracao");
-        }}
       />
 
       <ConfirmImportModal

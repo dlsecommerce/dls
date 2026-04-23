@@ -1,12 +1,17 @@
 "use client";
 
 import React, { useState } from "react";
-import { TableRow, TableCell } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import {
-  Loader,
+  Table,
+  TableBody,
+  TableCell,
+  TableRow,
+} from "@/components/ui/table";
+import {
   CopyIcon,
   Edit as EditIcon,
+  Loader,
   Trash2 as TrashIcon,
 } from "lucide-react";
 import { Anuncio } from "@/components/announce/types/Announce";
@@ -30,164 +35,229 @@ export default function TableBodyRows({
 }: Props) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const handleCopy = (text: string, uniqueKey: string) => {
+  const handleCopy = (text: string, key: string) => {
     if (!text) return;
     navigator.clipboard.writeText(text);
-    setCopiedId(uniqueKey);
+    setCopiedId(key);
     setTimeout(() => setCopiedId(null), 1500);
   };
 
-  if (loading) {
-    return (
-      <TableRow>
-        <TableCell colSpan={9}>
-          <div className="flex justify-center items-center py-16">
-            <Loader className="animate-spin h-8 w-8 text-neutral-400" />
-          </div>
-        </TableCell>
-      </TableRow>
-    );
-  }
-
-  if (rows.length === 0) {
-    return (
-      <TableRow>
-        <TableCell colSpan={9}>
-          <div className="py-10 text-center text-neutral-400">
-            Nenhum registro encontrado
-          </div>
-        </TableCell>
-      </TableRow>
-    );
-  }
-
   return (
-    <>
-      {rows.map((a) => {
-        const isSelected = selectedRows.some(
-          (r) => `${r.loja}-${r.id}` === `${a.loja}-${a.id}`
-        );
-
-        return (
-          <TableRow
-            key={`${a.id}-${a.loja}-${a.id_tray}`}
-            className={`border-b border-neutral-700 transition-colors ${
-              isSelected ? "bg-white/10 hover:bg-white/20" : "hover:bg-white/5"
-            }`}
-          >
-            {/* Checkbox com cor personalizada #1A8CEB */}
-            <TableCell className="text-center">
-              <input
-                type="checkbox"
-                checked={isSelected}
-                onChange={() => toggleRow(a)}
-                className="w-4 h-4 cursor-pointer accent-[#1A8CEB] [accent-color:#1A8CEB]"
-                style={{ accentColor: "#1A8CEB" }}
-              />
-            </TableCell>
-
-            <TableCell className="text-white text-center">{a.id}</TableCell>
-            <TableCell className="text-neutral-300 text-center">
-              {a.loja}
-            </TableCell>
-
-            {/* ID Bling */}
-            <TableCell className="text-neutral-300 text-center">
-              <div className="flex justify-center items-center gap-1 group">
-                {a.id_bling || "-"}
-                {a.id_bling && (
-                  <button
-                    onClick={() => handleCopy(a.id_bling || "", `bling-${a.id}`)}
-                    title="Copiar"
-                    className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
-                  >
-                    <CopyIcon
-                      className={`w-3 h-3 transition-all duration-300 ${
-                        copiedId === `bling-${a.id}`
-                          ? "text-blue-500 scale-110"
-                          : "text-white group-hover:text-blue-400"
-                      }`}
-                    />
-                  </button>
-                )}
+    <Table className="min-w-[1248px] table-fixed">
+      <TableBody>
+        {loading ? (
+          <TableRow>
+            <TableCell colSpan={9}>
+              <div className="flex items-center justify-center py-16">
+                <Loader className="h-8 w-8 animate-spin text-neutral-400" />
               </div>
-            </TableCell>
-
-            {/* ID Tray */}
-            <TableCell className="text-neutral-300 text-center">
-              <div className="flex justify-center items-center gap-1 group">
-                {a.id_tray || "-"}
-                {a.id_tray && (
-                  <button
-                    onClick={() => handleCopy(a.id_tray || "", `tray-${a.id}`)}
-                    title="Copiar"
-                    className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
-                  >
-                    <CopyIcon
-                      className={`w-3 h-3 transition-all duration-300 ${
-                        copiedId === `tray-${a.id}`
-                          ? "text-blue-500 scale-110"
-                          : "text-white group-hover:text-blue-400"
-                      }`}
-                    />
-                  </button>
-                )}
-              </div>
-            </TableCell>
-
-            {/* Referência */}
-            <TableCell className="text-neutral-300 text-center">
-              <div className="flex justify-center items-center gap-1 group">
-                {a.referencia || "-"}
-                {a.referencia && (
-                  <button
-                    onClick={() =>
-                      handleCopy(a.referencia || "", `ref-${a.id}`)
-                    }
-                    title="Copiar"
-                    className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
-                  >
-                    <CopyIcon
-                      className={`w-3 h-3 transition-all duration-300 ${
-                        copiedId === `ref-${a.id}`
-                          ? "text-blue-500 scale-110"
-                          : "text-white group-hover:text-blue-400"
-                      }`}
-                    />
-                  </button>
-                )}
-              </div>
-            </TableCell>
-
-            <TableCell className="text-neutral-300 text-center">
-              {a.nome}
-            </TableCell>
-            <TableCell className="text-neutral-300 text-center">
-              {a.marca}
-            </TableCell>
-
-            {/* Ações */}
-            <TableCell className="flex justify-center gap-2">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-white hover:text-[#1a8ceb] hover:scale-105 transition-all cursor-pointer"
-                onClick={() => onEdit(String(a.id), a.loja)}
-              >
-                <EditIcon className="h-4 w-4" />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-white hover:text-[#ef4444] hover:scale-105 transition-all cursor-pointer"
-                onClick={() => onDelete(a)}
-              >
-                <TrashIcon className="h-4 w-4" />
-              </Button>
             </TableCell>
           </TableRow>
-        );
-      })}
-    </>
+        ) : rows.length === 0 ? (
+          <TableRow>
+            <TableCell
+              colSpan={9}
+              className="py-8 text-center text-neutral-400"
+            >
+              Nenhum registro encontrado
+            </TableCell>
+          </TableRow>
+        ) : (
+          rows.map((a, i) => {
+            const isSelected = selectedRows.some(
+              (r) => `${r.loja}-${r.id}` === `${a.loja}-${a.id}`
+            );
+
+            return (
+              <TableRow
+                key={`${a.id}-${a.loja}-${a.id_tray}-${i}`}
+                className={`border-b border-neutral-700 transition-colors ${
+                  isSelected
+                    ? "bg-white/10 hover:bg-white/20"
+                    : "hover:bg-white/5"
+                }`}
+              >
+                {/* CHECKBOX */}
+                <TableCell className="w-[48px] text-center">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleRow(a)}
+                    className="h-4 w-4 cursor-pointer accent-green-500"
+                    style={{ accentColor: "#22c55e" }}
+                  />
+                </TableCell>
+
+                {/* ID */}
+                <TableCell className="w-[120px] text-center text-white">
+                  <div className="group inline-flex items-center gap-1">
+                    <span className="truncate">{a.id || "-"}</span>
+                    {a.id && (
+                      <button
+                        onClick={() => handleCopy(String(a.id), `id-${i}`)}
+                        className="cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
+                        type="button"
+                      >
+                        <CopyIcon
+                          className={`h-3 w-3 ${
+                            copiedId === `id-${i}`
+                              ? "text-green-500"
+                              : "text-white group-hover:text-green-400"
+                          }`}
+                        />
+                      </button>
+                    )}
+                  </div>
+                </TableCell>
+
+                {/* LOJA */}
+                <TableCell className="w-[120px] text-left text-neutral-300">
+                  <span className="truncate">{a.loja || "-"}</span>
+                </TableCell>
+
+                {/* ID BLING */}
+                <TableCell className="w-[140px] text-left text-neutral-300">
+                  <div className="group inline-flex max-w-full items-center gap-1">
+                    <span className="truncate">{a.id_bling || "-"}</span>
+                    {a.id_bling && (
+                      <button
+                        onClick={() =>
+                          handleCopy(a.id_bling || "", `bling-${i}`)
+                        }
+                        className="cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
+                        type="button"
+                      >
+                        <CopyIcon
+                          className={`h-3 w-3 ${
+                            copiedId === `bling-${i}`
+                              ? "text-green-500"
+                              : "text-white group-hover:text-green-400"
+                          }`}
+                        />
+                      </button>
+                    )}
+                  </div>
+                </TableCell>
+
+                {/* REFERÊNCIA */}
+                <TableCell className="w-[140px] text-left text-neutral-300">
+                  <div className="group inline-flex max-w-full items-center gap-1">
+                    <span className="truncate">{a.referencia || "-"}</span>
+                    {a.referencia && (
+                      <button
+                        onClick={() =>
+                          handleCopy(a.referencia || "", `ref-${i}`)
+                        }
+                        className="cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
+                        type="button"
+                      >
+                        <CopyIcon
+                          className={`h-3 w-3 ${
+                            copiedId === `ref-${i}`
+                              ? "text-green-500"
+                              : "text-white group-hover:text-green-400"
+                          }`}
+                        />
+                      </button>
+                    )}
+                  </div>
+                </TableCell>
+
+                {/* ID TRAY */}
+                <TableCell className="w-[140px] text-left text-neutral-300">
+                  <div className="group inline-flex max-w-full items-center gap-1">
+                    <span className="truncate">{a.id_tray || "-"}</span>
+                    {a.id_tray && (
+                      <button
+                        onClick={() => handleCopy(a.id_tray || "", `tray-${i}`)}
+                        className="cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
+                        type="button"
+                      >
+                        <CopyIcon
+                          className={`h-3 w-3 ${
+                            copiedId === `tray-${i}`
+                              ? "text-green-500"
+                              : "text-white group-hover:text-green-400"
+                          }`}
+                        />
+                      </button>
+                    )}
+                  </div>
+                </TableCell>
+
+                {/* NOME */}
+                <TableCell className="min-w-[260px] text-left text-neutral-300">
+                  <div className="group inline-flex max-w-full items-center gap-1">
+                    <span className="truncate">{a.nome || "-"}</span>
+                    {a.nome && (
+                      <button
+                        onClick={() => handleCopy(a.nome || "", `nome-${i}`)}
+                        className="cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
+                        type="button"
+                      >
+                        <CopyIcon
+                          className={`h-3 w-3 ${
+                            copiedId === `nome-${i}`
+                              ? "text-green-500"
+                              : "text-white group-hover:text-green-400"
+                          }`}
+                        />
+                      </button>
+                    )}
+                  </div>
+                </TableCell>
+
+                {/* MARCA */}
+                <TableCell className="w-[160px] text-left text-neutral-300">
+                  <div className="group inline-flex max-w-full items-center gap-1">
+                    <span className="truncate">{a.marca || "-"}</span>
+                    {a.marca && (
+                      <button
+                        onClick={() => handleCopy(a.marca || "", `marca-${i}`)}
+                        className="cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
+                        type="button"
+                      >
+                        <CopyIcon
+                          className={`h-3 w-3 ${
+                            copiedId === `marca-${i}`
+                              ? "text-green-500"
+                              : "text-white group-hover:text-green-400"
+                          }`}
+                        />
+                      </button>
+                    )}
+                  </div>
+                </TableCell>
+
+                {/* AÇÕES */}
+                <TableCell className="w-[120px] text-center">
+                  <div className="flex justify-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="cursor-pointer text-white hover:text-[#1a8ceb]"
+                      onClick={() => onEdit(String(a.id), a.loja)}
+                      type="button"
+                    >
+                      <EditIcon className="h-4 w-4" />
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="cursor-pointer text-white hover:text-[#ef4444]"
+                      onClick={() => onDelete(a)}
+                      type="button"
+                    >
+                      <TrashIcon className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })
+        )}
+      </TableBody>
+    </Table>
   );
 }

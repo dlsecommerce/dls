@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
 import { Anuncio } from "@/components/announce/types/Announce";
+import { AnuncioFilters } from "@/components/announce/AnnounceTable/types";
 import { ORDERABLE_COLUMNS } from "../utils/constants";
 import { RowShape, mapRowToAnuncio } from "../utils/mapRowToAnuncio";
 
@@ -14,19 +15,6 @@ import { RowShape, mapRowToAnuncio } from "../utils/mapRowToAnuncio";
 function parsePositiveInt(value: string | null, fallback: number) {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : fallback;
-}
-
-function parseArrayParam(value: string | null) {
-  if (!value) return [];
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function arraysEqual(a: string[], b: string[]) {
-  if (a.length !== b.length) return false;
-  return a.every((item, idx) => item === b[idx]);
 }
 
 function sanitizeTerm(input: string) {
@@ -83,7 +71,29 @@ function buildOrSearchParts(tokens: string[]) {
   return orParts;
 }
 
-export function useAnunciosData() {
+function buildMarcaParts(tokens: string[]) {
+  const parts: string[] = [];
+
+  for (const term of tokens) {
+    if (!term) continue;
+
+    const escaped = term.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    parts.push(`"Marca".ilike."%${escaped}%"`);
+  }
+
+  return parts;
+}
+
+function normalizeLojaToCode(value: string) {
+  const v = String(value || "").trim().toLowerCase();
+
+  if (v === "pikot shop" || v === "pk") return "PK";
+  if (v === "sóbaquetas" || v === "sobaquetas" || v === "sb") return "SB";
+
+  return value;
+}
+
+export function useAnunciosData(filters: AnuncioFilters) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -94,10 +104,7 @@ export function useAnunciosData() {
   const initialSearch = searchParams.get("search") ?? "";
   const initialPage = parsePositiveInt(searchParams.get("page"), 1);
   const initialPerPage = parsePositiveInt(searchParams.get("perPage"), 50);
-  const initialBrands = parseArrayParam(searchParams.get("brands"));
-  const initialLojas = parseArrayParam(searchParams.get("lojas"));
-  const initialCategorias = parseArrayParam(searchParams.get("categorias"));
-  const initialSortColumn = searchParams.get("sortColumn") || "ID";
+  const initialSortColumn = searchParams.get("sortColumn") || null;
   const initialSortDirection =
     searchParams.get("sortDirection") === "desc" ? "desc" : "asc";
 
@@ -115,18 +122,8 @@ export function useAnunciosData() {
   const [search, setSearch] = useState(initialSearch);
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
 
-  const [allBrands, setAllBrands] = useState<string[]>([]);
-  const [allLojas] = useState<string[]>(["Pikot Shop", "Sóbaquetas"]);
   const [allCategorias, setAllCategorias] = useState<string[]>([]);
-
-  const [selectedBrands, setSelectedBrands] = useState<string[]>(initialBrands);
-  const [selectedLoja, setSelectedLoja] = useState<string[]>(initialLojas);
-  const [selectedCategoria, setSelectedCategoria] =
-    useState<string[]>(initialCategorias);
-
-  const [filterOpen, setFilterOpen] = useState(false);
-
-  const [sortColumn, setSortColumn] = useState<string>(initialSortColumn);
+  const [sortColumn, setSortColumn] = useState<string | null>(initialSortColumn);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">(
     initialSortDirection
   );
@@ -142,43 +139,39 @@ export function useAnunciosData() {
      Facets
   =========================== */
 
-  const fetchDistinct = async (column: "Marca" | "Categoria") => {
+  const hydrateCategorias = async () => {
     const { data } = await supabase
       .from("anuncios_all")
-      .select(`${column}`, { distinct: true })
-      .not(column, "is", null)
-      .neq(column, "")
-      .order(column, { ascending: true })
+      .select("Categoria", { distinct: true })
+      .not("Categoria", "is", null)
+      .neq("Categoria", "")
+      .order("Categoria", { ascending: true })
       .limit(20000);
 
-    return [...new Set((data || []).map((r: any) => String(r[column] ?? "")))];
-  };
+    const categorias = [
+      ...new Set((data || []).map((r: any) => String(r.Categoria ?? "").trim())),
+    ].filter(Boolean);
 
-  const hydrateFacets = async () => {
-    const [marcas, categorias] = await Promise.all([
-      fetchDistinct("Marca"),
-      fetchDistinct("Categoria"),
-    ]);
-    setAllBrands(marcas.sort());
-    setAllCategorias(categorias.sort());
+    setAllCategorias(categorias.sort((a, b) => a.localeCompare(b)));
   };
 
   /* ===========================
      Carregar anúncios
   =========================== */
 
-  const loadAnuncios = async (page = currentPage) => {
+  const loadAnuncios = async (page = currentPage, limit = itemsPerPage) => {
     setLoading(true);
 
     try {
-      const from = (page - 1) * itemsPerPage;
-      const to = from + itemsPerPage - 1;
+      const from = (page - 1) * limit;
+      const to = from + limit - 1;
 
       let query = supabase
         .from("anuncios_all")
         .select("*", { count: "exact" })
         .range(from, to);
 
+      /* ===== Busca global ===== */
       if (debouncedSearch.trim()) {
         const tokens = parseSearchTokens(debouncedSearch.trim());
         const orParts = buildOrSearchParts(tokens);
@@ -188,33 +181,64 @@ export function useAnunciosData() {
         }
       }
 
-      if (selectedBrands.length) query = query.in("Marca", selectedBrands);
-      if (selectedCategoria.length)
-        query = query.in("Categoria", selectedCategoria);
+      /* ===== Marca ===== */
+      if (filters.marca.trim()) {
+        const marcaTokens = parseSearchTokens(filters.marca);
 
-      if (selectedLoja.length) {
-        const lojaCodes = selectedLoja.map((loja) =>
-          loja === "Pikot Shop"
-            ? "PK"
-            : loja === "Sóbaquetas"
-            ? "SB"
-            : loja
-        );
-        query = query.in("Loja", lojaCodes);
+        if (marcaTokens.length === 1) {
+          query = query.ilike("Marca", `%${marcaTokens[0]}%`);
+        } else if (marcaTokens.length > 1) {
+          const marcaParts = buildMarcaParts(marcaTokens);
+          query = query.or(marcaParts.join(","));
+        }
       }
 
+      /* ===== Categoria ===== */
+      if (filters.categoria && filters.categoria !== "Todos") {
+        query = query.eq("Categoria", filters.categoria);
+      }
+
+      /* ===== Tipo ===== */
+      if (filters.tipo && filters.tipo !== "Todos") {
+        if (filters.tipo === "Produtos") {
+          query = query.eq("Tipo", "PAI");
+        } else if (filters.tipo === "Produtos simples") {
+          query = query.eq("Tipo", "Produto simples");
+        } else if (filters.tipo === "Produtos com variações") {
+          query = query.eq("Tipo", "Produto com variações");
+        } else if (filters.tipo === "Variações") {
+          query = query.eq("Tipo", "Variação");
+        }
+      }
+
+      /* ===== Lojas Virtuais ===== */
+      if (filters.lojasVirtuais && filters.lojasVirtuais !== "Todos") {
+        const lojaCode = normalizeLojaToCode(filters.lojasVirtuais);
+        query = query.eq("Loja", lojaCode);
+      }
+
+      /* ===== Ordenação padrão / manual ===== */
       const primaryCol =
         sortColumn && ORDERABLE_COLUMNS[sortColumn]
           ? ORDERABLE_COLUMNS[sortColumn]
-          : "ID";
+          : null;
 
-      query = query.order(primaryCol, {
-        ascending: sortDirection === "asc",
-        nullsFirst: false,
-      });
+      if (primaryCol) {
+        query = query.order(primaryCol, {
+          ascending: sortDirection === "asc",
+          nullsFirst: false,
+        });
 
-      if (primaryCol !== "ID") {
-        query = query.order("ID", { ascending: true });
+        if (primaryCol !== "ID") {
+          query = query.order("ID", { ascending: true });
+        }
+      } else {
+        query = query.order("ID", { ascending: false });
+      }
+
+      /* ===== Situação ===== */
+      if (filters.situacao === "Últimos Incluídos" && !primaryCol) {
+        query = query.order("ID", { ascending: false });
       }
 
       const { data, count, error } = await query;
@@ -270,8 +294,9 @@ export function useAnunciosData() {
             loja.includes("sobaquetas") ||
             loja.includes("sóbaquetas") ||
             loja === "sb"
-          )
+          ) {
             tabela = "anuncios_sb";
+          }
 
           if (!tabela) return acc;
 
@@ -293,7 +318,7 @@ export function useAnunciosData() {
         })
       );
 
-      await loadAnuncios(currentPage);
+      await loadAnuncios(currentPage, itemsPerPage);
 
       setSelectedRows([]);
       setOpenDelete(false);
@@ -302,7 +327,7 @@ export function useAnunciosData() {
     } finally {
       setDeleting(false);
     }
-  }, [selectedRows, currentPage]);
+  }, [selectedRows, currentPage, itemsPerPage]);
 
   /* ===========================
      URL -> State
@@ -312,10 +337,7 @@ export function useAnunciosData() {
     const urlSearch = searchParams.get("search") ?? "";
     const urlPage = parsePositiveInt(searchParams.get("page"), 1);
     const urlPerPage = parsePositiveInt(searchParams.get("perPage"), 50);
-    const urlBrands = parseArrayParam(searchParams.get("brands"));
-    const urlLojas = parseArrayParam(searchParams.get("lojas"));
-    const urlCategorias = parseArrayParam(searchParams.get("categorias"));
-    const urlSortColumn = searchParams.get("sortColumn") || "ID";
+    const urlSortColumn = searchParams.get("sortColumn") || null;
     const urlSortDirection =
       searchParams.get("sortDirection") === "desc" ? "desc" : "asc";
 
@@ -323,20 +345,7 @@ export function useAnunciosData() {
     setDebouncedSearch((prev) => (prev !== urlSearch ? urlSearch : prev));
     setCurrentPage((prev) => (prev !== urlPage ? urlPage : prev));
     setItemsPerPage((prev) => (prev !== urlPerPage ? urlPerPage : prev));
-
-    setSelectedBrands((prev) =>
-      arraysEqual(prev, urlBrands) ? prev : urlBrands
-    );
-    setSelectedLoja((prev) =>
-      arraysEqual(prev, urlLojas) ? prev : urlLojas
-    );
-    setSelectedCategoria((prev) =>
-      arraysEqual(prev, urlCategorias) ? prev : urlCategorias
-    );
-
-    setSortColumn((prev) =>
-      prev !== urlSortColumn ? urlSortColumn : prev
-    );
+    setSortColumn((prev) => (prev !== urlSortColumn ? urlSortColumn : prev));
     setSortDirection((prev) =>
       prev !== urlSortDirection ? urlSortDirection : prev
     );
@@ -361,13 +370,15 @@ export function useAnunciosData() {
   =========================== */
 
   useEffect(() => {
-    setCurrentPage(1);
     setSelectedRows([]);
+    setCurrentPage(1);
   }, [
     debouncedSearch,
-    selectedBrands,
-    selectedLoja,
-    selectedCategoria,
+    filters.situacao,
+    filters.categoria,
+    filters.tipo,
+    filters.lojasVirtuais,
+    filters.marca,
   ]);
 
   /* ===========================
@@ -382,25 +393,14 @@ export function useAnunciosData() {
     if (search.trim()) params.set("search", search.trim());
     if (currentPage > 1) params.set("page", String(currentPage));
     if (itemsPerPage !== 50) params.set("perPage", String(itemsPerPage));
-
-    if (selectedBrands.length)
-      params.set("brands", selectedBrands.join(","));
-
-    if (selectedLoja.length)
-      params.set("lojas", selectedLoja.join(","));
-
-    if (selectedCategoria.length)
-      params.set("categorias", selectedCategoria.join(","));
-
     if (sortColumn) params.set("sortColumn", sortColumn);
-
-    if (sortDirection !== "asc")
+    if (sortColumn && sortDirection !== "asc") {
       params.set("sortDirection", sortDirection);
+    }
 
     const nextUrl = params.toString() ? `?${params.toString()}` : "?";
 
     if (lastUrlRef.current === nextUrl) return;
-
     lastUrlRef.current = nextUrl;
 
     router.replace(nextUrl, { scroll: false });
@@ -408,9 +408,6 @@ export function useAnunciosData() {
     search,
     currentPage,
     itemsPerPage,
-    selectedBrands,
-    selectedLoja,
-    selectedCategoria,
     sortColumn,
     sortDirection,
     router,
@@ -421,18 +418,20 @@ export function useAnunciosData() {
   =========================== */
 
   useEffect(() => {
-    hydrateFacets();
+    hydrateCategorias();
   }, []);
 
   useEffect(() => {
-    loadAnuncios(currentPage);
+    loadAnuncios(currentPage, itemsPerPage);
   }, [
     currentPage,
     itemsPerPage,
     debouncedSearch,
-    selectedBrands,
-    selectedLoja,
-    selectedCategoria,
+    filters.situacao,
+    filters.categoria,
+    filters.tipo,
+    filters.lojasVirtuais,
+    filters.marca,
     sortColumn,
     sortDirection,
   ]);
@@ -444,10 +443,13 @@ export function useAnunciosData() {
   const handleSort = (col: string) => {
     if (!(col in ORDERABLE_COLUMNS)) return;
 
-    if (sortColumn === col) {
-      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
+    if (sortColumn !== col) {
       setSortColumn(col);
+      setSortDirection("asc");
+    } else if (sortDirection === "asc") {
+      setSortDirection("desc");
+    } else {
+      setSortColumn(null);
       setSortDirection("asc");
     }
 
@@ -510,25 +512,17 @@ export function useAnunciosData() {
     rows,
     loading,
     totalItems,
-    allBrands,
-    allLojas,
     allCategorias,
-    selectedBrands,
-    selectedLoja,
-    selectedCategoria,
     currentPage,
     itemsPerPage,
     setCurrentPage,
     setItemsPerPage,
     search,
     setSearch,
-    setSelectedBrands,
-    setSelectedLoja,
-    setSelectedCategoria,
-    filterOpen,
-    setFilterOpen,
     sortColumn,
     sortDirection,
+    setSortColumn,
+    setSortDirection,
     handleSort,
     selectedRows,
     setSelectedRows,
