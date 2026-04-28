@@ -68,6 +68,8 @@ export default function TableBodyRows({
               (r) => `${r.loja}-${r.id}` === `${a.loja}-${a.id}`
             );
 
+            const variationCount = Number((a as any).total_variacoes || 0);
+
             return (
               <TableRow
                 key={`${a.id}-${a.loja}-${a.id_tray}-${i}`}
@@ -189,6 +191,14 @@ export default function TableBodyRows({
                 <TableCell className="min-w-[260px] text-left text-neutral-300">
                   <div className="group inline-flex max-w-full items-center gap-1">
                     <span className="truncate">{a.nome || "-"}</span>
+
+                    {variationCount > 0 && (
+                      <span className="shrink-0 whitespace-nowrap text-sm font-medium text-green-500">
+                        ({variationCount}{" "}
+                        {variationCount === 1 ? "variação" : "variações"})
+                      </span>
+                    )}
+
                     {a.nome && (
                       <button
                         onClick={() => handleCopy(a.nome || "", `nome-${i}`)}

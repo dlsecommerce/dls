@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { supabase } from "@/integrations/supabase/client";
 import { createNotification } from "@/lib/createNotification";
@@ -25,14 +25,102 @@ import {
   DEFAULT_ANUNCIO_FILTERS,
 } from "@/components/announce/AnnounceTable/types";
 
+const parsePositiveInt = (value: string | null, fallback: number) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
 export default function AnnounceTable() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const initialSearch = searchParams.get("search") ?? "";
+  const initialPage = parsePositiveInt(searchParams.get("page"), 1);
+  const initialPerPage = parsePositiveInt(searchParams.get("perPage"), 50);
+
+  const initialSortColumn = searchParams.get("sortColumn") || null;
+  const initialSortDirection =
+    searchParams.get("sortDirection") === "desc" ? "desc" : "asc";
+
+  const initialFilters: AnuncioFilters = {
+    ...DEFAULT_ANUNCIO_FILTERS,
+    situacao:
+      searchParams.get("situacao") ?? DEFAULT_ANUNCIO_FILTERS.situacao,
+    categoria:
+      searchParams.get("categoria") ?? DEFAULT_ANUNCIO_FILTERS.categoria,
+    tipo: searchParams.get("tipo") ?? DEFAULT_ANUNCIO_FILTERS.tipo,
+    lojasVirtuais:
+      searchParams.get("loja") ?? DEFAULT_ANUNCIO_FILTERS.lojasVirtuais,
+    marca: searchParams.get("marca") ?? DEFAULT_ANUNCIO_FILTERS.marca,
+  };
 
   const [loadingDelete, setLoadingDelete] = React.useState(false);
   const [filters, setFilters] =
-    React.useState<AnuncioFilters>(DEFAULT_ANUNCIO_FILTERS);
+    React.useState<AnuncioFilters>(initialFilters);
 
   const data = useAnunciosData(filters);
+
+  React.useEffect(() => {
+    data.setSearch(initialSearch);
+    data.setCurrentPage(initialPage);
+    data.setItemsPerPage(initialPerPage);
+    data.setSortColumn(initialSortColumn);
+    data.setSortDirection(initialSortDirection);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  React.useEffect(() => {
+    const params = new URLSearchParams();
+
+    if (data.search) params.set("search", data.search);
+    if (filters.marca) params.set("marca", filters.marca);
+
+    if (
+      filters.situacao &&
+      filters.situacao !== DEFAULT_ANUNCIO_FILTERS.situacao
+    ) {
+      params.set("situacao", filters.situacao);
+    }
+
+    if (
+      filters.categoria &&
+      filters.categoria !== DEFAULT_ANUNCIO_FILTERS.categoria
+    ) {
+      params.set("categoria", filters.categoria);
+    }
+
+    if (filters.tipo && filters.tipo !== DEFAULT_ANUNCIO_FILTERS.tipo) {
+      params.set("tipo", filters.tipo);
+    }
+
+    if (
+      filters.lojasVirtuais &&
+      filters.lojasVirtuais !== DEFAULT_ANUNCIO_FILTERS.lojasVirtuais
+    ) {
+      params.set("loja", filters.lojasVirtuais);
+    }
+
+    if (data.currentPage > 1) params.set("page", String(data.currentPage));
+    if (data.itemsPerPage !== 50) {
+      params.set("perPage", String(data.itemsPerPage));
+    }
+
+    if (data.sortColumn) params.set("sortColumn", data.sortColumn);
+    if (data.sortColumn && data.sortDirection !== "asc") {
+      params.set("sortDirection", data.sortDirection);
+    }
+
+    const nextUrl = params.toString() ? `?${params.toString()}` : "?";
+    router.replace(nextUrl, { scroll: false });
+  }, [
+    data.search,
+    filters,
+    data.currentPage,
+    data.itemsPerPage,
+    data.sortColumn,
+    data.sortDirection,
+    router,
+  ]);
 
   const impExp = useImportExport(
     data.loadAnuncios,
