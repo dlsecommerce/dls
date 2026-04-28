@@ -34,22 +34,25 @@ export default function Resultados({
   enableScroll,
 }: Props) {
   // Garante que tenha pelo menos 1 bloco de exemplo
-  const blocos = composicao.length > 0 ? composicao : [{ codigo: "", quantidade: "", custo: "" }];
+  const blocos =
+    composicao.length > 0
+      ? composicao
+      : [{ codigo: "", quantidade: "", custo: "" }];
 
   // Ativa scroll automático ao atingir 10 blocos
   const wrapperClass =
     composicao.length >= 10
-      ? "max-h-[420px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#1a8ceb]/30 scrollbar-track-transparent"
+      ? "max-h-[60dvh] sm:max-h-[420px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#1a8ceb]/30 scrollbar-track-transparent"
       : "";
 
   return (
     <>
       {/* Cabeçalho */}
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <TrendingUp className="w-5 h-5 text-[#1a8ceb]" />
-          <h3 className="text-base font-bold text-white flex items-center gap-2">
-            Resultados
+        <div className="flex items-center gap-2 min-w-0">
+          <TrendingUp className="w-5 h-5 text-[#1a8ceb] shrink-0" />
+          <h3 className="text-base font-bold text-white flex items-center gap-2 min-w-0">
+            <span className="truncate">Resultados</span>
             <HelpTooltip text="Resultados do Preço de Venda." />
           </h3>
         </div>
@@ -64,26 +67,26 @@ export default function Resultados({
           return (
             <div
               key={idx}
-              className={`p-2 rounded-lg border mb-2 transition-colors ${
+              className={`p-3 sm:p-2 rounded-lg border mb-2 transition-colors ${
                 hasCost
                   ? "bg-[#1a8ceb]/10 border-[#1a8ceb]/30"
                   : "bg-black/30 border-white/10"
               }`}
             >
-              <span className="text-white text-xs block mb-1">
+              <span className="text-white text-sm sm:text-xs block mb-2 sm:mb-1 truncate">
                 {item.codigo || "SKU"}
               </span>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div>
-                  <Label className="text-neutral-300 text-[10px] block mb-1">
+                  <Label className="text-neutral-300 text-xs sm:text-[10px] block mb-1">
                     Unitário (R$)
                   </Label>
                   <Input
                     value={resultado?.unitFmt || ""}
                     placeholder="0,00"
                     readOnly
-                    className={`text-xs rounded-md bg-black/50 text-white ${
+                    className={`h-11 sm:h-auto text-base sm:text-xs rounded-md bg-black/50 text-white ${
                       hasCost
                         ? "border-[#1a8ceb]/50 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
                         : "border-white/10 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
@@ -92,14 +95,14 @@ export default function Resultados({
                 </div>
 
                 <div>
-                  <Label className="text-neutral-300 text-[10px] block mb-1">
+                  <Label className="text-neutral-300 text-xs sm:text-[10px] block mb-1">
                     Total (R$)
                   </Label>
                   <Input
                     value={resultado?.totalFmt || ""}
                     placeholder="0,00"
                     readOnly
-                    className={`text-xs rounded-md bg-black/50 text-white ${
+                    className={`h-11 sm:h-auto text-base sm:text-xs rounded-md bg-black/50 text-white ${
                       hasCost
                         ? "border-[#1a8ceb]/50 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
                         : "border-white/10 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"

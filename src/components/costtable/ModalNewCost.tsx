@@ -201,8 +201,7 @@ export default function ModalNewCost({
   }, [form, marcas]);
 
   const isDropdownActive = marcaFocus;
-
-  useEffect(() => {
+    useEffect(() => {
     if (!isDropdownActive) return;
     setIndiceSelecionado((prev) => {
       if (prev < 0) return 0;
@@ -392,12 +391,11 @@ export default function ModalNewCost({
       setTimeout(() => setToast({ message: "", type: null }), 3000);
     }
   };
-
-  return (
+    return (
     <>
       {toast.type && (
         <div
-          className={`fixed bottom-6 right-6 px-4 py-3 rounded-xl shadow-lg text-white text-sm transition-all duration-300 ${
+          className={`fixed bottom-6 right-6 z-[9999] px-4 py-3 rounded-xl shadow-lg text-white text-sm transition-all duration-300 ${
             toast.type === "success" ? "bg-[#22c55e]" : "bg-[#ef4444]"
           }`}
         >
@@ -407,11 +405,33 @@ export default function ModalNewCost({
 
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
-          className="fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2 
-                     bg-[#0f0f0f] border border-neutral-700 rounded-2xl shadow-2xl p-6 
-                     max-w-lg w-[90%] transition-all duration-300 ease-in-out"
+          className="
+            fixed top-1/2 left-1/2 z-50
+            -translate-x-1/2 -translate-y-1/2
+
+            bg-[#0f0f0f]
+            border border-neutral-700
+            rounded-2xl
+            shadow-2xl
+
+            w-[calc(100vw-16px)]
+            max-w-[calc(100vw-16px)]
+            max-h-[calc(100dvh-16px)]
+
+            sm:max-w-lg
+            sm:w-[90%]
+
+            flex flex-col
+            overflow-hidden
+
+            p-4
+            sm:p-6
+            pb-[calc(1rem+env(safe-area-inset-bottom))]
+
+            transition-all duration-300 ease-in-out
+          "
         >
-          <DialogHeader>
+          <DialogHeader className="shrink-0">
             <div className="flex items-center gap-2">
               <DollarSign className="w-5 h-5 text-white" />
               <DialogTitle className="text-white text-lg">
@@ -420,105 +440,124 @@ export default function ModalNewCost({
             </div>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
-            <div>
-              <Label className="text-neutral-300">Código</Label>
-              <Input
-                value={form["Código"]}
-                onChange={(e) =>
-                  setForm({ ...form, ["Código"]: e.target.value })
-                }
-                disabled={mode === "edit"}
-                className="bg-white/5 border-neutral-700 text-white rounded-xl"
-                placeholder="Ex: 5535 ou TN 5AM"
-              />
-            </div>
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+              <div>
+                <Label className="text-neutral-300">Código</Label>
+                <Input
+                  value={form["Código"]}
+                  onChange={(e) =>
+                    setForm({ ...form, ["Código"]: e.target.value })
+                  }
+                  disabled={mode === "edit"}
+                  className="bg-white/5 border-neutral-700 text-white rounded-xl"
+                  placeholder="Ex: 5535 ou TN 5AM"
+                />
+              </div>
 
-            <div ref={marcaWrapRef} className="relative">
-              <Label className="text-neutral-300">Marca</Label>
-              <Input
-                value={form["Marca"]}
-                onChange={(e) => {
-                  setForm({ ...form, ["Marca"]: e.target.value });
-                  setIndiceSelecionado(0);
-                  setMarcaFocus(true);
-                }}
-                onFocus={() => setMarcaFocus(true)}
-                onKeyDown={onMarcaKeyDown}
-                className="bg-white/5 border-neutral-700 text-white rounded-xl"
-                placeholder="Ex: Liverpool"
-                autoComplete="off"
-              />
+              <div ref={marcaWrapRef} className="relative">
+                <Label className="text-neutral-300">Marca</Label>
+                <Input
+                  value={form["Marca"]}
+                  onChange={(e) => {
+                    setForm({ ...form, ["Marca"]: e.target.value });
+                    setIndiceSelecionado(0);
+                    setMarcaFocus(true);
+                  }}
+                  onFocus={() => setMarcaFocus(true)}
+                  onKeyDown={onMarcaKeyDown}
+                  className="bg-white/5 border-neutral-700 text-white rounded-xl"
+                  placeholder="Ex: Liverpool"
+                  autoComplete="off"
+                />
 
-              <BrandDropdown
-                isActive={isDropdownActive}
-                sugestoes={sugestoesMarca}
-                listaRef={listaRef}
-                indiceSelecionado={indiceSelecionado}
-                onSelect={(marca) => selectMarca(marca)}
-                emptyText="Nenhuma marca cadastrada ainda"
-              />
-            </div>
+                <BrandDropdown
+                  isActive={isDropdownActive}
+                  sugestoes={sugestoesMarca}
+                  listaRef={listaRef}
+                  indiceSelecionado={indiceSelecionado}
+                  onSelect={(marca) => selectMarca(marca)}
+                  emptyText="Nenhuma marca cadastrada ainda"
+                />
+              </div>
 
-            <div className="md:col-span-2">
-              <Label className="text-neutral-300">Produto</Label>
-              <Input
-                value={form["Produto"] || ""}
-                onChange={(e) =>
-                  setForm({ ...form, ["Produto"]: e.target.value })
-                }
-                className="bg-white/5 border-neutral-700 text-white rounded-xl"
-                placeholder="Ex: Baqueta 7A Liverpool Luminous Series"
-              />
-            </div>
+              <div className="md:col-span-2">
+                <Label className="text-neutral-300">Produto</Label>
+                <Input
+                  value={form["Produto"] || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, ["Produto"]: e.target.value })
+                  }
+                  className="bg-white/5 border-neutral-700 text-white rounded-xl"
+                  placeholder="Ex: Baqueta 7A Liverpool Luminous Series"
+                />
+              </div>
 
-            <div>
-              <Label className="text-neutral-300">Custo Atual</Label>
-              <Input
-                type="text"
-                value={form["Custo Atual"] || ""}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    ["Custo Atual"]: e.target.value,
-                  })
-                }
-                className="bg-white/5 border-neutral-700 text-white rounded-xl"
-                placeholder="Ex: 89,90"
-              />
-            </div>
+              <div>
+                <Label className="text-neutral-300">Custo Atual</Label>
+                <Input
+                  type="text"
+                  value={form["Custo Atual"] || ""}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      ["Custo Atual"]: e.target.value,
+                    })
+                  }
+                  className="bg-white/5 border-neutral-700 text-white rounded-xl"
+                  placeholder="Ex: 89,90"
+                />
+              </div>
 
-            <div>
-              <Label className="text-neutral-300">Custo Antigo</Label>
-              <Input
-                type="text"
-                value={form["Custo Antigo"] || ""}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    ["Custo Antigo"]: e.target.value,
-                  })
-                }
-                className="bg-white/5 border-neutral-700 text-white rounded-xl"
-                placeholder="Ex: 79,90"
-              />
-            </div>
+              <div>
+                <Label className="text-neutral-300">Custo Antigo</Label>
+                <Input
+                  type="text"
+                  value={form["Custo Antigo"] || ""}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      ["Custo Antigo"]: e.target.value,
+                    })
+                  }
+                  className="bg-white/5 border-neutral-700 text-white rounded-xl"
+                  placeholder="Ex: 79,90"
+                />
+              </div>
 
-            <div className="md:col-span-2">
-              <Label className="text-neutral-300">NCM</Label>
-              <Input
-                value={form["NCM"]}
-                onChange={(e) => setForm({ ...form, ["NCM"]: e.target.value })}
-                className="bg-white/5 border-neutral-700 text-white rounded-xl"
-                placeholder="Ex: 85182100"
-              />
+              <div className="md:col-span-2">
+                <Label className="text-neutral-300">NCM</Label>
+                <Input
+                  value={form["NCM"]}
+                  onChange={(e) =>
+                    setForm({ ...form, ["NCM"]: e.target.value })
+                  }
+                  className="bg-white/5 border-neutral-700 text-white rounded-xl"
+                  placeholder="Ex: 85182100"
+                />
+              </div>
             </div>
           </div>
 
-          <DialogFooter className="mt-5">
+          <DialogFooter
+            className="
+              mt-5
+              shrink-0
+              flex flex-col-reverse gap-2
+              sm:flex-row sm:justify-end
+            "
+          >
             <Button
               variant="outline"
-              className="border-neutral-700 text-white hover:scale-105 cursor-pointer"
+              className="
+                w-full sm:w-auto
+                h-11 sm:h-auto
+                border-neutral-700
+                text-white
+                cursor-pointer
+                active:scale-[0.98]
+                sm:hover:scale-105
+              "
               onClick={() => onOpenChange(false)}
               disabled={saving}
             >
@@ -526,7 +565,16 @@ export default function ModalNewCost({
             </Button>
 
             <Button
-              className="bg-gradient-to-r from-green-500 to-green-600 text-white hover:scale-105 cursor-pointer flex items-center justify-center gap-2"
+              className="
+                w-full sm:w-auto
+                h-11 sm:h-auto
+                bg-gradient-to-r from-green-500 to-green-600
+                text-white
+                cursor-pointer
+                flex items-center justify-center gap-2
+                active:scale-[0.98]
+                sm:hover:scale-105
+              "
               onClick={handleSave}
               disabled={saving}
             >

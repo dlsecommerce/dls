@@ -368,7 +368,7 @@ export default function Decomposition() {
   const enableResultsScroll = resultadosView.length > 10;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-4 md:p-8 pt-20">
+    <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-4 md:p-8 pt-20 max-md:min-h-[100dvh] max-md:px-3 max-md:pt-[calc(4.25rem+env(safe-area-inset-top))] max-md:pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         <ComposicaoCustos
           composicao={composicao}
@@ -393,7 +393,7 @@ export default function Decomposition() {
           adicionarItem={adicionarItem}
         />
 
-        <div className="lg:col-span-5 p-3 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg">
+        <div className="lg:col-span-5 p-3 rounded-xl bg-white/5 border border-white/10 shadow-lg">
           <PrecoVenda
             precoVenda={precoVenda}
             setPrecoVenda={setPrecoVenda}

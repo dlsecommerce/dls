@@ -30,9 +30,13 @@ export default function ConfirmDeleteModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="
-          w-[calc(100vw-24px)]
-          max-w-[calc(100vw-24px)]
+          w-[calc(100vw-16px)]
+          max-w-[calc(100vw-16px)]
+          max-h-[calc(100dvh-16px)]
+          overflow-y-auto
+
           sm:max-w-md
+
           bg-[#0f0f0f]/95
           backdrop-blur-xl
           border
@@ -40,8 +44,10 @@ export default function ConfirmDeleteModal({
           rounded-2xl
           text-white
           shadow-2xl
+
           p-4
           sm:p-6
+          pb-[calc(1rem+env(safe-area-inset-bottom))]
         "
       >
         <DialogHeader>
@@ -100,6 +106,7 @@ export default function ConfirmDeleteModal({
             variant="outline"
             className="
               w-full sm:w-auto
+              h-11 sm:h-auto
               border-neutral-700
               text-white
               transition-all
@@ -115,6 +122,7 @@ export default function ConfirmDeleteModal({
           <Button
             className="
               w-full sm:w-auto
+              h-11 sm:h-auto
               bg-gradient-to-r from-[#ef4444] to-[#dc2626]
               text-white
               flex items-center justify-center gap-2
@@ -126,9 +134,7 @@ export default function ConfirmDeleteModal({
             disabled={loading}
           >
             {loading ? (
-              <>
-                <Loader className="animate-spin w-4 h-4 sm:w-5 sm:h-5" />
-              </>
+              <Loader className="animate-spin w-4 h-4 sm:w-5 sm:h-5" />
             ) : (
               "Excluir"
             )}

@@ -11,8 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Loader, AlertTriangle } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-
-// ✅ desbloqueio de áudio (mudo) no clique do usuário
 import { unlockAudio } from "@/utils/sound";
 
 type Props = {
@@ -27,7 +25,6 @@ type Props = {
   tipo: "inclusao" | "alteracao";
 };
 
-// ✅ Toasts custom (verde/vermelho/laranja + warning top-center)
 const toastCustom = {
   success: (title: string, description?: string) =>
     toast.success(title, {
@@ -92,33 +89,40 @@ export default function ConfirmImportModal({
           rounded-2xl text-white
           shadow-2xl
 
-          w-[95vw] max-w-3xl
-          max-h-[85vh]
+          w-[calc(100vw-16px)]
+          max-w-[calc(100vw-16px)]
+          max-h-[calc(100dvh-16px)]
+
+          sm:max-w-3xl
+          sm:max-h-[85vh]
 
           overflow-hidden
           min-w-0
-          p-6
+          p-4 sm:p-6
 
           flex flex-col
+          pb-[calc(1rem+env(safe-area-inset-bottom))]
         "
       >
         <DialogHeader className="min-w-0 shrink-0">
-          <DialogTitle className="text-lg font-semibold text-white">
+          <DialogTitle className="text-base sm:text-lg font-semibold text-white">
             {titulo}
           </DialogTitle>
         </DialogHeader>
 
-        {/* ✅ Miolo */}
+        {/* MIolo */}
         <div className="mt-3 min-w-0 flex-1 min-h-0 overflow-y-auto pr-1 space-y-4">
-          <p className="text-neutral-300 leading-relaxed">{texto}</p>
+          <p className="text-neutral-300 text-sm sm:text-base leading-relaxed">
+            {texto}
+          </p>
 
-          <p className="text-neutral-300">
+          <p className="text-neutral-300 text-sm sm:text-base">
             O arquivo contém{" "}
             <span className="text-white font-semibold">{count}</span>{" "}
             registros.
           </p>
 
-          {/* ❌ ERROS BLOQUEADORES */}
+          {/* ERROS */}
           {errors.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: -5 }}
@@ -140,7 +144,7 @@ export default function ConfirmImportModal({
             </motion.div>
           )}
 
-          {/* ⚠️ Avisos (não bloqueiam) */}
+          {/* WARNINGS */}
           {warnings.length > 0 && errors.length === 0 && (
             <motion.div
               initial={{ opacity: 0, y: -5 }}
@@ -159,11 +163,11 @@ export default function ConfirmImportModal({
             </motion.div>
           )}
 
-          {/* 📋 Preview */}
+          {/* PREVIEW */}
           {preview.length > 0 && (
             <div className="mt-2 w-full min-w-0 rounded-xl border border-neutral-700 overflow-hidden">
-              <div className="h-56 w-full min-w-0 overflow-auto">
-                <table className="min-w-max text-sm text-neutral-300">
+              <div className="h-52 sm:h-56 w-full min-w-0 overflow-auto">
+                <table className="min-w-max text-xs sm:text-sm text-neutral-300">
                   <thead className="bg-neutral-800 sticky top-0 z-10">
                     <tr>
                       {keys.map((k) => (
@@ -181,12 +185,12 @@ export default function ConfirmImportModal({
                     {preview.map((row, i) => (
                       <tr
                         key={i}
-                        className="odd:bg-neutral-900 even:bg-neutral-800/50 transition-colors"
+                        className="odd:bg-neutral-900 even:bg-neutral-800/50"
                       >
                         {keys.map((k) => (
                           <td
                             key={k}
-                            className="p-2 whitespace-nowrap max-w-[240px] overflow-hidden text-ellipsis"
+                            className="p-2 whitespace-nowrap max-w-[180px] sm:max-w-[240px] overflow-hidden text-ellipsis"
                             title={String(row?.[k] ?? "-")}
                           >
                             {row?.[k] ?? "-"}
@@ -201,11 +205,17 @@ export default function ConfirmImportModal({
           )}
         </div>
 
-        {/* ✅ Footer */}
-        <DialogFooter className="mt-5 shrink-0 min-w-0 flex justify-end gap-3">
+        {/* FOOTER */}
+        <DialogFooter className="mt-5 shrink-0 min-w-0 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
           <Button
             variant="outline"
-            className="border-neutral-700 text-white hover:scale-105 cursor-pointer"
+            className="
+              w-full sm:w-auto
+              h-11 sm:h-auto
+              border-neutral-700 text-white
+              cursor-pointer
+              hover:scale-100 sm:hover:scale-105
+            "
             onClick={(e) => {
               e.stopPropagation();
               onOpenChange(false);
@@ -217,7 +227,10 @@ export default function ConfirmImportModal({
 
           <Button
             className={`
-              hover:scale-105 text-white flex items-center gap-2 cursor-pointer
+              w-full sm:w-auto
+              h-11 sm:h-auto
+              text-white flex items-center justify-center gap-2 cursor-pointer
+              hover:scale-100 sm:hover:scale-105
               ${
                 tipo === "inclusao"
                   ? "bg-green-600 hover:bg-green-700"
@@ -244,22 +257,18 @@ export default function ConfirmImportModal({
                 );
               }
 
-              // ✅ feedback de clique (sem som)
               toastCustom.message(
                 "Importação iniciada",
                 "Processando... aguarde a finalização."
               );
 
-              // ✅ desbloqueia o áudio NO CLIQUE (mudo / sem som)
               await unlockAudio();
-
-              // dispara ação do pai (onde o import de fato acontece)
               onConfirm();
             }}
           >
             {loading ? (
               <>
-                <Loader className="animate-spin w-5 h-5" />
+                <Loader className="animate-spin w-4 h-4 sm:w-5 sm:h-5" />
                 Importando...
               </>
             ) : tipo === "inclusao" ? (

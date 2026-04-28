@@ -13,17 +13,28 @@ export function FloatingEditor({
   onClose?: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-
-  if (typeof window === "undefined" || !anchorRect) return null;
-
   const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const [isMobile, setIsMobile] = useState(false);
 
   const padding = 4;
   const estimatedHeight = 70;
   const maxWidth = 220;
 
   useLayoutEffect(() => {
+    if (typeof window === "undefined" || !anchorRect) return;
+
     const calcPosition = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+
+      if (mobile) {
+        setCoords({
+          top: window.scrollY + window.innerHeight - estimatedHeight - 16,
+          left: window.scrollX + 12,
+        });
+        return;
+      }
+
       const canShowBelow =
         anchorRect.bottom + estimatedHeight + padding <= window.innerHeight;
 
@@ -42,7 +53,12 @@ export function FloatingEditor({
     calcPosition();
 
     window.addEventListener("resize", calcPosition);
-    return () => window.removeEventListener("resize", calcPosition);
+    window.addEventListener("scroll", calcPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", calcPosition);
+      window.removeEventListener("scroll", calcPosition, true);
+    };
   }, [anchorRect]);
 
   useEffect(() => {
@@ -68,6 +84,8 @@ export function FloatingEditor({
     return () => window.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
+  if (typeof window === "undefined" || !anchorRect) return null;
+
   return createPortal(
     <div
       ref={containerRef}
@@ -76,7 +94,8 @@ export function FloatingEditor({
         top: coords.top,
         left: coords.left,
         zIndex: 9999,
-        width: maxWidth,
+        width: isMobile ? "calc(100vw - 24px)" : maxWidth,
+        maxWidth: isMobile ? "calc(100vw - 24px)" : maxWidth,
       }}
     >
       <div className="bg-[#0f0f0f] border border-neutral-700 rounded-lg p-2 shadow-xl">

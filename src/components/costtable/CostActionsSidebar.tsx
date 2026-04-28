@@ -46,7 +46,19 @@ function ActionTextButton({
     return (
       <Button
         type="button"
-        className="h-11 w-full cursor-pointer justify-start rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white transition-all duration-200 hover:from-green-400 hover:to-green-500 hover:shadow-[0_0_14px_rgba(34,197,94,0.22)]"
+        className="
+          h-12 sm:h-11
+          w-full
+          cursor-pointer
+          justify-start
+          rounded-lg
+          bg-gradient-to-r from-green-500 to-green-600
+          text-white
+          transition-all duration-200
+          active:scale-[0.98]
+          sm:hover:from-green-400 sm:hover:to-green-500
+          sm:hover:shadow-[0_0_14px_rgba(34,197,94,0.22)]
+        "
         onClick={handleClick}
         disabled={disabled}
       >
@@ -61,7 +73,17 @@ function ActionTextButton({
       type="button"
       onClick={handleClick}
       disabled={disabled}
-      className="flex w-full cursor-pointer items-start gap-3 rounded-lg px-2 py-2 text-left text-sm text-neutral-200 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+      className="
+        flex w-full
+        items-start gap-3
+        rounded-lg
+        px-2 py-3 sm:py-2
+        text-left text-sm text-neutral-200
+        transition
+        active:scale-[0.98]
+        hover:bg-white/5
+        disabled:cursor-not-allowed disabled:opacity-50
+      "
     >
       <span className="mt-0.5 shrink-0 text-neutral-400">{icon}</span>
       <span className="leading-5">{label}</span>
@@ -123,7 +145,13 @@ export default function CostActionsSidebar({
   if (!hydrated) return null;
 
   return (
-    <div className="bg-transparent p-4">
+    <div
+      className="
+        bg-transparent
+        p-3 sm:p-4
+        w-full
+      "
+    >
       <input
         type="file"
         ref={inputInclusaoRef}
@@ -142,7 +170,7 @@ export default function CostActionsSidebar({
         onChange={handleFileChange(onImportAlteracao)}
       />
 
-      <div className="space-y-2">
+      <div className="space-y-2 sm:space-y-2">
         <ActionTextButton
           icon={<Plus className="h-4 w-4" />}
           label="Novo Custo"
@@ -157,11 +185,19 @@ export default function CostActionsSidebar({
           disabled={exporting}
         />
 
-        <div className="pt-1">
+        <div className="pt-2 sm:pt-1">
           <button
             type="button"
             onClick={() => setShowMoreOptions((prev) => !prev)}
-            className="mb-2 flex cursor-pointer items-center gap-2 px-2 text-sm font-semibold text-green-400 transition hover:underline"
+            className="
+              mb-2
+              flex items-center gap-2
+              px-2
+              text-sm font-semibold text-green-400
+              cursor-pointer
+              active:scale-[0.98]
+              hover:underline
+            "
           >
             {showMoreOptions ? (
               <SquareMinus className="h-4 w-4" />

@@ -120,8 +120,8 @@ export default function CostFiltersSidebar({
   };
 
   return (
-    <div className="w-full bg-transparent px-4 py-4">
-      <div className="w-full max-w-[220px] space-y-5">
+    <div className="w-full bg-transparent px-3 py-4 lg:px-4">
+      <div className="w-full lg:max-w-[220px] space-y-5">
         <div className="w-full">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
@@ -157,17 +157,35 @@ export default function CostFiltersSidebar({
           placeholder="Ex: Liverpool"
         />
 
-        <div className="w-full pt-1">
+        <div className="w-full pt-2 lg:pt-1">
           <Button
             type="button"
-            className="h-10 w-full cursor-pointer rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white transition-all duration-200 hover:from-green-400 hover:to-green-500 hover:shadow-[0_0_14px_rgba(34,197,94,0.22)]"
+            className="
+              h-11 lg:h-10
+              w-full
+              cursor-pointer
+              rounded-lg
+              bg-gradient-to-r from-green-500 to-green-600
+              text-white
+              transition-all duration-200
+              active:scale-[0.98]
+              lg:hover:from-green-400 lg:hover:to-green-500
+              lg:hover:shadow-[0_0_14px_rgba(34,197,94,0.22)]
+            "
           >
             Filtrar
           </Button>
 
           <div
             onClick={clearFilters}
-            className="mt-3 cursor-pointer text-center text-green-400 transition hover:underline"
+            className="
+              mt-3
+              cursor-pointer
+              text-center text-green-400
+              active:scale-[0.98]
+              transition
+              hover:underline
+            "
           >
             Limpar filtros
           </div>

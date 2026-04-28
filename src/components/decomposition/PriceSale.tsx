@@ -156,23 +156,23 @@ export default function PrecoVenda({
 
   /* === JSX === */
   return (
-    <div className="mb-3 relative">
+    <div className="mb-4 sm:mb-3 relative">
       {/* Cabeçalho */}
-      <div className="flex justify-between items-center mb-1">
-        <div className="flex items-center gap-2">
-          <DollarSign className="w-5 h-5 text-[#1a8ceb]" />
-          <h3 className="text-white text-sm font-semibold flex items-center gap-2">
-            Preço de Venda
+      <div className="flex justify-between items-center mb-2 sm:mb-1 gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <DollarSign className="w-5 h-5 text-[#1a8ceb] shrink-0" />
+          <h3 className="text-white text-sm font-semibold flex items-center gap-2 min-w-0">
+            <span className="truncate">Preço de Venda</span>
             <HelpTooltip text="Preço de Venda Total." />
           </h3>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <motion.button
             whileTap={{ scale: 0.9 }}
             onClick={handleDownload}
             title="Baixar planilha Excel"
-            className="p-2 hover:bg-white/10 rounded-full transition-all"
+            className="h-10 w-10 sm:h-auto sm:w-auto sm:p-2 flex items-center justify-center hover:bg-white/10 rounded-full transition-all"
           >
             <Download className="w-4 h-4 text-white opacity-70 hover:opacity-100" />
           </motion.button>
@@ -186,7 +186,7 @@ export default function PrecoVenda({
                 ? "Botão bloqueado temporariamente após muitos cliques"
                 : "Limpar todos os dados"
             }
-            className={`p-2 rounded-full transition-all ${
+            className={`h-10 w-10 sm:h-auto sm:w-auto sm:p-2 flex items-center justify-center rounded-full transition-all ${
               isClearing
                 ? "bg-red-500/20 text-red-300 cursor-not-allowed"
                 : "hover:bg-red-500/10 text-red-400 hover:text-red-500"
@@ -206,9 +206,9 @@ export default function PrecoVenda({
         placeholder="0,00"
         onChange={(e) => setPrecoVenda(e.target.value)}
         onBlur={onBlurPrecoVenda}
-        className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+        className="h-11 sm:h-auto bg-black/50 border-white/10 text-white text-base sm:text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
       />
-      <Label className="text-neutral-400 text-[10px] mt-1 block">
+      <Label className="text-neutral-400 text-xs sm:text-[10px] mt-1.5 sm:mt-1 block">
         Digite o preço final da venda
       </Label>
     </div>

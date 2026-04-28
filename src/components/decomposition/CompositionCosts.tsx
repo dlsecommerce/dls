@@ -5,7 +5,6 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { formatBR } from "@/components/decomposition/Decomposition";
 
-/* ========== DEBOUNCE 10ms ========== */
 function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
   let timer: ReturnType<typeof setTimeout>;
   return (...args: Parameters<T>) => {
@@ -27,11 +26,7 @@ const HelpTooltip = ({ text }: { text: string }) => (
 
 type Props = {
   composicao: Item[];
-  // 👇 OBS: seu tipo aqui está (v: Item[]) => void, mas você usa setState functional abaixo.
-  // Para ficar 100% tipado, o ideal seria: React.Dispatch<React.SetStateAction<Item[]>>
-  // Mas vou manter compatível com o que você mandou.
   setComposicao: any;
-
   codeRefs: React.MutableRefObject<HTMLInputElement[]>;
   qtyRefs: React.MutableRefObject<HTMLInputElement[]>;
   costRefs: React.MutableRefObject<HTMLInputElement[]>;
@@ -78,12 +73,10 @@ export default function ComposicaoCustos({
   onBlurCusto,
   adicionarItem,
 }: Props) {
-  /* ========== DEBOUNCED buscarSugestoes ========== */
   const buscarSugestoesDebounced = React.useRef(
     debounce((termo: string, idx: number) => buscarSugestoes(termo, idx), 10)
   ).current;
 
-  /* ========== FLAG PARA EVITAR BUG NO TAB (ignore blur) ========== */
   const ignoreBlur = React.useRef(false);
 
   const leftColScroll =
@@ -95,9 +88,6 @@ export default function ComposicaoCustos({
     setComposicao((prev: Item[]) => prev.filter((_, i) => i !== idx));
   };
 
-  /* ==========================================================
-     TAB/ENTER NO CUSTO — cria nova linha APENAS se todos preenchidos
-     ========================================================== */
   const handleKeyDownCusto = (
     e: React.KeyboardEvent<HTMLInputElement>,
     idx: number
@@ -113,10 +103,8 @@ export default function ComposicaoCustos({
 
       const isLast = idx === composicao.length - 1;
 
-      // Bloqueia onBlur durante o TAB para evitar flick
       ignoreBlur.current = true;
 
-      // Cria nova linha somente se todos os campos estiverem preenchidos
       if (isLast && codigoOK && quantidadeOK && custoOK) {
         setComposicao((prev: Item[]) => [
           ...prev,
@@ -130,7 +118,6 @@ export default function ComposicaoCustos({
         return;
       }
 
-      // Caso contrário, só pula para o próximo código
       setTimeout(() => {
         ignoreBlur.current = false;
         codeRefs.current[idx + 1]?.focus();
@@ -141,7 +128,7 @@ export default function ComposicaoCustos({
   };
 
   return (
-    <div className="lg:col-span-7 p-3 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg">
+    <div className="lg:col-span-7 p-3 rounded-xl bg-white/5 border border-white/10 shadow-lg">
       <div className="flex items-center gap-2 mb-3">
         <Layers className="w-5 h-5 text-[#1a8ceb]" />
         <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -150,25 +137,42 @@ export default function ComposicaoCustos({
         </h3>
       </div>
 
-      <div className={`space-y-1 ${leftColScroll}`}>
+      <div className={`space-y-2 sm:space-y-1 ${leftColScroll}`}>
         {composicao.map((item, idx) => (
           <div
             key={idx}
-            className="relative grid grid-cols-3 gap-2 mb-1 p-2 rounded-lg bg-black/30 border border-white/10"
+            className="
+              relative
+              grid grid-cols-1 gap-2
+              sm:grid-cols-3
+              sm:gap-2
+              mb-1 p-2
+              rounded-lg
+              bg-black/30
+              border border-white/10
+            "
           >
-            {/* Botão remove */}
             {idx > 0 && (
               <button
                 type="button"
                 onClick={() => removerItem(idx)}
-                className="absolute -top-1 -right-1 w-5 h-5 p-0 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-full flex items-center justify-center transition-all"
+                className="
+                  absolute -top-2 -right-2
+                  w-7 h-7 sm:w-5 sm:h-5
+                  p-0
+                  bg-red-500/20 hover:bg-red-500/30
+                  text-red-400
+                  rounded-full
+                  flex items-center justify-center
+                  transition-all
+                  z-20
+                "
               >
-                <X className="w-3 h-3" />
+                <X className="w-4 h-4 sm:w-3 sm:h-3" />
               </button>
             )}
 
-            {/* Código */}
-            <div className="relative">
+            <div className="relative min-w-0">
               <Label className="text-neutral-400 text-[10px] block mb-1">
                 Código
               </Label>
@@ -181,38 +185,46 @@ export default function ComposicaoCustos({
                   novo[idx].codigo = e.target.value;
                   setComposicao(novo);
 
-                  // ✅ garante que o dropdown está “vivo” nesse campo
                   setCampoAtivo(idx);
-
-                  // ✅ UX: ao digitar, já aponta pro 1º item
                   setIndiceSelecionado(0);
-
                   buscarSugestoesDebounced(e.target.value, idx);
                 }}
                 onKeyDown={(e) => handleKeyDownCodigo(e, idx)}
                 onBlur={() => {
-                  // ✅ se estiver tab/enter de custo, não auto-seleciona
                   if (!ignoreBlur.current) autoSelecionarPrimeiro(idx);
                 }}
-                className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                className="
+                  h-10 sm:h-auto
+                  bg-black/50
+                  border-white/10
+                  text-white text-xs
+                  rounded-md
+                  focus:border-[#1a8ceb]
+                  focus:ring-2 focus:ring-[#1a8ceb]
+                "
               />
 
               {campoAtivo === idx && sugestoes.length > 0 && (
                 <div
                   ref={listaRef}
-                  className="absolute z-50 mt-1 bg-[#0f0f0f] border border-white/10 rounded-md shadow-lg w-full max-h-40 overflow-y-auto"
+                  className="
+                    absolute z-50 mt-1
+                    bg-[#0f0f0f]
+                    border border-white/10
+                    rounded-md shadow-lg
+                    w-full
+                    max-h-48 sm:max-h-40
+                    overflow-y-auto
+                  "
                 >
                   {sugestoes.map((s, i) => (
                     <div
                       key={`${s.codigo}-${i}`}
-                      className={`px-2 py-1 text-xs flex justify-between cursor-pointer ${
+                      className={`px-2 py-2 sm:py-1 text-xs flex justify-between cursor-pointer ${
                         i === indiceSelecionado
                           ? "bg-[#1a8ceb]/30"
                           : "hover:bg-[#1a8ceb]/20"
                       }`}
-                      // ✅ FIX CRÍTICO:
-                      // onMouseDown roda ANTES do document.mousedown e ANTES do blur,
-                      // então impede o "autoSelecionarPrimeiro" de pegar sempre o 1º.
                       onMouseDown={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -220,8 +232,8 @@ export default function ComposicaoCustos({
                       }}
                       onMouseEnter={() => setIndiceSelecionado(i)}
                     >
-                      <span className="text-white">{s.codigo}</span>
-                      <span className="text-[#1a8ceb]">
+                      <span className="text-white truncate">{s.codigo}</span>
+                      <span className="text-[#1a8ceb] shrink-0 ml-3">
                         R$ {formatBR(s.custo)}
                       </span>
                     </div>
@@ -230,8 +242,7 @@ export default function ComposicaoCustos({
               )}
             </div>
 
-            {/* Quantidade */}
-            <div>
+            <div className="min-w-0">
               <Label className="text-neutral-400 text-[10px] block mb-1">
                 Quantidade
               </Label>
@@ -246,12 +257,19 @@ export default function ComposicaoCustos({
                 }}
                 onBlur={() => onBlurQuantidade(idx)}
                 onKeyDown={(e) => handleKeyDownQuantidade(e, idx)}
-                className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                className="
+                  h-10 sm:h-auto
+                  bg-black/50
+                  border-white/10
+                  text-white text-xs
+                  rounded-md
+                  focus:border-[#1a8ceb]
+                  focus:ring-2 focus:ring-[#1a8ceb]
+                "
               />
             </div>
 
-            {/* Custo */}
-            <div>
+            <div className="min-w-0">
               <Label className="text-neutral-400 text-[10px] block mb-1">
                 Custo (R$)
               </Label>
@@ -268,7 +286,15 @@ export default function ComposicaoCustos({
                   if (!ignoreBlur.current) onBlurCusto(idx);
                 }}
                 onKeyDown={(e) => handleKeyDownCusto(e, idx)}
-                className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                className="
+                  h-10 sm:h-auto
+                  bg-black/50
+                  border-white/10
+                  text-white text-xs
+                  rounded-md
+                  focus:border-[#1a8ceb]
+                  focus:ring-2 focus:ring-[#1a8ceb]
+                "
               />
             </div>
           </div>
@@ -278,7 +304,16 @@ export default function ComposicaoCustos({
       <Button
         onClick={adicionarItem}
         variant="outline"
-        className="w-full border-white/10 text-white text-xs hover:bg-white/5 hover:border-[#1a8ceb]/50 rounded-xl transition-all mt-2"
+        className="
+          w-full
+          h-11 sm:h-auto
+          border-white/10
+          text-white text-xs
+          hover:bg-white/5 hover:border-[#1a8ceb]/50
+          rounded-xl
+          transition-all
+          mt-2
+        "
       >
         <Plus className="w-3 h-3 mr-2" /> Incluir Custos
       </Button>
