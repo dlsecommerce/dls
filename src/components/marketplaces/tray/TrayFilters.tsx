@@ -129,7 +129,7 @@ export default function TrayFiltersSidebar({
           label="Situação"
           value={filters.situacao}
           onChange={(v) => updateFilter("situacao", v)}
-          options={["Todos", "Ativo", "Inativo"]}
+          options={["Todos", "Últimos Incluídos"]}
         />
 
         <FilterSelectBlock

@@ -108,12 +108,6 @@ export default function TrayActionsSidebar({
           disabled={exporting}
         />
 
-        <ActionTextButton
-          icon={<Layers className="h-4 w-4" />}
-          label="Edição em Massa"
-          onClick={onMassEditOpen}
-        />
-
         {selectedCount > 0 && (
           <div className="mx-2 rounded-lg border border-neutral-700 bg-white/5 p-3 text-sm text-neutral-300">
             <div className="mb-2">

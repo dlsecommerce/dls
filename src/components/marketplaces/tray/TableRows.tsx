@@ -43,14 +43,11 @@ type MarketplaceTableProps = {
 type TableRowsProps = MarketplaceTableProps;
 
 const HEADER_CELL =
-  "h-9 px-0 text-center align-middle text-[11px] font-semibold text-neutral-500";
+  "h-9 px-0 text-center align-middle text-[11px] font-semibold leading-none text-neutral-500";
 
 const BODY_CELL =
-  "h-10 px-0 text-center align-middle text-[11px] font-medium text-neutral-300";
+  "h-10 px-0 text-center align-middle text-[11px] font-medium leading-none text-neutral-300";
 
-/* ============================================================
-   COLGROUP (MESMO DO SHOPEE)
-============================================================ */
 function PricingColGroup() {
   return (
     <colgroup>
@@ -73,9 +70,6 @@ function PricingColGroup() {
   );
 }
 
-/* ============================================================
-   HEADER COM SORT
-============================================================ */
 function SortHeader({
   label,
   column,
@@ -93,27 +87,26 @@ function SortHeader({
 
   return (
     <button
+      type="button"
       onClick={() => onSort(column)}
-      className={`flex w-full items-center justify-center gap-1 text-[11px] font-semibold ${
+      className={`flex w-full min-w-0 cursor-pointer items-center justify-center gap-0.5 text-[11px] font-semibold leading-none transition hover:text-white ${
         isActive ? "text-white" : "text-neutral-500"
       }`}
+      title={`Ordenar por ${label}`}
     >
-      {label}
+      <span className="min-w-0 truncate">{label}</span>
 
       {!isActive ? (
-        <ArrowUpDown className="w-3 h-3" />
+        <ArrowUpDown className="h-3 w-3 shrink-0 text-neutral-500" />
       ) : sortDirection === "asc" ? (
-        <ChevronUp className="w-3 h-3 text-white" />
+        <ChevronUp className="h-3 w-3 shrink-0 text-white" />
       ) : (
-        <ChevronDown className="w-3 h-3 text-white" />
+        <ChevronDown className="h-3 w-3 shrink-0 text-white" />
       )}
     </button>
   );
 }
 
-/* ============================================================
-   TABLE PRINCIPAL
-============================================================ */
 export const Table: React.FC<MarketplaceTableProps> = ({
   rows,
   loading,
@@ -153,7 +146,7 @@ export const Table: React.FC<MarketplaceTableProps> = ({
       <PricingColGroup />
 
       <TableHeader>
-        <TableRow className="border-b border-neutral-700">
+        <TableRow className="border-b border-neutral-700 bg-transparent hover:bg-transparent">
           <TableHead className={HEADER_CELL}>
             <SortHeader
               label="ID"
@@ -164,10 +157,45 @@ export const Table: React.FC<MarketplaceTableProps> = ({
             />
           </TableHead>
 
-          <TableHead className={HEADER_CELL}>Loja</TableHead>
-          <TableHead className={HEADER_CELL}>Tray</TableHead>
-          <TableHead className={HEADER_CELL}>Marca</TableHead>
-          <TableHead className={HEADER_CELL}>Ref.</TableHead>
+          <TableHead className={HEADER_CELL}>
+            <SortHeader
+              label="Loja"
+              column="Loja"
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSort={handleSort}
+            />
+          </TableHead>
+
+          <TableHead className={HEADER_CELL}>
+            <SortHeader
+              label="Tray"
+              column="ID Tray"
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSort={handleSort}
+            />
+          </TableHead>
+
+          <TableHead className={HEADER_CELL}>
+            <SortHeader
+              label="Marca"
+              column="Marca"
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSort={handleSort}
+            />
+          </TableHead>
+
+          <TableHead className={HEADER_CELL}>
+            <SortHeader
+              label="Ref."
+              column="Referência"
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSort={handleSort}
+            />
+          </TableHead>
 
           <TableHead className={HEADER_CELL}>Desc.</TableHead>
           <TableHead className={HEADER_CELL}>Emb.</TableHead>
@@ -178,7 +206,9 @@ export const Table: React.FC<MarketplaceTableProps> = ({
           <TableHead className={HEADER_CELL}>Mkt.</TableHead>
           <TableHead className={HEADER_CELL}>Custo</TableHead>
           <TableHead className={HEADER_CELL}>Venda</TableHead>
-          <TableHead className={HEADER_CELL}>Aç.</TableHead>
+          <TableHead className="h-9 px-0 pr-6 text-right align-middle text-[11px] font-semibold leading-none text-neutral-500">
+            Aç.
+          </TableHead>
         </TableRow>
       </TableHeader>
 
@@ -195,21 +225,32 @@ export const Table: React.FC<MarketplaceTableProps> = ({
   );
 };
 
-/* ============================================================
-   TABLE ROWS EXPORT (MESMO PADRÃO)
-============================================================ */
-export const TableRows: React.FC<TableRowsProps> = (props) => {
+export const TableRows: React.FC<TableRowsProps> = ({
+  rows,
+  loading,
+  copiedId,
+  editedId,
+  handleCopy,
+  openEditor,
+  handleEditFull,
+}) => {
   return (
     <ShadTable className="w-full table-fixed bg-transparent">
       <PricingColGroup />
-      <RowsBody {...props} />
+
+      <RowsBody
+        rows={rows}
+        loading={loading}
+        copiedId={copiedId}
+        editedId={editedId}
+        handleCopy={handleCopy}
+        openEditor={openEditor}
+        handleEditFull={handleEditFull}
+      />
     </ShadTable>
   );
 };
 
-/* ============================================================
-   BODY
-============================================================ */
 function RowsBody({
   rows,
   loading,
@@ -222,12 +263,7 @@ function RowsBody({
   const router = useRouter();
 
   const lojaLabel = (loja: string) =>
-    loja === "PK" ? "Pikot Shop" : loja === "SB" ? "Sóbaquetas" : loja;
-
-  const getDetailsId = (row: Row) => {
-    const anyRow = row as any;
-    return anyRow.id ?? row.ID;
-  };
+    loja === "PK" ? "Pikot" : loja === "SB" ? "Sóbaq." : loja;
 
   const CellEditable = ({
     row,
@@ -248,14 +284,16 @@ function RowsBody({
 
     return (
       <TableCell className={`${BODY_CELL} text-white`}>
-        <div className="group flex items-center justify-center gap-1">
-          <span>{displayVal}</span>
+        <div className="group flex min-w-0 items-center justify-center gap-0.5">
+          <span className="min-w-0 truncate">{displayVal}</span>
 
           <button
+            type="button"
             onClick={(e) => openEditor(row, field, isMoney, e)}
-            className="opacity-0 group-hover:opacity-100"
+            title="Editar"
+            className="shrink-0 cursor-pointer opacity-0 transition-opacity duration-200 group-hover:opacity-100"
           >
-            <EditIcon className="w-3 h-3 text-green-500" />
+            <EditIcon className="h-3 w-3 text-green-500" />
           </button>
         </div>
       </TableCell>
@@ -267,8 +305,8 @@ function RowsBody({
       <TableBody>
         <TableRow>
           <TableCell colSpan={15}>
-            <div className="flex justify-center py-16">
-              <LoaderIcon className="animate-spin" />
+            <div className="flex items-center justify-center py-16">
+              <LoaderIcon className="h-6 w-6 animate-spin text-neutral-400" />
             </div>
           </TableCell>
         </TableRow>
@@ -280,7 +318,10 @@ function RowsBody({
     return (
       <TableBody>
         <TableRow>
-          <TableCell colSpan={15} className="text-center py-10 text-neutral-400">
+          <TableCell
+            colSpan={15}
+            className="py-10 text-center text-neutral-400"
+          >
             Nenhum registro encontrado
           </TableCell>
         </TableRow>
@@ -290,76 +331,136 @@ function RowsBody({
 
   return (
     <TableBody>
-      {rows.map((row) => {
-        const detailsId = getDetailsId(row);
+      {rows.map((row) => (
+        <TableRow
+          key={`${row.Loja}-${row.ID}`}
+          className="border-b border-neutral-700 text-center transition-colors hover:bg-white/5"
+        >
+          <TableCell className={`${BODY_CELL} text-white`}>
+            <span className="block min-w-0 truncate">{row.ID || "-"}</span>
+          </TableCell>
 
-        return (
-          <TableRow
-            key={`${row.Loja}-${row.ID}`}
-            className="border-b border-neutral-700 hover:bg-white/5"
-          >
-            <TableCell className={`${BODY_CELL} text-white`}>
-              {row.ID}
-            </TableCell>
+          <TableCell className={BODY_CELL}>
+            <span className="block min-w-0 truncate">
+              {lojaLabel(row.Loja) || "-"}
+            </span>
+          </TableCell>
 
-            <TableCell className={BODY_CELL}>
-              {lojaLabel(row.Loja)}
-            </TableCell>
+          <TableCell className={BODY_CELL}>
+            <div className="group flex min-w-0 items-center justify-center gap-0.5">
+              <span className="min-w-0 truncate">{row["ID Tray"] || "-"}</span>
 
-            <TableCell className={BODY_CELL}>
-              <div className="group flex justify-center gap-1">
-                {row["ID Tray"] || "-"}
+              {row["ID Tray"] && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleCopy(String(row["ID Tray"]), `tray-${row.ID}`)
+                  }
+                  className="shrink-0 cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
+                >
+                  <CopyIcon
+                    className={`h-2.5 w-2.5 ${
+                      copiedId === `tray-${row.ID}`
+                        ? "scale-110 text-green-500"
+                        : "text-white group-hover:text-green-400"
+                    }`}
+                  />
+                </button>
+              )}
+            </div>
+          </TableCell>
 
-                {row["ID Tray"] && (
-                  <button
-                    onClick={() =>
-                      handleCopy(String(row["ID Tray"]), `tray-${row.ID}`)
-                    }
-                    className="opacity-0 group-hover:opacity-100"
-                  >
-                    <CopyIcon className="w-3 h-3 text-white" />
-                  </button>
-                )}
-              </div>
-            </TableCell>
+          <TableCell className={BODY_CELL}>
+            <span className="block min-w-0 truncate">{row.Marca || "-"}</span>
+          </TableCell>
 
-            <TableCell className={BODY_CELL}>{row.Marca}</TableCell>
+          <TableCell className={BODY_CELL}>
+            <div className="group flex min-w-0 items-center justify-center gap-0.5">
+              <span className="min-w-0 truncate">
+                {row["Referência"] || "-"}
+              </span>
 
-            <TableCell className={BODY_CELL}>
-              {row["Referência"]}
-            </TableCell>
+              {row["Referência"] && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleCopy(String(row["Referência"]), `ref-${row.ID}`)
+                  }
+                  className="shrink-0 cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
+                >
+                  <CopyIcon
+                    className={`h-2.5 w-2.5 ${
+                      copiedId === `ref-${row.ID}`
+                        ? "scale-110 text-green-500"
+                        : "text-white group-hover:text-green-400"
+                    }`}
+                  />
+                </button>
+              )}
+            </div>
+          </TableCell>
 
-            <CellEditable row={row} field="Desconto" suffix="%" />
-            <CellEditable row={row} field="Embalagem" isMoney />
-            <CellEditable row={row} field="Frete" isMoney />
-            <CellEditable row={row} field="Comissão" suffix="%" />
-            <CellEditable row={row} field="Imposto" suffix="%" />
-            <CellEditable row={row} field="Margem de Lucro" suffix="%" />
-            <CellEditable row={row} field="Marketing" suffix="%" />
+          <CellEditable row={row} field="Desconto" suffix="%" />
+          <CellEditable row={row} field="Embalagem" isMoney />
+          <CellEditable row={row} field="Frete" isMoney />
+          <CellEditable row={row} field="Comissão" suffix="%" />
+          <CellEditable row={row} field="Imposto" suffix="%" />
+          <CellEditable row={row} field="Margem de Lucro" suffix="%" />
+          <CellEditable row={row} field="Marketing" suffix="%" />
 
-            <TableCell className={BODY_CELL}>
-              R$ {toBR(row.Custo)}
-            </TableCell>
+          <TableCell className={`${BODY_CELL} text-white`}>
+            <span className="block min-w-0 truncate">R$ {toBR(row.Custo)}</span>
+          </TableCell>
 
-            <TableCell className={`${BODY_CELL} text-green-400`}>
-              R$ {toBR(row["Preço de Venda"])}
-            </TableCell>
+          <TableCell className={`${BODY_CELL} font-semibold text-green-400`}>
+            <div className="group flex min-w-0 items-center justify-center gap-0.5">
+              <span className="min-w-0 truncate">
+                R$ {toBR(row["Preço de Venda"])}
+              </span>
 
-            <TableCell className="text-right pr-6">
               <button
-                onClick={() => {
-                  handleEditFull(row);
-                  router.push(
-                    `/dashboard/marketplaces/tray/details?id=${detailsId}&loja=${row.Loja}`
-                  );
-                }}
+                type="button"
+                onClick={() =>
+                  handleCopy(
+                    String(toBR(row["Preço de Venda"])),
+                    `preco-${row.ID}`
+                  )
+                }
+                className="shrink-0 cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
               >
-                <EditIcon className="w-4 h-4 text-white" />
+                <CopyIcon
+                  className={`h-2.5 w-2.5 ${
+                    copiedId === `preco-${row.ID}`
+                      ? "scale-110 text-green-500"
+                      : "text-white group-hover:text-green-400"
+                  }`}
+                />
               </button>
-            </TableCell>
-          </TableRow>
-        );
-      })}
+            </div>
+          </TableCell>
+
+          <TableCell className="h-10 px-0 pr-8 text-right align-middle">
+            <button
+              type="button"
+              onClick={() => {
+                handleEditFull(row);
+                router.push(
+                  `/dashboard/marketplaces/tray/details?id=${row.ID}&loja=${row.Loja}`
+                );
+              }}
+              className="inline-flex cursor-pointer items-center justify-end text-white transition hover:text-[#1A8CEB]"
+            >
+              <EditIcon
+                className={`h-3.5 w-3.5 ${
+                  editedId === `${row.Loja}-${row.ID}`
+                    ? "scale-110 text-[#1A8CEB]"
+                    : ""
+                }`}
+              />
+            </button>
+          </TableCell>
+        </TableRow>
+      ))}
     </TableBody>
   );
 }

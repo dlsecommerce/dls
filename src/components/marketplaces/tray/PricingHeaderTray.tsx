@@ -14,9 +14,6 @@ type Props = {
 const TABLE_GRID =
   "grid-cols-[4%_5.5%_7%_9%_12%_6.5%_7%_6%_6.5%_6%_6.5%_6%_6%_8%_4%]";
 
-/* ============================================================
-   SORT HEADER
-============================================================ */
 function SortHeader({
   label,
   column,
@@ -36,7 +33,7 @@ function SortHeader({
     <button
       type="button"
       onClick={() => onSort?.(column)}
-      className={`flex w-full min-w-0 items-center justify-center gap-0.5 text-[11px] font-semibold leading-none transition hover:text-white ${
+      className={`flex w-full min-w-0 cursor-pointer items-center justify-center gap-0.5 text-[11px] font-semibold leading-none transition hover:text-white ${
         isActive ? "text-white" : "text-neutral-500"
       }`}
       title={`Ordenar por ${label}`}
@@ -54,9 +51,6 @@ function SortHeader({
   );
 }
 
-/* ============================================================
-   HEADER CELL
-============================================================ */
 function HeaderCell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-w-0 items-center justify-center text-center">
@@ -65,9 +59,6 @@ function HeaderCell({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* ============================================================
-   TRAY HEADER ROW
-============================================================ */
 export default function TrayHeaderRow({
   sortColumn = null,
   sortDirection = "asc",
@@ -80,7 +71,6 @@ export default function TrayHeaderRow({
     { label: "Marca", key: "Marca", sortable: true },
     { label: "Referência", key: "Referência", sortable: true },
 
-    // ❌ sem sort (igual Shopee)
     { label: "Desconto", key: "Desconto", sortable: false },
     { label: "Embalagem", key: "Embalagem", sortable: false },
     { label: "Frete", key: "Frete", sortable: false },
@@ -95,11 +85,11 @@ export default function TrayHeaderRow({
 
   return (
     <div className="border-b border-neutral-700 bg-transparent">
-      <div className={`grid ${TABLE_GRID} w-full items-center px-0 py-2`}>
+      <div className={`grid ${TABLE_GRID} w-full items-center gap-0 px-0 py-2`}>
         {columns.map(({ label, key, sortable }) => (
           <HeaderCell key={key}>
             {key === "Ações" ? (
-              <div className="w-full pr-6 text-right text-[11px] font-semibold text-neutral-500">
+              <div className="w-full pr-6 text-right text-[11px] font-semibold leading-none text-neutral-500">
                 {label}
               </div>
             ) : sortable ? (
@@ -111,7 +101,7 @@ export default function TrayHeaderRow({
                 onSort={onSort}
               />
             ) : (
-              <div className="truncate text-[11px] font-semibold text-neutral-500">
+              <div className="min-w-0 truncate text-[11px] font-semibold leading-none text-neutral-500">
                 {label}
               </div>
             )}

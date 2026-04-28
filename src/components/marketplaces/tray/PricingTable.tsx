@@ -160,7 +160,6 @@ function buildOrSearchParts(tokens: string[]) {
 
   return orParts;
 }
-
 function normalizeLojaCode(lojaRaw: unknown): "PK" | "SB" | null {
   const s = String(lojaRaw ?? "").trim().toUpperCase();
 
@@ -309,6 +308,20 @@ export default function PricingTable() {
     ],
     []
   );
+
+  useEffect(() => {
+    const nextLojas = lojaFilterValueToCodes(filters.lojasVirtuais);
+    const nextBrands = filters.marca.trim() ? [filters.marca.trim()] : [];
+
+    setSelectedLoja((prev) =>
+      arraysEqual(prev, nextLojas) ? prev : nextLojas
+    );
+
+    setSelectedBrands((prev) =>
+      arraysEqual(prev, nextBrands) ? prev : nextBrands
+    );
+  }, [filters.lojasVirtuais, filters.marca]);
+
   useEffect(() => {
     const urlSearch = searchParams.get("search") ?? "";
     const urlPage = parsePositiveInt(searchParams.get("page"), 1);
@@ -329,45 +342,37 @@ export default function PricingTable() {
     };
 
     setSearch((prev) => (prev !== urlSearch ? urlSearch : prev));
-    setDebouncedSearch((prev) =>
-      prev !== urlSearch ? urlSearch : prev
-    );
+    setDebouncedSearch((prev) => (prev !== urlSearch ? urlSearch : prev));
     setCurrentPage((prev) => (prev !== urlPage ? urlPage : prev));
-    setItemsPerPage((prev) =>
-      prev !== urlPerPage ? urlPerPage : prev
-    );
-    setSelectedLoja((prev) =>
-      arraysEqual(prev, urlLojas) ? prev : urlLojas
-    );
+    setItemsPerPage((prev) => (prev !== urlPerPage ? urlPerPage : prev));
+    setSelectedLoja((prev) => (arraysEqual(prev, urlLojas) ? prev : urlLojas));
     setSelectedBrands((prev) =>
       arraysEqual(prev, urlBrands) ? prev : urlBrands
     );
-    setSortColumn((prev) =>
-      prev !== urlSortColumn ? urlSortColumn : prev
-    );
+    setSortColumn((prev) => (prev !== urlSortColumn ? urlSortColumn : prev));
     setSortDirection((prev) =>
       prev !== urlSortDirection ? urlSortDirection : prev
     );
     setFilters((prev) =>
-      JSON.stringify(prev) === JSON.stringify(urlFilters)
-        ? prev
-        : urlFilters
+      JSON.stringify(prev) === JSON.stringify(urlFilters) ? prev : urlFilters
     );
 
     didHydrateFromUrlRef.current = true;
   }, [searchParams]);
-
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      setDebouncedSearch(search.trim());
-    }, 300);
-
+    const timeout = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(timeout);
   }, [search]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, selectedLoja, selectedBrands, filters]);
+  }, [
+    debouncedSearch,
+    selectedLoja,
+    selectedBrands,
+    filters.situacao,
+    filters.tipo,
+  ]);
 
   useEffect(() => {
     if (!didHydrateFromUrlRef.current) return;
@@ -375,32 +380,38 @@ export default function PricingTable() {
     const params = new URLSearchParams();
 
     if (search.trim()) params.set("search", search.trim());
-    if (currentPage > 1) params.set("page", String(currentPage));
-    if (itemsPerPage !== 50)
-      params.set("perPage", String(itemsPerPage));
-    if (selectedLoja.length)
-      params.set("lojas", selectedLoja.join(","));
-    if (selectedBrands.length)
-      params.set("brands", selectedBrands.join(","));
+    if (filters.marca.trim()) params.set("marca", filters.marca.trim());
 
-    if (filters.situacao)
+    if (
+      filters.situacao &&
+      filters.situacao !== DEFAULT_TRAY_FILTERS.situacao
+    ) {
       params.set("situacao", filters.situacao);
-    if (filters.tipo) params.set("tipo", filters.tipo);
-    if (filters.lojasVirtuais)
+    }
+
+    if (filters.tipo && filters.tipo !== DEFAULT_TRAY_FILTERS.tipo) {
+      params.set("tipo", filters.tipo);
+    }
+
+    if (
+      filters.lojasVirtuais &&
+      filters.lojasVirtuais !== DEFAULT_TRAY_FILTERS.lojasVirtuais
+    ) {
       params.set("loja", filters.lojasVirtuais);
-    if (filters.marca) params.set("marca", filters.marca);
+    }
 
+    if (currentPage > 1) params.set("page", String(currentPage));
+    if (itemsPerPage !== 50) params.set("perPage", String(itemsPerPage));
+    if (selectedLoja.length) params.set("lojas", selectedLoja.join(","));
+    if (selectedBrands.length) params.set("brands", selectedBrands.join(","));
     if (sortColumn) params.set("sortColumn", sortColumn);
-    if (sortDirection !== "asc")
-      params.set("sortDirection", sortDirection);
+    if (sortDirection !== "asc") params.set("sortDirection", sortDirection);
 
-    const nextUrl = params.toString()
-      ? `?${params.toString()}`
-      : "?";
+    const nextUrl = params.toString() ? `?${params.toString()}` : "?";
 
     if (lastUrlRef.current === nextUrl) return;
-    lastUrlRef.current = nextUrl;
 
+    lastUrlRef.current = nextUrl;
     router.replace(nextUrl, { scroll: false });
   }, [
     search,
@@ -435,22 +446,10 @@ export default function PricingTable() {
       debouncedSearch,
       sortColumn,
       sortDirection,
-      filters,
+      filters.situacao,
+      filters.tipo,
     ]
   );
-
-  useEffect(() => {
-    const cached = getCache(cacheKey);
-
-    if (cached) {
-      const safe = (cached.rows || []).filter(isValidRow);
-
-      setRows(safe);
-      setFilteredRows(safe);
-      setTotalItems(cached.totalItems);
-      setLoading(false);
-    }
-  }, [cacheKey]);
 
   const loadData = useCallback(async () => {
     const myReqId = ++reqIdRef.current;
@@ -460,13 +459,11 @@ export default function PricingTable() {
     if (cached) {
       startTransition(() => {
         const safe = (cached.rows || []).filter(isValidRow);
-
         setRows(safe);
         setFilteredRows(safe);
         setTotalItems(cached.totalItems);
         setLoading(false);
       });
-
       return;
     }
 
@@ -516,27 +513,36 @@ export default function PricingTable() {
         { count: "exact" }
       );
 
-    if (selectedLoja.length)
-      query = query.in("Loja", selectedLoja);
+    if (selectedLoja.length) query = query.in("Loja", selectedLoja);
+    if (selectedBrands.length) query = query.in("Marca", selectedBrands);
 
-    if (selectedBrands.length)
-      query = query.in("Marca", selectedBrands);
-
-    if (filters.situacao)
-      query = query.eq("Situacao", filters.situacao);
-
-    if (filters.tipo)
-      query = query.eq("Tipo", filters.tipo);
+    if (filters.tipo && filters.tipo !== "Todos") {
+      if (filters.tipo === "Produtos") {
+        query = query.ilike("Referência", "%PAI%");
+      } else if (filters.tipo === "Produtos simples") {
+        query = query
+          .not("Referência", "ilike", "%PAI%")
+          .not("Referência", "ilike", "%VAR%");
+      } else if (filters.tipo === "Produtos com variações") {
+        query = query.ilike("Referência", "%PAI%");
+      } else if (filters.tipo === "Variações") {
+        query = query.ilike("Referência", "%VAR%");
+      }
+    }
 
     if (debouncedSearch) {
       const tokens = parseSearchTokens(debouncedSearch);
       const orParts = buildOrSearchParts(tokens);
 
-      if (orParts.length)
-        query = query.or(orParts.join(","));
+      if (orParts.length) query = query.or(orParts.join(","));
     }
 
-    if (sortColumn) {
+    if (filters.situacao === "Últimos Incluídos") {
+      query = query
+        .order("ID", { ascending: false })
+        .order("Atualizado em", { ascending: false })
+        .order("id", { ascending: false });
+    } else if (sortColumn) {
       query = query
         .order(sortColumn, {
           ascending: sortDirection === "asc",
@@ -555,7 +561,13 @@ export default function PricingTable() {
     if (myReqId !== reqIdRef.current) return;
 
     if (error) {
-      console.error("Erro:", error);
+      console.error(
+        "❌ Supabase error:",
+        error.message,
+        error.details,
+        error.hint
+      );
+
       setRows([]);
       setFilteredRows([]);
       setTotalItems(0);
@@ -567,7 +579,6 @@ export default function PricingTable() {
 
     const normalized = safeData.map((r: any) => {
       let OD = 3;
-
       const ref = String(r.Referência || "").trim();
 
       if (ref.startsWith("PAI -")) OD = 1;
@@ -575,30 +586,30 @@ export default function PricingTable() {
 
       return {
         ...r,
-        id: r.id,
+        id: String(r.id),
         anuncio_id: r.anuncio_id,
         OD,
-        Desconto: parseBR(r.Desconto),
-        Embalagem: parseBR(r.Embalagem),
-        Frete: parseBR(r.Frete),
-        Comissão: parseBR(r.Comissão),
-        Imposto: parseBR(r.Imposto),
-        Marketing: parseBR(r.Marketing),
-        "Margem de Lucro": parseBR(r["Margem de Lucro"]),
-        Custo: parseBR(r.Custo),
-        "Preço de Venda": parseBR(r["Preço de Venda"]),
-      };
+        Desconto: r.Desconto ?? null,
+        Embalagem: r.Embalagem ?? null,
+        Frete: r.Frete ?? null,
+        Comissão: r.Comissão ?? null,
+        Imposto: r.Imposto ?? null,
+        Marketing: r.Marketing ?? null,
+        "Margem de Lucro": r["Margem de Lucro"] ?? null,
+        Custo: r.Custo ?? null,
+        "Preço de Venda": r["Preço de Venda"] ?? null,
+      } as any;
     });
 
     setCache(cacheKey, {
-      rows: normalized,
+      rows: normalized as any,
       totalItems: count || 0,
       savedAt: Date.now(),
     });
 
     startTransition(() => {
-      setRows(normalized);
-      setFilteredRows(normalized);
+      setRows(normalized as any);
+      setFilteredRows(normalized as any);
       setTotalItems(count || 0);
       setLoading(false);
     });
@@ -611,9 +622,11 @@ export default function PricingTable() {
     selectedLoja,
     selectedBrands,
     debouncedSearch,
-    filters,
+    filters.tipo,
+    filters.situacao,
   ]);
-    useEffect(() => {
+
+  useEffect(() => {
     let cancelled = false;
 
     async function run() {
@@ -636,7 +649,7 @@ export default function PricingTable() {
 
   const handleSort = (col: string) => {
     if (sortColumn === col) {
-      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+      setSortDirection((p) => (p === "asc" ? "desc" : "asc"));
     } else {
       setSortColumn(col);
       setSortDirection("asc");
@@ -650,7 +663,6 @@ export default function PricingTable() {
     setCopiedId(key);
     setTimeout(() => setCopiedId(null), 1200);
   }, []);
-
   const openEditor = useCallback(
     (row: Row, field: keyof Row, isMoney: boolean, e: React.MouseEvent) => {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -891,6 +903,20 @@ export default function PricingTable() {
           exportQuery = exportQuery.in("Marca", selectedBrands);
         }
 
+        if (filters.tipo && filters.tipo !== "Todos") {
+          if (filters.tipo === "Produtos") {
+            exportQuery = exportQuery.ilike("Referência", "%PAI%");
+          } else if (filters.tipo === "Produtos simples") {
+            exportQuery = exportQuery
+              .not("Referência", "ilike", "%PAI%")
+              .not("Referência", "ilike", "%VAR%");
+          } else if (filters.tipo === "Produtos com variações") {
+            exportQuery = exportQuery.ilike("Referência", "%PAI%");
+          } else if (filters.tipo === "Variações") {
+            exportQuery = exportQuery.ilike("Referência", "%VAR%");
+          }
+        }
+
         if (debouncedSearch) {
           const tokens = parseSearchTokens(debouncedSearch);
           const orParts = buildOrSearchParts(tokens);
@@ -921,7 +947,7 @@ export default function PricingTable() {
     } finally {
       setExporting(false);
     }
-  }, [selectedLoja, selectedBrands, debouncedSearch, impExp]);
+  }, [selectedLoja, selectedBrands, debouncedSearch, filters.tipo, impExp]);
 
   return (
     <div className="min-h-screen bg-[#0b0b0c] p-0">
@@ -1026,17 +1052,19 @@ export default function PricingTable() {
 
             <div className="absolute right-1 flex items-center gap-1">
               <button
+                type="button"
                 title="Cancelar"
                 onClick={cancelEdit}
-                className="text-red-400 hover:text-red-300"
+                className="cursor-pointer text-red-400 hover:text-red-300"
               >
                 <XIcon className="w-4 h-4" />
               </button>
 
               <button
+                type="button"
                 title="Confirmar"
                 onClick={confirmEdit}
-                className="text-green-400 hover:text-green-300"
+                className="cursor-pointer text-green-400 hover:text-green-300"
               >
                 <CheckIcon className="w-4 h-4" />
               </button>
@@ -1046,4 +1074,4 @@ export default function PricingTable() {
       )}
     </div>
   );
-}
+}    
