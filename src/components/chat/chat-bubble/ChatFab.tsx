@@ -198,42 +198,84 @@ export default function ChatFab({
   return (
     <AnimatePresence>
       {!isOpen && (
-        <motion.button
-          initial={{ scale: 0, opacity: 0 }}
-          animate={{
-            scale: 1,
-            opacity: 1,
-            x: position.x,
-            y: position.y,
-          }}
-          exit={{ scale: 0, opacity: 0 }}
-          whileHover={{ scale: 1.08 }}
-          whileTap={{ scale: 0.95 }}
-          onMouseDown={startMouseDrag}
-          onTouchStart={startTouchDrag}
-          onClick={handleOpen}
-          className="chat-fab-draggable fixed bottom-6 right-6 z-[99999] flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] shadow-2xl group"
-          style={{
-            boxShadow: "0 8px 32px rgba(38, 153, 254, 0.4)",
-            cursor: isDragging ? "grabbing" : "grab",
-          }}
-        >
-          <MessageCircle className="h-7 w-7 text-white" />
+        <>
+          {/* Mobile */}
+          <motion.button
+            initial={{ scale: 0, opacity: 0, y: 16 }}
+            animate={{
+              scale: 1,
+              opacity: 1,
+              x: position.x,
+              y: position.y,
+            }}
+            exit={{ scale: 0, opacity: 0, y: 16 }}
+            whileTap={{ scale: 0.94 }}
+            onMouseDown={startMouseDrag}
+            onTouchStart={startTouchDrag}
+            onClick={handleOpen}
+            className="chat-fab-draggable fixed right-5 z-[99999] flex h-14 w-14 items-center justify-center rounded-full bg-[#2699fe] shadow-2xl md:hidden"
+            style={{
+              bottom: "calc(1.25rem + env(safe-area-inset-bottom))",
+              boxShadow: "0 10px 30px rgba(38, 153, 254, 0.45)",
+              cursor: isDragging ? "grabbing" : "grab",
+              touchAction: "none",
+            }}
+          >
+            <MessageCircle className="relative z-10 h-6 w-6 text-white" />
 
-          {hasAnyUnread && (
+            {hasAnyUnread && (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="absolute -right-1 -top-1 h-4 w-4 rounded-full border-2 border-[#0a0a0a] bg-red-500"
+              />
+            )}
+
             <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full border-2 border-[#0a0a0a] bg-red-500"
+              className="pointer-events-none absolute inset-0 rounded-full bg-[#2699fe]"
+              animate={{ scale: [1, 1.28, 1], opacity: [0.35, 0, 0.35] }}
+              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
             />
-          )}
+          </motion.button>
 
-          <motion.div
-            className="pointer-events-none absolute inset-0 rounded-full bg-[#2699fe]"
-            animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0, 0.5] }}
-            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-          />
-        </motion.button>
+          {/* Desktop - intacto */}
+          <motion.button
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{
+              scale: 1,
+              opacity: 1,
+              x: position.x,
+              y: position.y,
+            }}
+            exit={{ scale: 0, opacity: 0 }}
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.95 }}
+            onMouseDown={startMouseDrag}
+            onTouchStart={startTouchDrag}
+            onClick={handleOpen}
+            className="chat-fab-draggable fixed bottom-6 right-6 z-[99999] hidden h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] shadow-2xl group md:flex"
+            style={{
+              boxShadow: "0 8px 32px rgba(38, 153, 254, 0.4)",
+              cursor: isDragging ? "grabbing" : "grab",
+            }}
+          >
+            <MessageCircle className="h-7 w-7 text-white" />
+
+            {hasAnyUnread && (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full border-2 border-[#0a0a0a] bg-red-500"
+              />
+            )}
+
+            <motion.div
+              className="pointer-events-none absolute inset-0 rounded-full bg-[#2699fe]"
+              animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0, 0.5] }}
+              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+            />
+          </motion.button>
+        </>
       )}
     </AnimatePresence>
   );

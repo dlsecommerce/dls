@@ -38,7 +38,7 @@ export default function ConfirmExitModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-[#0f0f0f]/95 backdrop-blur-xl border border-neutral-700 rounded-2xl text-white max-w-md shadow-2xl">
+      <DialogContent className="bg-[#0f0f0f] border border-neutral-700 rounded-2xl text-white max-w-md shadow-2xl w-[calc(100vw-24px)] md:w-full p-5 md:p-6 top-[44%] md:top-1/2 pb-[calc(env(safe-area-inset-bottom)+20px)]">
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold text-white flex items-center gap-2">
             <LogOut className="w-5 h-5 text-[#e74c3c]" />
@@ -51,7 +51,7 @@ export default function ConfirmExitModal({
           animate={{ opacity: 1, y: 0 }}
           className="mt-3 space-y-3"
         >
-          <p className="text-neutral-300">
+          <p className="text-neutral-300 text-sm md:text-base leading-relaxed">
             As alterações não salvas serão perdidas. Confirma a saída desta
             página?
           </p>
@@ -61,11 +61,11 @@ export default function ConfirmExitModal({
           </div>
         </motion.div>
 
-        <DialogFooter className="mt-5 flex justify-end gap-3">
+        <DialogFooter className="mt-5 flex flex-col-reverse md:flex-row justify-end gap-3">
           <Button
             variant="outline"
             type="button"
-            className="border-neutral-700 text-white hover:scale-105 transition-all cursor-pointer"
+            className="w-full md:w-auto h-11 md:h-10 border-neutral-700 text-white hover:scale-105 transition-all cursor-pointer"
             onClick={() => onOpenChange(false)}
             disabled={loading}
           >
@@ -74,7 +74,7 @@ export default function ConfirmExitModal({
 
           <Button
             type="button"
-            className={`bg-gradient-to-r from-[#e74c3c] to-[#c0392b] text-white cursor-pointer transition-all ${
+            className={`w-full md:w-auto h-11 md:h-10 bg-gradient-to-r from-[#e74c3c] to-[#c0392b] text-white cursor-pointer transition-all ${
               loading ? "opacity-80 cursor-wait" : "hover:scale-105"
             }`}
             onClick={handleConfirm}

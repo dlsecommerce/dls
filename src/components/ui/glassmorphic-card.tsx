@@ -19,7 +19,6 @@ export function GlassmorphicCard({
       className={`
         relative overflow-hidden
         bg-gradient-to-br from-white/5 to-white/[0.03]
-        backdrop-blur-xl
         border border-neutral-700
         rounded-2xl
         shadow-md

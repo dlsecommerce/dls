@@ -122,7 +122,7 @@ export default function ProductDetails() {
     <>
       <LoadingBar ref={loadingBarRef} />
 
-      <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-4 md:p-8 pt-24">
+      <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] p-4 md:p-8 pt-14 pb-[calc(env(safe-area-inset-bottom)+96px)] md:pb-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* 💡 Seção de composição */}
           <CompositionSection
@@ -148,7 +148,7 @@ export default function ProductDetails() {
 
           {/* 📦 Seção de informações gerais */}
           <motion.div
-            className="lg:col-span-5 p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg flex flex-col gap-3 h-full"
+            className="lg:col-span-5 p-2 rounded-xl bg-[#0f0f0f] md:bg-white/5 border border-white/10 backdrop-blur-none md:backdrop-blur-lg shadow-lg flex flex-col gap-3 h-full pb-[calc(env(safe-area-inset-bottom)+72px)] md:pb-2"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, ease: "easeOut" }}

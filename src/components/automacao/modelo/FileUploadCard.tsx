@@ -60,105 +60,209 @@ export const FileUploadCard = ({
   const draggingActive = !disableEffects && isDragging;
 
   return (
-    <GlassmorphicCard
-      onClick={handleClick}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className={cn(
-        "relative w-full h-full overflow-hidden cursor-pointer",
-
-        // ❌ remove TODA transição quando disableEffects
-        disableEffects ? "" : "transition-all duration-300 group",
-
-        selectedFile
-          ? "bg-blue-500/10 border-none ring-1 ring-blue-500/40"
-          : draggingActive
-          ? "border-2 border-blue-400 bg-blue-400/10"
-          : cn(
-              "border-2 border-border",
-              disableEffects
-                ? ""
-                : "hover:border-blue-400/50 hover:shadow-lg hover:scale-[1.02]"
-            )
-      )}
-    >
-      {/* Badge */}
-      <div
+    <>
+      {/* Desktop - original preservado */}
+      <GlassmorphicCard
+        onClick={handleClick}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
         className={cn(
-          "absolute top-3 left-3 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md z-10",
-          selectedFile ? "bg-blue-500" : "bg-blue-400"
+          "relative w-full h-full overflow-hidden cursor-pointer hidden md:block",
+
+          // ❌ remove TODA transição quando disableEffects
+          disableEffects ? "" : "transition-all duration-300 group",
+
+          selectedFile
+            ? "bg-blue-500/10 border-none ring-1 ring-blue-500/40"
+            : draggingActive
+            ? "border-2 border-blue-400 bg-blue-400/10"
+            : cn(
+                "border-2 border-border",
+                disableEffects
+                  ? ""
+                  : "hover:border-blue-400/50 hover:shadow-lg hover:scale-[1.02]"
+              )
         )}
       >
-        {stepNumber}
-      </div>
-
-      {/* Remover */}
-      {selectedFile && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn(
-            "absolute top-2 right-2 w-7 h-7 z-10",
-            disableEffects
-              ? "opacity-100"
-              : "opacity-0 group-hover:opacity-100 transition-opacity",
-            "hover:bg-red-500 hover:text-white"
-          )}
-          onClick={handleRemove}
-        >
-          <X className="w-4 h-4" />
-        </Button>
-      )}
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".xlsx,.xls,.csv"
-        onChange={handleFileChange}
-        className="hidden"
-      />
-
-      {/* Conteúdo */}
-      <div className="p-6 flex flex-col items-center justify-center min-h-[200px] space-y-3">
+        {/* Badge */}
         <div
           className={cn(
-            "rounded-full p-4",
-            selectedFile
-              ? "bg-blue-500 text-white"
-              : "bg-blue-500/10 text-blue-400",
-            // ❌ SEM scale quando disableEffects
-            disableEffects ? "" : selectedFile && "scale-110 transition-transform"
+            "absolute top-3 left-3 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md z-10",
+            selectedFile ? "bg-blue-500" : "bg-blue-400"
           )}
         >
-          {selectedFile ? (
-            <CheckCircle2 className="w-8 h-8" />
-          ) : (
-            icon || <FileSpreadsheet className="w-8 h-8" />
-          )}
+          {stepNumber}
         </div>
 
-        <div className="text-center space-y-1 w-full px-2">
-          <h3 className="font-semibold text-foreground">{label}</h3>
-          {selectedFile ? (
-            <p className="text-xs text-blue-500 font-medium truncate">
-              {selectedFile.name}
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Clique ou arraste o arquivo
-            </p>
-          )}
-        </div>
+        {/* Remover */}
+        {selectedFile && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "absolute top-2 right-2 w-7 h-7 z-10",
+              disableEffects
+                ? "opacity-100"
+                : "opacity-0 group-hover:opacity-100 transition-opacity",
+              "hover:bg-red-500 hover:text-white"
+            )}
+            onClick={handleRemove}
+          >
+            <X className="w-4 h-4" />
+          </Button>
+        )}
 
-        <Upload
-          className={cn(
-            "w-5 h-5",
-            selectedFile ? "opacity-0 scale-0" : "opacity-40 scale-100",
-            disableEffects ? "" : "transition-all duration-300"
-          )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx,.xls,.csv"
+          onChange={handleFileChange}
+          className="hidden"
         />
-      </div>
-    </GlassmorphicCard>
+
+        {/* Conteúdo */}
+        <div className="p-6 flex flex-col items-center justify-center min-h-[200px] space-y-3">
+          <div
+            className={cn(
+              "rounded-full p-4",
+              selectedFile
+                ? "bg-blue-500 text-white"
+                : "bg-blue-500/10 text-blue-400",
+              // ❌ SEM scale quando disableEffects
+              disableEffects ? "" : selectedFile && "scale-110 transition-transform"
+            )}
+          >
+            {selectedFile ? (
+              <CheckCircle2 className="w-8 h-8" />
+            ) : (
+              icon || <FileSpreadsheet className="w-8 h-8" />
+            )}
+          </div>
+
+          <div className="text-center space-y-1 w-full px-2">
+            <h3 className="font-semibold text-foreground">{label}</h3>
+            {selectedFile ? (
+              <p className="text-xs text-blue-500 font-medium truncate">
+                {selectedFile.name}
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Clique ou arraste o arquivo
+              </p>
+            )}
+          </div>
+
+          <Upload
+            className={cn(
+              "w-5 h-5",
+              selectedFile ? "opacity-0 scale-0" : "opacity-40 scale-100",
+              disableEffects ? "" : "transition-all duration-300"
+            )}
+          />
+        </div>
+      </GlassmorphicCard>
+
+      {/* Mobile - camada separada */}
+      <GlassmorphicCard
+        onClick={handleClick}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={cn(
+          "relative w-full overflow-hidden cursor-pointer md:hidden",
+          "rounded-2xl border-2 active:scale-[0.99]",
+          "min-h-[132px] touch-manipulation",
+          disableEffects ? "" : "transition-all duration-200",
+          selectedFile
+            ? "bg-blue-500/10 border-blue-500/40 ring-1 ring-blue-500/30"
+            : draggingActive
+            ? "border-blue-400 bg-blue-400/10"
+           : "border-border bg-[#0a0a0a]"
+        )}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx,.xls,.csv"
+          onChange={handleFileChange}
+          className="hidden"
+        />
+
+        <div className="p-4 pr-12 grid grid-cols-[48px_1fr] gap-4 items-center min-h-[132px]">
+          <div
+            className={cn(
+              "relative w-12 h-12 rounded-2xl flex items-center justify-center shrink-0",
+              selectedFile
+                ? "bg-blue-500 text-white shadow-md"
+                : "bg-blue-500/10 text-blue-400"
+            )}
+          >
+            {selectedFile ? (
+              <CheckCircle2 className="w-6 h-6" />
+            ) : (
+              icon || <FileSpreadsheet className="w-6 h-6" />
+            )}
+
+            <div
+              className={cn(
+                "absolute -top-2 -left-2 w-6 h-6 rounded-full flex items-center justify-center",
+                "text-[11px] font-bold text-white shadow-md",
+                selectedFile ? "bg-blue-500" : "bg-blue-400"
+              )}
+            >
+              {stepNumber}
+            </div>
+          </div>
+
+          <div className="min-w-0 space-y-2">
+            <div className="space-y-1">
+              <h3 className="font-semibold text-foreground leading-tight truncate">
+                {label}
+              </h3>
+
+              {selectedFile ? (
+                <p className="text-xs text-blue-500 font-medium truncate">
+                  {selectedFile.name}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground leading-snug">
+                  Toque para selecionar sua planilha
+                </p>
+              )}
+            </div>
+
+            <div
+              className={cn(
+                "w-full rounded-xl px-3 py-2 text-xs font-semibold text-center",
+                selectedFile
+                  ? "bg-blue-500/10 text-blue-500"
+                  : "bg-muted/70 text-muted-foreground"
+              )}
+            >
+              {selectedFile ? "Arquivo selecionado" : "Enviar arquivo"}
+            </div>
+          </div>
+        </div>
+
+        {selectedFile ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "absolute top-3 right-3 w-9 h-9 z-10 rounded-full",
+              "bg-[#0a0a0a] hover:bg-red-500 hover:text-white"
+            )}
+            onClick={handleRemove}
+          >
+            <X className="w-4 h-4" />
+          </Button>
+        ) : (
+          <div className="absolute top-4 right-4 w-9 h-9 rounded-full bg-muted/70 flex items-center justify-center">
+            <Upload className="w-4 h-4 opacity-60" />
+          </div>
+        )}
+      </GlassmorphicCard>
+    </>
   );
 };

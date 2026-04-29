@@ -29,10 +29,21 @@ export default function ConfirmDeleteModal({
 }: Props) {
   return (
     <Dialog open={open} onOpenChange={(v) => !loading && onOpenChange(v)}>
-      <DialogContent className="bg-[#0f0f0f]/95 backdrop-blur-xl border border-neutral-700 rounded-2xl text-white max-w-md shadow-2xl">
+      <DialogContent
+        className="
+          w-[calc(100vw-1.5rem)]
+          max-w-md
+          rounded-2xl
+          border border-neutral-700
+          bg-[#0f0f0f]
+          p-4 sm:p-6
+          text-white
+          shadow-2xl
+        "
+      >
         <DialogHeader>
-          <DialogTitle className="text-lg font-semibold text-white flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-red-400" />
+          <DialogTitle className="flex items-center gap-2 text-base font-semibold text-white sm:text-lg">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-red-400" />
             Excluir Anúncio(s)
           </DialogTitle>
         </DialogHeader>
@@ -42,25 +53,34 @@ export default function ConfirmDeleteModal({
           animate={{ opacity: 1, y: 0 }}
           className="mt-3 space-y-3"
         >
-          <p className="text-neutral-300">
+          <p className="text-sm leading-6 text-neutral-300 sm:text-base">
             Deseja realmente excluir{" "}
-            <span className="text-white font-semibold">{count}</span>{" "}
+            <span className="font-semibold text-white">{count}</span>{" "}
             {count === 1 ? "anúncio selecionado" : "anúncios selecionados"}?
           </p>
 
-          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-300 flex items-start gap-2">
-            <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm leading-5 text-red-300">
+            <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-400" />
             <div>
-              <strong className="text-red-400">Atenção:</strong> Esta ação é permanente e
-              não poderá ser desfeita.
+              <strong className="text-red-400">Atenção:</strong> Esta ação é
+              permanente e não poderá ser desfeita.
             </div>
           </div>
         </motion.div>
 
-        <DialogFooter className="mt-5 flex justify-end gap-3">
+        <DialogFooter className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
           <Button
             variant="outline"
-            className="border-neutral-700 text-white hover:scale-105 transition-all cursor-pointer"
+            className="
+              h-11 w-full
+              cursor-pointer
+              border-neutral-700
+              text-white
+              transition-all
+              active:scale-[0.98]
+              sm:w-auto
+              sm:hover:scale-105
+            "
             onClick={() => onOpenChange(false)}
             disabled={loading}
           >
@@ -68,11 +88,20 @@ export default function ConfirmDeleteModal({
           </Button>
 
           <Button
-            className="bg-gradient-to-r from-[#ef4444] to-[#dc2626] hover:scale-105 text-white flex items-center gap-2 cursor-pointer"
+            className="
+              flex h-11 w-full
+              cursor-pointer
+              items-center justify-center gap-2
+              bg-gradient-to-r from-[#ef4444] to-[#dc2626]
+              text-white
+              active:scale-[0.98]
+              sm:w-auto
+              sm:hover:scale-105
+            "
             onClick={onConfirm}
             disabled={loading}
           >
-            {loading ? <Loader className="animate-spin w-5 h-5" /> : "Excluir"}
+            {loading ? <Loader className="h-5 w-5 animate-spin" /> : "Excluir"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -38,15 +38,19 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f3f3f3" },
-    { media: "(prefers-color-scheme: dark)", color: "#090909" },
+    { media: "(prefers-color-scheme: light)", color: "#050505" },
+    { media: "(prefers-color-scheme: dark)", color: "#050505" },
   ],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
-      <body className={inter.className}>
+    <html
+      lang="pt-BR"
+      suppressHydrationWarning
+      className="bg-[#050505] overscroll-none"
+    >
+      <body className={`${inter.className} bg-[#050505] overscroll-none`}>
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"
@@ -56,7 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           <Providers>
             <SupabaseProvider>
-              <main className="relative z-10 text-foreground min-h-screen">
+              <main className="relative z-10 text-foreground min-h-screen bg-[#050505] overscroll-none">
                 <ClientWrapper>{children}</ClientWrapper>
               </main>
 

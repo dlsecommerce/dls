@@ -495,20 +495,20 @@ export default function PricingMassEditionModal({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="bg-[#0f0f0f]/95 backdrop-blur-xl border border-neutral-700 rounded-2xl text-white max-w-5xl shadow-2xl max-h-[90vh] overflow-hidden">
+        <DialogContent className="bg-[#0f0f0f] md:bg-[#0f0f0f]/95 backdrop-blur-none md:backdrop-blur-xl border border-neutral-700 rounded-2xl text-white w-[calc(100vw-16px)] md:w-full max-w-5xl shadow-2xl max-h-[calc(100dvh-24px)] md:max-h-[90vh] overflow-hidden p-4 md:p-6 top-[48%] md:top-1/2 pb-[calc(env(safe-area-inset-bottom)+16px)] md:pb-6">
           <DialogHeader>
-            <DialogTitle className="text-xl font-semibold flex items-center gap-2 text-white">
+            <DialogTitle className="text-lg md:text-xl font-semibold flex items-center gap-2 text-white">
               <Layers className="w-5 h-5 text-white" />
               Importação de Preços (Tray)
             </DialogTitle>
           </DialogHeader>
 
-          <div className="overflow-y-auto max-h-[75vh] pr-2 custom-scrollbar">
+          <div className="overflow-y-auto max-h-[calc(100dvh-230px)] md:max-h-[75vh] pr-1 md:pr-2 custom-scrollbar">
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
-              className="space-y-6 pb-6"
+              className="space-y-4 md:space-y-6 pb-4 md:pb-6"
             >
               <input
                 ref={fileInputRef}
@@ -519,12 +519,12 @@ export default function PricingMassEditionModal({
               />
 
               <div
-                className="p-6 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-all cursor-pointer"
+                className="p-4 md:p-6 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-all cursor-pointer"
                 onClick={() => fileInputRef.current?.click()}
               >
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3 md:gap-4">
                   <div
-                    className="w-12 h-12 rounded-xl flex items-center justify-center"
+                    className="w-11 h-11 md:w-12 md:h-12 rounded-xl flex items-center justify-center"
                     style={{ backgroundColor: "#2699fe20" }}
                   >
                     {loading ? (
@@ -533,11 +533,11 @@ export default function PricingMassEditionModal({
                       <UploadCloud className="w-6 h-6 text-[#2699fe]" />
                     )}
                   </div>
-                  <div className="flex-1">
-                    <h4 className="font-bold mb-1">
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold mb-1 text-sm md:text-base">
                       {loading ? `Lendo arquivo... (${progress}%)` : "Importar Planilha"}
                     </h4>
-                    <p className="text-sm text-neutral-400">
+                    <p className="text-xs md:text-sm text-neutral-400 leading-relaxed">
                       Para 50k+ linhas, use CSV (mais rápido). XLSX funciona, mas é mais pesado.
                     </p>
                   </div>
@@ -555,8 +555,8 @@ export default function PricingMassEditionModal({
                   <Loader className="w-6 h-6 animate-spin text-neutral-400" />
                 </div>
               ) : previewData.length > 0 ? (
-                <div className="border border-neutral-700 rounded-xl overflow-auto max-h-[350px]">
-                  <table className="w-full text-sm text-neutral-300 min-w-[900px]">
+                <div className="border border-neutral-700 rounded-xl overflow-auto max-h-[300px] md:max-h-[350px]">
+                  <table className="w-full text-xs md:text-sm text-neutral-300 min-w-[900px]">
                     <thead className="bg-neutral-800/80 text-white sticky top-0">
                       <tr>
                         {columns.map((col) => (
@@ -594,10 +594,10 @@ export default function PricingMassEditionModal({
             </div>
           )}
 
-          <DialogFooter className="mt-6 flex justify-end border-t border-neutral-800 pt-4">
+          <DialogFooter className="mt-4 md:mt-6 flex flex-col-reverse md:flex-row justify-end gap-3 border-t border-neutral-800 pt-4">
             <Button
               variant="outline"
-              className="border-neutral-700 text-white hover:bg-white/10"
+              className="w-full md:w-auto h-11 md:h-10 border-neutral-700 text-white hover:bg-white/10"
               onClick={() => onOpenChange(false)}
               disabled={updating}
             >
@@ -605,7 +605,7 @@ export default function PricingMassEditionModal({
             </Button>
 
             <Button
-              className="bg-green-600 hover:scale-105 text-white rounded-xl flex items-center gap-2"
+              className="w-full md:w-auto h-11 md:h-10 bg-green-600 hover:scale-105 text-white rounded-xl flex items-center justify-center gap-2"
               disabled={previewData.length === 0 || updating}
               onClick={() => setConfirmOpen(true)}
             >
@@ -623,7 +623,7 @@ export default function PricingMassEditionModal({
       </Dialog>
 
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="bg-[#0f0f0f]/95 border border-neutral-700 rounded-2xl text-white max-w-md shadow-2xl">
+        <DialogContent className="bg-[#0f0f0f] md:bg-[#0f0f0f]/95 border border-neutral-700 rounded-2xl text-white w-[calc(100vw-24px)] md:w-full max-w-md shadow-2xl p-5 md:p-6 top-[44%] md:top-1/2 pb-[calc(env(safe-area-inset-bottom)+20px)] md:pb-6">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-yellow-400" />
@@ -631,16 +631,16 @@ export default function PricingMassEditionModal({
             </DialogTitle>
           </DialogHeader>
 
-          <p className="mt-3 text-neutral-300">
+          <p className="mt-3 text-sm md:text-base text-neutral-300 leading-relaxed">
             Deseja realmente atualizar
             <span className="text-white font-semibold"> {previewData.length} </span>
             itens?
           </p>
 
-          <DialogFooter className="mt-5 flex justify-end gap-3">
+          <DialogFooter className="mt-5 flex flex-col-reverse md:flex-row justify-end gap-3">
             <Button
               variant="outline"
-              className="border-neutral-700 text-white"
+              className="w-full md:w-auto h-11 md:h-10 border-neutral-700 text-white"
               onClick={() => setConfirmOpen(false)}
               disabled={updating}
             >
@@ -648,7 +648,7 @@ export default function PricingMassEditionModal({
             </Button>
 
             <Button
-              className="bg-green-600 hover:scale-105 text-white"
+              className="w-full md:w-auto h-11 md:h-10 bg-green-600 hover:scale-105 text-white"
               disabled={updating}
               onClick={async () => {
                 // ✅ desbloqueia o áudio NO CLIQUE (sem som)

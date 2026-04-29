@@ -79,12 +79,12 @@ export default function DashboardClient() {
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="mb-6 flex items-center gap-3 md:mb-8 md:flex-row md:items-center md:justify-end md:gap-4"
+          className="mb-6 flex flex-nowrap items-center gap-3 md:mb-8 md:flex-row md:items-center md:justify-end md:gap-4"
         >
           <Calendar className="h-5 w-5 flex-shrink-0 text-neutral-400" />
 
           <Select value={periodo} onValueChange={handlePeriodoChange}>
-            <SelectTrigger className="h-10 flex-1 bg-white/5 border-white/10 text-white rounded-xl hover:bg-white/10 transition-all md:w-48 md:flex-none md:h-auto">
+            <SelectTrigger className="h-10 flex-1 min-w-0 bg-white/5 border-white/10 text-white rounded-xl hover:bg-white/10 transition-all md:w-48 md:flex-none md:h-auto">
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-[#1a1a1a] border-white/10">

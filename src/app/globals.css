@@ -29,6 +29,10 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: "Inter", Arial, Helvetica, sans-serif;
+
+  /* 🔥 FIX DO BRANCO ANDROID */
+  overscroll-behavior: none;
+
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -137,6 +141,9 @@ main {
   background: var(--background);
   margin: 0;
   padding: 0;
+
+  /* 🔥 FIX ANDROID */
+  overscroll-behavior-y: none;
 }
 
 /* background fixo suave */

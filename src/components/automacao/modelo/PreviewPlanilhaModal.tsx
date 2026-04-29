@@ -58,18 +58,18 @@ export default function PreviewPlanilhaModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !loading && onOpenChange(v)}>
-      <DialogContent className="bg-[#0f0f0f]/95 backdrop-blur-xl border border-neutral-700 rounded-2xl text-white max-w-3xl shadow-2xl">
+      <DialogContent className="bg-[#0f0f0f]/95 backdrop-blur-xl border border-neutral-700 rounded-2xl text-white max-w-3xl shadow-2xl w-[calc(100vw-24px)] max-h-[calc(100dvh-32px)] overflow-hidden p-4 md:p-6">
         <DialogHeader>
-          <DialogTitle className="text-lg font-semibold text-white flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
+          <DialogTitle className="text-base md:text-lg font-semibold text-white flex items-center gap-2">
+            <FileSpreadsheet className="w-5 h-5 text-emerald-400 shrink-0" />
             Pré-visualização da Planilha
           </DialogTitle>
         </DialogHeader>
 
         {file && (
-          <div className="text-sm text-neutral-400 mb-3">
-            <span className="font-medium text-white">{file.name}</span> —{" "}
-            {(file.size / 1024).toFixed(1)} KB
+          <div className="text-xs md:text-sm text-neutral-400 mb-3 min-w-0">
+            <span className="font-medium text-white break-all">{file.name}</span>{" "}
+            — {(file.size / 1024).toFixed(1)} KB
             {sheetName && (
               <span className="ml-2 text-emerald-400">({sheetName})</span>
             )}
@@ -88,7 +88,7 @@ export default function PreviewPlanilhaModal({
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="overflow-x-auto max-h-[400px] rounded-lg border border-neutral-700"
+            className="overflow-auto max-h-[52dvh] md:max-h-[400px] rounded-lg border border-neutral-700"
           >
             <table className="min-w-full border-collapse">
               <tbody>
@@ -102,7 +102,10 @@ export default function PreviewPlanilhaModal({
                     } border-b border-neutral-700`}
                   >
                     {row.map((cell, j) => (
-                      <td key={j} className="px-3 py-2 text-sm whitespace-nowrap">
+                      <td
+                        key={j}
+                        className="px-3 py-2 text-xs md:text-sm whitespace-nowrap"
+                      >
                         {cell ?? ""}
                       </td>
                     ))}
@@ -113,10 +116,10 @@ export default function PreviewPlanilhaModal({
           </motion.div>
         )}
 
-        <DialogFooter className="mt-5 flex justify-end gap-3">
+        <DialogFooter className="mt-5 flex flex-col-reverse md:flex-row justify-end gap-3 pb-[calc(12px+env(safe-area-inset-bottom))] md:pb-0">
           <Button
             variant="outline"
-            className="border-neutral-700 text-white hover:scale-105 transition-all cursor-pointer"
+            className="w-full md:w-auto h-12 md:h-10 border-neutral-700 text-white hover:scale-105 transition-all cursor-pointer"
             onClick={() => onOpenChange(false)}
             disabled={loading}
           >
@@ -124,7 +127,7 @@ export default function PreviewPlanilhaModal({
           </Button>
           {file && (
             <Button
-              className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:scale-105 text-white flex items-center gap-2 cursor-pointer"
+              className="w-full md:w-auto h-12 md:h-10 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:scale-105 text-white flex items-center gap-2 cursor-pointer"
               onClick={() => onConfirm(file)}
               disabled={loading}
             >

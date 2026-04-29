@@ -143,9 +143,10 @@ export default function PlanilhaModelo() {
   const isThreeCards = steps.length === 3;
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-start bg-transparent overflow-hidden mt-20">
+    <div className="min-h-screen w-full flex flex-col items-center justify-start bg-transparent overflow-hidden md:mt-20">
       <div className="w-full max-w-[1400px] mx-auto flex justify-center">
-        <GlassmorphicCard className="relative w-full h-[70vh] flex flex-col justify-center items-center p-10 space-y-6 rounded-2xl shadow-2xl backdrop-blur-md border border-white/10 overflow-hidden">
+        {/* DESKTOP - ORIGINAL PRESERVADO */}
+        <GlassmorphicCard className="hidden md:flex relative w-full h-[70vh] flex-col justify-center items-center p-10 space-y-6 rounded-2xl shadow-2xl border border-white/10 overflow-hidden">
           {/* 🔹 Topo com filtro e botão limpar */}
           <div className="absolute top-6 right-6 flex items-center gap-3">
             <motion.button
@@ -239,6 +240,109 @@ export default function PlanilhaModelo() {
             </motion.button>
           </div>
         </GlassmorphicCard>
+
+        {/* MOBILE - CAMADA SEPARADA */}
+        <div className="md:hidden w-full min-h-screen px-4 pt-4 pb-[calc(180px+env(safe-area-inset-bottom))] overflow-y-scroll">
+          <div className="sticky top-0 z-20 -mx-4 px-4 pt-2 pb-3 bg-background/95 border-b border-white/10">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h1 className="text-lg font-bold text-foreground leading-tight">
+                  Modelo
+                </h1>
+                <p className="text-xs text-muted-foreground truncate">
+                  {selectedCount}/{steps.length} arquivos selecionados
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <motion.button
+                  whileTap={{ scale: 0.92, rotate: -10 }}
+                  onClick={handleClearActive}
+                  title="Limpar arquivos da loja"
+                  className="h-11 w-11 rounded-full border border-red-500/25 bg-red-500/10 text-red-400 flex items-center justify-center touch-manipulation"
+                >
+                  <Repeat2 className="w-5 h-5" />
+                </motion.button>
+
+                <FiltroLoja
+                  selectedLoja={selectedLoja}
+                  setSelectedLoja={handleChangeLoja}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 space-y-4">
+            <GlassmorphicCard className="w-full rounded-2xl border border-white/10 p-4 shadow-xl overflow-hidden">
+              <ProgressIndicator
+                totalSteps={steps.length}
+                completedSteps={selectedCount}
+                loading={buttonStatus === "processing"}
+              />
+
+              {buttonStatus !== "processing" && (
+                <div className="mt-4 flex items-center justify-center gap-2 text-xs">
+                  <div className={`w-2.5 h-2.5 rounded-full ${getDotColor()} animate-pulse`} />
+                  {!allFilesSelected ? (
+                    <span className="text-red-500 font-medium">
+                      Faltam {steps.length - selectedCount} arquivo(s)
+                    </span>
+                  ) : (
+                    <span className="text-green-500 font-semibold">
+                      Todos os arquivos selecionados
+                    </span>
+                  )}
+                </div>
+              )}
+            </GlassmorphicCard>
+
+            <div className="grid grid-cols-1 gap-3">
+              {steps.map((item, i) => (
+                <FileUploadCard
+                  key={item.key}
+                  label={item.label}
+                  selectedFile={planilhas[item.key]}
+                  onFileSelect={(f) => {
+                    if (f) {
+                      setPreviewFile(f);
+                      setPendingKey(item.key);
+                      setPreviewOpen(true);
+                    }
+                  }}
+                  stepNumber={i + 1}
+                  icon={item.icon}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="fixed left-0 right-0 bottom-0 z-30 px-4 pt-3 pb-[calc(64px+env(safe-area-inset-bottom))] bg-background/95 border-t border-white/10">
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={handleStartAutomation}
+              disabled={!allFilesSelected || status === "processing"}
+              className={`${getButtonColor()} w-full h-14 text-base font-bold shadow-none transition-all flex items-center justify-center gap-2 rounded-2xl touch-manipulation ${
+                !allFilesSelected || status === "processing"
+                  ? "opacity-60 cursor-not-allowed"
+                  : "cursor-pointer"
+              }`}
+            >
+              {buttonStatus === "processing" || status === "processing" ? (
+                <>
+                  <Loader className="w-5 h-5 animate-spin" />
+                  <span>Processando...</span>
+                </>
+              ) : buttonStatus === "success" ? (
+                <>
+                  <CheckCircle2 className="w-5 h-5" />
+                  <span>Concluído!</span>
+                </>
+              ) : (
+                "Iniciar automação"
+              )}
+            </motion.button>
+          </div>
+        </div>
       </div>
 
       {/* 🔹 Modal de preview da planilha */}

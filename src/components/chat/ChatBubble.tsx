@@ -98,6 +98,7 @@ export default function ChatBubble() {
 
   const [fabPosition, setFabPosition] = useState<FabPosition>({ x: 0, y: 0 });
   const [isDraggingFab, setIsDraggingFab] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   const fabDragRef = useRef({
     active: false,
@@ -265,8 +266,20 @@ export default function ChatBubble() {
     };
   }, [fabPosition, clampFabPosition]);
 
-  const ensureConversationParticipants = useCallback(async () => {
-    if (!conversaId || !myId || !selectedUser?.usuario_id) return;
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const updateIsMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    updateIsMobile();
+    window.addEventListener("resize", updateIsMobile);
+
+    return () => window.removeEventListener("resize", updateIsMobile);
+  }, []);
+
+  const ensureConversationParticipants = useCallback(async () => {    if (!conversaId || !myId || !selectedUser?.usuario_id) return;
 
     const { error } = await supabase.rpc("ensure_dm_participants", {
       p_conversa_id: conversaId,
@@ -341,7 +354,11 @@ export default function ChatBubble() {
       if (isOpen && !isMinimized) return;
 
       if ("Notification" in window && Notification.permission === "granted") {
-        new Notification(title, { body, icon: "/favicon.ico", badge: "/favicon.ico" });
+        new Notification(title, {
+          body,
+          icon: "/favicon.ico",
+          badge: "/favicon.ico",
+        });
       }
     },
     [notificationsEnabled, isOpen, isMinimized]
@@ -349,15 +366,19 @@ export default function ChatBubble() {
 
   const playSound = useCallback(() => {
     if (!soundEnabled) return;
+
     const audio = new Audio(
       "data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSmH0fPTgjMGHm7A7+OZRQ0PVqvl8LJeGAg+ltryxnIsBS59zvLaizsIGGS57OihUBELTKXh8LhlHAU2kdXzzn0pBSh+zPLZjT0HHnK/7eObRw4OWKzl8A=="
     );
+
     audio.play().catch(() => {});
   }, [soundEnabled]);
 
   useEffect(() => {
     const fetchProfiles = async () => {
-      const { data, error } = await supabase.from("profiles").select("id, name, avatar_url, status");
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, name, avatar_url, status");
 
       if (error) {
         console.error("[profiles] select error:", error);
@@ -380,24 +401,31 @@ export default function ChatBubble() {
 
     const channel = supabase
       .channel("profiles-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, (payload) => {
-        const newRow: any = payload.new;
-        if (!newRow?.id) return;
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "profiles" },
+        (payload) => {
+          const newRow: any = payload.new;
+          if (!newRow?.id) return;
 
-        setUsers((prev) => {
-          const exists = prev.some((u) => u.usuario_id === newRow.id);
+          setUsers((prev) => {
+            const exists = prev.some((u) => u.usuario_id === newRow.id);
 
-          const mapped: MiniUser = {
-            usuario_id: newRow.id,
-            usuario_nome: newRow.name || "Usuário",
-            avatar_url: newRow.avatar_url,
-            status: (newRow.status as MiniUser["status"]) || "offline",
-          };
+            const mapped: MiniUser = {
+              usuario_id: newRow.id,
+              usuario_nome: newRow.name || "Usuário",
+              avatar_url: newRow.avatar_url,
+              status:
+                (newRow.status as MiniUser["status"]) || "offline",
+            };
 
-          if (!exists) return [mapped, ...prev];
-          return prev.map((u) => (u.usuario_id === newRow.id ? { ...u, ...mapped } : u));
-        });
-      })
+            if (!exists) return [mapped, ...prev];
+            return prev.map((u) =>
+              u.usuario_id === newRow.id ? { ...u, ...mapped } : u
+            );
+          });
+        }
+      )
       .subscribe();
 
     return () => {
@@ -416,6 +444,7 @@ export default function ChatBubble() {
       .on("presence", { event: "sync" }, () => {
         const state = presence.presenceState();
         const ids = new Set<string>();
+
         Object.keys(state).forEach((k) => ids.add(String(k)));
         setOnlineIds(ids);
       })
@@ -432,7 +461,10 @@ export default function ChatBubble() {
 
     presence.subscribe(async (status) => {
       if (status !== "SUBSCRIBED") return;
-      await presence.track({ nome: myName, at: new Date().toISOString() });
+      await presence.track({
+        nome: myName,
+        at: new Date().toISOString(),
+      });
     });
 
     presenceChannelRef.current = presence;
@@ -444,8 +476,7 @@ export default function ChatBubble() {
       }
     };
   }, [myId, myName]);
-
-  useEffect(() => {
+    useEffect(() => {
     if (!myId) return;
 
     if (inboxChannelRef.current) {
@@ -470,7 +501,10 @@ export default function ChatBubble() {
           if (m.remetente_id === myId) return;
 
           const currentOpenConversation = conversaIdRef.current || "";
-          const isThisConversationOpen = Boolean(currentOpenConversation) && m.conversa_id === currentOpenConversation;
+          const isThisConversationOpen =
+            Boolean(currentOpenConversation) &&
+            m.conversa_id === currentOpenConversation;
+
           const shouldHighlightUser = !isThisConversationOpen;
 
           if (shouldHighlightUser) {
@@ -502,8 +536,19 @@ export default function ChatBubble() {
 
   const safeSortMessages = useCallback((list: ChatMessage[]) => {
     const getTime = (m: any) =>
-      String(m?.created_at ?? m?.createdAt ?? m?.created_on ?? m?.createdOn ?? m?.data ?? m?.criado_em ?? "");
-    return [...list].sort((a: any, b: any) => getTime(a).localeCompare(getTime(b)));
+      String(
+        m?.created_at ??
+          m?.createdAt ??
+          m?.created_on ??
+          m?.createdOn ??
+          m?.data ??
+          m?.criado_em ??
+          ""
+      );
+
+    return [...list].sort((a: any, b: any) =>
+      getTime(a).localeCompare(getTime(b))
+    );
   }, []);
 
   const initMessagesRealtime = useCallback(async () => {
@@ -529,10 +574,16 @@ export default function ChatBubble() {
         return safeSortMessages([...prev, m]);
       });
     });
+
     messagesChannelCleanup.current = unsub;
 
     typingChannelRef.current?.unsubscribe();
-    typingChannelRef.current = supabaseChatService.createTypingChannel(conversaId, myId, { nome: myName });
+    typingChannelRef.current = supabaseChatService.createTypingChannel(
+      conversaId,
+      myId,
+      { nome: myName }
+    );
+
     supabaseChatService.onTyping(typingChannelRef.current, setTypingUsers);
 
     if (selectedUser?.usuario_id && selectedUser.usuario_id !== myId) {
@@ -547,7 +598,13 @@ export default function ChatBubble() {
         await supabaseChatService.markAllRead(conversaId, myId);
       } catch {}
     }
-  }, [conversaId, myId, myName, safeSortMessages, selectedUser?.usuario_id]);
+  }, [
+    conversaId,
+    myId,
+    myName,
+    safeSortMessages,
+    selectedUser?.usuario_id,
+  ]);
 
   useEffect(() => {
     if (!myId) return;
@@ -566,7 +623,9 @@ export default function ChatBubble() {
   }, [messages.length]);
 
   const handleTyping = useCallback(() => {
-    if (typingChannelRef.current) supabaseChatService.startTyping(typingChannelRef.current);
+    if (typingChannelRef.current) {
+      supabaseChatService.startTyping(typingChannelRef.current);
+    }
   }, []);
 
   const handleSend = useCallback(async () => {
@@ -591,9 +650,19 @@ export default function ChatBubble() {
       setReplyingTo(null);
     } catch (e) {
       console.error("[chat] sendText error:", e);
-      alert("Não foi possível enviar a mensagem. Veja o console (F12) para o erro.");
+      alert(
+        "Não foi possível enviar a mensagem. Veja o console (F12) para o erro."
+      );
     }
-  }, [newMessage, myId, myName, selectedUser?.usuario_id, conversaId, replyingTo, ensureConversationParticipants]);
+  }, [
+    newMessage,
+    myId,
+    myName,
+    selectedUser?.usuario_id,
+    conversaId,
+    replyingTo,
+    ensureConversationParticipants,
+  ]);
 
   const handleFileSelect = useCallback(
     async (file: File) => {
@@ -615,22 +684,34 @@ export default function ChatBubble() {
         setUploadOverlay(false);
       } catch (e) {
         console.error("[chat] sendFile error:", e);
-        alert("Não foi possível enviar o arquivo. Veja o console (F12) para o erro.");
+        alert(
+          "Não foi possível enviar o arquivo. Veja o console (F12) para o erro."
+        );
       }
     },
-    [myId, myName, selectedUser?.usuario_id, conversaId, ensureConversationParticipants]
+    [
+      myId,
+      myName,
+      selectedUser?.usuario_id,
+      conversaId,
+      ensureConversationParticipants,
+    ]
   );
 
-  const handleEdit = useCallback(async (messageId: string, novoTexto: string) => {
-    try {
-      await supabaseChatService.editMessage(messageId, novoTexto);
-    } catch (e) {
-      console.error("[chat] editMessage error:", e);
-    }
-  }, []);
+  const handleEdit = useCallback(
+    async (messageId: string, novoTexto: string) => {
+      try {
+        await supabaseChatService.editMessage(messageId, novoTexto);
+      } catch (e) {
+        console.error("[chat] editMessage error:", e);
+      }
+    },
+    []
+  );
 
   const handleDelete = useCallback(async (messageId: string) => {
     if (!window.confirm("Deletar esta mensagem?")) return;
+
     try {
       await supabaseChatService.deleteMessage(messageId);
     } catch (e) {
@@ -668,8 +749,13 @@ export default function ChatBubble() {
 
   const filteredMessages = useMemo(() => {
     const base = messages;
+
     return searchTerm
-      ? base.filter((m: any) => String(m.mensagem || "").toLowerCase().includes(searchTerm.toLowerCase()))
+      ? base.filter((m: any) =>
+          String(m.mensagem || "")
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase())
+        )
       : base;
   }, [messages, searchTerm]);
 
@@ -686,10 +772,12 @@ export default function ChatBubble() {
       .sort((a, b) => {
         const haA = (unreadByUser[a.usuario_id] ?? 0) > 0 ? 0 : 1;
         const haB = (unreadByUser[b.usuario_id] ?? 0) > 0 ? 0 : 1;
+
         if (haA !== haB) return haA - haB;
 
         const ra = onlineIds.has(a.usuario_id) ? 0 : 1;
         const rb = onlineIds.has(b.usuario_id) ? 0 : 1;
+
         if (ra !== rb) return ra - rb;
 
         return (a.usuario_nome || "").localeCompare(b.usuario_nome || "");
@@ -706,155 +794,248 @@ export default function ChatBubble() {
   const typingForUI = useMemo(() => {
     return typingUsers
       .map((t: any) => ({
-        nome: t?.nome || t?.name || t?.full_name || t?.user_name || "Alguém",
+        nome:
+          t?.nome ||
+          t?.name ||
+          t?.full_name ||
+          t?.user_name ||
+          "Alguém",
       }))
       .filter((x: any) => x.nome);
   }, [typingUsers]);
 
   return (
-    <>
-      <AnimatePresence>
+    <>      <AnimatePresence>
         {!isOpen && (
-          <motion.button
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{
-              scale: 1,
-              opacity: 1,
-              x: fabPosition.x,
-              y: fabPosition.y,
-            }}
-            exit={{ scale: 0, opacity: 0 }}
-            whileHover={{ scale: 1.08 }}
-            whileTap={{ scale: 0.95 }}
-            onMouseDown={startFabMouseDrag}
-            onTouchStart={startFabTouchDrag}
-            onClick={handleFabOpen}
-            className="chat-fab-draggable fixed bottom-6 right-6 w-16 h-16 bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] rounded-full shadow-2xl flex items-center justify-center z-[99999] group"
-            style={{
-              boxShadow: "0 8px 32px rgba(38, 153, 254, 0.4)",
-              cursor: isDraggingFab ? "grabbing" : "grab",
-            }}
-          >
-            <MessageCircle className="w-7 h-7 text-white" />
+          <>
+            {/* Mobile FAB */}
+            <motion.button
+              initial={{ scale: 0, opacity: 0, y: 16 }}
+              animate={{
+                scale: 1,
+                opacity: 1,
+                x: fabPosition.x,
+                y: fabPosition.y,
+              }}
+              exit={{ scale: 0, opacity: 0, y: 16 }}
+              whileTap={{ scale: 0.94 }}
+              onMouseDown={startFabMouseDrag}
+              onTouchStart={startFabTouchDrag}
+              onClick={handleFabOpen}
+              className="chat-fab-draggable fixed right-5 z-[99999] flex h-14 w-14 items-center justify-center rounded-full bg-[#2699fe] shadow-2xl md:hidden"
+              style={{
+                bottom: "calc(1.25rem + env(safe-area-inset-bottom))",
+                boxShadow: "0 10px 30px rgba(38, 153, 254, 0.45)",
+                cursor: isDraggingFab ? "grabbing" : "grab",
+                touchAction: "none",
+              }}
+            >
+              <MessageCircle className="relative z-10 h-6 w-6 text-white" />
 
-            {hasAnyUnread && (
+              {hasAnyUnread && (
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="absolute -right-1 -top-1 h-4 w-4 rounded-full border-2 border-[#0a0a0a] bg-red-500"
+                />
+              )}
+
               <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full border-2 border-[#0a0a0a]"
+                className="pointer-events-none absolute inset-0 rounded-full bg-[#2699fe]"
+                animate={{ scale: [1, 1.28, 1], opacity: [0.35, 0, 0.35] }}
+                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
               />
-            )}
+            </motion.button>
 
-            <motion.div
-              className="absolute inset-0 rounded-full bg-[#2699fe] pointer-events-none"
-              animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0, 0.5] }}
-              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-            />
-          </motion.button>
+            {/* Desktop FAB - original preservado */}
+            <motion.button
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{
+                scale: 1,
+                opacity: 1,
+                x: fabPosition.x,
+                y: fabPosition.y,
+              }}
+              exit={{ scale: 0, opacity: 0 }}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.95 }}
+              onMouseDown={startFabMouseDrag}
+              onTouchStart={startFabTouchDrag}
+              onClick={handleFabOpen}
+              className="chat-fab-draggable fixed bottom-6 right-6 z-[99999] hidden h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] shadow-2xl group md:flex"
+              style={{
+                boxShadow: "0 8px 32px rgba(38, 153, 254, 0.4)",
+                cursor: isDraggingFab ? "grabbing" : "grab",
+              }}
+            >
+              <MessageCircle className="h-7 w-7 text-white" />
+
+              {hasAnyUnread && (
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full border-2 border-[#0a0a0a] bg-red-500"
+                />
+              )}
+
+              <motion.div
+                className="pointer-events-none absolute inset-0 rounded-full bg-[#2699fe]"
+                animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0, 0.5] }}
+                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+              />
+            </motion.button>
+          </>
         )}
       </AnimatePresence>
 
       <AnimatePresence>
         {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: 100, scale: 0.8 }}
-            animate={{
-              opacity: 1,
-              y: 0,
-              scale: 1,
-              height: isMinimized ? 60 : isFullscreen ? "100vh" : 600,
-            }}
-            exit={{ opacity: 0, y: 100, scale: 0.8 }}
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className={`fixed ${chatPosition} ${chatWidth} bg-[#111111] rounded-2xl shadow-2xl border border-white/10 z-50 flex flex-col overflow-hidden`}
-            style={{ boxShadow: "0 20px 60px rgba(0, 0, 0, 0.8)" }}
-          >
-            <div className="bg-gradient-to-r from-[#2699fe] to-[#1a7dd9] p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
-                    <Users className="w-5 h-5 text-white" />
+          <>
+            {/* Mobile */}
+            <motion.div
+              initial={{ opacity: 0, y: "100%" }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: "100%" }}
+              transition={{ type: "spring", stiffness: 280, damping: 32 }}
+              className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-[#0a0a0a] md:hidden"
+            >
+              <div className="flex items-center justify-between border-b border-white/10 bg-[#0a0a0a] px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))]">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="relative shrink-0">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#2699fe]">
+                      <Users className="h-5 w-5 text-white" />
+                    </div>
+                    <div
+                      className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#0a0a0a]"
+                      style={{ backgroundColor: "#10b981" }}
+                    />
                   </div>
-                  <div
-                    className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#2699fe]"
-                    style={{ backgroundColor: "#10b981" }}
-                  />
+
+                  <div className="min-w-0">
+                    <h3 className="truncate text-sm font-bold text-white">
+                      {selectedUser?.usuario_nome || "Selecione um usuário"}
+                    </h3>
+                    <p className="text-xs text-white/70">{onlineCount} online</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-bold text-white">
-                    {selectedUser?.usuario_nome ? selectedUser.usuario_nome : "Selecione um usuário"}
-                  </h3>
-                  <p className="text-xs text-white/80">{onlineCount} online</p>
+
+                <div className="flex shrink-0 items-center gap-1">
+                  <motion.button
+                    whileTap={{ scale: 0.92 }}
+                    onClick={() => setShowSearch((s) => !s)}
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-[#151515] text-white"
+                  >
+                    <Search className="h-4 w-4" />
+                  </motion.button>
+
+                  <motion.button
+                    whileTap={{ scale: 0.92 }}
+                    onClick={() => setShowSettings((s) => !s)}
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-[#151515] text-white"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </motion.button>
+
+                  <motion.button
+                    whileTap={{ scale: 0.92 }}
+                    onClick={() => setIsOpen(false)}
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-[#151515] text-white"
+                  >
+                    <X className="h-4 w-4" />
+                  </motion.button>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                {showSearch ? (
-                  <motion.div initial={{ width: 0, opacity: 0 }} animate={{ width: 200, opacity: 1 }} className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/60" />
+              {showSearch && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="border-b border-white/10 bg-[#0a0a0a] px-4 pb-3"
+                >
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/50" />
                     <Input
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       placeholder="Buscar..."
-                      className="pl-10 h-8 bg-white/10 border-white/20 text-white placeholder-white/60 rounded-lg"
+                      className="h-11 rounded-xl border-white/10 bg-[#151515] pl-10 text-white placeholder:text-white/40"
                     />
-                  </motion.div>
-                ) : (
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => setShowSearch((s) => !s)}
-                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                  >
-                    <Search className="w-4 h-4 text-white" />
-                  </motion.button>
-                )}
+                  </div>
+                </motion.div>
+              )}
 
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => setShowSettings((s) => !s)}
-                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                >
-                  <Settings className="w-4 h-4 text-white" />
-                </motion.button>
+              {!showSettings && (
+                <div className="border-b border-white/10 bg-[#0a0a0a] px-4 py-3">
+                  <div className="flex gap-3 overflow-x-auto pb-1">
+                    {usersOrdered.map((u) => {
+                      const isMe = u.usuario_id === myId;
+                      const effStatus = getEffectiveStatus(u);
+                      const hasDot = (unreadByUser[u.usuario_id] ?? 0) > 0;
+                      const isSelected = selectedUser?.usuario_id === u.usuario_id;
 
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => setIsFullscreen((f) => !f)}
-                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                >
-                  {isFullscreen ? (
-                    <Minimize2 className="w-4 h-4 text-white" />
-                  ) : (
-                    <Maximize2 className="w-4 h-4 text-white" />
-                  )}
-                </motion.button>
+                      return (
+                        <button
+                          key={u.usuario_id}
+                          disabled={isMe}
+                          onClick={async () => {
+                            if (isMe) return;
 
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => setIsMinimized((m) => !m)}
-                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                >
-                  <Minimize2 className="w-4 h-4 text-white" />
-                </motion.button>
+                            setSelectedUser(u);
 
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => setIsOpen(false)}
-                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                >
-                  <X className="w-4 h-4 text-white" />
-                </motion.button>
-              </div>
-            </div>
+                            setUnreadByUser((prev) => {
+                              if (!prev[u.usuario_id]) return prev;
+                              const next = { ...prev };
+                              delete next[u.usuario_id];
+                              return next;
+                            });
 
-            {!isMinimized && (
-              <>
-                {showSettings ? (
+                            try {
+                              const key = supabaseChatService.conversationKeyDirect(myId, u.usuario_id);
+                              await supabaseChatService.markAllRead(key, myId);
+                            } catch {}
+                          }}
+                          className="flex shrink-0 flex-col items-center gap-1"
+                        >
+                          <div
+                            className={[
+                              "relative rounded-full p-0.5",
+                              isSelected ? "bg-[#2699fe]" : "bg-transparent",
+                              isMe ? "opacity-60" : "",
+                            ].join(" ")}
+                          >
+                            <Avatar className="h-12 w-12 rounded-full">
+                              {u.avatar_url ? (
+                                <AvatarImage className="rounded-full" src={u.avatar_url} alt={u.usuario_nome} />
+                              ) : (
+                                <AvatarFallback className="rounded-full bg-[#151515] text-xs font-bold text-white">
+                                  {getInitials(u.usuario_nome)}
+                                </AvatarFallback>
+                              )}
+                            </Avatar>
+
+                            {!isMe && hasDot && (
+                              <div className="absolute -right-1 -top-1 h-4 w-4 rounded-full border-2 border-[#0a0a0a] bg-red-500" />
+                            )}
+
+                            <div
+                              className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#0a0a0a]"
+                              style={{ backgroundColor: getStatusColor(effStatus) }}
+                            />
+                          </div>
+
+                          <span className="max-w-[58px] truncate text-[10px] text-white/70">
+                            {isMe ? "Você" : u.usuario_nome.split(" ")[0]}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {showSettings ? (
+                <div className="flex-1 overflow-y-auto bg-[#0a0a0a]">
                   <ChatSettings
                     notificationsEnabled={notificationsEnabled}
                     setNotificationsEnabled={setNotificationsEnabled}
@@ -862,271 +1043,580 @@ export default function ChatBubble() {
                     setSoundEnabled={setSoundEnabled}
                     onClose={() => setShowSettings(false)}
                   />
-                ) : (
-                  <div className="flex-1 flex overflow-hidden">
-                    <div className="w-24 bg-[#0a0a0a] border-r border-white/10 p-3 overflow-y-auto">
-                      <p className="text-xs text-gray-500 font-semibold mb-3 uppercase">Equipe</p>
+                </div>
+              ) : (
+                <>
+                  {selectedUser && selectedUser.usuario_id !== myId && (
+                    <div className="border-b border-white/10 bg-[#0a0a0a] px-4 py-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Avatar className="h-9 w-9 shrink-0">
+                            {selectedUser.avatar_url ? (
+                              <AvatarImage src={selectedUser.avatar_url} alt={selectedUser.usuario_nome} />
+                            ) : (
+                              <AvatarFallback className="bg-[#2699fe] text-xs text-white">
+                                {getInitials(selectedUser.usuario_nome)}
+                              </AvatarFallback>
+                            )}
+                          </Avatar>
 
-                      <div className="space-y-3">
-                        {usersOrdered.map((u, idx) => {
-                          const isMe = u.usuario_id === myId;
-                          const effStatus = getEffectiveStatus(u);
-                          const hasDot = (unreadByUser[u.usuario_id] ?? 0) > 0;
-
-                          return (
-                            <motion.button
-                              key={u.usuario_id}
-                              initial={{ opacity: 0, x: -20 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: idx * 0.03 }}
-                              onClick={async () => {
-                                if (isMe) return;
-
-                                setSelectedUser(u);
-
-                                setUnreadByUser((prev) => {
-                                  if (!prev[u.usuario_id]) return prev;
-                                  const next = { ...prev };
-                                  delete next[u.usuario_id];
-                                  return next;
-                                });
-
-                                try {
-                                  const key = supabaseChatService.conversationKeyDirect(myId, u.usuario_id);
-                                  await supabaseChatService.markAllRead(key, myId);
-                                } catch {}
-                              }}
-                              disabled={isMe}
-                              whileHover={{ scale: isMe ? 1 : 1.05 }}
-                              whileTap={{ scale: isMe ? 1 : 0.95 }}
-                              className={[
-                                "relative group w-12 h-12 flex items-center justify-center rounded-full",
-                                isMe ? "opacity-90 cursor-not-allowed" : "",
-                              ].join(" ")}
-                              title={isMe ? "Você" : u.usuario_nome}
-                            >
-                              <Avatar className="w-12 h-12 rounded-full">
-                                {u.avatar_url ? (
-                                  <AvatarImage className="rounded-full" src={u.avatar_url} alt={u.usuario_nome} />
-                                ) : (
-                                  <AvatarFallback className="rounded-full bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] text-white font-bold text-xs">
-                                    {getInitials(u.usuario_nome)}
-                                  </AvatarFallback>
-                                )}
-                              </Avatar>
-
-                              {!isMe && hasDot && (
-                                <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-[#0a0a0a]" />
-                              )}
-
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-white">{selectedUser.usuario_nome}</p>
+                            <div className="flex items-center gap-1.5">
                               <div
-                                className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#0a0a0a]"
-                                style={{ backgroundColor: getStatusColor(effStatus) }}
+                                className="h-2 w-2 rounded-full"
+                                style={{ backgroundColor: getStatusColor(selectedEffectiveStatus) }}
                               />
+                              <span className="text-xs text-white/50">{getStatusText(selectedEffectiveStatus)}</span>
+                            </div>
+                          </div>
+                        </div>
 
-                              <div className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <span className="text-[8px] text-white font-medium">{isMe ? "" : u.usuario_nome.split(" ")[0]}</span>
-                              </div>
-                            </motion.button>
-                          );
-                        })}
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                            <Phone className="h-4 w-4 text-white/50" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                            <Video className="h-4 w-4 text-white/50" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                            <MoreVertical className="h-4 w-4 text-white/50" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
+                  )}
 
-                    <div className="flex-1 flex flex-col">
-                      {selectedUser && selectedUser.usuario_id !== myId && (
-                        <div className="p-3 border-b border-white/10 bg-[#0a0a0a]/50">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <Avatar className="w-8 h-8">
-                                {selectedUser.avatar_url ? (
-                                  <AvatarImage src={selectedUser.avatar_url} alt={selectedUser.usuario_nome} />
-                                ) : (
-                                  <AvatarFallback className="bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] text-white text-xs">
-                                    {getInitials(selectedUser.usuario_nome)}
-                                  </AvatarFallback>
+                  <ScrollArea className="flex-1 bg-[#0a0a0a] px-4 py-4">
+                    {!hasConversationSelected ? (
+                      <div className="flex h-full min-h-[300px] w-full items-center justify-center">
+                        <div className="px-6 text-center">
+                          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#151515]">
+                            <MessageCircle className="h-7 w-7 text-white/70" />
+                          </div>
+                          <p className="font-medium text-white">Selecione um usuário para conversar</p>
+                          <p className="mt-1 text-xs text-white/45">
+                            Online aparece automaticamente quando a pessoa estiver com o site aberto.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4 pb-2">
+                        {filteredMessages.map((msg, idx) => (
+                          <MessageItem
+                            key={(msg as any).id ?? `${idx}`}
+                            message={msg as any}
+                            currentUser={{ id: myId, full_name: myName } as any}
+                            onReply={setReplyingTo as any}
+                            onEdit={handleEdit as any}
+                            onDelete={handleDelete as any}
+                            onReaction={() => {}}
+                            delay={idx * 0.03}
+                          />
+                        ))}
+                        <div ref={messagesEndRef} />
+                      </div>
+                    )}
+                  </ScrollArea>
+
+                  {typingForUI.length > 0 && hasConversationSelected && <TypingIndicator users={typingForUI as any} />}
+
+                  {replyingTo && hasConversationSelected && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="border-t border-white/10 bg-[#111111] px-4 py-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <div className="h-10 w-1 rounded bg-[#2699fe]" />
+                          <div className="min-w-0">
+                            <p className="text-xs text-white/45">Respondendo a {(replyingTo as any).remetente_nome}</p>
+                            <p className="truncate text-sm text-white">{(replyingTo as any).mensagem}</p>
+                          </div>
+                        </div>
+
+                        <Button variant="ghost" size="sm" onClick={() => setReplyingTo(null)} className="h-8 w-8 p-0">
+                          <X className="h-4 w-4 text-white/70" />
+                        </Button>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  <div
+                    className="border-t border-white/10 bg-[#0a0a0a] px-4 pt-3"
+                    style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+                  >
+                    <div className="flex items-end gap-2">
+                      <div className="relative flex-1">
+                        <Input
+                          value={newMessage}
+                          disabled={!hasConversationSelected}
+                          onChange={(e) => {
+                            setNewMessage(e.target.value);
+                            handleTyping();
+                          }}
+                          onKeyDown={async (e) => {
+                            if (!hasConversationSelected) return;
+
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              await handleSend();
+                            } else {
+                              handleTyping();
+                            }
+                          }}
+                          placeholder={hasConversationSelected ? "Digite sua mensagem..." : "Selecione um usuário..."}
+                          className="h-12 rounded-2xl border-white/10 bg-[#151515] pr-24 text-white placeholder:text-white/40 disabled:opacity-60"
+                        />
+
+                        <div className="absolute right-2 top-1/2 flex -translate-y-1/2 gap-1">
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            className="hidden"
+                            onChange={async (e) => {
+                              if (!hasConversationSelected) return;
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+
+                              await handleFileSelect(file);
+                              e.target.value = "";
+                            }}
+                          />
+
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            disabled={!hasConversationSelected}
+                            onClick={() => fileInputRef.current?.click()}
+                          >
+                            <Paperclip className="h-4 w-4 text-white/50" />
+                          </Button>
+
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            disabled={!hasConversationSelected}
+                            onClick={() => setShowEmojiPicker((s) => !s)}
+                          >
+                            <Smile className="h-4 w-4 text-white/50" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <motion.button
+                        whileTap={{ scale: hasConversationSelected ? 0.94 : 1 }}
+                        onClick={handleSend}
+                        disabled={!hasConversationSelected || !newMessage.trim()}
+                        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#2699fe] shadow-lg shadow-[#2699fe]/25 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Send className="h-5 w-5 text-white" />
+                      </motion.button>
+                    </div>
+
+                    <AnimatePresence>
+                      {showEmojiPicker && hasConversationSelected && (
+                        <EmojiPicker
+                          onSelect={(emoji: string) => {
+                            setNewMessage((prev) => prev + emoji);
+                            setShowEmojiPicker(false);
+                          }}
+                          onClose={() => setShowEmojiPicker(false)}
+                        />
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </>
+              )}
+
+              <AnimatePresence>
+                {uploadOverlay && hasConversationSelected && (
+                  <FileUploadArea
+                    onFileSelect={async (file) => {
+                      await handleFileSelect(file);
+                    }}
+                    onClose={() => setUploadOverlay(false)}
+                  />
+                )}
+              </AnimatePresence>
+            </motion.div>
+
+            {/* Desktop - original preservado */}
+            <motion.div
+              initial={{ opacity: 0, y: 100, scale: 0.8 }}
+              animate={{
+                opacity: 1,
+                y: 0,
+                scale: 1,
+                height: isMinimized ? 60 : isFullscreen ? "100vh" : 600,
+              }}
+              exit={{ opacity: 0, y: 100, scale: 0.8 }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className={`fixed ${chatPosition} ${chatWidth} hidden flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#111111] shadow-2xl z-50 md:flex`}
+              style={{ boxShadow: "0 20px 60px rgba(0, 0, 0, 0.8)" }}
+            >
+              <div className="bg-gradient-to-r from-[#2699fe] to-[#1a7dd9] p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
+                      <Users className="w-5 h-5 text-white" />
+                    </div>
+                    <div
+                      className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#2699fe]"
+                      style={{ backgroundColor: "#10b981" }}
+                    />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white">
+                      {selectedUser?.usuario_nome ? selectedUser.usuario_nome : "Selecione um usuário"}
+                    </h3>
+                    <p className="text-xs text-white/80">{onlineCount} online</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {showSearch ? (
+                    <motion.div initial={{ width: 0, opacity: 0 }} animate={{ width: 200, opacity: 1 }} className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/60" />
+                      <Input
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Buscar..."
+                        className="pl-10 h-8 bg-white/10 border-white/20 text-white placeholder-white/60 rounded-lg"
+                      />
+                    </motion.div>
+                  ) : (
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => setShowSearch((s) => !s)}
+                      className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                    >
+                      <Search className="w-4 h-4 text-white" />
+                    </motion.button>
+                  )}
+
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => setShowSettings((s) => !s)}
+                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                  >
+                    <Settings className="w-4 h-4 text-white" />
+                  </motion.button>
+
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => setIsFullscreen((f) => !f)}
+                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                  >
+                    {isFullscreen ? (
+                      <Minimize2 className="w-4 h-4 text-white" />
+                    ) : (
+                      <Maximize2 className="w-4 h-4 text-white" />
+                    )}
+                  </motion.button>
+
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => setIsMinimized((m) => !m)}
+                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                  >
+                    <Minimize2 className="w-4 h-4 text-white" />
+                  </motion.button>
+
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => setIsOpen(false)}
+                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                  >
+                    <X className="w-4 h-4 text-white" />
+                  </motion.button>
+                </div>
+              </div>
+
+              {!isMinimized && (
+                <>
+                  {showSettings ? (
+                    <ChatSettings
+                      notificationsEnabled={notificationsEnabled}
+                      setNotificationsEnabled={setNotificationsEnabled}
+                      soundEnabled={soundEnabled}
+                      setSoundEnabled={setSoundEnabled}
+                      onClose={() => setShowSettings(false)}
+                    />
+                  ) : (
+                    <div className="flex-1 flex overflow-hidden">
+                      <div className="w-24 bg-[#0a0a0a] border-r border-white/10 p-3 overflow-y-auto">
+                        <p className="text-xs text-gray-500 font-semibold mb-3 uppercase">Equipe</p>
+
+                        <div className="space-y-3">
+                          {usersOrdered.map((u, idx) => {
+                            const isMe = u.usuario_id === myId;
+                            const effStatus = getEffectiveStatus(u);
+                            const hasDot = (unreadByUser[u.usuario_id] ?? 0) > 0;
+
+                            return (
+                              <motion.button
+                                key={u.usuario_id}
+                                initial={{ opacity: 0, x: -20 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ delay: idx * 0.03 }}
+                                onClick={async () => {
+                                  if (isMe) return;
+
+                                  setSelectedUser(u);
+
+                                  setUnreadByUser((prev) => {
+                                    if (!prev[u.usuario_id]) return prev;
+                                    const next = { ...prev };
+                                    delete next[u.usuario_id];
+                                    return next;
+                                  });
+
+                                  try {
+                                    const key = supabaseChatService.conversationKeyDirect(myId, u.usuario_id);
+                                    await supabaseChatService.markAllRead(key, myId);
+                                  } catch {}
+                                }}
+                                disabled={isMe}
+                                whileHover={{ scale: isMe ? 1 : 1.05 }}
+                                whileTap={{ scale: isMe ? 1 : 0.95 }}
+                                className={[
+                                  "relative group w-12 h-12 flex items-center justify-center rounded-full",
+                                  isMe ? "opacity-90 cursor-not-allowed" : "",
+                                ].join(" ")}
+                                title={isMe ? "Você" : u.usuario_nome}
+                              >
+                                <Avatar className="w-12 h-12 rounded-full">
+                                  {u.avatar_url ? (
+                                    <AvatarImage className="rounded-full" src={u.avatar_url} alt={u.usuario_nome} />
+                                  ) : (
+                                    <AvatarFallback className="rounded-full bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] text-white font-bold text-xs">
+                                      {getInitials(u.usuario_nome)}
+                                    </AvatarFallback>
+                                  )}
+                                </Avatar>
+
+                                {!isMe && hasDot && (
+                                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-[#0a0a0a]" />
                                 )}
-                              </Avatar>
-                              <div>
-                                <p className="text-sm font-medium text-white">{selectedUser.usuario_nome}</p>
-                                <div className="flex items-center gap-1.5">
-                                  <div
-                                    className="w-2 h-2 rounded-full"
-                                    style={{ backgroundColor: getStatusColor(selectedEffectiveStatus) }}
-                                  />
-                                  <span className="text-xs text-gray-400">{getStatusText(selectedEffectiveStatus)}</span>
+
+                                <div
+                                  className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#0a0a0a]"
+                                  style={{ backgroundColor: getStatusColor(effStatus) }}
+                                />
+
+                                <div className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <span className="text-[8px] text-white font-medium">{isMe ? "" : u.usuario_nome.split(" ")[0]}</span>
+                                </div>
+                              </motion.button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="flex-1 flex flex-col">
+                        {selectedUser && selectedUser.usuario_id !== myId && (
+                          <div className="p-3 border-b border-white/10 bg-[#0a0a0a]/50">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Avatar className="w-8 h-8">
+                                  {selectedUser.avatar_url ? (
+                                    <AvatarImage src={selectedUser.avatar_url} alt={selectedUser.usuario_nome} />
+                                  ) : (
+                                    <AvatarFallback className="bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] text-white text-xs">
+                                      {getInitials(selectedUser.usuario_nome)}
+                                    </AvatarFallback>
+                                  )}
+                                </Avatar>
+                                <div>
+                                  <p className="text-sm font-medium text-white">{selectedUser.usuario_nome}</p>
+                                  <div className="flex items-center gap-1.5">
+                                    <div
+                                      className="w-2 h-2 rounded-full"
+                                      style={{ backgroundColor: getStatusColor(selectedEffectiveStatus) }}
+                                    />
+                                    <span className="text-xs text-gray-400">{getStatusText(selectedEffectiveStatus)}</span>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
 
-                            <div className="flex gap-1">
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <Phone className="w-4 h-4 text-gray-400" />
-                              </Button>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <Video className="w-4 h-4 text-gray-400" />
-                              </Button>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <MoreVertical className="w-4 h-4 text-gray-400" />
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      <ScrollArea className="flex-1 p-4">
-                        {!hasConversationSelected ? (
-                          <div className="h-full w-full flex items-center justify-center">
-                            <div className="text-center">
-                              <p className="text-white font-medium">Selecione um usuário para conversar</p>
-                              <p className="text-xs text-gray-400 mt-1">
-                                Online aparece automaticamente quando a pessoa estiver com o site aberto.
-                              </p>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-4">
-                            {filteredMessages.map((msg, idx) => (
-                              <MessageItem
-                                key={(msg as any).id ?? `${idx}`}
-                                message={msg as any}
-                                currentUser={{ id: myId, full_name: myName } as any}
-                                onReply={setReplyingTo as any}
-                                onEdit={handleEdit as any}
-                                onDelete={handleDelete as any}
-                                onReaction={() => {}}
-                                delay={idx * 0.03}
-                              />
-                            ))}
-                            <div ref={messagesEndRef} />
-                          </div>
-                        )}
-                      </ScrollArea>
-
-                      {typingForUI.length > 0 && hasConversationSelected && <TypingIndicator users={typingForUI as any} />}
-
-                      {replyingTo && hasConversationSelected && (
-                        <motion.div
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="px-4 py-2 border-t border-white/10 bg-white/5"
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <div className="w-1 h-10 bg-[#2699fe] rounded" />
-                              <div>
-                                <p className="text-xs text-gray-400">Respondendo a {(replyingTo as any).remetente_nome}</p>
-                                <p className="text-sm text-white truncate max-w-xs">{(replyingTo as any).mensagem}</p>
+                              <div className="flex gap-1">
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                  <Phone className="w-4 h-4 text-gray-400" />
+                                </Button>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                  <Video className="w-4 h-4 text-gray-400" />
+                                </Button>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                  <MoreVertical className="w-4 h-4 text-gray-400" />
+                                </Button>
                               </div>
                             </div>
-                            <Button variant="ghost" size="sm" onClick={() => setReplyingTo(null)} className="h-6 w-6 p-0">
-                              <X className="w-4 h-4" />
-                            </Button>
                           </div>
-                        </motion.div>
-                      )}
+                        )}
 
-                      <div className="p-4 border-t border-white/10 bg-[#0a0a0a]/50">
-                        <div className="flex items-end gap-2">
-                          <div className="flex-1 relative">
-                            <Input
-                              value={newMessage}
-                              disabled={!hasConversationSelected}
-                              onChange={(e) => {
-                                setNewMessage(e.target.value);
-                                handleTyping();
-                              }}
-                              onKeyDown={async (e) => {
-                                if (!hasConversationSelected) return;
+                        <ScrollArea className="flex-1 p-4">
+                          {!hasConversationSelected ? (
+                            <div className="h-full w-full flex items-center justify-center">
+                              <div className="text-center">
+                                <p className="text-white font-medium">Selecione um usuário para conversar</p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                  Online aparece automaticamente quando a pessoa estiver com o site aberto.
+                                </p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              {filteredMessages.map((msg, idx) => (
+                                <MessageItem
+                                  key={(msg as any).id ?? `${idx}`}
+                                  message={msg as any}
+                                  currentUser={{ id: myId, full_name: myName } as any}
+                                  onReply={setReplyingTo as any}
+                                  onEdit={handleEdit as any}
+                                  onDelete={handleDelete as any}
+                                  onReaction={() => {}}
+                                  delay={idx * 0.03}
+                                />
+                              ))}
+                              <div ref={messagesEndRef} />
+                            </div>
+                          )}
+                        </ScrollArea>
 
-                                if (e.key === "Enter" && !e.shiftKey) {
-                                  e.preventDefault();
-                                  await handleSend();
-                                } else {
-                                  handleTyping();
-                                }
-                              }}
-                              placeholder={hasConversationSelected ? "Digite sua mensagem..." : "Selecione um usuário..."}
-                              className="bg-white/5 border-white/10 text-white rounded-xl pr-24 h-11 resize-none disabled:opacity-60"
-                            />
+                        {typingForUI.length > 0 && hasConversationSelected && <TypingIndicator users={typingForUI as any} />}
 
-                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
-                              <input
-                                ref={fileInputRef}
-                                type="file"
-                                className="hidden"
-                                onChange={async (e) => {
-                                  if (!hasConversationSelected) return;
-                                  const file = e.target.files?.[0];
-                                  if (!file) return;
-
-                                  await handleFileSelect(file);
-                                  e.target.value = "";
-                                }}
-                              />
-
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0"
-                                disabled={!hasConversationSelected}
-                                onClick={() => fileInputRef.current?.click()}
-                              >
-                                <Paperclip className="w-4 h-4 text-gray-400" />
-                              </Button>
-
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0"
-                                disabled={!hasConversationSelected}
-                                onClick={() => setShowEmojiPicker((s) => !s)}
-                              >
-                                <Smile className="w-4 h-4 text-gray-400" />
+                        {replyingTo && hasConversationSelected && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="px-4 py-2 border-t border-white/10 bg-white/5"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className="w-1 h-10 bg-[#2699fe] rounded" />
+                                <div>
+                                  <p className="text-xs text-gray-400">Respondendo a {(replyingTo as any).remetente_nome}</p>
+                                  <p className="text-sm text-white truncate max-w-xs">{(replyingTo as any).mensagem}</p>
+                                </div>
+                              </div>
+                              <Button variant="ghost" size="sm" onClick={() => setReplyingTo(null)} className="h-6 w-6 p-0">
+                                <X className="w-4 h-4" />
                               </Button>
                             </div>
+                          </motion.div>
+                        )}
+
+                        <div className="p-4 border-t border-white/10 bg-[#0a0a0a]/50">
+                          <div className="flex items-end gap-2">
+                            <div className="flex-1 relative">
+                              <Input
+                                value={newMessage}
+                                disabled={!hasConversationSelected}
+                                onChange={(e) => {
+                                  setNewMessage(e.target.value);
+                                  handleTyping();
+                                }}
+                                onKeyDown={async (e) => {
+                                  if (!hasConversationSelected) return;
+
+                                  if (e.key === "Enter" && !e.shiftKey) {
+                                    e.preventDefault();
+                                    await handleSend();
+                                  } else {
+                                    handleTyping();
+                                  }
+                                }}
+                                placeholder={hasConversationSelected ? "Digite sua mensagem..." : "Selecione um usuário..."}
+                                className="bg-white/5 border-white/10 text-white rounded-xl pr-24 h-11 resize-none disabled:opacity-60"
+                              />
+
+                              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
+                                <input
+                                  ref={fileInputRef}
+                                  type="file"
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    if (!hasConversationSelected) return;
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+
+                                    await handleFileSelect(file);
+                                    e.target.value = "";
+                                  }}
+                                />
+
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0"
+                                  disabled={!hasConversationSelected}
+                                  onClick={() => fileInputRef.current?.click()}
+                                >
+                                  <Paperclip className="w-4 h-4 text-gray-400" />
+                                </Button>
+
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0"
+                                  disabled={!hasConversationSelected}
+                                  onClick={() => setShowEmojiPicker((s) => !s)}
+                                >
+                                  <Smile className="w-4 h-4 text-gray-400" />
+                                </Button>
+                              </div>
+                            </div>
+
+                            <motion.button
+                              whileHover={{ scale: hasConversationSelected ? 1.05 : 1 }}
+                              whileTap={{ scale: hasConversationSelected ? 0.95 : 1 }}
+                              onClick={handleSend}
+                              disabled={!hasConversationSelected || !newMessage.trim()}
+                              className="h-11 w-11 bg-gradient-to-r from-[#2699fe] to-[#1a7dd9] rounded-xl flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#2699fe]/30"
+                            >
+                              <Send className="w-5 h-5 text-white" />
+                            </motion.button>
                           </div>
 
-                          <motion.button
-                            whileHover={{ scale: hasConversationSelected ? 1.05 : 1 }}
-                            whileTap={{ scale: hasConversationSelected ? 0.95 : 1 }}
-                            onClick={handleSend}
-                            disabled={!hasConversationSelected || !newMessage.trim()}
-                            className="h-11 w-11 bg-gradient-to-r from-[#2699fe] to-[#1a7dd9] rounded-xl flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#2699fe]/30"
-                          >
-                            <Send className="w-5 h-5 text-white" />
-                          </motion.button>
+                          <AnimatePresence>
+                            {showEmojiPicker && hasConversationSelected && (
+                              <EmojiPicker
+                                onSelect={(emoji: string) => {
+                                  setNewMessage((prev) => prev + emoji);
+                                  setShowEmojiPicker(false);
+                                }}
+                                onClose={() => setShowEmojiPicker(false)}
+                              />
+                            )}
+                          </AnimatePresence>
                         </div>
-
-                        <AnimatePresence>
-                          {showEmojiPicker && hasConversationSelected && (
-                            <EmojiPicker
-                              onSelect={(emoji: string) => {
-                                setNewMessage((prev) => prev + emoji);
-                                setShowEmojiPicker(false);
-                              }}
-                              onClose={() => setShowEmojiPicker(false)}
-                            />
-                          )}
-                        </AnimatePresence>
                       </div>
                     </div>
-                  </div>
-                )}
-              </>
-            )}
-
-            <AnimatePresence>
-              {uploadOverlay && hasConversationSelected && (
-                <FileUploadArea
-                  onFileSelect={async (file) => {
-                    await handleFileSelect(file);
-                  }}
-                  onClose={() => setUploadOverlay(false)}
-                />
+                  )}
+                </>
               )}
-            </AnimatePresence>
-          </motion.div>
+
+              <AnimatePresence>
+                {uploadOverlay && hasConversationSelected && (
+                  <FileUploadArea
+                    onFileSelect={async (file) => {
+                      await handleFileSelect(file);
+                    }}
+                    onClose={() => setUploadOverlay(false)}
+                  />
+                )}
+              </AnimatePresence>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </>

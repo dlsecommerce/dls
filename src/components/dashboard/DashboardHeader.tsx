@@ -339,7 +339,7 @@ export default function DashboardHeader({}: DashboardHeaderProps) {
             onClick={() => setMobileMenuOpen(false)}
           />
 
-          <div className="fixed left-0 top-0 z-50 h-screen w-[300px] max-w-[85vw] border-r border-white/10 bg-[#1a1a1a]/95 shadow-2xl backdrop-blur-xl md:hidden">
+          <div className="fixed left-0 top-0 z-50 h-screen w-[300px] max-w-[85vw] border-r border-white/10 bg-[#1a1a1a]/95 shadow-2xl  md:hidden">
             <div className="flex h-[72px] items-center justify-between border-b border-white/10 px-4">
               <span className="text-lg font-semibold text-white">
                 Navegação

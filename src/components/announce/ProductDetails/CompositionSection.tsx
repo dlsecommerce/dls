@@ -159,11 +159,11 @@ export const CompositionSection = ({
   // ================================
   return (
     <motion.div
-      className="lg:col-span-7 p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg h-full relative"
+      className="lg:col-span-7 p-3 md:p-2 rounded-xl bg-[#0f0f0f] md:bg-white/5 border border-white/10 shadow-lg h-auto md:h-full relative max-h-[calc(100dvh-120px)] md:max-h-none overflow-y-auto md:overflow-visible pb-[calc(env(safe-area-inset-bottom)+88px)] md:pb-2"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
     >
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex items-center gap-2 mb-3 md:mb-2">
         <Layers className="w-5 h-5 text-[#1a8ceb]" />
         <h3 className="text-base font-bold text-white flex items-center gap-2">
           Composição <HelpTooltip text="Composição de Custos." />
@@ -172,9 +172,9 @@ export const CompositionSection = ({
 
       {/* LISTAGEM DE ITENS */}
       <div
-        className={`space-y-1.5 ${
+        className={`space-y-3 md:space-y-1.5 ${
           composicao.length > 10
-            ? "max-h-[360px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#1a8ceb]/30 scrollbar-track-transparent"
+            ? "max-h-[calc(100dvh-310px)] md:max-h-[360px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#1a8ceb]/30 scrollbar-track-transparent"
             : ""
         }`}
       >
@@ -187,11 +187,11 @@ export const CompositionSection = ({
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ duration: 0.15 }}
-              className="relative grid grid-cols-3 gap-2 mb-1 p-1.5 rounded-lg bg-black/30 border border-white/10"
+              className="relative grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-2 mb-2 md:mb-1 p-3 md:p-1.5 rounded-xl md:rounded-lg bg-black/40 md:bg-black/30 border border-white/10"
             >
               {/* Código */}
               <div className="relative">
-                <Label className="text-neutral-400 text-[10px] mb-1 block">
+                <Label className="text-neutral-400 text-[11px] md:text-[10px] mb-1.5 md:mb-1 block">
                   Código
                 </Label>
 
@@ -277,18 +277,18 @@ export const CompositionSection = ({
                       return;
                     }
                   }}
-                  className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                  className="h-11 md:h-auto bg-black/50 border-white/10 text-white text-sm md:text-xs rounded-lg md:rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
                 />
 
                 {campoAtivo === idx && sugestoes.length > 0 && (
                   <div
                     ref={listaRef}
-                    className="absolute z-50 mt-1 bg-[#0f0f0f] border border-white/10 rounded-md shadow-lg w-full max-h-40 overflow-y-auto"
+                    className="absolute z-50 mt-1 bg-[#0f0f0f] border border-white/10 rounded-md shadow-lg w-full max-h-48 md:max-h-40 overflow-y-auto"
                   >
                     {sugestoes.map((s, i) => (
                       <div
                         key={i}
-                        className={`px-2 py-1 text-xs text-white cursor-pointer flex justify-between ${
+                        className={`px-3 md:px-2 py-2 md:py-1 text-sm md:text-xs text-white cursor-pointer flex justify-between ${
                           i === indiceSelecionado
                             ? "bg-[#1a8ceb]/30"
                             : "hover:bg-[#1a8ceb]/20"
@@ -307,7 +307,7 @@ export const CompositionSection = ({
 
               {/* Quantidade */}
               <div>
-                <Label className="text-neutral-400 text-[10px] mb-1 block">
+                <Label className="text-neutral-400 text-[11px] md:text-[10px] mb-1.5 md:mb-1 block">
                   Quantidade
                 </Label>
 
@@ -323,13 +323,13 @@ export const CompositionSection = ({
                     novo[idx].quantidade = e.target.value;
                     setComposicao(novo);
                   }}
-                  className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                  className="h-11 md:h-auto bg-black/50 border-white/10 text-white text-sm md:text-xs rounded-lg md:rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
                 />
               </div>
 
               {/* Custo */}
               <div className="relative">
-                <Label className="text-neutral-400 text-[10px] mb-1 block">
+                <Label className="text-neutral-400 text-[11px] md:text-[10px] mb-1.5 md:mb-1 block">
                   Custo (R$)
                 </Label>
 
@@ -370,7 +370,7 @@ export const CompositionSection = ({
                       setComposicao(novo);
                     }
                   }}
-                  className="bg-black/50 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
+                  className="h-11 md:h-auto bg-black/50 border-white/10 text-white text-sm md:text-xs rounded-lg md:rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
                 />
 
                 {/* Remover linha */}
@@ -384,7 +384,7 @@ export const CompositionSection = ({
                     size="sm"
                     variant="ghost"
                     className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2
-                      w-5 h-5 p-0 flex items-center justify-center
+                      w-7 h-7 md:w-5 md:h-5 p-0 flex items-center justify-center
                       bg-red-500/20 hover:bg-red-500/40 text-red-400
                       border border-red-500/30 rounded-full shadow-sm
                       transition-all cursor-pointer"
@@ -408,17 +408,17 @@ export const CompositionSection = ({
           ])
         }
         variant="outline"
-        className="w-full border-white/10 text-white text-xs hover:bg-white/5 hover:border-[#1a8ceb]/50 rounded-xl transition-all mt-2"
+        className="w-full h-11 md:h-auto border-white/10 text-white text-sm md:text-xs hover:bg-white/5 hover:border-[#1a8ceb]/50 rounded-xl transition-all mt-3 md:mt-2"
       >
-        <Plus className="w-3 h-3 mr-2" />
+        <Plus className="w-4 h-4 md:w-3 md:h-3 mr-2" />
         Incluir Custos
       </Button>
 
       {/* Total */}
-      <div className="mt-3 p-3 bg-gradient-to-br from-[#1a8ceb]/20 to-[#1a8ceb]/5 rounded-xl border border-[#1a8ceb]/30">
+      <div className="mt-3 p-4 md:p-3 bg-gradient-to-br from-[#1a8ceb]/20 to-[#1a8ceb]/5 rounded-xl border border-[#1a8ceb]/30">
         <div className="flex flex-col items-center justify-center">
           <span className="text-neutral-300 text-xs mb-1">Custo Total</span>
-          <span className="text-xl font-bold text-white">
+          <span className="text-2xl md:text-xl font-bold text-white">
             R$ <AnimatedNumber value={custoTotal} />
           </span>
         </div>

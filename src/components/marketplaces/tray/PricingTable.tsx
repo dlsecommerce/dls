@@ -32,7 +32,12 @@ import {
   DEFAULT_TRAY_FILTERS,
 } from "@/components/marketplaces/tray/types";
 
-import { Check as CheckIcon, X as XIcon } from "lucide-react";
+import {
+  Check as CheckIcon,
+  X as XIcon,
+  Menu,
+  SlidersHorizontal,
+} from "lucide-react";
 
 type CacheEntry = {
   rows: Row[];
@@ -288,6 +293,9 @@ export default function PricingTable() {
   const [isPending, startTransition] = useTransition();
   const [exporting, setExporting] = useState(false);
   const [openPricingModal, setOpenPricingModal] = useState(false);
+
+  const [openFiltersMobile, setOpenFiltersMobile] = useState(false);
+  const [openActionsMobile, setOpenActionsMobile] = useState(false);
 
   const didHydrateFromUrlRef = useRef(false);
   const lastUrlRef = useRef("");
@@ -951,8 +959,8 @@ export default function PricingTable() {
 
   return (
     <div className="min-h-screen bg-[#0b0b0c] p-0">
-      <div className="grid min-h-screen grid-cols-[220px_minmax(0,1fr)_300px]">
-        <aside>
+      <div className="flex min-h-screen flex-col lg:grid lg:grid-cols-[220px_minmax(0,1fr)_300px]">
+        <aside className="hidden lg:block">
           <div className="fixed left-0 top-24 w-[220px] bg-[#0b0b0c]">
             <TrayFilters
               search={search}
@@ -964,7 +972,27 @@ export default function PricingTable() {
         </aside>
 
         <section className="min-w-0 bg-[#0b0b0c]">
-          <div className="px-4 py-4">
+          <div className="px-3 py-4 lg:px-4">
+            <div className="mb-3 flex items-center justify-between gap-2 lg:hidden">
+              <button
+                type="button"
+                onClick={() => setOpenFiltersMobile(true)}
+                className="flex h-11 items-center gap-2 rounded-full border border-neutral-700 bg-[#161616] px-4 text-sm font-medium text-white shadow-lg active:scale-[0.98]"
+              >
+                <SlidersHorizontal className="h-4 w-4 text-green-400" />
+                Filtros
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setOpenActionsMobile(true)}
+                className="flex h-11 items-center gap-2 rounded-full border border-neutral-700 bg-[#161616] px-4 text-sm font-medium text-white shadow-lg active:scale-[0.98]"
+              >
+                <Menu className="h-4 w-4 text-green-400" />
+                Ações
+              </button>
+            </div>
+
             <PricingHeaderTray
               sortColumn={sortColumn}
               sortDirection={sortDirection}
@@ -989,7 +1017,7 @@ export default function PricingTable() {
               </div>
             </GlassmorphicCard>
 
-            <div className="mt-2 px-2 pb-4">
+            <div className="mt-2 px-2 pb-24 lg:pb-4">
               <TableControls
                 currentPage={currentPage}
                 totalPages={Math.max(1, Math.ceil(totalItems / itemsPerPage))}
@@ -1006,7 +1034,7 @@ export default function PricingTable() {
           </div>
         </section>
 
-        <aside className="relative">
+        <aside className="relative hidden lg:block">
           <div className="fixed right-5 top-23 w-[300px] bg-[#0b0b0c]">
             <TrayActionsSidebar
               exporting={exporting}
@@ -1020,6 +1048,105 @@ export default function PricingTable() {
           </div>
         </aside>
       </div>
+
+      <button
+        type="button"
+        onClick={() => setOpenActionsMobile(true)}
+        className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-r from-green-500 to-green-600 text-white shadow-[0_0_24px_rgba(34,197,94,0.35)] active:scale-95 lg:hidden"
+        aria-label="Abrir ações"
+      >
+        <Menu className="h-6 w-6" />
+      </button>
+
+      {openFiltersMobile && (
+        <div className="fixed inset-0 z-50 bg-black/70 lg:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 h-full w-full cursor-default"
+            onClick={() => setOpenFiltersMobile(false)}
+            aria-label="Fechar filtros"
+          />
+
+          <div className="absolute left-0 top-0 h-full w-[86vw] max-w-[340px] overflow-y-auto border-r border-neutral-800 bg-[#0b0b0c] shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-neutral-800 bg-[#0b0b0c] px-4 py-4">
+              <div>
+                <p className="text-sm text-neutral-400">Refinar busca</p>
+                <h2 className="text-lg font-semibold text-white">Filtros</h2>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setOpenFiltersMobile(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-neutral-700 text-white active:scale-95"
+                aria-label="Fechar filtros"
+              >
+                <XIcon className="h-4 w-4" />
+              </button>
+            </div>
+
+            <TrayFilters
+              search={search}
+              setSearch={setSearch}
+              filters={filters}
+              setFilters={setFilters}
+            />
+          </div>
+        </div>
+      )}
+
+      {openActionsMobile && (
+        <div className="fixed inset-0 z-50 bg-black/70 lg:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 h-full w-full cursor-default"
+            onClick={() => setOpenActionsMobile(false)}
+            aria-label="Fechar ações"
+          />
+
+          <div className="absolute bottom-0 left-0 right-0 max-h-[86dvh] overflow-y-auto rounded-t-3xl border-t border-neutral-800 bg-[#0b0b0c] shadow-2xl">
+            <div className="sticky top-0 z-10 border-b border-neutral-800 bg-[#0b0b0c] px-4 py-4">
+              <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-neutral-700" />
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-neutral-400">Central de ações</p>
+                  <h2 className="text-lg font-semibold text-white">Ações</h2>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setOpenActionsMobile(false)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-neutral-700 text-white active:scale-95"
+                  aria-label="Fechar ações"
+                >
+                  <XIcon className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="pb-[calc(1rem+env(safe-area-inset-bottom))]">
+              <TrayActionsSidebar
+                exporting={exporting}
+                onExport={() => {
+                  setOpenActionsMobile(false);
+                  handleExportAll();
+                }}
+                onImportOpen={() => {
+                  setOpenActionsMobile(false);
+                  setOpenPricingModal(true);
+                }}
+                onMassEditOpen={() => {
+                  setOpenActionsMobile(false);
+                  setOpenPricingModal(true);
+                }}
+                selectedCount={0}
+                onDeleteSelected={() => {}}
+                onClearSelection={() => {}}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       <PricingMassEditionModal
         open={openPricingModal}
@@ -1074,4 +1201,4 @@ export default function PricingTable() {
       )}
     </div>
   );
-}    
+}

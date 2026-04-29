@@ -118,9 +118,9 @@ export const ProductInfoSection = ({
       />
 
       {/* 🔹 Conteúdo principal */}
-      <div className="p-3 rounded-xl bg-black/30 border border-white/10">
+      <div className="p-4 md:p-3 rounded-xl bg-black/30 border border-white/10 pb-[calc(env(safe-area-inset-bottom)+24px)] md:pb-3">
         {/* 🔹 Cabeçalho */}
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-3 md:mb-2">
           <div className="flex items-center gap-2">
             <Package className="w-5 h-5 text-[#1a8ceb]" />
             <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -138,7 +138,7 @@ export const ProductInfoSection = ({
               title="Voltar"
               className="p-2 hover:bg-white/10 rounded-full transition-all"
             >
-              <ArrowLeft className="w-4 h-4 text-white opacity-70 hover:opacity-100" />
+              <ArrowLeft className="w-5 h-5 md:w-4 md:h-4 text-white opacity-70 hover:opacity-100" />
             </motion.button>
 
             {/* Limpar local */}
@@ -154,7 +154,7 @@ export const ProductInfoSection = ({
               }`}
             >
               <Trash2
-                className={`w-4 h-4 transition-transform ${
+                className={`w-5 h-5 md:w-4 md:h-4 transition-transform ${
                   isClearing ? "animate-pulse" : ""
                 }`}
               />
@@ -171,19 +171,19 @@ export const ProductInfoSection = ({
               }`}
             >
               {saving ? (
-                <Loader className="w-4 h-4 text-white animate-spin" />
+                <Loader className="w-5 h-5 md:w-4 md:h-4 text-white animate-spin" />
               ) : (
-                <Save className="w-4 h-4 text-white opacity-70 hover:opacity-100" />
+                <Save className="w-5 h-5 md:w-4 md:h-4 text-white opacity-70 hover:opacity-100" />
               )}
             </motion.button>
           </div>
         </div>
 
         {/* 🔸 Campos de formulário */}
-        <div className="grid md:grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-2">
           {/* ✅ Loja como Select (PK / SB) */}
           <div>
-            <Label className="text-neutral-400 text-[10px] block mb-1">
+            <Label className="text-neutral-400 text-[11px] md:text-[10px] block mb-1.5 md:mb-1">
               Loja
             </Label>
 
@@ -196,7 +196,7 @@ export const ProductInfoSection = ({
                 }))
               }
             >
-              <SelectTrigger className="bg-white/5 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb]">
+              <SelectTrigger className="h-11 md:h-auto bg-white/5 border-white/10 text-white text-sm md:text-xs rounded-lg md:rounded-md focus:border-[#1a8ceb]">
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
 
@@ -219,7 +219,7 @@ export const ProductInfoSection = ({
             { label: "Categoria", key: "categoria" },
           ].map((f) => (
             <div key={f.key}>
-              <Label className="text-neutral-400 text-[10px] block mb-1">
+              <Label className="text-neutral-400 text-[11px] md:text-[10px] block mb-1.5 md:mb-1">
                 {f.label}
               </Label>
               <Input
@@ -228,14 +228,14 @@ export const ProductInfoSection = ({
                 onChange={(e) =>
                   setProduto((p: any) => ({ ...p, [f.key]: e.target.value }))
                 }
-                className="bg-white/5 border-white/10 text-white text-xs rounded-md focus:border-[#1a8ceb]"
+                className="h-11 md:h-auto bg-white/5 border-white/10 text-white text-sm md:text-xs rounded-lg md:rounded-md focus:border-[#1a8ceb]"
               />
             </div>
           ))}
 
           {isEditing && (
             <div>
-              <Label className="text-neutral-400 text-[10px] block mb-1">
+              <Label className="text-neutral-400 text-[11px] md:text-[10px] block mb-1.5 md:mb-1">
                 Tipo de Anúncio
               </Label>
               <Select
@@ -247,7 +247,7 @@ export const ProductInfoSection = ({
                   }))
                 }
               >
-                <SelectTrigger className="bg-white/5 border-white/10 text-white text-xs rounded-md">
+                <SelectTrigger className="h-11 md:h-auto bg-white/5 border-white/10 text-white text-sm md:text-xs rounded-lg md:rounded-md">
                   <SelectValue placeholder="Selecione" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#0f0f0f] border-white/10 text-white">
