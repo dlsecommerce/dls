@@ -72,7 +72,7 @@ export default function DashboardClient() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] px-3 py-4 md:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] px-3 py-4 pb-24 md:p-8 md:pb-8">
       <div className="max-w-7xl mx-auto">
         {/* Cabeçalho com filtros */}
         <motion.div
