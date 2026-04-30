@@ -99,12 +99,9 @@ export function useAutomacaoPlanilhas() {
 
       setStatus("processing");
 
-      const API_BASE = getApiBase();
-
-      // ✅ funciona em localhost e em produção (com env ou com proxy/rewrite)
-      const response = await fetch(`${API_BASE}/atualizar-planilha`, {
-        method: "POST",
-        body: formData,
+      const response = await fetch("/api/atualizar-planilha", {
+      method: "POST",
+      body: formData,
       });
 
       // ❌ Falha real no servidor

@@ -5,17 +5,27 @@ import fs from "fs";
 import path from "path";
 import ExcelJS from "exceljs";
 import chalk from "chalk";
-import he from "he"; // ✅ decodificador HTML
-import { parse as parseCsv } from "csv-parse/sync"; // ✅ CSV robusto (respeita aspas)
+import he from "he";
+import { parse as parseCsv } from "csv-parse/sync";
 
 const app = express();
 
 /**
- * ✅ CORS (localhost + produção)
- * - Em produção, coloque seu domínio em ALLOWED_ORIGINS (ou via env).
- * - expõe Content-Disposition (ajuda no download)
+ * ✅ NECESSÁRIO NA VERCEL
+ * Desativa o bodyParser padrão do Next/Vercel para permitir upload com multer.
  */
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+/**
+ * ✅ CORS
+ * Como a API está no mesmo domínio da Vercel, normalmente nem precisaria.
+ * Mas mantive para liberar seu domínio e localhost.
+ */
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "https://dlsecommerce.vercel.app")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
@@ -40,39 +50,36 @@ app.use(
   })
 );
 
-// ✅ mantém uploads em disco (como você já usa)
-const upload = multer({ dest: "uploads/" });
+/**
+ * ✅ Na Vercel, só pode gravar temporariamente em /tmp
+ */
+const upload = multer({ dest: "/tmp" });
 
 /** 🔤 Normalização */
 function normalize(s = "") {
   return String(s)
-    .replace(/\u00a0/g, " ") // ✅ remove NBSP do Excel/CSV
+    .replace(/\u00a0/g, " ")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
+
 function normCode(s = "") {
   return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 /**
- * ✅ SANITIZA TEXTO PARA EXCEL (evita "Excel reparou...")
- * Remove caracteres de controle ilegais no XML do XLSX:
- * 0x00-0x1F e 0x7F, exceto TAB(0x09), LF(0x0A), CR(0x0D)
+ * ✅ SANITIZA TEXTO PARA EXCEL
  */
 function textoSeguroExcel(v) {
   if (v === null || v === undefined) return "";
   let s = String(v);
 
-  // NBSP
   s = s.replace(/\u00a0/g, " ");
-
-  // caracteres ilegais
   s = s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
 
-  // lixo comum
   const low = s.trim().toLowerCase();
   if (low === "undefined" || low === "null") return "";
 
@@ -80,10 +87,7 @@ function textoSeguroExcel(v) {
 }
 
 /**
- * ✅ CONVERSOR NUMÉRICO SEGURO (evita XLSX corrompido)
- * - Converte "4,50" -> 4.5 (Number)
- * - Converte "1.234,56" -> 1234.56
- * - Se não der pra converter, retorna null
+ * ✅ CONVERSOR NUMÉRICO SEGURO
  */
 function numeroSeguro(v) {
   if (v === null || v === undefined || v === "") return null;
@@ -92,12 +96,10 @@ function numeroSeguro(v) {
   const s0 = String(v).replace(/\u00a0/g, " ").trim();
   if (!s0) return null;
 
-  // remove qualquer coisa que não seja dígito, ponto, vírgula, sinal
   const s1 = s0.replace(/[^\d.,-]/g, "");
 
   let s;
   if (s1.includes(",") && s1.includes(".")) {
-    // pt-BR: remove milhar e troca vírgula por ponto
     s = s1.replace(/\./g, "").replace(",", ".");
   } else if (s1.includes(",")) {
     s = s1.replace(",", ".");
@@ -109,10 +111,11 @@ function numeroSeguro(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** ✅ Valor final seguro pra célula (nunca NaN/Infinity/objeto) */
+/** ✅ Valor final seguro pra célula */
 function valorSeguroExcel(v) {
   if (v === null || v === undefined) return "";
   if (typeof v === "number") return Number.isFinite(v) ? v : "";
+
   if (typeof v === "object") {
     try {
       return textoSeguroExcel(JSON.stringify(v));
@@ -120,6 +123,7 @@ function valorSeguroExcel(v) {
       return "";
     }
   }
+
   return textoSeguroExcel(v);
 }
 
@@ -141,7 +145,7 @@ function lerCSV(filePath) {
 
   const data = rows.slice(1).map((colsRaw) => {
     const cols = Array.isArray(colsRaw) ? [...colsRaw] : [];
-    while (cols.length < headers.length) cols.push(""); // ✅ padding
+    while (cols.length < headers.length) cols.push("");
 
     const obj = {};
     headers.forEach((h, i) => (obj[h] = cols[i] ?? ""));
@@ -193,7 +197,6 @@ function buildHeaderMap(sheet, headerRowNumber = 2) {
     const cell = headerRow.getCell(col);
     let value = cell?.value;
 
-    // RichText
     if (value && typeof value === "object" && value.richText) {
       value = value.richText.map((t) => t.text).join("");
     }
@@ -210,28 +213,27 @@ function pick(obj, keyCandidates = []) {
   const map = new Map(Object.keys(obj || {}).map((k) => [normalize(k), obj[k]]));
   const allKeys = Array.from(map.keys());
 
-  // 1) exato
   for (const cand of keyCandidates) {
     const normCand = normalize(cand);
     const v = map.get(normCand);
     if (v !== undefined && v !== null && String(v).trim() !== "") return v;
   }
 
-  // 2) parcial
   for (const cand of keyCandidates) {
     const normCand = normalize(cand);
     const keyEncontrada = allKeys.find(
       (k) => k.includes(normCand) || normCand.includes(k)
     );
+
     if (keyEncontrada) {
       const v = map.get(keyEncontrada);
       if (v !== undefined && v !== null && String(v).trim() !== "") return v;
     }
   }
 
-  // 3) genérico “categoria”
   if (keyCandidates.some((k) => normalize(k).includes("categoria"))) {
     const chaveCat = allKeys.find((k) => k.includes("categoria"));
+
     if (chaveCat) {
       const v = map.get(chaveCat);
       if (v !== undefined && v !== null && String(v).trim() !== "") return v;
@@ -265,22 +267,36 @@ function aplicarEstiloCabecalho(sheet) {
     try {
       sheet.unMergeCells(range);
     } catch {}
+
     sheet.mergeCells(range);
+
     const c = sheet.getCell(range.split(":")[0]);
     c.value = texto;
     c.alignment = { horizontal: "center", vertical: "middle" };
     c.font = { bold: true, color: { argb: branco }, size: 12 };
-    c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: azulEscuro } };
+    c.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: azulEscuro },
+    };
   }
 
   sheet.getRow(1).eachCell((cell) => {
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: azulEscuro } };
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: azulEscuro },
+    };
     cell.font = { color: { argb: branco }, bold: true, size: 12 };
     cell.alignment = { horizontal: "center", vertical: "middle" };
   });
 
   sheet.getRow(2).eachCell((cell) => {
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: azulClaro } };
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: azulClaro },
+    };
     cell.font = { color: { argb: branco }, bold: true, size: 11 };
     cell.alignment = { horizontal: "center", vertical: "middle" };
   });
@@ -291,20 +307,20 @@ function encontrarProdutoNoBling(bling, { idProduto, referencia, nomeVinculo }) 
   const refNorm = normCode(referencia);
   const nomeNormVinc = normalize(nomeVinculo);
 
-  // 1) por ID
   let prod =
     bling.find(
       (b) =>
         String(pick(b, ["ID", "Id", "Id Produto", "ID Produto"])).trim() ===
         String(idProduto).trim()
     ) || null;
+
   if (prod) return prod;
 
-  // 2) por Código/SKU
   prod =
     bling.find((b) => {
       const codigo = pick(b, ["Código", "Codigo", "SKU"]) || "";
       const codNorm = normCode(codigo);
+
       return (
         (refNorm &&
           codNorm &&
@@ -313,13 +329,14 @@ function encontrarProdutoNoBling(bling, { idProduto, referencia, nomeVinculo }) 
         (refNorm && refNorm.includes(codNorm))
       );
     }) || null;
+
   if (prod) return prod;
 
-  // 3) por nome aproximado
   prod =
     bling.find((b) => {
       const nomeBling = pick(b, ["Descrição", "Descricao", "Nome"]) || "";
       const nomeNormBling = normalize(nomeBling);
+
       return (
         nomeNormBling && nomeNormVinc && nomeNormBling.includes(nomeNormVinc)
       );
@@ -337,7 +354,9 @@ function getCategoriaIndex(blingHeaders = []) {
   let idx = normHeaders.findIndex((h) => h === normalize("Categoria do produto"));
   if (idx >= 0) return idx;
 
-  idx = normHeaders.findIndex((h) => h.includes("categoria") && h.includes("produto"));
+  idx = normHeaders.findIndex(
+    (h) => h.includes("categoria") && h.includes("produto")
+  );
   if (idx >= 0) return idx;
 
   idx = normHeaders.findIndex((h) => h === "categoria" || h.includes("categoria"));
@@ -348,10 +367,13 @@ function getCategoriaIndex(blingHeaders = []) {
 
 /** ✅ Categoria do produto do Bling */
 function getCategoriaFromBling(blingProd, categoriaIdx) {
-  if (!blingProd || typeof categoriaIdx !== "number" || categoriaIdx < 0) return "";
+  if (!blingProd || typeof categoriaIdx !== "number" || categoriaIdx < 0) {
+    return "";
+  }
 
   const raw = blingProd.__cols?.[categoriaIdx];
   const v = limparTexto(raw);
+
   if (!v) return "";
 
   return textoSeguroExcel(v.replace(/\s*>>\s*/g, " » ").trim());
@@ -400,7 +422,7 @@ function parseReferencia(refRaw) {
   return out;
 }
 
-/** acha coluna pelo nome no headerMap (normalizado) */
+/** acha coluna pelo nome no headerMap */
 function findCol(headerMap, name) {
   const n = normalize(name);
   const h = headerMap.find((x) => x.norm === n);
@@ -418,6 +440,7 @@ function getIdNaLoja(v) {
     "Id na loja",
     "Id na loja multiloja",
   ]);
+
   return textoSeguroExcel(val);
 }
 
@@ -433,13 +456,13 @@ function getNomeVinculo(v) {
   return limparTexto(val);
 }
 
-/** 🚀 Endpoint principal */
+/** 🚀 Endpoint principal - Vercel */
 app.post(
-  "/atualizar-planilha",
+  "/api/atualizar-planilha",
   upload.fields([
     { name: "modelo" },
     { name: "bling" },
-    { name: "tray" }, // pode ser opcional dependendo da loja
+    { name: "tray" },
     { name: "vinculo" },
   ]),
   async (req, res) => {
@@ -448,11 +471,11 @@ app.post(
     try {
       const lojaRaw = textoSeguroExcel(req.body?.loja || "");
       const lojaNorm = normalize(lojaRaw);
-      const isPikot = lojaNorm.includes("pikot"); // Pikot Shop
+      const isPikot = lojaNorm.includes("pikot");
 
       const modeloPath = req.files?.["modelo"]?.[0]?.path;
       const blingPath = req.files?.["bling"]?.[0]?.path;
-      const trayPath = req.files?.["tray"]?.[0]?.path; // pode ser undefined
+      const trayPath = req.files?.["tray"]?.[0]?.path;
       const vinculoPath = req.files?.["vinculo"]?.[0]?.path;
 
       if (modeloPath) filesToCleanup.push(modeloPath);
@@ -476,35 +499,44 @@ app.post(
         )
       );
 
-      // tray mantido (mesmo se não usar em alguma regra)
       const tray = trayPath ? lerCSV(trayPath) : [];
       const vinculo = lerCSV(vinculoPath);
 
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.readFile(modeloPath);
+
       const sheet = workbook.worksheets[0];
+
       aplicarEstiloCabecalho(sheet);
 
       const headerMap = buildHeaderMap(sheet, 2);
 
-      // ✅ Coluna J do modelo (Categoria) = 10
       const colCategoriaModelo = 10;
 
-      // ✅ achar colunas de destino
       const colIdTray =
         findCol(headerMap, "ID Tray") || findCol(headerMap, "ID TRAY");
+
       const colIdVar =
         findCol(headerMap, "ID Var") || findCol(headerMap, "ID VAR");
 
-      if (!colIdTray) throw new Error("Coluna 'ID Tray' não encontrada no MODELO.");
-      if (!colIdVar) throw new Error("Coluna 'ID Var' não encontrada no MODELO.");
+      if (!colIdTray) {
+        throw new Error("Coluna 'ID Tray' não encontrada no MODELO.");
+      }
+
+      if (!colIdVar) {
+        throw new Error("Coluna 'ID Var' não encontrada no MODELO.");
+      }
 
       const colReferencia =
         findCol(headerMap, "Referência") || findCol(headerMap, "Referencia");
-      if (!colReferencia) throw new Error("Coluna 'Referência' não encontrada no MODELO.");
+
+      if (!colReferencia) {
+        throw new Error("Coluna 'Referência' não encontrada no MODELO.");
+      }
 
       const codigoCols = [];
       const quantCols = [];
+
       for (let i = 1; i <= 10; i++) {
         const c =
           findCol(headerMap, `Código ${i}`) ||
@@ -521,6 +553,7 @@ app.post(
 
         if (!c || !q) {
           const colsDisponiveis = headerMap.map((h) => h.key).join(" | ");
+
           throw new Error(
             `Colunas 'Código ${i}' e/ou 'Quantidade/Quant. ${i}' não encontradas no MODELO.\n` +
               `Headers detectados (linha 2): ${colsDisponiveis}`
@@ -531,27 +564,32 @@ app.post(
         quantCols.push(q);
       }
 
-      // limpa conteúdo antigo (mantém estilos)
       sheet.eachRow((row, rowNumber) => {
-        if (rowNumber >= 3) row.eachCell((cell) => (cell.value = null));
+        if (rowNumber >= 3) {
+          row.eachCell((cell) => {
+            cell.value = null;
+          });
+        }
       });
 
       console.log(
         chalk.cyanBright(
-          `\n🚀 Iniciando automação... Loja: ${lojaRaw || "NÃO INFORMADA"} | Tray: ${
-            trayPath ? "SIM" : "NÃO"
-          }\n`
+          `\n🚀 Iniciando automação... Loja: ${
+            lojaRaw || "NÃO INFORMADA"
+          } | Tray: ${trayPath ? "SIM" : "NÃO"}\n`
         )
       );
 
-      // lógica original (pai/var por grupo)
       const parentTrayByGroup = new Map();
+
       for (const v of vinculo) {
         const idLoja = getIdNaLoja(v);
         const nome = getNomeVinculo(v);
         const referencia = getCodigoVinculo(v);
 
-        const od = definirOD(nome) !== 3 ? definirOD(nome) : definirOD(referencia);
+        const od =
+          definirOD(nome) !== 3 ? definirOD(nome) : definirOD(referencia);
+
         if (od === 1) {
           const group = normalize(baseNomeGrupo(nome));
           if (group) parentTrayByGroup.set(group, idLoja);
@@ -563,10 +601,12 @@ app.post(
 
       for (const v of vinculo) {
         const idProduto = textoSeguroExcel(
-          pick(v, ["IdProduto", "ID Produto", "Id Produto", "ID"]) || v["IdProduto"] || ""
+          pick(v, ["IdProduto", "ID Produto", "Id Produto", "ID"]) ||
+            v["IdProduto"] ||
+            ""
         );
 
-        const idLojaOriginal = getIdNaLoja(v); // ✅ (VAR) id da variação
+        const idLojaOriginal = getIdNaLoja(v);
         const nomeVinculo = getNomeVinculo(v);
         const referencia = getCodigoVinculo(v);
         const nome = nomeVinculo;
@@ -577,29 +617,31 @@ app.post(
           nomeVinculo,
         });
 
-        // ✅ Categoria correta do Bling
         const categoria = getCategoriaFromBling(blProduto, categoriaIdx);
 
-        // OD
         let od = definirOD(nome);
         if (od === 3) od = definirOD(referencia);
 
-        // ✅ TRAY (PAI) para VAR: herda do grupo
         let idTrayCalc = idLojaOriginal;
         const group = normalize(baseNomeGrupo(nome));
+
         if (od === 2 && group && parentTrayByGroup.has(group)) {
           idTrayCalc = parentTrayByGroup.get(group) || idLojaOriginal;
         }
 
-        // var (mantida)
         let idVarCalc;
+
         if (od === 1) idVarCalc = "PAI";
         else if (od === 2) idVarCalc = idLojaOriginal;
         else idVarCalc = "SIMPLES";
 
         const novaLinha = {
           ID: "",
-          Loja: /\d/.test(String(idTrayCalc || "")) ? "PK" : idTrayCalc ? "SB" : "NULL",
+          Loja: /\d/.test(String(idTrayCalc || ""))
+            ? "PK"
+            : idTrayCalc
+            ? "SB"
+            : "NULL",
           "ID Bling": textoSeguroExcel(
             pick(blProduto || {}, ["ID", "Id", "Id Produto", "ID Produto"])
           ),
@@ -611,7 +653,6 @@ app.post(
           Marca: textoSeguroExcel(limparTexto(pick(blProduto || {}, ["Marca"]))),
           Categoria: textoSeguroExcel(categoria),
 
-          // ✅ números seguros
           Peso: numeroSeguro(
             pick(blProduto || {}, [
               "Peso líquido (Kg)",
@@ -620,8 +661,15 @@ app.post(
               "Peso",
             ])
           ),
-          Largura: numeroSeguro(pick(blProduto || {}, ["Largura do produto", "Largura"])),
-          Altura: numeroSeguro(pick(blProduto || {}, ["Altura do Produto", "Altura"])),
+
+          Largura: numeroSeguro(
+            pick(blProduto || {}, ["Largura do produto", "Largura"])
+          ),
+
+          Altura: numeroSeguro(
+            pick(blProduto || {}, ["Altura do Produto", "Altura"])
+          ),
+
           Comprimento: numeroSeguro(
             pick(blProduto || {}, [
               "Profundidade do produto",
@@ -633,7 +681,6 @@ app.post(
 
         const row = sheet.getRow(linhaAtual);
 
-        // escreve pelo headerMap
         const novaLinhaNormMap = new Map(
           Object.keys(novaLinha).map((k) => [normalize(k), novaLinha[k]])
         );
@@ -646,34 +693,30 @@ app.post(
               : undefined;
 
           if (valor === undefined) valor = novaLinhaNormMap.get(norm);
+
           row.getCell(col).value = valorSeguroExcel(valor);
         }
 
-        // ✅ Categoria na coluna J
         row.getCell(colCategoriaModelo).value = textoSeguroExcel(categoria || "");
 
-        /**
-         * ✅✅✅ REGRA CORRETA (PIKOT) — SEM HEURÍSTICA DE TAMANHO
-         * - ID TRAY = SEMPRE idTrayCalc (nas VAR herda do PAI)
-         * - ID VAR  = idLojaOriginal quando od=2 (VAR)
-         *           = "PAI" quando od=1
-         *           = "SIMPLES" quando od=3
-         */
         if (isPikot) {
           const trayClean = textoSeguroExcel(idTrayCalc);
           const varClean = textoSeguroExcel(idLojaOriginal);
 
           row.getCell(colIdTray).value = trayClean || "";
 
-          if (od === 2) row.getCell(colIdVar).value = varClean || "";
-          else if (od === 1) row.getCell(colIdVar).value = "PAI";
-          else row.getCell(colIdVar).value = "SIMPLES";
+          if (od === 2) {
+            row.getCell(colIdVar).value = varClean || "";
+          } else if (od === 1) {
+            row.getCell(colIdVar).value = "PAI";
+          } else {
+            row.getCell(colIdVar).value = "SIMPLES";
+          }
         } else {
           row.getCell(colIdTray).value = "N TRAY";
           row.getCell(colIdVar).value = "N TRAY";
         }
 
-        // ✅ Código/Quantidade a partir da Referência
         const parsed = parseReferencia(referencia);
 
         for (let i = 0; i < 10; i++) {
@@ -687,48 +730,59 @@ app.post(
         }
 
         row.commit?.();
+
         linhaAtual++;
         processados++;
 
         console.log(
           categoria
-            ? chalk.greenBright(`✅ [${processados}] ${nome} — Categoria: ${categoria}`)
+            ? chalk.greenBright(
+                `✅ [${processados}] ${nome} — Categoria: ${categoria}`
+              )
             : chalk.yellow(`⚠️ [${processados}] ${nome} — Categoria vazia`)
         );
       }
 
-      // ✅ gera buffer direto
       const buffer = await workbook.xlsx.writeBuffer();
 
-      // opcional: salvar no disco
       const outputPath = path.resolve(
-        "uploads",
-        `AUTOMACAO - MODELO -${new Date().toLocaleDateString("pt-BR").replaceAll("/", "-")}.xlsx`
+        "/tmp",
+        `AUTOMACAO - MODELO - ${new Date()
+          .toLocaleDateString("pt-BR")
+          .replaceAll("/", "-")}.xlsx`
       );
 
       try {
         fs.writeFileSync(outputPath, Buffer.from(buffer));
         console.log(chalk.greenBright(`📁 Arquivo salvo em: ${outputPath}`));
       } catch (e) {
-        console.log(chalk.yellow("⚠️ Não foi possível salvar no disco (ok em produção)."));
+        console.log(
+          chalk.yellow("⚠️ Não foi possível salvar no disco. Continuando...")
+        );
       }
 
-      console.log(chalk.cyanBright(`\n💾 ${processados} linhas gravadas com sucesso.\n`));
+      console.log(
+        chalk.cyanBright(`\n💾 ${processados} linhas gravadas com sucesso.\n`)
+      );
 
       res.setHeader(
         "Content-Type",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       );
+
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="AUTOMACAO - MODELO - ${Date.now()}.xlsx"`
       );
-      res.status(200).send(Buffer.from(buffer));
+
+      return res.status(200).send(Buffer.from(buffer));
     } catch (err) {
       console.error(chalk.redBright("🛑 Erro crítico:"), err);
-      res.status(500).json({ error: err?.message || "Erro interno no servidor." });
+
+      return res.status(500).json({
+        error: err?.message || "Erro interno no servidor.",
+      });
     } finally {
-      // ✅ limpa temporários do multer
       for (const p of filesToCleanup) {
         try {
           fs.unlinkSync(p);
@@ -738,8 +792,8 @@ app.post(
   }
 );
 
-app.listen(5000, () =>
-  console.log(
-    chalk.magentaBright("🚀 Servidor rodando em http://localhost:5000/atualizar-planilha")
-  )
-);
+/**
+ * ✅ ESSENCIAL NA VERCEL
+ * Não usar app.listen().
+ */
+export default app;
