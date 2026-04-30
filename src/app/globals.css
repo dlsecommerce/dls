@@ -116,9 +116,11 @@ input[type="number"] {
 
 /* =========================================================
   HEADER FIXO
+  Use .AppHeader apenas nos headers internos do sistema.
+  Não estilize a tag global header para não afetar o header público.
 ========================================================= */
 
-header {
+.AppHeader {
   position: sticky;
   top: 0;
   z-index: 40;
@@ -177,7 +179,7 @@ main {
 ========================================================= */
 
 body,
-header,
+.AppHeader,
 main,
 .AppSidebar,
 .AppContent,

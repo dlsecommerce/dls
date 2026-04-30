@@ -59,6 +59,7 @@ function ActionTextButton({
           active:scale-[0.98]
           sm:hover:from-green-400 sm:hover:to-green-500
           sm:hover:shadow-[0_0_14px_rgba(34,197,94,0.22)]
+          disabled:cursor-not-allowed disabled:opacity-50
         "
         onClick={handleClick}
         disabled={disabled}
@@ -76,6 +77,7 @@ function ActionTextButton({
       disabled={disabled}
       className="
         flex w-full
+        cursor-pointer
         items-start gap-3
         rounded-lg
         px-2 py-3 sm:py-2
@@ -319,9 +321,9 @@ export default function AnunciosActionsSidebar({
             className="
               mb-2
               flex items-center gap-2
+              cursor-pointer
               px-2
               text-sm font-semibold text-green-400
-              cursor-pointer
               active:scale-[0.98]
               hover:underline
             "

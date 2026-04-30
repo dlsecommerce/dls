@@ -1,96 +1,151 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Menu, X, LogIn, ArrowUpRight } from "lucide-react";
-import { LoadingBar, LoadingBarRef } from "@/components/ui/loading-bar";
+import { LoadingBar, type LoadingBarRef } from "@/components/ui/loading-bar";
+
+const menuItems = [
+  { label: "Início", type: "route", href: "/" },
+  { label: "Precificação", type: "scroll", href: "#precificacao" },
+  { label: "Dashboard", type: "route", href: "/dashboard" },
+  { label: "Sobre nós", type: "scroll", href: "#sobre-nos" },
+] as const;
 
 const Header = () => {
   const [open, setOpen] = useState(false);
   const [show, setShow] = useState(true);
-  const [lastScrollY, setLastScrollY] = useState(0);
   const [isTop, setIsTop] = useState(true);
 
   const loadingBarRef = useRef<LoadingBarRef>(null);
+  const lastScrollYRef = useRef(0);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const router = useRouter();
 
   useEffect(() => {
-    let timeout: NodeJS.Timeout;
+    const scrollContainer =
+      document.querySelector<HTMLElement>("main") ||
+      document.querySelector<HTMLElement>(".AppContent");
+
+    if (!scrollContainer) return;
 
     const handleScroll = () => {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => {
-        if (window.scrollY <= 20) {
-          setIsTop(true);
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+
+      scrollTimeoutRef.current = setTimeout(() => {
+        const currentScrollY = scrollContainer.scrollTop;
+
+        setIsTop(currentScrollY <= 20);
+
+        if (currentScrollY <= 20) {
           setShow(true);
         } else {
-          setIsTop(false);
-          if (window.scrollY > lastScrollY) {
-            setShow(false);
-          } else {
-            setShow(true);
-          }
+          setShow(currentScrollY < lastScrollYRef.current);
         }
-        setLastScrollY(window.scrollY);
-      }, 150);
+
+        lastScrollYRef.current = currentScrollY;
+      }, 120);
     };
 
-    window.addEventListener("scroll", handleScroll);
+    scrollContainer.addEventListener("scroll", handleScroll, {
+      passive: true,
+    });
+
+    handleScroll();
+
     return () => {
-      clearTimeout(timeout);
-      window.removeEventListener("scroll", handleScroll);
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+
+      scrollContainer.removeEventListener("scroll", handleScroll);
     };
-  }, [lastScrollY]);
+  }, []);
 
-  // Scroll interno
-  const handleScrollTo = (id: string) => {
+  const handleScrollTo = useCallback((id: string) => {
     const section = document.querySelector(id);
+
     if (section) {
-      section.scrollIntoView({ behavior: "smooth" });
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  };
+  }, []);
 
-  // Navegação normal de rotas
-  const handleRoute = (href: string) => {
-    loadingBarRef.current?.start();
-    router.push(href);
-    setTimeout(() => {
-      loadingBarRef.current?.finish();
-    }, 1500);
-  };
+  const handleRoute = useCallback(
+    (href: string) => {
+      loadingBarRef.current?.start();
+      router.push(href);
 
-  // Menu items configurados
-  const menuItems = [
-    { label: "Início", type: "route", href: "/" },
-    { label: "Precificação", type: "scroll", href: "#precificacao" },
-    { label: "Dashboard", type: "route", href: "/dashboard" },
-    { label: "Sobre nós", type: "scroll", href: "#sobre-nos" },
-  ];
+      setTimeout(() => {
+        loadingBarRef.current?.finish();
+      }, 1000);
+    },
+    [router]
+  );
+
+  const handleMenuItemClick = useCallback(
+    (item: (typeof menuItems)[number]) => {
+      setOpen(false);
+
+      if (item.type === "scroll") {
+        handleScrollTo(item.href);
+        return;
+      }
+
+      handleRoute(item.href);
+    },
+    [handleRoute, handleScrollTo]
+  );
 
   return (
     <>
       <LoadingBar ref={loadingBarRef} />
 
       <header
-        className={`fixed top-0 z-50 flex w-full justify-center transition-all duration-500 ease-in-out ${
-          show
-            ? "translate-y-0 opacity-100"
-            : "pointer-events-none -translate-y-6 opacity-0"
-        }`}
+        className={`
+          pointer-events-none
+          fixed left-0 top-0 z-50
+          flex w-full justify-center
+          bg-transparent
+          px-4
+          shadow-none
+          backdrop-blur-none
+          transition-all duration-500 ease-in-out
+          sm:px-6 lg:px-8
+          ${
+            show
+              ? "translate-y-0 opacity-100"
+              : "pointer-events-none -translate-y-6 opacity-0"
+          }
+        `}
       >
         <nav
-          className={`grid w-full max-w-7xl grid-cols-3 items-center gap-x-6 mx-auto mt-3 sm:mt-6 px-4 sm:px-6 lg:px-8 py-3 sm:py-4 rounded-xl shadow-sm transition-all duration-500 ${
-            isTop
-              ? "border border-neutral-800 bg-transparent"
-              : "border border-neutral-800 bg-neutral-900/40 backdrop-blur-md"
-          }`}
+          className={`
+            pointer-events-auto
+            relative mx-auto mt-3 sm:mt-6
+            grid w-full max-w-7xl grid-cols-3 items-center gap-x-6
+            rounded-xl
+            border border-neutral-800
+            px-4 py-3
+            shadow-sm
+            transition-all duration-500
+            sm:px-6 sm:py-4 lg:px-8
+            ${
+              isTop
+                ? "bg-black/35 backdrop-blur-sm"
+                : "bg-neutral-900/80 backdrop-blur-md shadow-lg shadow-black/20"
+            }
+          `}
         >
           {/* Logo */}
           <div className="flex items-center">
             <Link
               href="/"
+              aria-label="Ir para o início"
               onClick={(e) => {
                 e.preventDefault();
                 handleRoute("/");
@@ -108,20 +163,16 @@ const Header = () => {
           </div>
 
           {/* Menu Desktop */}
-          <ul className="hidden md:flex justify-center items-center gap-6 lg:gap-10 text-xs sm:text-sm md:text-base font-medium text-[#d4d4d4] whitespace-nowrap">
-            {menuItems.map((item, idx) => (
-              <li key={idx}>
+          <ul className="hidden items-center justify-center gap-6 whitespace-nowrap text-xs font-medium text-[#d4d4d4] sm:text-sm md:flex md:text-base lg:gap-10">
+            {menuItems.map((item) => (
+              <li key={item.label}>
                 <Link
                   href={item.href}
                   onClick={(e) => {
                     e.preventDefault();
-                    if (item.type === "scroll") {
-                      handleScrollTo(item.href);
-                    } else {
-                      handleRoute(item.href);
-                    }
+                    handleMenuItemClick(item);
                   }}
-                  className="hover:text-white transition-colors cursor-pointer"
+                  className="cursor-pointer transition-colors hover:text-white"
                 >
                   {item.label}
                 </Link>
@@ -130,18 +181,20 @@ const Header = () => {
           </ul>
 
           {/* Ações Desktop */}
-          <div className="hidden md:flex items-center justify-end gap-3 lg:gap-4">
+          <div className="hidden items-center justify-end gap-3 md:flex lg:gap-4">
             <button
+              type="button"
               onClick={() => handleRoute("/login")}
-              className="flex items-center px-3 sm:px-4 py-2 rounded-lg text-[#d4d4d4] hover:text-white transition text-xs sm:text-sm md:text-base font-medium cursor-pointer"
+              className="flex cursor-pointer items-center rounded-lg px-3 py-2 text-xs font-medium text-[#d4d4d4] transition hover:text-white sm:px-4 sm:text-sm md:text-base"
             >
               Entrar
               <LogIn size={16} className="ml-2" />
             </button>
 
             <button
+              type="button"
               onClick={() => handleRoute("/cadastro")}
-              className="px-4 sm:px-5 py-2 bg-sky-600 text-white rounded-lg text-xs sm:text-sm md:text-base font-medium flex items-center hover:bg-sky-700 transition cursor-pointer"
+              className="flex cursor-pointer items-center rounded-lg bg-sky-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-sky-700 sm:px-5 sm:text-sm md:text-base"
             >
               Criar conta
               <ArrowUpRight size={16} className="ml-2" />
@@ -150,31 +203,28 @@ const Header = () => {
 
           {/* Botão Mobile */}
           <button
-            className="absolute right-4 md:hidden text-[#d4d4d4] transition hover:text-white cursor-pointer sm:right-6"
-            onClick={() => setOpen(!open)}
+            type="button"
+            className="absolute right-4 cursor-pointer text-[#d4d4d4] transition hover:text-white sm:right-6 md:hidden"
+            onClick={() => setOpen((prev) => !prev)}
             aria-label={open ? "Fechar menu" : "Abrir menu"}
+            aria-expanded={open}
           >
             {open ? <X size={24} /> : <Menu size={24} />}
           </button>
 
           {/* Menu Mobile */}
           {open && (
-            <div className="absolute left-0 top-[calc(100%+10px)] w-full rounded-2xl border border-neutral-800 bg-neutral-900/95 px-4 py-5 shadow-xl backdrop-blur-md md:hidden sm:px-6 sm:py-6">
-              <div className="flex flex-col space-y-2 text-[#d4d4d4] font-medium text-sm sm:text-base">
-                {menuItems.map((item, idx) => (
+            <div className="absolute left-0 top-[calc(100%+10px)] w-full rounded-2xl border border-neutral-800 bg-neutral-900/95 px-4 py-5 shadow-xl backdrop-blur-md sm:px-6 sm:py-6 md:hidden">
+              <div className="flex flex-col space-y-2 text-sm font-medium text-[#d4d4d4] sm:text-base">
+                {menuItems.map((item) => (
                   <Link
-                    key={idx}
+                    key={item.label}
                     href={item.href}
                     onClick={(e) => {
                       e.preventDefault();
-                      setOpen(false);
-                      if (item.type === "scroll") {
-                        handleScrollTo(item.href);
-                      } else {
-                        handleRoute(item.href);
-                      }
+                      handleMenuItemClick(item);
                     }}
-                    className="flex min-h-[44px] items-center rounded-lg px-3 transition hover:bg-white/5 hover:text-white cursor-pointer"
+                    className="flex min-h-[44px] cursor-pointer items-center rounded-lg px-3 transition hover:bg-white/5 hover:text-white"
                   >
                     {item.label}
                   </Link>
@@ -183,22 +233,24 @@ const Header = () => {
 
               <div className="mt-4 flex flex-col space-y-3">
                 <button
+                  type="button"
                   onClick={() => {
                     setOpen(false);
                     handleRoute("/login");
                   }}
-                  className="flex min-h-[44px] items-center justify-center rounded-lg border border-neutral-700 px-4 py-2 text-sm text-[#d4d4d4] transition hover:text-white cursor-pointer"
+                  className="flex min-h-[44px] cursor-pointer items-center justify-center rounded-lg border border-neutral-700 px-4 py-2 text-sm text-[#d4d4d4] transition hover:text-white"
                 >
                   Entrar
                   <LogIn size={16} className="ml-2" />
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => {
                     setOpen(false);
                     handleRoute("/cadastro");
                   }}
-                  className="flex min-h-[44px] items-center justify-center rounded-lg bg-sky-600 px-5 py-2 text-sm text-white transition hover:bg-sky-700 cursor-pointer"
+                  className="flex min-h-[44px] cursor-pointer items-center justify-center rounded-lg bg-sky-600 px-5 py-2 text-sm text-white transition hover:bg-sky-700"
                 >
                   Criar conta
                   <ArrowUpRight size={16} className="ml-2" />
