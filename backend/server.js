@@ -310,47 +310,95 @@ function aplicarEstiloCabecalho(sheet) {
   });
 }
 
-/** 🔎 Estratégia robusta para encontrar o produto no Bling */
-function encontrarProdutoNoBling(bling, { idProduto, referencia, nomeVinculo }) {
+/**
+ * ✅ OTIMIZAÇÃO FORTE:
+ * Cria índices do Bling uma única vez.
+ * Evita fazer bling.find() milhares de vezes.
+ */
+function criarIndicesBling(bling) {
+  const byId = new Map();
+  const byCodigo = new Map();
+  const byCodigoSemZero = new Map();
+  const byNomeExato = new Map();
+  const nomes = [];
+
+  for (const b of bling) {
+    const id = textoSeguroExcel(
+      pick(b, ["ID", "Id", "Id Produto", "ID Produto"])
+    );
+
+    if (id) byId.set(String(id).trim(), b);
+
+    const codigo = textoSeguroExcel(pick(b, ["Código", "Codigo", "SKU"]) || "");
+    const codNorm = normCode(codigo);
+
+    if (codNorm) {
+      byCodigo.set(codNorm, b);
+
+      const semZero = codNorm.replace(/^0+/, "");
+      if (semZero) byCodigoSemZero.set(semZero, b);
+    }
+
+    const nomeBling = textoSeguroExcel(
+      pick(b, ["Descrição", "Descricao", "Nome"]) || ""
+    );
+    const nomeNormBling = normalize(nomeBling);
+
+    if (nomeNormBling) {
+      byNomeExato.set(nomeNormBling, b);
+      nomes.push({ nomeNormBling, produto: b });
+    }
+  }
+
+  return {
+    byId,
+    byCodigo,
+    byCodigoSemZero,
+    byNomeExato,
+    nomes,
+  };
+}
+
+/** 🔎 Busca rápida no Bling usando os índices */
+function encontrarProdutoNoBlingRapido(indices, { idProduto, referencia, nomeVinculo }) {
+  const id = String(idProduto || "").trim();
   const refNorm = normCode(referencia);
   const nomeNormVinc = normalize(nomeVinculo);
 
-  let prod =
-    bling.find(
-      (b) =>
-        String(pick(b, ["ID", "Id", "Id Produto", "ID Produto"])).trim() ===
-        String(idProduto).trim()
-    ) || null;
+  if (id && indices.byId.has(id)) {
+    return indices.byId.get(id);
+  }
 
-  if (prod) return prod;
+  if (refNorm) {
+    if (indices.byCodigo.has(refNorm)) {
+      return indices.byCodigo.get(refNorm);
+    }
 
-  prod =
-    bling.find((b) => {
-      const codigo = pick(b, ["Código", "Codigo", "SKU"]) || "";
-      const codNorm = normCode(codigo);
+    const semZero = refNorm.replace(/^0+/, "");
+    if (semZero && indices.byCodigoSemZero.has(semZero)) {
+      return indices.byCodigoSemZero.get(semZero);
+    }
+  }
 
-      return (
-        (refNorm &&
-          codNorm &&
-          (refNorm === codNorm || refNorm === codNorm.replace(/^0+/, ""))) ||
-        (refNorm && codNorm.includes(refNorm)) ||
-        (refNorm && refNorm.includes(codNorm))
-      );
-    }) || null;
+  if (nomeNormVinc && indices.byNomeExato.has(nomeNormVinc)) {
+    return indices.byNomeExato.get(nomeNormVinc);
+  }
 
-  if (prod) return prod;
+  /**
+   * Fallback por nome aproximado.
+   * Para performance, só roda quando não encontrou por ID/código.
+   */
+  if (nomeNormVinc) {
+    const achado = indices.nomes.find(
+      (x) =>
+        x.nomeNormBling.includes(nomeNormVinc) ||
+        nomeNormVinc.includes(x.nomeNormBling)
+    );
 
-  prod =
-    bling.find((b) => {
-      const nomeBling = pick(b, ["Descrição", "Descricao", "Nome"]) || "";
-      const nomeNormBling = normalize(nomeBling);
+    if (achado) return achado.produto;
+  }
 
-      return (
-        nomeNormBling && nomeNormVinc && nomeNormBling.includes(nomeNormVinc)
-      );
-    }) || null;
-
-  return prod || null;
+  return null;
 }
 
 /** ✅ Descobre índice da coluna "Categoria do produto" */
@@ -373,18 +421,97 @@ function getCategoriaIndex(blingHeaders = []) {
   return -1;
 }
 
-/** ✅ Categoria do produto do Bling */
+/**
+ * ✅ Categoria do produto do Bling
+ * Agora pega apenas o FINAL da categoria.
+ * Ex:
+ * "Máquinas & Ferramentas » Ferrementas & Utensílios » Martelos & Marteletes"
+ * retorna:
+ * "Martelos & Marteletes"
+ */
+function getCategoriaFinal(categoriaRaw) {
+  const categoria = limparTexto(categoriaRaw);
+  if (!categoria) return "";
+
+  const normalizada = categoria.replace(/\s*>>\s*/g, " » ").trim();
+
+  const partes = normalizada
+    .split("»")
+    .map((p) => textoSeguroExcel(p))
+    .filter(Boolean);
+
+  if (partes.length === 0) return "";
+
+  return partes[partes.length - 1];
+}
+
 function getCategoriaFromBling(blingProd, categoriaIdx) {
   if (!blingProd || typeof categoriaIdx !== "number" || categoriaIdx < 0) {
     return "";
   }
 
   const raw = blingProd.__cols?.[categoriaIdx];
-  const v = limparTexto(raw);
+  return getCategoriaFinal(raw);
+}
 
-  if (!v) return "";
+/**
+ * ✅ Normaliza item da referência para código + quantidade
+ *
+ * Regras:
+ * - DWT-6005150127      => código 6005150127, qtd 1
+ * - FIS-3570-2345       => código 3570-2345, qtd 1
+ * - 3-3570-2345         => código 3570-2345, qtd 3
+ * - 36450-104456        => código 36450-104456, qtd 1
+ * - PAI - DWT-600       => código 600, qtd 1
+ * - VAR - FIS-3570-2345 => código 3570-2345, qtd 1
+ */
+function parseItemReferencia(itemRaw) {
+  const original = textoSeguroExcel(itemRaw);
+  if (!original) return null;
 
-  return textoSeguroExcel(v.replace(/\s*>>\s*/g, " » ").trim());
+  const parts = original
+    .split("-")
+    .map((s) => textoSeguroExcel(s))
+    .filter(Boolean);
+
+  if (parts.length === 0) return null;
+
+  let qtd = 1;
+  let codeParts = [...parts];
+
+  const first = parts[0];
+
+  /**
+   * Quantidade:
+   * Só considera quantidade se o primeiro pedaço for número pequeno.
+   * Assim:
+   * 3-3570-2345 => qtd 3
+   * 36450-104456 => NÃO vira qtd 36450
+   */
+  if (/^\d+$/.test(first)) {
+    const n = parseInt(first, 10);
+
+    if (n >= 2 && n <= 500 && parts.length >= 2) {
+      qtd = n;
+      codeParts = parts.slice(1);
+    }
+  } else if (/^[a-zA-Z]{2,10}$/.test(first) && parts.length >= 2) {
+    /**
+     * Prefixo de marca:
+     * DWT-6005150127 => remove DWT
+     * FIS-3570-2345 => remove FIS
+     */
+    codeParts = parts.slice(1);
+  }
+
+  const codigo = textoSeguroExcel(codeParts.join("-"));
+
+  if (!codigo) return null;
+
+  return {
+    codigo,
+    qtd,
+  };
 }
 
 /** ✅ PARSE DA REFERÊNCIA PARA CÓDIGO/QUANTIDADE */
@@ -402,29 +529,8 @@ function parseReferencia(refRaw) {
   const out = [];
 
   for (const item of items) {
-    const parts = item
-      .split("-")
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    if (parts.length >= 2) {
-      const last = parts[parts.length - 1];
-      let qtd = 1;
-
-      for (let i = 0; i < parts.length - 1; i++) {
-        if (/^\d+$/.test(parts[i])) {
-          qtd = parseInt(parts[i], 10);
-          break;
-        }
-      }
-
-      if (qtd >= 2 && last) {
-        out.push({ codigo: textoSeguroExcel(last), qtd });
-        continue;
-      }
-    }
-
-    out.push({ codigo: textoSeguroExcel(item), qtd: 1 });
+    const parsed = parseItemReferencia(item);
+    if (parsed) out.push(parsed);
   }
 
   return out;
@@ -474,6 +580,7 @@ app.post(
     { name: "vinculo" },
   ]),
   async (req, res) => {
+    const inicio = Date.now();
     const filesToCleanup = [];
 
     try {
@@ -495,20 +602,28 @@ app.post(
         throw new Error("⚠️ Envie Modelo, Bling e Vínculo.");
       }
 
+      console.log(chalk.cyanBright("\n🚀 Iniciando automação otimizada...\n"));
+
       const bling = lerCSV(blingPath);
+      const indicesBling = criarIndicesBling(bling);
+
       const blingHeaders = bling.__headers || [];
       const categoriaIdx = getCategoriaIndex(blingHeaders);
 
       console.log(
         chalk.magentaBright(
-          `🧾 BLING: headers=${blingHeaders.length} | categoriaIdx=${categoriaIdx} | header="${
+          `🧾 BLING: linhas=${bling.length} | headers=${blingHeaders.length} | categoriaIdx=${categoriaIdx} | header="${
             blingHeaders[categoriaIdx] || "NÃO ENCONTRADO"
           }"`
         )
       );
 
-      const tray = trayPath ? lerCSV(trayPath) : [];
       const vinculo = lerCSV(vinculoPath);
+
+      // Tray mantido como opcional, mas não precisa ser varrido no fluxo atual.
+      if (trayPath) {
+        console.log(chalk.gray("📄 Tray recebido."));
+      }
 
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.readFile(modeloPath);
@@ -572,6 +687,10 @@ app.post(
         quantCols.push(q);
       }
 
+      /**
+       * ✅ Limpa conteúdo antigo.
+       * Mantém estilos do modelo.
+       */
       sheet.eachRow((row, rowNumber) => {
         if (rowNumber >= 3) {
           row.eachCell((cell) => {
@@ -582,12 +701,14 @@ app.post(
 
       console.log(
         chalk.cyanBright(
-          `\n🚀 Iniciando automação... Loja: ${
-            lojaRaw || "NÃO INFORMADA"
-          } | Tray: ${trayPath ? "SIM" : "NÃO"}\n`
+          `Loja: ${lojaRaw || "NÃO INFORMADA"} | Vínculos: ${vinculo.length}\n`
         )
       );
 
+      /**
+       * ✅ Índice de PAI por grupo.
+       * Uma passada só.
+       */
       const parentTrayByGroup = new Map();
 
       for (const v of vinculo) {
@@ -606,6 +727,8 @@ app.post(
 
       let linhaAtual = 3;
       let processados = 0;
+      let semCategoria = 0;
+      let semBling = 0;
 
       for (const v of vinculo) {
         const idProduto = textoSeguroExcel(
@@ -619,13 +742,16 @@ app.post(
         const referencia = getCodigoVinculo(v);
         const nome = nomeVinculo;
 
-        const blProduto = encontrarProdutoNoBling(bling, {
+        const blProduto = encontrarProdutoNoBlingRapido(indicesBling, {
           idProduto,
           referencia,
           nomeVinculo,
         });
 
+        if (!blProduto) semBling++;
+
         const categoria = getCategoriaFromBling(blProduto, categoriaIdx);
+        if (!categoria) semCategoria++;
 
         let od = definirOD(nome);
         if (od === 3) od = definirOD(referencia);
@@ -742,36 +868,36 @@ app.post(
         linhaAtual++;
         processados++;
 
-        console.log(
-          categoria
-            ? chalk.greenBright(
-                `✅ [${processados}] ${nome} — Categoria: ${categoria}`
-              )
-            : chalk.yellow(`⚠️ [${processados}] ${nome} — Categoria vazia`)
-        );
+        /**
+         * ✅ Log leve para performance.
+         * Não imprime toda linha.
+         */
+        if (processados % 500 === 0) {
+          console.log(chalk.cyanBright(`Processados: ${processados}`));
+        }
       }
 
+      /**
+       * ✅ Não salva cópia extra no disco.
+       * Ganha performance.
+       */
       const buffer = await workbook.xlsx.writeBuffer();
 
-      const outputPath = path.resolve(
-        uploadDir,
-        `AUTOMACAO - MODELO - ${new Date()
-          .toLocaleDateString("pt-BR")
-          .replaceAll("/", "-")}.xlsx`
-      );
-
-      try {
-        fs.writeFileSync(outputPath, Buffer.from(buffer));
-        console.log(chalk.greenBright(`📁 Arquivo salvo em: ${outputPath}`));
-      } catch (e) {
-        console.log(
-          chalk.yellow("⚠️ Não foi possível salvar no disco. Continuando...")
-        );
-      }
+      const duracaoSeg = ((Date.now() - inicio) / 1000).toFixed(2);
 
       console.log(
-        chalk.cyanBright(`\n💾 ${processados} linhas gravadas com sucesso.\n`)
+        chalk.greenBright(
+          `\n💾 ${processados} linhas gravadas com sucesso em ${duracaoSeg}s.`
+        )
       );
+
+      if (semBling > 0) {
+        console.log(chalk.yellow(`⚠️ Produtos não encontrados no Bling: ${semBling}`));
+      }
+
+      if (semCategoria > 0) {
+        console.log(chalk.yellow(`⚠️ Linhas com categoria vazia: ${semCategoria}`));
+      }
 
       res.setHeader(
         "Content-Type",
