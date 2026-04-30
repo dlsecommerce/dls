@@ -97,12 +97,13 @@ export function useAutomacaoPlanilhas() {
         if (file) formData.append(key, file);
       }
 
-      const API_BASE = process.env.NEXT_PUBLIC_AUTOMACAO_API_URL;
-
-      const response = await fetch(`${API_BASE}/atualizar-planilha`, {
+      const response = await fetch(
+      "https://dlsecommerce-api.onrender.com/atualizar-planilha",
+      {
       method: "POST",
       body: formData,
-      });
+      }
+);
 
       // ❌ Falha real no servidor
       if (!response.ok) {
