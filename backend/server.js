@@ -29,9 +29,9 @@ app.use(
         origin.includes("http://localhost") ||
         origin.includes("http://127.0.0.1");
 
-      if (ALLOWED_ORIGINS.length === 0 && isLocal) return cb(null, true);
-
-      if (ALLOWED_ORIGINS.includes(origin) || isLocal) return cb(null, true);
+      if (ALLOWED_ORIGINS.includes(origin) || isLocal) {
+        return cb(null, true);
+      }
 
       return cb(new Error("CORS bloqueado para: " + origin));
     },
