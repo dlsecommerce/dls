@@ -11,21 +11,26 @@ import { parse as parseCsv } from "csv-parse/sync";
 const app = express();
 
 /**
- * ✅ NECESSÁRIO NA VERCEL
- * Desativa o bodyParser padrão do Next/Vercel para permitir upload com multer.
+ * ✅ Render/Node backend
+ * - Este arquivo é para rodar no Render, NÃO na Vercel.
+ * - No Render usamos app.listen(PORT).
+ * - A rota da automação é /atualizar-planilha.
  */
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+
+const uploadDir = path.resolve("uploads");
+
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 /**
  * ✅ CORS
- * Como a API está no mesmo domínio da Vercel, normalmente nem precisaria.
- * Mas mantive para liberar seu domínio e localhost.
+ * Em produção, coloque seu domínio em ALLOWED_ORIGINS no Render:
+ * ALLOWED_ORIGINS=https://dlsecommerce.vercel.app
  */
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "https://dlsecommerce.vercel.app")
+const ALLOWED_ORIGINS = (
+  process.env.ALLOWED_ORIGINS || "https://dlsecommerce.vercel.app"
+)
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
@@ -50,10 +55,13 @@ app.use(
   })
 );
 
-/**
- * ✅ Na Vercel, só pode gravar temporariamente em /tmp
- */
-const upload = multer({ dest: "/tmp" });
+// ✅ mantém uploads em disco no Render
+const upload = multer({ dest: uploadDir });
+
+/** ✅ Rota teste para verificar se o Render subiu */
+app.get("/", (req, res) => {
+  res.send("API da automação rodando ✅");
+});
 
 /** 🔤 Normalização */
 function normalize(s = "") {
@@ -456,9 +464,9 @@ function getNomeVinculo(v) {
   return limparTexto(val);
 }
 
-/** 🚀 Endpoint principal - Vercel */
+/** 🚀 Endpoint principal - Render */
 app.post(
-  "/api/atualizar-planilha",
+  "/atualizar-planilha",
   upload.fields([
     { name: "modelo" },
     { name: "bling" },
@@ -746,7 +754,7 @@ app.post(
       const buffer = await workbook.xlsx.writeBuffer();
 
       const outputPath = path.resolve(
-        "/tmp",
+        uploadDir,
         `AUTOMACAO - MODELO - ${new Date()
           .toLocaleDateString("pt-BR")
           .replaceAll("/", "-")}.xlsx`
@@ -792,8 +800,8 @@ app.post(
   }
 );
 
-/**
- * ✅ ESSENCIAL NA VERCEL
- * Não usar app.listen().
- */
-export default app;
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () =>
+  console.log(chalk.magentaBright(`🚀 Servidor rodando na porta ${PORT}`))
+);
