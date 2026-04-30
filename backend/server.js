@@ -360,7 +360,10 @@ function criarIndicesBling(bling) {
 }
 
 /** 🔎 Busca rápida no Bling usando os índices */
-function encontrarProdutoNoBlingRapido(indices, { idProduto, referencia, nomeVinculo }) {
+function encontrarProdutoNoBlingRapido(
+  indices,
+  { idProduto, referencia, nomeVinculo }
+) {
   const id = String(idProduto || "").trim();
   const refNorm = normCode(referencia);
   const nomeNormVinc = normalize(nomeVinculo);
@@ -570,6 +573,37 @@ function getNomeVinculo(v) {
   return limparTexto(val);
 }
 
+/**
+ * ✅ Nome do arquivo baixado
+ * Ex:
+ * AUTOMAÇÃO - PLANILHA - 30-04-2026 14-13-36.xlsx
+ */
+function formatarDataHoraNomeArquivo() {
+  const agora = new Date();
+
+  const partes = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(agora);
+
+  const get = (type) => partes.find((p) => p.type === type)?.value || "";
+
+  const dia = get("day");
+  const mes = get("month");
+  const ano = get("year");
+  const hora = get("hour");
+  const minuto = get("minute");
+  const segundo = get("second");
+
+  return `${dia}-${mes}-${ano} ${hora}-${minuto}-${segundo}`;
+}
+
 /** 🚀 Endpoint principal - Render */
 app.post(
   "/atualizar-planilha",
@@ -620,7 +654,6 @@ app.post(
 
       const vinculo = lerCSV(vinculoPath);
 
-      // Tray mantido como opcional, mas não precisa ser varrido no fluxo atual.
       if (trayPath) {
         console.log(chalk.gray("📄 Tray recebido."));
       }
@@ -687,10 +720,6 @@ app.post(
         quantCols.push(q);
       }
 
-      /**
-       * ✅ Limpa conteúdo antigo.
-       * Mantém estilos do modelo.
-       */
       sheet.eachRow((row, rowNumber) => {
         if (rowNumber >= 3) {
           row.eachCell((cell) => {
@@ -705,10 +734,6 @@ app.post(
         )
       );
 
-      /**
-       * ✅ Índice de PAI por grupo.
-       * Uma passada só.
-       */
       const parentTrayByGroup = new Map();
 
       for (const v of vinculo) {
@@ -868,19 +893,11 @@ app.post(
         linhaAtual++;
         processados++;
 
-        /**
-         * ✅ Log leve para performance.
-         * Não imprime toda linha.
-         */
         if (processados % 500 === 0) {
           console.log(chalk.cyanBright(`Processados: ${processados}`));
         }
       }
 
-      /**
-       * ✅ Não salva cópia extra no disco.
-       * Ganha performance.
-       */
       const buffer = await workbook.xlsx.writeBuffer();
 
       const duracaoSeg = ((Date.now() - inicio) / 1000).toFixed(2);
@@ -899,6 +916,8 @@ app.post(
         console.log(chalk.yellow(`⚠️ Linhas com categoria vazia: ${semCategoria}`));
       }
 
+      const nomeArquivo = `AUTOMAÇÃO - PLANILHA - ${formatarDataHoraNomeArquivo()}.xlsx`;
+
       res.setHeader(
         "Content-Type",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -906,7 +925,7 @@ app.post(
 
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="AUTOMACAO - MODELO - ${Date.now()}.xlsx"`
+        `attachment; filename="${nomeArquivo}"`
       );
 
       return res.status(200).send(Buffer.from(buffer));
