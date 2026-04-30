@@ -1,6 +1,7 @@
 // 📄 src/components/costtable/helpers/exportFilteredToXlsx.ts
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
+import { createNotification } from "@/lib/createNotification";
 
 /**
  * Tipo que representa uma linha da tabela de custos
@@ -8,7 +9,7 @@ import { saveAs } from "file-saver";
 export type CustoRow = {
   ["Código"]: string;
   ["Marca"]: string;
-  ["Produto"]?: string; // ✅ NOVO
+  ["Produto"]?: string;
   ["Custo Atual"]: number | string;
   ["Custo Antigo"]: number | string;
   ["NCM"]: string;
@@ -32,41 +33,31 @@ function parseCostToNumber(value: number | string | null | undefined): number {
   let raw = String(value).trim();
   if (!raw) return 0;
 
-  // Remove tudo que não seja dígito, ponto, vírgula ou sinal
   raw = raw.replace(/[^\d.,-]/g, "");
 
-  // CASO A: tem ponto e NÃO tem vírgula
-  // Pode ser:
-  // - milhar pt-BR: 25.000 / 1.250.000
-  // - decimal US: 126.97
   if (raw.includes(".") && !raw.includes(",")) {
     const parts = raw.split(".");
     const last = parts[parts.length - 1];
 
-    // Se termina com 3 dígitos, assume separador de milhar
     if (/^\d{3}$/.test(last)) {
       const n = parseFloat(raw.replace(/\./g, ""));
       return Number.isFinite(n) ? n : 0;
     }
 
-    // Caso contrário, assume decimal
     const n = parseFloat(raw);
     return Number.isFinite(n) ? n : 0;
   }
 
-  // CASO B: tem vírgula e NÃO tem ponto -> 126,97
   if (raw.includes(",") && !raw.includes(".")) {
     const n = parseFloat(raw.replace(",", "."));
     return Number.isFinite(n) ? n : 0;
   }
 
-  // CASO C: tem ponto e vírgula -> 1.234,56
   if (raw.includes(".") && raw.includes(",")) {
     const n = parseFloat(raw.replace(/\./g, "").replace(",", "."));
     return Number.isFinite(n) ? n : 0;
   }
 
-  // CASO D: inteiro simples -> 3100
   const n = parseFloat(raw);
   return Number.isFinite(n) ? n : 0;
 }
@@ -74,10 +65,11 @@ function parseCostToNumber(value: number | string | null | undefined): number {
 /**
  * Exporta os dados filtrados da tabela de custos em formato XLSX.
  * ⚙️ Otimizado para grandes volumes de dados:
- * - Divide a geração em partes (para não travar a UI)
+ * - Divide a geração em partes para não travar a UI
  * - Cabeçalho azul estilizado (#1A8CEB)
- * - Mantém custos como NÚMERO no Excel (evita virar texto)
+ * - Mantém custos como NÚMERO no Excel
  * - Gera e baixa automaticamente o arquivo XLSX
+ * - Cria notificação informativa após o download ser iniciado
  */
 export async function exportFilteredToXlsx(rows: CustoRow[], filename: string) {
   if (!rows || rows.length === 0) {
@@ -85,7 +77,6 @@ export async function exportFilteredToXlsx(rows: CustoRow[], filename: string) {
     return;
   }
 
-  // 🧱 Cabeçalhos fixos (✅ NOVO: Produto)
   const header = [
     "Código",
     "Marca",
@@ -95,30 +86,30 @@ export async function exportFilteredToXlsx(rows: CustoRow[], filename: string) {
     "NCM",
   ];
 
-  // 🔄 Normaliza os dados (IMPORTANTE: custos viram number “de verdade”)
   const normalized = rows.map((r) => ({
     "Código": r["Código"] ?? "",
     "Marca": r["Marca"] ?? "",
-    "Produto": r["Produto"] ?? "", // ✅ NOVO
+    "Produto": r["Produto"] ?? "",
     "Custo Atual": parseCostToNumber(r["Custo Atual"]),
     "Custo Antigo": parseCostToNumber(r["Custo Antigo"]),
     "NCM": r["NCM"] ?? "",
   }));
 
-  // ⚙️ Cabeçalho estilizado
   const headerStyle = {
-    fill: { type: "pattern", patternType: "solid", fgColor: { rgb: "1A8CEB" } },
+    fill: {
+      type: "pattern",
+      patternType: "solid",
+      fgColor: { rgb: "1A8CEB" },
+    },
     font: { bold: true, color: { rgb: "FFFFFF" } },
     alignment: { horizontal: "center", vertical: "center" as const },
   };
 
-  // 🔢 (Opcional, mas recomendado) formato numérico para as colunas de custo no Excel
   const moneyCellStyle = {
     numFmt: "#,##0.00",
     alignment: { horizontal: "right", vertical: "center" as const },
   };
 
-  // 🔹 Função auxiliar para gerar planilha sem travar a UI
   const generateSheetAsync = (): Promise<Blob> =>
     new Promise((resolve) => {
       setTimeout(() => {
@@ -127,7 +118,7 @@ export async function exportFilteredToXlsx(rows: CustoRow[], filename: string) {
           ...normalized.map((o) => [
             o["Código"],
             o["Marca"],
-            o["Produto"], // ✅ NOVO
+            o["Produto"],
             o["Custo Atual"],
             o["Custo Antigo"],
             o["NCM"],
@@ -136,45 +127,58 @@ export async function exportFilteredToXlsx(rows: CustoRow[], filename: string) {
 
         const ws = XLSX.utils.aoa_to_sheet(data);
 
-        // Aplica estilo no cabeçalho
         header.forEach((_, col) => {
           const cellRef = XLSX.utils.encode_cell({ r: 0, c: col });
-          if ((ws as any)[cellRef]) (ws as any)[cellRef].s = headerStyle;
+          if ((ws as any)[cellRef]) {
+            (ws as any)[cellRef].s = headerStyle;
+          }
         });
 
-        // Aplica formatação numérica nas colunas de custo
-        // Agora: Custo Atual = coluna D (index 3), Custo Antigo = coluna E (index 4)
         for (let r = 1; r <= normalized.length; r++) {
-          // Coluna D (index 3) -> Custo Atual
           const cAtualRef = XLSX.utils.encode_cell({ r, c: 3 });
-          if ((ws as any)[cAtualRef]) (ws as any)[cAtualRef].s = moneyCellStyle;
+          if ((ws as any)[cAtualRef]) {
+            (ws as any)[cAtualRef].s = moneyCellStyle;
+          }
 
-          // Coluna E (index 4) -> Custo Antigo
           const cAntigoRef = XLSX.utils.encode_cell({ r, c: 4 });
-          if ((ws as any)[cAntigoRef]) (ws as any)[cAntigoRef].s = moneyCellStyle;
+          if ((ws as any)[cAntigoRef]) {
+            (ws as any)[cAntigoRef].s = moneyCellStyle;
+          }
         }
 
-        // Define largura das colunas (✅ NOVO: Produto)
         (ws as any)["!cols"] = [
-          { wch: 16 }, // Código
-          { wch: 20 }, // Marca
-          { wch: 34 }, // Produto
-          { wch: 14 }, // Custo Atual
-          { wch: 14 }, // Custo Antigo
-          { wch: 14 }, // NCM
+          { wch: 16 },
+          { wch: 20 },
+          { wch: 34 },
+          { wch: 14 },
+          { wch: 14 },
+          { wch: 14 },
         ];
 
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Relatorio");
 
         const buffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-        const blob = new Blob([buffer], { type: "application/octet-stream" });
+        const blob = new Blob([buffer], {
+          type: "application/octet-stream",
+        });
+
         resolve(blob);
-      }, 50); // ⏳ dá tempo do navegador respirar (UI não trava)
+      }, 50);
     });
 
-  // 🧾 Gera e baixa o arquivo
   const blob = await generateSheetAsync();
-  const safeFilename = filename.endsWith(".xlsx") ? filename : `${filename}.xlsx`;
+  const safeFilename = filename.endsWith(".xlsx")
+    ? filename
+    : `${filename}.xlsx`;
+
   saveAs(blob, safeFilename);
+
+  await createNotification({
+    title: "Relatório de custos exportado",
+    message: `O relatório "${safeFilename}" foi exportado com ${rows.length} custo(s).`,
+    action: "status",
+    entityType: "cost_export",
+    link: "/dashboard/custos",
+  });
 }

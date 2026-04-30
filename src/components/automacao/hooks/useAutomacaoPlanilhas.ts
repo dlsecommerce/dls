@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createNotification } from "@/lib/createNotification";
 
 /** Tipagem das planilhas */
 interface Planilhas {
@@ -16,7 +17,7 @@ type Loja = "Pikot Shop" | "Sóbaquetas" | "Sobaquetas";
 const REQUIRED_BY_LOJA: Record<Loja, (keyof Planilhas)[]> = {
   "Pikot Shop": ["bling", "tray", "vinculo", "modelo"],
   "Sóbaquetas": ["bling", "vinculo", "modelo"],
-  "Sobaquetas": ["bling", "vinculo", "modelo"], // fallback se vier sem acento
+  "Sobaquetas": ["bling", "vinculo", "modelo"],
 };
 
 /**
@@ -28,7 +29,7 @@ const REQUIRED_BY_LOJA: Record<Loja, (keyof Planilhas)[]> = {
  */
 function getApiBase() {
   const env = process.env.NEXT_PUBLIC_AUTOMACAO_API_URL;
-  if (env && env.trim()) return env.replace(/\/+$/, ""); // remove "/" no fim
+  if (env && env.trim()) return env.replace(/\/+$/, "");
 
   if (typeof window !== "undefined") {
     const isLocal =
@@ -37,12 +38,14 @@ function getApiBase() {
 
     if (isLocal) return "http://localhost:5000";
 
-    // produção sem env: assume que existe proxy/rewrite no mesmo domínio
     return "";
   }
 
-  // SSR fallback
   return "http://localhost:5000";
+}
+
+function buildAutomationMessage(loja: Loja, nomeArquivo: string) {
+  return `A automação da loja ${loja} gerou o arquivo "${nomeArquivo}".`;
 }
 
 /** 🔹 Hook principal de automação de planilhas */
@@ -65,9 +68,16 @@ export function useAutomacaoPlanilhas() {
 
   /** Util: valida se os arquivos exigidos existem */
   const validateRequired = (loja: Loja) => {
-    const requiredKeys = REQUIRED_BY_LOJA[loja] ?? REQUIRED_BY_LOJA["Pikot Shop"];
+    const requiredKeys =
+      REQUIRED_BY_LOJA[loja] ?? REQUIRED_BY_LOJA["Pikot Shop"];
+
     const missing = requiredKeys.filter((k) => !planilhas[k]);
-    return { ok: missing.length === 0, requiredKeys, missing };
+
+    return {
+      ok: missing.length === 0,
+      requiredKeys,
+      missing,
+    };
   };
 
   /** 🔹 Envia as planilhas para o servidor Node.js */
@@ -97,13 +107,17 @@ export function useAutomacaoPlanilhas() {
         if (file) formData.append(key, file);
       }
 
+      const apiBase = getApiBase();
+
       const response = await fetch(
-      "https://dlsecommerce-api.onrender.com/atualizar-planilha",
-      {
-      method: "POST",
-      body: formData,
-      }
-);
+        apiBase
+          ? `${apiBase}/atualizar-planilha`
+          : "/atualizar-planilha",
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
 
       // ❌ Falha real no servidor
       if (!response.ok) {
@@ -111,8 +125,11 @@ export function useAutomacaoPlanilhas() {
         throw new Error(text || "Erro ao processar as planilhas.");
       }
 
+      setStatus("processing");
+
       // ❌ Servidor não retornou Excel
       const contentType = response.headers.get("content-type") || "";
+
       const isExcel =
         contentType.includes("spreadsheet") ||
         contentType.includes(
@@ -147,17 +164,29 @@ export function useAutomacaoPlanilhas() {
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
+
       a.href = url;
       a.download = nomeArquivo;
+
       document.body.appendChild(a);
       a.click();
       a.remove();
+
       URL.revokeObjectURL(url);
+
+      await createNotification({
+        title: "Automação de planilhas concluída",
+        message: buildAutomationMessage(loja, nomeArquivo),
+        action: "status",
+        entityType: "spreadsheet_automation",
+        link: "/dashboard/anuncios",
+      });
 
       // ✅ Concluído
       setStatus("done");
     } catch (error) {
       console.error("Erro na automação:", error);
+
       alert(
         "A automação falhou.\n\n" +
           "⚠️ Se você usa AdBlock, uBlock, Brave ou antivírus com proteção web,\n" +
@@ -165,6 +194,7 @@ export function useAutomacaoPlanilhas() {
           "Detalhe: " +
           (error instanceof Error ? error.message : "erro desconhecido")
       );
+
       setStatus("error");
     }
   };

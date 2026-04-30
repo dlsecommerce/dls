@@ -249,14 +249,19 @@ export default function AnnounceTable() {
       );
 
       await createNotification({
-        title:
-          selectedRowsSnapshot.length === 1
-            ? "Anúncio excluído"
-            : "Anúncios excluídos",
-        message: deleteMessage,
-        action: "delete",
-        entityType: "announcement",
-      });
+  title:
+    selectedRowsSnapshot.length === 1
+      ? "Anúncio excluído"
+      : "Anúncios excluídos",
+  message: deleteMessage,
+  action: "delete",
+  entityType: "announcement",
+  entityId:
+    selectedRowsSnapshot.length === 1
+      ? String(selectedRowsSnapshot[0]?.id ?? selectedRowsSnapshot[0]?.ID ?? "")
+      : undefined,
+  link: "/dashboard/anuncios",
+});
 
       data.setOpenDelete(false);
       data.setSelectedRows([]);

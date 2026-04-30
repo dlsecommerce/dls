@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { DollarSign, HelpCircle, Download, Trash2 } from "lucide-react";
@@ -6,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
+import { createNotification } from "@/lib/createNotification";
 import { Item } from "@/components/decomposition/CompositionCosts";
 import { ResultadoView } from "@/components/decomposition/Results";
 
@@ -41,7 +43,7 @@ export default function PrecoVenda({
   const [clicks, setClicks] = useState(0);
 
   /* === DOWNLOAD XLSX COM ESTILO === */
-  const handleDownload = () => {
+  const handleDownload = async () => {
     const now = new Date();
     const dataFormatada = now.toLocaleDateString("pt-BR").replace(/\//g, "-");
     const horaFormatada = `${now
@@ -51,6 +53,7 @@ export default function PrecoVenda({
       .getMinutes()
       .toString()
       .padStart(2, "0")}m`;
+
     const fileName = `DECOMPOSIÇÃO_${dataFormatada}_${horaFormatada}.xlsx`;
 
     const composicaoRows: (string | number)[][] = [
@@ -101,6 +104,7 @@ export default function PrecoVenda({
 
     const applyHeaderStyle = (sheet: any, headerRow: number) => {
       const headers = ["A", "B", "C"];
+
       headers.forEach((col) => {
         const cellRef = `${col}${headerRow}`;
         if (sheet[cellRef]) sheet[cellRef].s = headerStyle;
@@ -114,6 +118,7 @@ export default function PrecoVenda({
     resultadosSheet["!cols"] = [{ wch: 18 }, { wch: 18 }, { wch: 18 }];
 
     const wb = XLSX.utils.book_new();
+
     XLSX.utils.book_append_sheet(wb, composicaoSheet, "Composição");
     XLSX.utils.book_append_sheet(wb, resultadosSheet, "Resultados");
 
@@ -126,7 +131,16 @@ export default function PrecoVenda({
     const blob = new Blob([wbout], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
+
     saveAs(blob, fileName);
+
+    await createNotification({
+      title: "Decomposição exportada",
+      message: `A planilha "${fileName}" foi exportada com ${resultados.length} resultado(s).`,
+      action: "status",
+      entityType: "decomposition_export",
+      link: "/dashboard/precificacao/decomposicao",
+    });
   };
 
   const handleClearAll = () => {
@@ -150,17 +164,19 @@ export default function PrecoVenda({
 
   useEffect(() => {
     if (clicks === 0) return;
+
     const timer = setTimeout(() => setClicks(0), 5000);
+
     return () => clearTimeout(timer);
   }, [clicks]);
 
-  /* === JSX === */
   return (
     <div className="mb-4 sm:mb-3 relative">
       {/* Cabeçalho */}
       <div className="flex justify-between items-center mb-2 sm:mb-1 gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <DollarSign className="w-5 h-5 text-[#1a8ceb] shrink-0" />
+
           <h3 className="text-white text-sm font-semibold flex items-center gap-2 min-w-0">
             <span className="truncate">Preço de Venda</span>
             <HelpTooltip text="Preço de Venda Total." />
@@ -170,7 +186,9 @@ export default function PrecoVenda({
         <div className="flex items-center gap-2 shrink-0">
           <motion.button
             whileTap={{ scale: 0.9 }}
-            onClick={handleDownload}
+            onClick={() => {
+              void handleDownload();
+            }}
             title="Baixar planilha Excel"
             className="h-10 w-10 sm:h-auto sm:w-auto sm:p-2 flex items-center justify-center hover:bg-white/10 rounded-full transition-all"
           >
@@ -208,6 +226,7 @@ export default function PrecoVenda({
         onBlur={onBlurPrecoVenda}
         className="h-11 sm:h-auto bg-black/50 border-white/10 text-white text-base sm:text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
       />
+
       <Label className="text-neutral-400 text-xs sm:text-[10px] mt-1.5 sm:mt-1 block">
         Digite o preço final da venda
       </Label>

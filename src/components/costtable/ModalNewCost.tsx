@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { DollarSign, Loader } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { createNotification } from "@/lib/createNotification";
 
 export type Custo = {
   ["Código"]: string;
@@ -201,8 +202,10 @@ export default function ModalNewCost({
   }, [form, marcas]);
 
   const isDropdownActive = marcaFocus;
-    useEffect(() => {
+
+  useEffect(() => {
     if (!isDropdownActive) return;
+
     setIndiceSelecionado((prev) => {
       if (prev < 0) return 0;
       if (prev > sugestoesMarca.length - 1) return 0;
@@ -226,6 +229,7 @@ export default function ModalNewCost({
         setMarcaFocus(false);
       }
     };
+
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
@@ -280,11 +284,11 @@ export default function ModalNewCost({
     ) {
       const idx = Number(e.key) - 1;
       const item = sugestoesMarca[idx];
+
       if (item) {
         e.preventDefault();
         selectMarca(item.marca);
       }
-      return;
     }
   };
 
@@ -313,7 +317,6 @@ export default function ModalNewCost({
       return;
     }
 
-    // Agora aceita letras, números, hífen, underline, ponto e espaço
     if (!/^[a-zA-Z0-9\-_. ]+$/.test(codigoLimpo)) {
       setToast({
         message: "Código contém caracteres inválidos.",
@@ -350,6 +353,7 @@ export default function ModalNewCost({
         const { error: insertError } = await supabase
           .from("custos")
           .insert([payload]);
+
         error = insertError;
       } else {
         const codigoParaBuscar = String(oldCodigo || form["Código"] || "")
@@ -369,6 +373,18 @@ export default function ModalNewCost({
       }
 
       if (error) throw error;
+
+      await createNotification({
+        title: mode === "create" ? "Custo incluído" : "Custo atualizado",
+        message:
+          mode === "create"
+            ? `O custo "${codigoLimpo}" foi incluído.`
+            : `O custo "${codigoLimpo}" foi atualizado.`,
+        action: mode === "create" ? "create" : "update",
+        entityType: "cost",
+        entityId: codigoLimpo,
+        link: "/dashboard/custos",
+      });
 
       setToast({
         message:
@@ -391,7 +407,8 @@ export default function ModalNewCost({
       setTimeout(() => setToast({ message: "", type: null }), 3000);
     }
   };
-    return (
+
+  return (
     <>
       {toast.type && (
         <div

@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
+import { createNotification } from "@/lib/createNotification";
 
 type ImportResult = {
   data: any[];
@@ -23,7 +24,7 @@ const REQUIRED_COLUMNS = [
  * - INITIAL_BATCH_SIZE: tamanho inicial do lote (vai se adaptar pra baixo se der timeout)
  */
 const DEBUG_STRICT_COMMA_CHECK = false;
-const INITIAL_BATCH_SIZE = 800; // bom ponto de partida para 50k+ (auto reduz se necessário)
+const INITIAL_BATCH_SIZE = 800;
 const MIN_BATCH_SIZE = 50;
 const MAX_RETRIES = 6;
 
@@ -32,8 +33,8 @@ const MAX_RETRIES = 6;
  */
 function cleanHeaderKey(key: string) {
   return String(key)
-    .replace(/\u00a0/g, " ") // NBSP -> espaço normal
-    .replace(/\s+/g, " ") // múltiplos espaços
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -133,13 +134,15 @@ function normalizeCodigo(value: any): string | null {
   if (!/^[a-zA-Z0-9\-_.]+$/.test(codigo)) return null;
 
   const lower = codigo.toLowerCase();
-  if (lower === "null" || lower === "undefined" || lower === "nan") return null;
+  if (lower === "null" || lower === "undefined" || lower === "nan") {
+    return null;
+  }
 
   return codigo;
 }
 
 // =====================================================================
-// ✅ normalizeRow agora já devolve o PAYLOAD FINAL do banco (mais rápido)
+// ✅ normalizeRow já devolve o PAYLOAD FINAL do banco
 // =====================================================================
 function normalizeRow(rowRaw: Record<string, any>) {
   const row = normalizeRowKeys(rowRaw);
@@ -179,7 +182,7 @@ function normalizeRow(rowRaw: Record<string, any>) {
 }
 
 // =====================================================================
-// ✅ Validação rápida (barata) — boa para 50k+
+// ✅ Validação rápida
 // =====================================================================
 function assertNumericOkFast(batch: any[]) {
   for (let idx = 0; idx < batch.length; idx++) {
@@ -203,7 +206,7 @@ function assertNumericOkFast(batch: any[]) {
 }
 
 // =====================================================================
-// 🧪 Validação pesada opcional (debug)
+// 🧪 Validação pesada opcional
 // =====================================================================
 function assertNoCommaStringsStrict(batch: any[]) {
   for (let idx = 0; idx < batch.length; idx++) {
@@ -211,6 +214,7 @@ function assertNoCommaStringsStrict(batch: any[]) {
     const badCommaString = Object.entries(r).find(
       ([, v]) => typeof v === "string" && v.includes(",")
     );
+
     if (badCommaString) {
       console.error(
         "🚨 String com vírgula detectada no payload (índice no batch):",
@@ -222,6 +226,7 @@ function assertNoCommaStringsStrict(batch: any[]) {
         "linha:",
         r
       );
+
       throw new Error(
         `Payload inválido: string com vírgula detectada no campo "${badCommaString[0]}".`
       );
@@ -252,7 +257,7 @@ function sleep(ms: number) {
 }
 
 // =====================================================================
-// 🚚 UPSERT EM LOTES (50k+)
+// 🚚 UPSERT EM LOTES
 // =====================================================================
 async function upsertInBatches(
   rows: any[],
@@ -340,6 +345,29 @@ async function upsertInBatches(
   }
 }
 
+async function notifyCostImportResult(params: {
+  tipo: "inclusao" | "alteracao";
+  total: number;
+}) {
+  const { tipo, total } = params;
+
+  if (total <= 0) return;
+
+  await createNotification({
+    title:
+      tipo === "inclusao"
+        ? "Importação de custos concluída"
+        : "Atualização de custos concluída",
+    message:
+      tipo === "inclusao"
+        ? `${total} custo(s) foram processados. Códigos existentes foram ignorados.`
+        : `${total} custo(s) foram atualizados por código.`,
+    action: tipo === "inclusao" ? "create" : "update",
+    entityType: "cost_import",
+    link: "/dashboard/custos",
+  });
+}
+
 // =====================================================================
 // 🔥 FUNÇÃO PRINCIPAL
 // =====================================================================
@@ -351,6 +379,7 @@ export async function importFromXlsxOrCsv(
   const warnings: string[] = [];
 
   const now = new Date();
+
   const fileName = `${
     tipo === "inclusao" ? "INCLUSÃO" : "ALTERAÇÃO"
   } - ${now
@@ -364,6 +393,7 @@ export async function importFromXlsxOrCsv(
   // 📁 INPUT FILE
   if (input instanceof File) {
     const buffer = await input.arrayBuffer();
+
     const workbook = XLSX.read(buffer, {
       type: "array",
       codepage: 65001,
@@ -371,10 +401,12 @@ export async function importFromXlsxOrCsv(
     });
 
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
+
     rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
       defval: "",
     });
   }
+
   // 📦 INPUT ARRAY
   else if (Array.isArray(input)) {
     rawRows = input as Record<string, any>[];
@@ -385,6 +417,7 @@ export async function importFromXlsxOrCsv(
   // 🔎 Validação de colunas (somente quando veio de arquivo)
   if (rawRows.length > 0 && input instanceof File) {
     const headers = Object.keys(normalizeRowKeys(rawRows[0] || {}));
+
     const missing = REQUIRED_COLUMNS.filter(
       (col) =>
         !headers.some(
@@ -400,7 +433,7 @@ export async function importFromXlsxOrCsv(
     }
   }
 
-  // 🔧 NORMALIZAÇÃO (já no payload final)
+  // 🔧 NORMALIZAÇÃO
   const normalizedAll = rawRows.map(normalizeRow).filter(Boolean) as any[];
 
   const totalLidas = rawRows.length;
@@ -443,7 +476,7 @@ export async function importFromXlsxOrCsv(
     };
   }
 
-  // ✅ IMPORTAÇÃO REAL (50k+)
+  // ✅ IMPORTAÇÃO REAL
   await upsertInBatches(deduped, tipo, {
     initialBatchSize: INITIAL_BATCH_SIZE,
     minBatchSize: MIN_BATCH_SIZE,
@@ -458,6 +491,11 @@ export async function importFromXlsxOrCsv(
   } else {
     warnings.push("Alteração concluída. Registros atualizados por Código.");
   }
+
+  await notifyCostImportResult({
+    tipo,
+    total: deduped.length,
+  });
 
   return {
     data: deduped,

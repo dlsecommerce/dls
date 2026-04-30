@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRouter } from "next/navigation";
+import { createNotification } from "@/lib/createNotification";
 import {
   parseValorBR,
   inferirOD,
@@ -30,6 +31,10 @@ function tabelaFromCodigo(c: LojaCodigo): "anuncios_pk" | "anuncios_sb" {
   return c === "PK" ? "anuncios_pk" : "anuncios_sb";
 }
 
+function lojaCodigoToNome(c: LojaCodigo) {
+  return c === "PK" ? "Pikot Shop" : "Sóbaquetas";
+}
+
 function normalizeStr(v: any): string | null {
   const s = String(v ?? "").trim();
   return s ? s : null;
@@ -53,6 +58,24 @@ function normalizeIdBling(v: any): string | null {
   }
 
   return s;
+}
+
+function getProdutoLabel(produto: any, fallback: string) {
+  return (
+    produto?.nome ||
+    produto?.Nome ||
+    produto?.referencia ||
+    produto?.["Referência"] ||
+    produto?.id_bling ||
+    produto?.["ID Bling"] ||
+    fallback
+  );
+}
+
+function buildAnnouncementLink(id: string | number, lojaCodigo: LojaCodigo) {
+  return `/dashboard/anuncios/edit?id=${encodeURIComponent(
+    String(id)
+  )}&loja=${encodeURIComponent(lojaCodigoToNome(lojaCodigo))}`;
 }
 
 export function useAnuncioActions() {
@@ -127,17 +150,22 @@ export function useAnuncioActions() {
         // =====================================================
         const payload: Record<string, any> = {
           Loja: lojaCodigo,
-          "ID Bling": normalizeIdBling(produto?.id_bling ?? produto?.["ID Bling"]),
+          "ID Bling": normalizeIdBling(
+            produto?.id_bling ?? produto?.["ID Bling"]
+          ),
           "ID Tray": normalizeStr(produto?.id_tray ?? produto?.["ID Tray"]),
           "ID Var": normalizeStr(produto?.id_var ?? produto?.["ID Var"]),
-          Referência: normalizeStr(produto?.referencia ?? produto?.["Referência"]),
+          Referência: normalizeStr(
+            produto?.referencia ?? produto?.["Referência"]
+          ),
           Nome: produto?.nome ?? produto?.["Nome"] ?? null,
           Marca: produto?.marca ?? produto?.["Marca"] ?? null,
           Categoria: produto?.categoria ?? produto?.["Categoria"] ?? null,
           Peso: produto?.peso ?? produto?.["Peso"] ?? null,
           Altura: produto?.altura ?? produto?.["Altura"] ?? null,
           Largura: produto?.largura ?? produto?.["Largura"] ?? null,
-          Comprimento: produto?.comprimento ?? produto?.["Comprimento"] ?? null,
+          Comprimento:
+            produto?.comprimento ?? produto?.["Comprimento"] ?? null,
           OD: od || produto?.["OD"] || null,
           ...camposComposicao,
         };
@@ -152,6 +180,18 @@ export function useAnuncioActions() {
             .eq("ID", idAtualStr);
 
           if (error) throw error;
+
+          await createNotification({
+            title: "Anúncio atualizado",
+            message: `O anúncio "${getProdutoLabel(
+              produto,
+              idAtualStr
+            )}" foi atualizado.`,
+            action: "update",
+            entityType: "announcement",
+            entityId: idAtualStr,
+            link: buildAnnouncementLink(idAtualStr, lojaCodigo),
+          });
 
           if (onAfterSave) onAfterSave();
           else router.push("/dashboard/anuncios");
@@ -184,6 +224,18 @@ export function useAnuncioActions() {
           .insert([payloadNovo] as any);
 
         if (insertError) throw insertError;
+
+        await createNotification({
+          title: "Anúncio criado",
+          message: `O anúncio "${getProdutoLabel(
+            produto,
+            String(novoId)
+          )}" foi criado.`,
+          action: "create",
+          entityType: "announcement",
+          entityId: String(novoId),
+          link: buildAnnouncementLink(novoId, lojaCodigo),
+        });
 
         if (onAfterSave) onAfterSave();
         else router.push("/dashboard/anuncios");
@@ -221,6 +273,18 @@ export function useAnuncioActions() {
 
         if (error) throw error;
 
+        await createNotification({
+          title: "Anúncio excluído",
+          message: `O anúncio "${getProdutoLabel(
+            produto,
+            idProduto
+          )}" foi excluído do sistema.`,
+          action: "delete",
+          entityType: "announcement",
+          entityId: idProduto,
+          link: "/dashboard/anuncios",
+        });
+
         if (onAfterDelete) onAfterDelete();
         else router.push("/dashboard/anuncios");
       } catch (err: any) {
@@ -245,25 +309,66 @@ export function useAnuncioActions() {
       setDeleting(true);
 
       try {
-        const grouped = selectedRows.reduce<Record<string, string[]>>(
+        const selectedRowsSnapshot = [...selectedRows];
+
+        const grouped = selectedRowsSnapshot.reduce<Record<string, string[]>>(
           (acc, row) => {
             const lojaCodigo = lojaAnyToCodigo(row?.loja ?? row?.Loja);
             if (!lojaCodigo) return acc;
 
+            const id = String(row?.id ?? row?.ID ?? "").trim();
+            if (!id) return acc;
+
             const tabela = tabelaFromCodigo(lojaCodigo);
             acc[tabela] = acc[tabela] || [];
-            acc[tabela].push(String(row?.id ?? row?.ID ?? "").trim());
+            acc[tabela].push(id);
             return acc;
           },
           {}
         );
 
         const promises = Object.entries(grouped).map(async ([tabela, ids]) => {
-          const { error } = await supabase.from(tabela as any).delete().in("ID", ids);
+          const { error } = await supabase
+            .from(tabela as any)
+            .delete()
+            .in("ID", ids);
+
           if (error) throw error;
         });
 
         await Promise.all(promises);
+
+        const labels = selectedRowsSnapshot
+          .slice(0, 3)
+          .map((row) => `"${getProdutoLabel(row, row?.id ?? row?.ID ?? "anúncio")}"`);
+
+        const message =
+          selectedRowsSnapshot.length === 1
+            ? `O anúncio ${labels[0]} foi excluído do sistema.`
+            : selectedRowsSnapshot.length <= 3
+            ? `Os anúncios ${labels.join(", ")} foram excluídos do sistema.`
+            : `Os anúncios ${labels.join(", ")} e mais ${
+                selectedRowsSnapshot.length - 3
+              } foram excluídos do sistema.`;
+
+        await createNotification({
+          title:
+            selectedRowsSnapshot.length === 1
+              ? "Anúncio excluído"
+              : "Anúncios excluídos",
+          message,
+          action: "delete",
+          entityType: "announcement",
+          entityId:
+            selectedRowsSnapshot.length === 1
+              ? String(
+                  selectedRowsSnapshot[0]?.id ??
+                    selectedRowsSnapshot[0]?.ID ??
+                    ""
+                )
+              : undefined,
+          link: "/dashboard/anuncios",
+        });
 
         if (onAfterDelete) onAfterDelete();
       } catch (err: any) {
