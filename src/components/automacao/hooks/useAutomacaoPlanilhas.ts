@@ -97,9 +97,9 @@ export function useAutomacaoPlanilhas() {
         if (file) formData.append(key, file);
       }
 
-      setStatus("processing");
+      const API_BASE = process.env.NEXT_PUBLIC_AUTOMACAO_API_URL;
 
-      const response = await fetch("/api/atualizar-planilha", {
+      const response = await fetch(`${API_BASE}/atualizar-planilha`, {
       method: "POST",
       body: formData,
       });
