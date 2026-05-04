@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
+import { createNotification } from "@/lib/createNotification";
 
 import { useTrayImportExport } from "@/components/marketplaces/tray/hooks/useTrayImportExport";
 import { Table, TableBody } from "@/components/ui/table";
@@ -165,6 +166,7 @@ function buildOrSearchParts(tokens: string[]) {
 
   return orParts;
 }
+
 function normalizeLojaCode(lojaRaw: unknown): "PK" | "SB" | null {
   const s = String(lojaRaw ?? "").trim().toUpperCase();
 
@@ -241,6 +243,10 @@ function parseBRNullable(value: any) {
   const parsed = parseBR(value);
 
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getTrayPricingLabel(row: any, fallbackId: string) {
+  return row?.Nome || row?.Referência || row?.ID || fallbackId || "anúncio";
 }
 
 export default function PricingTable() {
@@ -367,6 +373,7 @@ export default function PricingTable() {
 
     didHydrateFromUrlRef.current = true;
   }, [searchParams]);
+
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(timeout);
@@ -671,6 +678,7 @@ export default function PricingTable() {
     setCopiedId(key);
     setTimeout(() => setCopiedId(null), 1200);
   }, []);
+
   const openEditor = useCallback(
     (row: Row, field: keyof Row, isMoney: boolean, e: React.MouseEvent) => {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -826,6 +834,18 @@ export default function PricingTable() {
           throw new Error("Nenhuma linha atualizada no fallback.");
         }
       }
+
+      await createNotification({
+        title: "Precificação Tray atualizada",
+        message: `O campo "${String(field)}" do anúncio "${getTrayPricingLabel(
+          currentRow,
+          dbIdStr
+        )}" foi atualizado.`,
+        action: "update",
+        entityType: "tray_pricing",
+        entityId: String((currentRow as any)?.ID || dbIdStr),
+        link: "/dashboard/marketplaces/tray",
+      });
     } catch (e: any) {
       console.error("❌ Falha ao salvar. Revertendo UI.", e);
       alert("Erro ao salvar. Veja o console.");

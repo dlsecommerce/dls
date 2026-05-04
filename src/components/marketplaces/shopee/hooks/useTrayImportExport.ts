@@ -6,6 +6,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { unlockAudio, playImportSuccessSound } from "@/utils/sound";
 import { toastCustom } from "@/utils/toastCustom";
+import { createNotification } from "@/lib/createNotification";
 
 export function useTrayImportExport(
   rows: any[],
@@ -90,7 +91,9 @@ export function useTrayImportExport(
 
         const middle = Array.from(new Set(partes)).filter(Boolean).join("-");
 
-        const stamp = format(new Date(), "dd-MM-yyyy HH'h'mm", { locale: ptBR });
+        const stamp = format(new Date(), "dd-MM-yyyy HH'h'mm", {
+          locale: ptBR,
+        });
 
         // ✅ Nome correto: SHOPEE
         const fileName =
@@ -143,7 +146,11 @@ export function useTrayImportExport(
 
         sheet.addRow([]);
         sheet.addRow(headers);
-        sheet.columns = headers.map((h) => ({ header: h, key: h, width: 18 }));
+        sheet.columns = headers.map((h) => ({
+          header: h,
+          key: h,
+          width: 18,
+        }));
         sheet.views = [{ state: "frozen", ySplit: 2 }];
 
         sheet.mergeCells("A1:G1");
@@ -290,7 +297,9 @@ export function useTrayImportExport(
 
           // ✅ P (Margem) = preserva se veio do import; senão, deixa em branco
           sheet.getCell(`P${rowNumber}`).value =
-            margemAtual === undefined || margemAtual === "" ? null : margemAtual;
+            margemAtual === undefined || margemAtual === ""
+              ? null
+              : margemAtual;
 
           // Q (Marketing) = 3 (editável na planilha)
           sheet.getCell(`Q${rowNumber}`).value = 3;
@@ -355,6 +364,14 @@ export function useTrayImportExport(
           }),
           fileName
         );
+
+        await createNotification({
+          title: "Relatório Shopee exportado",
+          message: `O relatório "${fileName}" foi exportado com ${data.length} anúncio(s).`,
+          action: "status",
+          entityType: "shopee_pricing_export",
+          link: "/dashboard/marketplaces/shopee",
+        });
 
         toastCustom.success(
           "Exportação concluída!",

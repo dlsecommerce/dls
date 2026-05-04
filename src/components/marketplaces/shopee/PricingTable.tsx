@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
+import { createNotification } from "@/lib/createNotification";
 import { useTrayImportExport } from "@/components/marketplaces/shopee/hooks/useTrayImportExport";
 import { Table, TableBody } from "@/components/ui/table";
 import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
@@ -232,6 +233,10 @@ function lojaFilterValueToCodes(value: string) {
   if (v === "Sóbaquetas" || v === "SB") return ["SB"];
 
   return [v];
+}
+
+function getShopeePricingLabel(row: any, fallbackId: string) {
+  return row?.Nome || row?.Referência || row?.ID || fallbackId || "anúncio";
 }
 
 export default function PricingTable() {
@@ -835,6 +840,18 @@ export default function PricingTable() {
           throw new Error("Nenhuma linha atualizada no fallback.");
         }
       }
+
+      await createNotification({
+        title: "Precificação Shopee atualizada",
+        message: `O campo "${String(field)}" do anúncio "${getShopeePricingLabel(
+          currentRow,
+          dbIdStr
+        )}" foi atualizado.`,
+        action: "update",
+        entityType: "shopee_pricing",
+        entityId: String((currentRow as any)?.ID || dbIdStr),
+        link: "/dashboard/marketplaces/shopee",
+      });
     } catch (e: any) {
       console.error("❌ Falha ao salvar. Revertendo UI.", e);
       alert("Erro ao salvar. Veja o console.");

@@ -15,6 +15,7 @@ import * as XLSX from "xlsx-js-style";
 import Papa from "papaparse";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { createNotification } from "@/lib/createNotification";
 
 // ✅ áudio centralizado (public/sounds/success.mp3)
 import {
@@ -159,6 +160,7 @@ export default function PricingMassEditionModal({
     for (const c of targetCols) {
       map[normalizeHeader(c)] = c;
     }
+
     return map;
   }, [targetCols]);
 
@@ -202,11 +204,13 @@ export default function PricingMassEditionModal({
   const normalizeRowsByHeaders = (rows: ImportRow[]) => {
     return rows.map((row) => {
       const normalizedRow: Record<string, any> = {};
+
       for (const key of Object.keys(row)) {
         const nk = normalizeHeader(key);
         const match = headerKeyMap[nk] ?? null;
         normalizedRow[match || key] = row[key];
       }
+
       return normalizedRow;
     });
   };
@@ -215,14 +219,20 @@ export default function PricingMassEditionModal({
   // ✅ Progress "throttle"
   // =============================================================
   const startProgressPump = () => {
-    if (progressTimerRef.current) window.clearInterval(progressTimerRef.current);
+    if (progressTimerRef.current) {
+      window.clearInterval(progressTimerRef.current);
+    }
+
     progressTimerRef.current = window.setInterval(() => {
       setProgress(progressRef.current);
     }, 200);
   };
 
   const stopProgressPump = () => {
-    if (progressTimerRef.current) window.clearInterval(progressTimerRef.current);
+    if (progressTimerRef.current) {
+      window.clearInterval(progressTimerRef.current);
+    }
+
     progressTimerRef.current = null;
     setProgress(progressRef.current);
   };
@@ -242,7 +252,9 @@ export default function PricingMassEditionModal({
         chunkSize: 1024 * 1024 * 2,
         chunk: (result) => {
           all.push(...(result.data as ImportRow[]));
+
           const cursor = (result.meta as any)?.cursor as number | undefined;
+
           if (cursor && file.size) {
             progressRef.current = Math.min(
               99,
@@ -276,7 +288,10 @@ export default function PricingMassEditionModal({
       ws["!ref"] = XLSX.utils.encode_range(range);
     }
 
-    const jsonData: ImportRow[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+    const jsonData: ImportRow[] = XLSX.utils.sheet_to_json(ws, {
+      defval: "",
+    });
+
     return jsonData;
   };
 
@@ -301,6 +316,7 @@ export default function PricingMassEditionModal({
         const normalized = normalizeRowsByHeaders(rows);
 
         progressRef.current = 100;
+
         toastCustom.success(
           "CSV carregado!",
           `Encontrados ${normalized.length} itens.`
@@ -315,6 +331,7 @@ export default function PricingMassEditionModal({
         const normalized = normalizeRowsByHeaders(rows);
 
         progressRef.current = 100;
+
         toastCustom.success(
           "Planilha carregada!",
           `Encontrados ${normalized.length} itens.`
@@ -327,6 +344,7 @@ export default function PricingMassEditionModal({
       toastCustom.warning("Formato não suportado", "Use CSV, XLSX ou XLS.");
     } catch (err) {
       console.error("Erro ao ler arquivo:", err);
+
       toastCustom.error(
         "Erro ao processar a planilha",
         "Verifique o arquivo e tente novamente."
@@ -351,12 +369,14 @@ export default function PricingMassEditionModal({
       .replace(/[\u0300-\u036f]/g, "");
 
     if (norm === "PK" || norm.includes("PIKOT")) return "PK";
+
     if (
       norm === "SB" ||
       norm.includes("SOBAQUETAS") ||
       norm.includes("SO BAQUETAS")
-    )
+    ) {
       return "SB";
+    }
 
     const short = norm.replace(/\s+/g, "");
     if (short === "PK") return "PK";
@@ -371,6 +391,7 @@ export default function PricingMassEditionModal({
   const buildRpcRow = (row: ImportRow) => {
     const id = String(row["ID"] ?? "").trim();
     const loja = mapLoja(row["Loja"]);
+
     if (!id || !loja) return null;
 
     const percentCols = [
@@ -380,6 +401,7 @@ export default function PricingMassEditionModal({
       "Margem de Lucro",
       "Marketing",
     ];
+
     const moneyCols = ["Embalagem", "Frete", "Custo", "Preço de Venda"];
 
     const out: any = {
@@ -398,8 +420,10 @@ export default function PricingMassEditionModal({
 
     for (const col of percentCols) {
       const num = toNumberBR(row[col]);
+
       if (num !== null) {
         const fixed = num > 0 && num <= 1 ? num * 100 : num;
+
         if (col === "Desconto") out.desconto = fixed;
         if (col === "Comissão") out.comissao = fixed;
         if (col === "Imposto") out.imposto = fixed;
@@ -410,9 +434,11 @@ export default function PricingMassEditionModal({
 
     for (const col of moneyCols) {
       const num = toNumberBR(row[col]);
+
       if (num !== null) {
         const fixedMoney =
           col === "Preço de Venda" ? Number(num.toFixed(2)) : num;
+
         if (col === "Embalagem") out.embalagem = fixedMoney;
         if (col === "Frete") out.frete = fixedMoney;
         if (col === "Custo") out.custo = fixedMoney;
@@ -450,7 +476,12 @@ export default function PricingMassEditionModal({
 
     if (rpcRows.length === 0) {
       progressRef.current = 100;
-      return { updatedCount: 0, totalToUpdate: 0, pkCount: 0, sbCount: 0 };
+      return {
+        updatedCount: 0,
+        totalToUpdate: 0,
+        pkCount: 0,
+        sbCount: 0,
+      };
     }
 
     if (pk.length === 0 && sb.length === 0) {
@@ -464,8 +495,10 @@ export default function PricingMassEditionModal({
     }
 
     let updatedCount = 0;
+
     const totalBatches =
       Math.ceil(pk.length / BATCH_SIZE) + Math.ceil(sb.length / BATCH_SIZE);
+
     let batchesDone = 0;
 
     const runBatches = async (
@@ -477,16 +510,21 @@ export default function PricingMassEditionModal({
 
         console.log("[RPC] chamando", rpcName, "batchLen", batch.length);
 
-        const { data, error } = await supabase.rpc(rpcName, { payload: batch });
+        const { data, error } = await supabase.rpc(rpcName, {
+          payload: batch,
+        });
 
         if (error) {
           console.error("[RPC ERROR]", rpcName, error);
           throw error;
         }
 
-        if (typeof data === "number") updatedCount += data;
+        if (typeof data === "number") {
+          updatedCount += data;
+        }
 
         batchesDone++;
+
         progressRef.current = Math.min(
           99,
           Math.round((batchesDone / Math.max(1, totalBatches)) * 100)
@@ -498,6 +536,7 @@ export default function PricingMassEditionModal({
     await runBatches(sb, "update_pricing_batch_sb");
 
     progressRef.current = 100;
+
     return {
       updatedCount,
       totalToUpdate: rpcRows.length,
@@ -514,10 +553,15 @@ export default function PricingMassEditionModal({
     // (se falhar, não quebra nada)
     void unlockAudio();
 
-    console.log("[CONFIRM] cliquei confirmar", { previewLen: previewData.length });
+    console.log("[CONFIRM] cliquei confirmar", {
+      previewLen: previewData.length,
+    });
 
     const { data: sess, error: sessErr } = await supabase.auth.getSession();
-    if (sessErr) console.error("[AUTH] erro session:", sessErr);
+
+    if (sessErr) {
+      console.error("[AUTH] erro session:", sessErr);
+    }
 
     if (!sess.session) {
       toastCustom.error("Você não está logado", "Faça login e tente novamente.");
@@ -543,7 +587,12 @@ export default function PricingMassEditionModal({
       const { updatedCount, totalToUpdate, pkCount, sbCount } =
         await updateByRpcBatches(previewData);
 
-      console.log("[RESULT]", { updatedCount, totalToUpdate, pkCount, sbCount });
+      console.log("[RESULT]", {
+        updatedCount,
+        totalToUpdate,
+        pkCount,
+        sbCount,
+      });
 
       if (totalToUpdate === 0) {
         toastCustom.warning(
@@ -567,6 +616,14 @@ export default function PricingMassEditionModal({
           `${updatedCount} item(ns) atualizado(s).`
         );
 
+        await createNotification({
+          title: "Preços Shopee atualizados",
+          message: `${updatedCount} preço(s) foram atualizados via importação. PK: ${pkCount} | SB: ${sbCount}.`,
+          action: "update",
+          entityType: "shopee_pricing_import",
+          link: "/dashboard/marketplaces/shopee",
+        });
+
         // ✅ SOM SOMENTE AQUI: sucesso real
         playImportSuccessSound(0.4);
       } else {
@@ -581,6 +638,7 @@ export default function PricingMassEditionModal({
       setConfirmOpen(false);
     } catch (err: any) {
       console.error("Erro ao atualizar via RPC:", err);
+
       toastCustom.error(
         "Erro ao atualizar (RPC)",
         err?.message || err?.details || JSON.stringify(err)
@@ -592,7 +650,9 @@ export default function PricingMassEditionModal({
   };
 
   const columns =
-    previewData.length > 0 ? Object.keys(previewData[0]) : targetCols.slice(0, 12);
+    previewData.length > 0
+      ? Object.keys(previewData[0])
+      : targetCols.slice(0, 12);
 
   return (
     <>
@@ -635,14 +695,17 @@ export default function PricingMassEditionModal({
                       <UploadCloud className="w-6 h-6 text-[#2699fe]" />
                     )}
                   </div>
+
                   <div className="flex-1 min-w-0">
                     <h4 className="font-bold mb-1 text-sm md:text-base">
                       {loading
                         ? `Lendo arquivo... (${progress}%)`
                         : "Importar Planilha"}
                     </h4>
+
                     <p className="text-xs md:text-sm text-neutral-400 leading-relaxed">
-                      Para 50k+ linhas, use CSV (mais rápido). XLSX funciona, mas é mais pesado.
+                      Para 50k+ linhas, use CSV (mais rápido). XLSX funciona,
+                      mas é mais pesado.
                     </p>
                   </div>
                 </div>
@@ -676,16 +739,22 @@ export default function PricingMassEditionModal({
                         ))}
                       </tr>
                     </thead>
+
                     <tbody>
                       {previewData.slice(0, 50).map((row, i) => (
                         <tr
                           key={i}
                           className={`${
-                            i % 2 === 0 ? "bg-neutral-900/40" : "bg-neutral-800/40"
+                            i % 2 === 0
+                              ? "bg-neutral-900/40"
+                              : "bg-neutral-800/40"
                           } hover:bg-white/10`}
                         >
                           {columns.map((col) => (
-                            <td key={col} className="p-2 border-b border-neutral-800">
+                            <td
+                              key={col}
+                              className="p-2 border-b border-neutral-800"
+                            >
                               {row[col] ?? ""}
                             </td>
                           ))}
@@ -750,7 +819,10 @@ export default function PricingMassEditionModal({
 
           <p className="mt-3 text-sm md:text-base text-neutral-300 leading-relaxed">
             Deseja realmente atualizar
-            <span className="text-white font-semibold"> {previewData.length} </span>
+            <span className="text-white font-semibold">
+              {" "}
+              {previewData.length}{" "}
+            </span>
             itens?
           </p>
 
@@ -769,7 +841,11 @@ export default function PricingMassEditionModal({
               onClick={() => void handleUpdateConfirm()}
               disabled={updating}
             >
-              {updating ? <Loader className="animate-spin w-5 h-5" /> : "Confirmar"}
+              {updating ? (
+                <Loader className="animate-spin w-5 h-5" />
+              ) : (
+                "Confirmar"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

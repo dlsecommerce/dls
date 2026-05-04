@@ -6,6 +6,7 @@ import { usePrecificacao } from "@/hooks/usePrecificacao";
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "@/integrations/supabase/client";
+import { createNotification } from "@/lib/createNotification";
 
 import { HelpTooltip } from "./parts/HelpTooltip";
 import { CostComposition } from "./parts/CostComposition";
@@ -603,7 +604,7 @@ export default function PricingCalculatorModern() {
     return () => clearTimeout(timer);
   }, [clicks]);
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     const now = new Date();
     const dataFormatada = now.toLocaleDateString("pt-BR").replace(/\//g, "-");
     const horaFormatada = `${now
@@ -701,7 +702,16 @@ export default function PricingCalculatorModern() {
     const blob = new Blob([wbout], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
+
     saveAs(blob, fileName);
+
+    await createNotification({
+      title: "Precificação exportada",
+      message: `A planilha "${fileName}" foi exportada com ${composicao.length} item(ns) na composição.`,
+      action: "status",
+      entityType: "pricing_calculator_export",
+      link: "/dashboard/precificacao",
+    });
   };
 
   return (

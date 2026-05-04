@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { usePrecificacao } from "@/hooks/usePrecificacao";
+import { createNotification } from "@/lib/createNotification";
 
 function detectarTipoAnuncio(ref: string = "") {
   if (!ref) return "Simples";
@@ -10,6 +11,25 @@ function detectarTipoAnuncio(ref: string = "") {
   const ehPai = r.includes("PAI -");
   const ehVar = r.includes("VAR -");
   return ehPai || ehVar ? "Com variações" : "Simples";
+}
+
+function getTrayNotificationLink(params: {
+  marketplaceId: string;
+  loja: string;
+}) {
+  return `/dashboard/marketplaces/tray/details?id=${encodeURIComponent(
+    params.marketplaceId
+  )}&loja=${encodeURIComponent(params.loja)}`;
+}
+
+function getProdutoLabel(produto: any) {
+  return (
+    produto?.nome ||
+    produto?.referencia ||
+    produto?.id_logico ||
+    produto?.marketplace_id ||
+    "anúncio"
+  );
 }
 
 /**
@@ -154,22 +174,25 @@ export function useMarketplaceDetails(
     }
   };
 
-  const buscarCustoPorCodigo = useCallback(async (codigo: string): Promise<number> => {
-    if (!codigo) return 0;
+  const buscarCustoPorCodigo = useCallback(
+    async (codigo: string): Promise<number> => {
+      if (!codigo) return 0;
 
-    const { data, error } = await supabase
-      .from("custos")
-      .select('"Custo Atual"')
-      .eq('"Código"', codigo)
-      .maybeSingle();
+      const { data, error } = await supabase
+        .from("custos")
+        .select('"Custo Atual"')
+        .eq('"Código"', codigo)
+        .maybeSingle();
 
-    if (error) {
-      console.error("Erro ao buscar custo por código:", codigo, error);
-      return 0;
-    }
+      if (error) {
+        console.error("Erro ao buscar custo por código:", codigo, error);
+        return 0;
+      }
 
-    return data ? Number(data["Custo Atual"]) || 0 : 0;
-  }, []);
+      return data ? Number(data["Custo Atual"]) || 0 : 0;
+    },
+    []
+  );
 
   /**
    * 🔎 Buscar registro do marketplace (PK = UUID) na tabela correta (sb/pk)
@@ -184,7 +207,11 @@ export function useMarketplaceDetails(
       .maybeSingle();
 
     if (error) {
-      console.error("Erro ao buscar marketplace:", { tabela, marketplaceId, error });
+      console.error("Erro ao buscar marketplace:", {
+        tabela,
+        marketplaceId,
+        error,
+      });
       return null;
     }
 
@@ -205,7 +232,11 @@ export function useMarketplaceDetails(
       .maybeSingle();
 
     if (error) {
-      console.error("Erro ao buscar anuncio por anuncio_id:", { anuncioId, lojaNome, error });
+      console.error("Erro ao buscar anuncio por anuncio_id:", {
+        anuncioId,
+        lojaNome,
+        error,
+      });
       return null;
     }
 
@@ -249,7 +280,9 @@ export function useMarketplaceDetails(
         return [{ codigo: "", quantidade: "", custo: "" }];
       }
 
-      const custos = await Promise.all(itens.map((item) => buscarCustoPorCodigo(item.codigo)));
+      const custos = await Promise.all(
+        itens.map((item) => buscarCustoPorCodigo(item.codigo))
+      );
 
       return itens.map((item, idx) => ({
         codigo: item.codigo,
@@ -279,9 +312,14 @@ export function useMarketplaceDetails(
       }
 
       // 2) pega anúncio pelo anuncio_id
-      const anuncio = await buscarAnuncioPorAnuncioId(String(mp.anuncio_id), lojaParam);
+      const anuncio = await buscarAnuncioPorAnuncioId(
+        String(mp.anuncio_id),
+        lojaParam
+      );
       if (!anuncio) {
-        console.warn("Anuncio não encontrado para anuncio_id:", { anuncio_id: mp.anuncio_id });
+        console.warn("Anuncio não encontrado para anuncio_id:", {
+          anuncio_id: mp.anuncio_id,
+        });
         return;
       }
 
@@ -344,7 +382,14 @@ export function useMarketplaceDetails(
     } finally {
       setLoading(false);
     }
-  }, [idParam, lojaParam, montarComposicao, setAcrescimos, setCalculo, setComposicao]);
+  }, [
+    idParam,
+    lojaParam,
+    montarComposicao,
+    setAcrescimos,
+    setCalculo,
+    setComposicao,
+  ]);
 
   useEffect(() => {
     carregar();
@@ -354,9 +399,12 @@ export function useMarketplaceDetails(
    * 💾 SAVE — cada tabela com seu PK correto
    */
   const save = useCallback(async () => {
-    if (!produto.marketplace_id || !produto.anuncio_id || !lojaParam) return { error: null };
+    if (!produto.marketplace_id || !produto.anuncio_id || !lojaParam) {
+      return { error: null };
+    }
 
-    const tabela = lojaParam === "SB" ? "marketplace_tray_sb" : "marketplace_tray_pk";
+    const tabela =
+      lojaParam === "SB" ? "marketplace_tray_sb" : "marketplace_tray_pk";
 
     setSaving(true);
 
@@ -375,7 +423,7 @@ export function useMarketplaceDetails(
         })
         .eq("id", produto.marketplace_id);
 
-      if (errMp) console.error("Erro ao salvar marketplace:", errMp);
+      if (errMp) throw errMp;
 
       // ✅ 2) Atualiza anuncios_all pelo anuncio_id (FK)
       const { error: errAn } = await supabase
@@ -392,9 +440,26 @@ export function useMarketplaceDetails(
         })
         .eq("id", produto.anuncio_id);
 
-      if (errAn) console.error("Erro ao salvar anuncio:", errAn);
+      if (errAn) throw errAn;
 
-      return {};
+      await createNotification({
+        title: "Precificação Tray atualizada",
+        message: `A precificação Tray do anúncio "${getProdutoLabel(
+          produto
+        )}" foi atualizada.`,
+        action: "update",
+        entityType: "marketplace_tray_pricing",
+        entityId: String(produto.id_logico || produto.marketplace_id),
+        link: getTrayNotificationLink({
+          marketplaceId: String(produto.marketplace_id),
+          loja: lojaParam,
+        }),
+      });
+
+      return { error: null };
+    } catch (error) {
+      console.error("Erro ao salvar precificação Tray:", error);
+      return { error };
     } finally {
       setSaving(false);
     }

@@ -7,6 +7,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { unlockAudio, playImportSuccessSound } from "@/utils/sound";
 import { toastCustom } from "@/utils/toastCustom";
+import { createNotification } from "@/lib/createNotification";
 
 export function useTrayImportExport(
   rows: any[],
@@ -79,7 +80,9 @@ export function useTrayImportExport(
 
         const middle = Array.from(new Set(partes)).filter(Boolean).join("-");
 
-        const stamp = format(new Date(), "dd-MM-yyyy HH'h'mm", { locale: ptBR });
+        const stamp = format(new Date(), "dd-MM-yyyy HH'h'mm", {
+          locale: ptBR,
+        });
 
         const fileName =
           middle.length > 0
@@ -245,6 +248,14 @@ export function useTrayImportExport(
           }),
           fileName
         );
+
+        await createNotification({
+          title: "Relatório Tray exportado",
+          message: `O relatório "${fileName}" foi exportado com ${data.length} anúncio(s).`,
+          action: "status",
+          entityType: "tray_pricing_export",
+          link: "/dashboard/marketplaces/tray",
+        });
 
         toastCustom.success(
           "Exportação concluída!",
