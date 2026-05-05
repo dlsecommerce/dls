@@ -656,7 +656,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
   };
 
   const getPriceClass = (row: ChannelRow) => {
-    if (row.key === "loja") return "text-emerald-400";
+    if (row.key === "loja") return "text-neutral-100";
     if (row.key === "shopee") return "text-orange-400";
     if (row.key === "magalu") return "text-[#1a8ceb]";
     if (row.key === "mlClassico") return "text-yellow-400";
