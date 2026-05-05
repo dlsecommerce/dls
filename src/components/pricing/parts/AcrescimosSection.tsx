@@ -1,9 +1,6 @@
 import React from "react";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Calculator, Copy } from "lucide-react";
+import { Copy, CheckCheck, Handshake } from "lucide-react";
 import { AnimatedNumber } from "./AnimatedNumber";
-import { HelpTooltip } from "./HelpTooltip";
 
 type AcrescimosSectionProps = {
   acrescimos: any;
@@ -22,289 +19,232 @@ type AcrescimosSectionProps = {
   statusAcrescimo: any;
 };
 
-export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
-  acrescimos,
-  setAcrescimos,
-  isEditing,
-  setEditing,
-  toDisplay,
-  toInternal,
-  handleLinearNav,
-  acrescimosRefs,
-}) => {
-  const copyPercent = async (value: any) => {
-    const n = Number(value ?? 0);
-    const text = Number.isFinite(n) ? n.toFixed(2) : "0.00";
-    await navigator.clipboard.writeText(text);
+type CardVariant = "classico" | "premium" | "magalu";
+
+type AcrescimoCardProps = {
+  variant: CardVariant;
+  title: string;
+  percent: number;
+  difference: number;
+  copied: boolean;
+  onCopy: () => void;
+};
+
+const parseBR = (value: any): number => {
+  if (value === null || value === undefined || value === "") return 0;
+
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+
+  const raw = String(value).trim();
+
+  if (!raw) return 0;
+
+  if (raw.includes(",")) {
+    return Number(raw.replace(/\./g, "").replace(",", ".")) || 0;
+  }
+
+  return Number(raw) || 0;
+};
+
+const getPercent = (price: number, base: number) => {
+  if (!base || !price) return 0;
+
+  return (price / base - 1) * 100;
+};
+
+const formatPercentForCopy = (value: number) => {
+  const safeValue = Number.isFinite(value) ? value : 0;
+
+  return Math.abs(safeValue).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
+const getVariantClasses = (variant: CardVariant) => {
+  if (variant === "magalu") {
+    return {
+      card: "border-[#1a8ceb]/45 bg-gradient-to-br from-[#1a8ceb]/12 via-[#151515] to-[#151515]",
+      icon: "border-[#1a8ceb]/40 bg-[#1a8ceb]",
+      percent: "text-[#1a8ceb]",
+      difference: "text-[#1a8ceb]",
+    };
+  }
+
+  return {
+    card: "border-yellow-500/40 bg-gradient-to-br from-yellow-500/10 via-[#151515] to-[#151515]",
+    icon: "border-yellow-500/35 bg-yellow-500/80",
+    percent: "text-yellow-400",
+    difference: "text-yellow-400",
   };
+};
+
+const MercadoLivreIcon = () => {
+  return <Handshake className="h-5 w-5 text-white" />;
+};
+
+const MagaluLogo = () => {
+  return (
+    <span className="select-none text-[8px] font-black leading-none tracking-tight text-white">
+      Magalu
+    </span>
+  );
+};
+
+const AcrescimoCard: React.FC<AcrescimoCardProps> = ({
+  variant,
+  title,
+  percent,
+  difference,
+  copied,
+  onCopy,
+}) => {
+  const styles = getVariantClasses(variant);
 
   return (
-    <div className="p-3 sm:p-3 rounded-lg bg-black/30 border border-white/10">
-      <h4 className="font-bold text-sm sm:text-xs text-white mb-3 sm:mb-2 flex items-center gap-2">
-        <Calculator className="w-4 h-4 text-[#1a8ceb]" />
-        Cálculo de Acréscimos
-        <HelpTooltip text="Calculo de Acréscimo." />
-      </h4>
+    <div
+      className={`group relative rounded-xl border px-3 py-2 transition-all duration-200 ${styles.card}`}
+    >
+      <button
+        type="button"
+        onClick={onCopy}
+        className="
+          absolute right-3 top-3 flex h-7 w-7 cursor-pointer items-center
+          justify-center rounded-lg border border-white/10 bg-white/[0.03]
+          text-white/45 opacity-0 transition
+          hover:bg-white/[0.08] hover:text-white
+          group-hover:opacity-100
+        "
+        title="Copiar acréscimo"
+        aria-label={`Copiar acréscimo ${title}`}
+      >
+        {copied ? (
+          <CheckCheck className="h-3.5 w-3.5 text-emerald-400" />
+        ) : (
+          <Copy className="h-3.5 w-3.5" />
+        )}
+      </button>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-3">
-
-        {/* ============================
-             PREÇO LOJA
-           ============================ */}
-        <div className="flex flex-col gap-3 sm:gap-2">
-          <div>
-            <Label className="text-neutral-400 text-[11px] sm:text-[10px] mb-1.5 sm:mb-1 block">
-              Preço Loja (R$)
-            </Label>
-
-            <Input
-              ref={(el) => (acrescimosRefs.current[0] = el!)}
-              type="text"
-              inputMode="decimal"
-              value={
-                isEditing("a-precoLoja")
-                  ? acrescimos.precoLoja
-                  : toDisplay(acrescimos.precoLoja)
-              }
-              onFocus={() => setEditing("a-precoLoja", true)}
-              onBlur={(e) => {
-                setEditing("a-precoLoja", false);
-                setAcrescimos({
-                  ...acrescimos,
-                  precoLoja: toInternal(e.target.value),
-                });
-              }}
-              onChange={(e) =>
-                setAcrescimos({
-                  ...acrescimos,
-                  precoLoja: toInternal(e.target.value),
-                })
-              }
-              onKeyDown={(e) => handleLinearNav(e, 0, acrescimosRefs, 5)}
-              className="bg-black/50 border border-white/10 text-white text-sm sm:text-xs rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
-            />
-          </div>
+      <div className="mb-1 flex items-center gap-1">
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border shadow-sm ${styles.icon}`}
+        >
+          {variant === "magalu" ? <MagaluLogo /> : <MercadoLivreIcon />}
         </div>
 
-        {/* ============================
-             PREÇOS + FRETES
-           ============================ */}
-        <div className="flex flex-col gap-3 sm:gap-2">
+        <h3 className="truncate pr-8 text-base font-semibold text-white">
+          {title}
+        </h3>
+      </div>
 
-          {/* PREÇOS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-2">
-            <div>
-              <Label className="text-neutral-400 text-[11px] sm:text-[10px] mb-1.5 sm:mb-1 block">
-                Preço Mercado Livre Clássico (R$)
-              </Label>
-              <Input
-                ref={(el) => (acrescimosRefs.current[1] = el!)}
-                type="text"
-                inputMode="decimal"
-                value={
-                  isEditing("a-precoMLClassico")
-                    ? acrescimos.precoMercadoLivreClassico
-                    : toDisplay(acrescimos.precoMercadoLivreClassico)
-                }
-                onFocus={() => setEditing("a-precoMLClassico", true)}
-                onBlur={(e) => {
-                  setEditing("a-precoMLClassico", false);
-                  setAcrescimos({
-                    ...acrescimos,
-                    precoMercadoLivreClassico: toInternal(e.target.value),
-                  });
-                }}
-                onChange={(e) =>
-                  setAcrescimos({
-                    ...acrescimos,
-                    precoMercadoLivreClassico: toInternal(e.target.value),
-                  })
-                }
-                onKeyDown={(e) => handleLinearNav(e, 1, acrescimosRefs, 5)}
-                className="bg-black/50 border border-white/10 text-white text-sm sm:text-xs rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
-              />
-            </div>
+      <div className="space-y-2">
+        <div className="grid grid-cols-[84px_1fr] items-baseline gap-3">
+          <span className="text-sm text-white/65">Acréscimo</span>
 
-            <div>
-              <Label className="text-neutral-400 text-[11px] sm:text-[10px] mb-1.5 sm:mb-1 block">
-                Preço Mercado Livre Premium (R$)
-              </Label>
-              <Input
-                ref={(el) => (acrescimosRefs.current[2] = el!)}
-                type="text"
-                inputMode="decimal"
-                value={
-                  isEditing("a-precoMLPremium")
-                    ? acrescimos.precoMercadoLivrePremium
-                    : toDisplay(acrescimos.precoMercadoLivrePremium)
-                }
-                onFocus={() => setEditing("a-precoMLPremium", true)}
-                onBlur={(e) => {
-                  setEditing("a-precoMLPremium", false);
-                  setAcrescimos({
-                    ...acrescimos,
-                    precoMercadoLivrePremium: toInternal(e.target.value),
-                  });
-                }}
-                onChange={(e) =>
-                  setAcrescimos({
-                    ...acrescimos,
-                    precoMercadoLivrePremium: toInternal(e.target.value),
-                  })
-                }
-                onKeyDown={(e) => handleLinearNav(e, 2, acrescimosRefs, 5)}
-                className="bg-black/50 border border-white/10 text-white text-sm sm:text-xs rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
-              />
-            </div>
-          </div>
+          <span
+            className={`text-2xl font-black tabular-nums ${styles.percent}`}
+          >
+            {percent > 0 ? "+" : ""}
+            <AnimatedNumber value={Number(percent || 0)} />%
+          </span>
+        </div>
 
-          {/* FRETES */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-2">
-            <div>
-              <Label className="text-neutral-400 text-[11px] sm:text-[10px] mb-1.5 sm:mb-1 block">
-                Frete Clássico (R$)
-              </Label>
-              <Input
-                ref={(el) => (acrescimosRefs.current[3] = el!)}
-                type="text"
-                inputMode="decimal"
-                value={
-                  isEditing("a-freteClassico")
-                    ? acrescimos.freteMercadoLivreClassico
-                    : toDisplay(acrescimos.freteMercadoLivreClassico)
-                }
-                onFocus={() => setEditing("a-freteClassico", true)}
-                onBlur={(e) => {
-                  setEditing("a-freteClassico", false);
-                  setAcrescimos({
-                    ...acrescimos,
-                    freteMercadoLivreClassico: toInternal(e.target.value),
-                  });
-                }}
-                onChange={(e) =>
-                  setAcrescimos({
-                    ...acrescimos,
-                    freteMercadoLivreClassico: toInternal(e.target.value),
-                  })
-                }
-                onKeyDown={(e) => handleLinearNav(e, 3, acrescimosRefs, 5)}
-                className="bg-black/50 border border-white/10 text-white text-sm sm:text-xs rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
-              />
-            </div>
+        <div className="grid grid-cols-[84px_1fr] items-baseline gap-3">
+          <span className="text-sm text-white/65">Diferença</span>
 
-            <div>
-              <Label className="text-neutral-400 text-[11px] sm:text-[10px] mb-1.5 sm:mb-1 block">
-                Frete Premium (R$)
-              </Label>
-              <Input
-                ref={(el) => (acrescimosRefs.current[4] = el!)}
-                type="text"
-                inputMode="decimal"
-                value={
-                  isEditing("a-fretePremium")
-                    ? acrescimos.freteMercadoLivrePremium
-                    : toDisplay(acrescimos.freteMercadoLivrePremium)
-                }
-                onFocus={() => setEditing("a-fretePremium", true)}
-                onBlur={(e) => {
-                  setEditing("a-fretePremium", false);
-                  setAcrescimos({
-                    ...acrescimos,
-                    freteMercadoLivrePremium: toInternal(e.target.value),
-                  });
-                }}
-                onChange={(e) =>
-                  setAcrescimos({
-                    ...acrescimos,
-                    freteMercadoLivrePremium: toInternal(e.target.value),
-                  })
-                }
-                onKeyDown={(e) => handleLinearNav(e, 4, acrescimosRefs, 5)}
-                className="bg-black/50 border border-white/10 text-white text-sm sm:text-xs rounded-md min-h-[44px] sm:min-h-0 px-3 sm:px-2 focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
-              />
-            </div>
-          </div>
-
-          {/* ============================
-               BLOCOS DE ACRÉSCIMO
-             ============================ */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-2 mt-3 sm:mt-2">
-
-            {/* CLÁSSICO */}
-            <div
-              className={`group flex flex-col justify-center items-center text-[12px] sm:text-[11px] rounded-md p-4 sm:p-3 transition-all duration-300 ${
-                acrescimos.acrescimoClassico > 0
-                  ? "bg-green-500/10 border border-green-500/30"
-                  : acrescimos.acrescimoClassico < 0
-                  ? "bg-red-500/10 border border-red-500/30"
-                  : "bg-white/5 border border-white/10"
-              }`}
-            >
-              <span className="text-neutral-300 mb-1">
-                Acréscimo Clássico
-              </span>
-
-              <span
-                className={`font-semibold text-lg sm:text-base inline-flex items-center gap-1 sm:gap-0 ${
-                  acrescimos.acrescimoClassico > 0
-                    ? "text-green-400"
-                    : acrescimos.acrescimoClassico < 0
-                    ? "text-red-400"
-                    : "text-neutral-400"
-                }`}
-              >
-                <AnimatedNumber value={Number(acrescimos.acrescimoClassico || 0)} />%
-                <button
-                  type="button"
-                  onClick={() => copyPercent(acrescimos.acrescimoClassico)}
-                  className="ml-1 sm:ml-[3px] inline-flex h-8 w-8 sm:h-auto sm:w-auto items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer transition-opacity"
-                  title="Copiar"
-                  aria-label="Copiar acréscimo clássico"
-                >
-                  <Copy className="w-4 h-4 sm:w-3 sm:h-3" />
-                </button>
-              </span>
-            </div>
-
-            {/* PREMIUM */}
-            <div
-              className={`group flex flex-col justify-center items-center text-[12px] sm:text-[11px] rounded-md p-4 sm:p-3 transition-all duration-300 ${
-                acrescimos.acrescimoPremium > 0
-                  ? "bg-green-500/10 border border-green-500/30"
-                  : acrescimos.acrescimoPremium < 0
-                  ? "bg-red-500/10 border border-red-500/30"  
-                  : "bg-white/5 border border-white/10"
-              }`}
-            >
-              <span className="text-neutral-300 mb-1">
-                Acréscimo Premium
-              </span>
-
-              <span
-                className={`font-semibold text-lg sm:text-base inline-flex items-center gap-1 sm:gap-0 ${
-                  acrescimos.acrescimoPremium >  0
-                    ? "text-green-400"
-                    : acrescimos.acrescimoPremium < 0
-                    ? "text-red-400"
-                    : "text-neutral-400"
-                }`}
-              >
-                <AnimatedNumber value={Number(acrescimos.acrescimoPremium || 0)} />%
-                <button
-                  type="button"
-                  onClick={() => copyPercent(acrescimos.acrescimoPremium)}
-                  className="ml-1 sm:ml-[3px] inline-flex h-8 w-8 sm:h-auto sm:w-auto items-center justify-center opacity-100 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer transition-opacity"
-                  title="Copiar"
-                  aria-label="Copiar acréscimo premium"
-                >
-                  <Copy className="w-4 h-4 sm:w-3 sm:h-3" />
-                </button>
-              </span>
-            </div>
-
-          </div>
+          <span
+            className={`text-lg font-bold tabular-nums ${styles.difference}`}
+          >
+            {difference < 0 ? "-" : ""}
+            R$ <AnimatedNumber value={Math.abs(Number(difference || 0))} />
+          </span>
         </div>
       </div>
     </div>
+  );
+};
+
+export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
+  acrescimos,
+}) => {
+  const [copiedKey, setCopiedKey] = React.useState<CardVariant | null>(null);
+
+  const precoLoja = parseBR(acrescimos.precoLoja);
+
+  const precoClassico = parseBR(acrescimos.precoMercadoLivreClassico);
+  const freteClassico = parseBR(acrescimos.freteMercadoLivreClassico);
+  const baseClassico = precoLoja + freteClassico;
+  const acrescimoClassico = getPercent(precoClassico, baseClassico);
+  const diferencaClassico = precoClassico - baseClassico;
+
+  const precoPremium = parseBR(acrescimos.precoMercadoLivrePremium);
+  const fretePremium = parseBR(acrescimos.freteMercadoLivrePremium);
+  const basePremium = precoLoja + fretePremium;
+  const acrescimoPremium = getPercent(precoPremium, basePremium);
+  const diferencaPremium = precoPremium - basePremium;
+
+  const precoMagalu = parseBR(acrescimos.precoMagalu);
+  const acrescimoMagalu = getPercent(precoMagalu, precoLoja);
+  const diferencaMagalu = precoMagalu - precoLoja;
+
+  const copyCard = async (key: CardVariant, percent: number) => {
+    const text = formatPercentForCopy(percent);
+
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 1200);
+  };
+
+  return (
+    <section className="rounded-2xl border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
+      <div className="mb-4 flex items-center gap-2.5">
+        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#1a8ceb] text-xs font-bold text-white">
+          4.
+        </span>
+
+        <h2 className="text-base font-semibold text-white">
+          Acréscimo sobre o Preço da Loja Própria
+        </h2>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <AcrescimoCard
+          variant="classico"
+          title="Mercado Livre Clássico"
+          percent={acrescimoClassico}
+          difference={diferencaClassico}
+          copied={copiedKey === "classico"}
+          onCopy={() => copyCard("classico", acrescimoClassico)}
+        />
+
+        <AcrescimoCard
+          variant="premium"
+          title="Mercado Livre Premium"
+          percent={acrescimoPremium}
+          difference={diferencaPremium}
+          copied={copiedKey === "premium"}
+          onCopy={() => copyCard("premium", acrescimoPremium)}
+        />
+
+        <AcrescimoCard
+          variant="magalu"
+          title="Magalu"
+          percent={acrescimoMagalu}
+          difference={diferencaMagalu}
+          copied={copiedKey === "magalu"}
+          onCopy={() => copyCard("magalu", acrescimoMagalu)}
+        />
+      </div>
+    </section>
   );
 };

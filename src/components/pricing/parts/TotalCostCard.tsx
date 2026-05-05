@@ -6,10 +6,13 @@ type TotalCostCardProps = {
 };
 
 export const TotalCostCard: React.FC<TotalCostCardProps> = ({ custoTotal }) => (
-  <div className="mt-3 p-4 sm:p-3 bg-gradient-to-br from-[#1a8ceb]/20 to-[#1a8ceb]/5 rounded-xl border border-[#1a8ceb]/30">
+  <div className="mt-3 rounded-xl border border-white/10 bg-[#1a8ceb] p-4 shadow-sm sm:p-3">
     <div className="flex flex-col items-center justify-center">
-      <span className="text-neutral-300 text-sm sm:text-xs mb-1">Custo Total</span>
-      <span className="text-2xl sm:text-xl font-bold text-white tabular-nums text-center">
+      <span className="mb-1 text-sm text-white sm:text-xs">
+        Custo Total
+      </span>
+
+      <span className="text-center text-2xl font-bold tabular-nums text-white sm:text-xl">
         R$ <AnimatedNumber value={Number(custoTotal)} />
       </span>
     </div>

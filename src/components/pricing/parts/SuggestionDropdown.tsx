@@ -1,13 +1,17 @@
 import React from "react";
 
-type Sugestao = { codigo: string; custo: number };
+type Sugestao = {
+  codigo: string;
+  custo: number;
+  produto?: string;
+};
 
 type SuggestionDropdownProps = {
   isActive: boolean;
   sugestoes: Sugestao[];
   listaRef: React.RefObject<HTMLDivElement>;
   indiceSelecionado: number;
-  onSelect: (codigo: string, custo: number) => void;
+  onSelect: (codigo: string, custo: number, produto?: string) => void;
 };
 
 export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
@@ -22,23 +26,47 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
   return (
     <div
       ref={listaRef}
-      className="absolute left-0 top-full mt-1 z-[90] w-[min(220px,calc(100vw-32px))] sm:w-full max-h-56 sm:max-h-40 overflow-y-auto overscroll-contain rounded-md border border-white/10 bg-[#0f0f0f] shadow-lg"
+      className="
+        absolute left-0 top-full z-[999] mt-1
+        max-h-60 w-full overflow-y-auto overscroll-contain
+        rounded-lg border border-white/10 bg-[#0f0f0f]
+        shadow-[0_18px_40px_rgba(0,0,0,0.45)]
+      "
     >
       {sugestoes.map((s, i) => (
-        <div
-          key={i}
-          className={`px-3 sm:px-2 py-2 sm:py-1 min-h-[36px] sm:min-h-0 text-sm sm:text-xs text-white cursor-pointer flex items-center justify-between gap-2 ${
-            i === indiceSelecionado
-              ? "bg-[#1a8ceb]/30"
-              : "hover:bg-[#1a8ceb]/20"
-          }`}
-          onClick={() => onSelect(s.codigo, s.custo)}
+        <button
+          key={`${s.codigo}-${i}`}
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onSelect(s.codigo, s.custo, s.produto);
+          }}
+          className={`
+            flex min-h-[46px] w-full cursor-pointer items-center
+            justify-between gap-3 px-3 py-2 text-left transition
+            ${
+              i === indiceSelecionado
+                ? "bg-[#1a8ceb]/30"
+                : "hover:bg-[#1a8ceb]/20"
+            }
+          `}
         >
-          <span className="flex-1 min-w-0 truncate text-left">{s.codigo}</span>
-          <span className="text-[#1a8ceb] shrink-0 text-right">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold text-white">
+              {s.codigo}
+            </div>
+
+            {s.produto && (
+              <div className="mt-0.5 truncate text-xs text-white/45">
+                {s.produto}
+              </div>
+            )}
+          </div>
+
+          <span className="shrink-0 text-right text-sm font-semibold text-[#1a8ceb]">
             R$ {s.custo.toFixed(2)}
           </span>
-        </div>
+        </button>
       ))}
     </div>
   );

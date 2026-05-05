@@ -1,24 +1,39 @@
 import React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { TrendingUp, ArrowUpCircle, Check, X } from "lucide-react";
-import { HelpTooltip } from "./HelpTooltip";
+import {
+  Store,
+  ShoppingBag,
+  Handshake,
+  Check,
+  X,
+  Copy,
+  CheckCheck,
+  ArrowUpCircle,
+} from "lucide-react";
 import { ClearAndDownloadActions } from "./ClearAndDownloadActions";
-import { PriceBlock } from "./PriceBlock";
 import { AcrescimosSection } from "./AcrescimosSection";
+import { AnimatedNumber } from "./AnimatedNumber";
 import type { Calculo } from "../PricingCalculatorModern";
 
 type PriceCalculationSectionProps = {
   calculoLoja: Calculo;
   setCalculoLoja: (c: Calculo) => void;
+
   calculoShopee: Calculo;
   setCalculoShopee: (c: Calculo) => void;
+
+  calculoMagalu: Calculo;
+  setCalculoMagalu: (c: Calculo) => void;
+
   calculoMLClassico: Calculo;
   setCalculoMLClassico: (c: Calculo) => void;
+
   calculoMLPremium: Calculo;
   setCalculoMLPremium: (c: Calculo) => void;
 
   precoLoja: number;
   precoShopee: number;
+  precoMagalu: number;
   precoMLClassico: number;
   precoMLPremium: number;
 
@@ -39,6 +54,7 @@ type PriceCalculationSectionProps = {
 
   calcLojaRefs: React.MutableRefObject<HTMLInputElement[]>;
   calcShopeeRefs: React.MutableRefObject<HTMLInputElement[]>;
+  calcMagaluRefs: React.MutableRefObject<HTMLInputElement[]>;
   calcMLClassicoRefs: React.MutableRefObject<HTMLInputElement[]>;
   calcMLPremiumRefs: React.MutableRefObject<HTMLInputElement[]>;
   acrescimosRefs: React.MutableRefObject<HTMLInputElement[]>;
@@ -72,28 +88,185 @@ type PriceCalculationSectionProps = {
   setUserEditedShopeeEmbalagem: (v: boolean) => void;
 };
 
-type BlockKey = "loja" | "shopee" | "mlClassico" | "mlPremium";
+type ChannelKey =
+  | "loja"
+  | "shopee"
+  | "magalu"
+  | "mlClassico"
+  | "mlPremium";
 
-const BLOCKS: Array<{ key: BlockKey; nome: string; blocoIndex: number }> = [
-  { key: "loja", nome: "Preço Loja", blocoIndex: 0 },
-  { key: "shopee", nome: "Preço Shopee", blocoIndex: 1 },
-  { key: "mlClassico", nome: "Preço ML Clássico", blocoIndex: 2 },
-  { key: "mlPremium", nome: "Preço ML Premium", blocoIndex: 3 },
+type ChannelRow = {
+  key: ChannelKey;
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  iconClassName: string;
+  state: Calculo;
+  preco: number;
+  refs: React.MutableRefObject<HTMLInputElement[]>;
+};
+
+const BLOCKS: Array<{ key: ChannelKey; nome: string }> = [
+  { key: "loja", nome: "Loja Própria" },
+  { key: "shopee", nome: "Shopee" },
+  { key: "magalu", nome: "Magalu" },
+  { key: "mlClassico", nome: "Mercado Livre" },
+  { key: "mlPremium", nome: "Mercado Livre" },
 ];
 
-const STORAGE_KEY = "pricing.visibleBlocks.v1";
+const STORAGE_KEY = "pricing.visibleBlocks.v4";
+
+const fields: Array<{
+  key: keyof Calculo;
+  label: string;
+  suffix?: string;
+  unit: string;
+}> = [
+  { key: "desconto", label: "Desconto", suffix: "%", unit: "(%)" },
+  { key: "embalagem", label: "Embalagem", suffix: "R$", unit: "(R$)" },
+  { key: "frete", label: "Frete", suffix: "R$", unit: "(R$)" },
+  { key: "imposto", label: "Imposto", suffix: "%", unit: "(%)" },
+  { key: "comissao", label: "Comissão", suffix: "%", unit: "(%)" },
+  { key: "margem", label: "Margem de Lucro", suffix: "%", unit: "(%)" },
+  { key: "marketing", label: "Marketing", suffix: "%", unit: "(%)" },
+];
+
+const formatCurrency = (value: number) => {
+  return value.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+};
+
+const shortLabel = (key: ChannelKey) => {
+  if (key === "loja") return "Loja";
+  if (key === "shopee") return "Shopee";
+  if (key === "magalu") return "Magalu";
+  if (key === "mlClassico") return "Clássico";
+  return "Premium";
+};
+
+const isEmptyOrZero = (v: string) => {
+  const s = (v || "").trim();
+  if (!s) return true;
+
+  const n = Number(s);
+  return !isFinite(n) || n === 0;
+};
+
+const ChannelIcon = ({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className: string;
+}) => {
+  return (
+    <div
+      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border shadow-sm ${className}`}
+    >
+      {children}
+    </div>
+  );
+};
+
+const MagaluLogo = () => {
+  return (
+    <span className="select-none text-[10px] font-black leading-none tracking-tight text-white">
+      Magalu
+    </span>
+  );
+};
+
+const FieldInput = ({
+  value,
+  fieldKey,
+  editingKey,
+  suffix,
+  inputRef,
+  navIndex,
+  totalFields,
+  refs,
+  onChange,
+  onBlur,
+  isEditing,
+  setEditing,
+  toDisplay,
+  toInternal,
+  handleLinearNav,
+}: {
+  value: string | undefined;
+  fieldKey: keyof Calculo;
+  editingKey: string;
+  suffix?: string;
+  inputRef: (el: HTMLInputElement | null) => void;
+  navIndex: number;
+  totalFields: number;
+  refs: React.MutableRefObject<HTMLInputElement[]>;
+  onChange: (key: keyof Calculo, value: string) => void;
+  onBlur: (key: keyof Calculo, value: string) => void;
+  isEditing: (key: string) => boolean;
+  setEditing: (key: string, editing: boolean) => void;
+  toDisplay: (v: string) => string;
+  toInternal: (v: string) => string;
+  handleLinearNav: (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    index: number,
+    refs: React.MutableRefObject<HTMLInputElement[]>,
+    total: number
+  ) => void;
+}) => {
+  const rawValue = value || "";
+  const displayValue = isEditing(editingKey) ? rawValue : toDisplay(rawValue);
+
+  return (
+    <div className="mx-auto flex h-10 w-full max-w-[96px] items-center rounded-lg border border-white/10 bg-[#070707] px-2 transition focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+      <input
+        ref={inputRef}
+        value={displayValue}
+        inputMode="decimal"
+        onFocus={() => setEditing(editingKey, true)}
+        onBlur={(e) => {
+          setEditing(editingKey, false);
+          const internalValue = toInternal(e.target.value);
+          onBlur(fieldKey, internalValue);
+        }}
+        onChange={(e) => {
+          const internalValue = toInternal(e.target.value);
+          onChange(fieldKey, internalValue);
+        }}
+        onKeyDown={(e) => handleLinearNav(e, navIndex, refs, totalFields)}
+        className="
+          h-full w-full min-w-0 bg-transparent text-center text-sm font-semibold text-white
+          outline-none placeholder:text-white/20
+          focus:outline-none focus:ring-0
+          focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0
+        "
+      />
+
+      {suffix && (
+        <span className="ml-1 shrink-0 text-xs font-semibold text-white/45">
+          {suffix}
+        </span>
+      )}
+    </div>
+  );
+};
 
 export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = ({
   calculoLoja,
   setCalculoLoja,
   calculoShopee,
   setCalculoShopee,
+  calculoMagalu,
+  setCalculoMagalu,
   calculoMLClassico,
   setCalculoMLClassico,
   calculoMLPremium,
   setCalculoMLPremium,
   precoLoja,
   precoShopee,
+  precoMagalu,
   precoMLClassico,
   precoMLPremium,
   acrescimos,
@@ -105,66 +278,54 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
   handleLinearNav,
   calcLojaRefs,
   calcShopeeRefs,
+  calcMagaluRefs,
   calcMLClassicoRefs,
   calcMLPremiumRefs,
   acrescimosRefs,
-  handleEmbalagemBlurShared,
-  handleEmbalagemChangeShared,
-  handleEmbalagemBlurShopee,
-  handleEmbalagemChangeShopee,
   handleDownload,
   handleClearAll,
   isClearing,
   clicks,
   statusAcrescimo,
   syncDescontoFromLoja,
-  userEditedShopeeComissao,
   setUserEditedShopeeComissao,
-  userEditedShopeeFrete,
   setUserEditedShopeeFrete,
-  userEditedShopeeImposto,
   setUserEditedShopeeImposto,
-  userEditedShopeeMargem,
   setUserEditedShopeeMargem,
-  userEditedShopeeMarketing,
   setUserEditedShopeeMarketing,
-  userEditedShopeeEmbalagem,
   setUserEditedShopeeEmbalagem,
 }) => {
-  const isEmptyOrZero = (v: string) => {
-    const s = (v || "").trim();
-    if (!s) return true;
-    const n = Number(s);
-    return !isFinite(n) || n === 0;
-  };
-
-  const defaultVisible: Record<BlockKey, boolean> = React.useMemo(
+  const defaultVisible: Record<ChannelKey, boolean> = React.useMemo(
     () => ({
       loja: true,
       shopee: true,
+      magalu: true,
       mlClassico: true,
       mlPremium: true,
     }),
     []
   );
 
-  const [visible, setVisible] = React.useState<Record<BlockKey, boolean>>(
-    defaultVisible
-  );
+  const [visible, setVisible] =
+    React.useState<Record<ChannelKey, boolean>>(defaultVisible);
 
   const [isLayoutOpen, setIsLayoutOpen] = React.useState(false);
+  const [copiedKey, setCopiedKey] = React.useState<ChannelKey | null>(null);
 
   React.useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
-      const parsed = JSON.parse(raw) as Partial<Record<BlockKey, boolean>>;
-      const next: Record<BlockKey, boolean> = {
+
+      const parsed = JSON.parse(raw) as Partial<Record<ChannelKey, boolean>>;
+
+      const next: Record<ChannelKey, boolean> = {
         ...defaultVisible,
         ...parsed,
       };
 
       const count = Object.values(next).filter(Boolean).length;
+
       setVisible(count === 0 ? { ...next, loja: true } : next);
     } catch {
       // ignore
@@ -180,7 +341,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
   }, [visible]);
 
   const ensureAtLeastOneVisible = React.useCallback(
-    (next: Record<BlockKey, boolean>) => {
+    (next: Record<ChannelKey, boolean>) => {
       const count = Object.values(next).filter(Boolean).length;
       if (count === 0) return { ...next, loja: true };
       return next;
@@ -188,77 +349,363 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
     []
   );
 
-  const minimize = React.useCallback(
-    (key: BlockKey) => {
-      setVisible((prev) => ensureAtLeastOneVisible({ ...prev, [key]: false }));
+  const hideBlock = React.useCallback(
+    (key: ChannelKey) => {
+      setVisible((prev) =>
+        ensureAtLeastOneVisible({
+          ...prev,
+          [key]: false,
+        })
+      );
     },
     [ensureAtLeastOneVisible]
   );
 
-  const restore = React.useCallback((key: BlockKey) => {
-    setVisible((prev) => ({ ...prev, [key]: true }));
-  }, []);
-
-  const toggleBlock = (key: BlockKey) => {
+  const toggleBlock = (key: ChannelKey) => {
     setVisible((prev) =>
-      ensureAtLeastOneVisible({ ...prev, [key]: !prev[key] })
+      ensureAtLeastOneVisible({
+        ...prev,
+        [key]: !prev[key],
+      })
     );
   };
 
-  const visibleCount = React.useMemo(
-    () => Object.values(visible).filter(Boolean).length,
-    [visible]
-  );
+  const restore = React.useCallback((key: ChannelKey) => {
+    setVisible((prev) => ({
+      ...prev,
+      [key]: true,
+    }));
+  }, []);
 
   const hiddenBlocks = React.useMemo(
     () => BLOCKS.filter((b) => !visible[b.key]),
     [visible]
   );
 
-  const gridClass = React.useMemo(() => {
-    if (visibleCount <= 1) return "grid grid-cols-1 gap-3 sm:gap-2 mb-2";
-    if (visibleCount === 2)
-      return "grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-2 mb-2";
-    if (visibleCount === 3)
-      return "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-2 mb-2";
-    return "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-2 mb-2";
-  }, [visibleCount]);
-
-  const shortLabel = (key: BlockKey) => {
-    if (key === "loja") return "Loja";
-    if (key === "shopee") return "Shopee";
-    if (key === "mlClassico") return "Clássico";
-    return "Premium";
-  };
-
   const closeLayoutOnOutside = React.useCallback((e: MouseEvent) => {
     const target = e.target as HTMLElement | null;
+
     if (!target) return;
     if (target.closest?.("[data-layout-dropdown]")) return;
+
     setIsLayoutOpen(false);
   }, []);
 
   React.useEffect(() => {
     if (!isLayoutOpen) return;
+
     window.addEventListener("mousedown", closeLayoutOnOutside);
-    return () =>
+
+    return () => {
       window.removeEventListener("mousedown", closeLayoutOnOutside);
+    };
   }, [isLayoutOpen, closeLayoutOnOutside]);
 
+  const rows: ChannelRow[] = [
+    {
+      key: "loja",
+      title: "Loja Própria",
+      subtitle: "Site / E-commerce",
+      icon: <Store className="h-5 w-5 text-[#1a8ceb]" />,
+      iconClassName: "border-[#1a8ceb]/35 bg-[#1a8ceb]/15",
+      state: calculoLoja,
+      preco: precoLoja,
+      refs: calcLojaRefs,
+    },
+    {
+      key: "shopee",
+      title: "Shopee",
+      subtitle: "Marketplace",
+      icon: <ShoppingBag className="h-5 w-5 text-white" />,
+      iconClassName: "border-orange-500/30 bg-orange-500",
+      state: calculoShopee,
+      preco: precoShopee,
+      refs: calcShopeeRefs,
+    },
+    {
+      key: "magalu",
+      title: "Magalu",
+      subtitle: "Marketplace",
+      icon: <MagaluLogo />,
+      iconClassName: "border-[#1a8ceb]/40 bg-[#1a8ceb]",
+      state: calculoMagalu,
+      preco: precoMagalu,
+      refs: calcMagaluRefs,
+    },
+    {
+      key: "mlClassico",
+      title: "Mercado Livre",
+      subtitle: "Clássico",
+      icon: <Handshake className="h-5 w-5 text-white" />,
+      iconClassName: "border-yellow-500/30 bg-yellow-500/80",
+      state: calculoMLClassico,
+      preco: precoMLClassico,
+      refs: calcMLClassicoRefs,
+    },
+    {
+      key: "mlPremium",
+      title: "Mercado Livre",
+      subtitle: "Premium",
+      icon: <Handshake className="h-5 w-5 text-white" />,
+      iconClassName: "border-yellow-500/30 bg-yellow-500/80",
+      state: calculoMLPremium,
+      preco: precoMLPremium,
+      refs: calcMLPremiumRefs,
+    },
+  ];
+
+  const visibleRows = rows.filter((row) => visible[row.key]);
+  const totalFields = fields.length;
+
+  const handleChange = (
+    row: ChannelRow,
+    field: keyof Calculo,
+    internalValue: string
+  ) => {
+    if (field === "embalagem") {
+      setCalculoLoja({
+        ...calculoLoja,
+        embalagem: internalValue,
+      });
+
+      setCalculoShopee({
+        ...calculoShopee,
+        embalagem: internalValue,
+      });
+
+      setCalculoMagalu({
+        ...calculoMagalu,
+        embalagem: internalValue,
+      });
+
+      setCalculoMLClassico({
+        ...calculoMLClassico,
+        embalagem: internalValue,
+      });
+
+      setCalculoMLPremium({
+        ...calculoMLPremium,
+        embalagem: internalValue,
+      });
+
+      setUserEditedShopeeEmbalagem(true);
+
+      return;
+    }
+
+    if (row.key === "loja") {
+      if (field === "desconto") {
+        syncDescontoFromLoja(internalValue);
+      } else {
+        setCalculoLoja({
+          ...calculoLoja,
+          [field]: internalValue,
+        });
+      }
+
+      return;
+    }
+
+    if (row.key === "shopee") {
+      if (field === "comissao") setUserEditedShopeeComissao(true);
+      if (field === "frete") setUserEditedShopeeFrete(true);
+      if (field === "imposto") setUserEditedShopeeImposto(true);
+      if (field === "margem") setUserEditedShopeeMargem(true);
+      if (field === "marketing") setUserEditedShopeeMarketing(true);
+
+      setCalculoShopee({
+        ...calculoShopee,
+        [field]: internalValue,
+      });
+
+      return;
+    }
+
+    if (row.key === "magalu") {
+      setCalculoMagalu({
+        ...calculoMagalu,
+        [field]: internalValue,
+      });
+
+      return;
+    }
+
+    if (row.key === "mlClassico") {
+      setCalculoMLClassico({
+        ...calculoMLClassico,
+        [field]: internalValue,
+      });
+
+      return;
+    }
+
+    if (row.key === "mlPremium") {
+      setCalculoMLPremium({
+        ...calculoMLPremium,
+        [field]: internalValue,
+      });
+    }
+  };
+
+  const handleBlur = (
+    row: ChannelRow,
+    field: keyof Calculo,
+    internalValue: string
+  ) => {
+    if (field === "embalagem") {
+      const value = internalValue || "3";
+
+      setCalculoLoja({
+        ...calculoLoja,
+        embalagem: value,
+      });
+
+      setCalculoShopee({
+        ...calculoShopee,
+        embalagem: value,
+      });
+
+      setCalculoMagalu({
+        ...calculoMagalu,
+        embalagem: value,
+      });
+
+      setCalculoMLClassico({
+        ...calculoMLClassico,
+        embalagem: value,
+      });
+
+      setCalculoMLPremium({
+        ...calculoMLPremium,
+        embalagem: value,
+      });
+
+      if (isEmptyOrZero(value)) {
+        setUserEditedShopeeEmbalagem(false);
+      }
+
+      return;
+    }
+
+    if (row.key === "loja") {
+      if (field === "desconto") {
+        syncDescontoFromLoja(internalValue);
+      } else {
+        setCalculoLoja({
+          ...calculoLoja,
+          [field]: internalValue,
+        });
+      }
+
+      return;
+    }
+
+    if (row.key === "shopee") {
+      if (field === "comissao" && isEmptyOrZero(internalValue)) {
+        setUserEditedShopeeComissao(false);
+      }
+
+      if (field === "frete" && isEmptyOrZero(internalValue)) {
+        setUserEditedShopeeFrete(false);
+      }
+
+      if (field === "imposto" && isEmptyOrZero(internalValue)) {
+        setUserEditedShopeeImposto(false);
+      }
+
+      if (field === "margem" && isEmptyOrZero(internalValue)) {
+        setUserEditedShopeeMargem(false);
+      }
+
+      if (field === "marketing" && isEmptyOrZero(internalValue)) {
+        setUserEditedShopeeMarketing(false);
+      }
+
+      setCalculoShopee({
+        ...calculoShopee,
+        [field]: internalValue,
+      });
+
+      return;
+    }
+
+    if (row.key === "magalu") {
+      setCalculoMagalu({
+        ...calculoMagalu,
+        [field]: internalValue,
+      });
+
+      return;
+    }
+
+    if (row.key === "mlClassico") {
+      setCalculoMLClassico({
+        ...calculoMLClassico,
+        [field]: internalValue,
+      });
+
+      return;
+    }
+
+    if (row.key === "mlPremium") {
+      setCalculoMLPremium({
+        ...calculoMLPremium,
+        [field]: internalValue,
+      });
+    }
+  };
+
+  const getPriceClass = (row: ChannelRow) => {
+    if (row.key === "loja") return "text-emerald-400";
+    if (row.key === "shopee") return "text-orange-400";
+    if (row.key === "magalu") return "text-[#1a8ceb]";
+    if (row.key === "mlClassico") return "text-yellow-400";
+    if (row.key === "mlPremium") return "text-yellow-400";
+    return "text-white";
+  };
+
+  const formatCopyValue = (value: number) => {
+    return Number(value || 0).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
+  const handleCopyPrice = async (row: ChannelRow) => {
+    const value = formatCopyValue(row.preco);
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedKey(row.key);
+      setTimeout(() => setCopiedKey(null), 1200);
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = value;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+
+      setCopiedKey(row.key);
+      setTimeout(() => setCopiedKey(null), 1200);
+    }
+  };
+
   return (
-    <motion.div
-      className="relative z-0 lg:col-span-6 min-w-0 p-3 sm:p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg flex flex-col"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-    >
-      <div data-layout-dropdown className="relative z-0 min-w-0">
-        <div className="flex items-start sm:items-center justify-between mb-3 sm:mb-2 gap-3 sm:gap-2 min-w-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <TrendingUp className="w-5 h-5 text-[#1a8ceb] flex-shrink-0" />
-            <h3 className="text-base font-bold text-white flex items-center gap-2 min-w-0">
-              <span className="truncate">Cálculo de Preço</span>
-              <HelpTooltip text="Preços de Venda." />
-            </h3>
+    <div className="flex min-w-0 flex-col gap-4">
+      <section
+        data-layout-dropdown
+        className="relative rounded-2xl border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]"
+      >
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#1a8ceb] text-xs font-bold text-white">
+              3.
+            </span>
+
+            <h2 className="text-base font-semibold text-white">
+              Preço de Venda por Canal
+            </h2>
           </div>
 
           <ClearAndDownloadActions
@@ -277,56 +724,56 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 6, scale: 0.98 }}
               transition={{ duration: 0.14 }}
-              className="absolute right-0 mt-2 w-full max-w-[260px] sm:w-[260px] rounded-xl border border-white/10 bg-black/70 backdrop-blur-xl shadow-xl p-2 z-50"
+              className="absolute right-4 top-14 z-50 w-full max-w-[280px] rounded-xl border border-white/10 bg-black/80 p-2 shadow-xl backdrop-blur-xl"
             >
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-xs text-white/80 font-semibold">
-                  Configurar blocos
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-xs font-semibold text-white/80">
+                  Ajustar layout
                 </div>
+
                 <button
                   type="button"
                   onClick={() => setIsLayoutOpen(false)}
-                  className="p-1 rounded-md hover:bg-white/10 transition"
-                  title="Fechar"
+                  className="cursor-pointer rounded-md p-1 transition hover:bg-white/10"
+                  title="Fechar ajuste de layout"
                 >
-                  <X className="w-4 h-4 text-white/70" />
+                  <X className="h-4 w-4 text-white/70" />
                 </button>
               </div>
 
               <div className="flex flex-col gap-1">
-                {BLOCKS.map((b) => {
-                  const checked = visible[b.key];
+                {BLOCKS.map((block) => {
+                  const checked = visible[block.key];
+
                   return (
                     <button
-                      key={b.key}
+                      key={block.key}
                       type="button"
-                      onClick={() => toggleBlock(b.key)}
+                      onClick={() => toggleBlock(block.key)}
                       className={[
-                        "h-10 sm:h-9 px-2 rounded-lg",
-                        "border border-white/10",
+                        "flex h-10 cursor-pointer items-center justify-between rounded-lg border border-white/10 px-2 transition",
                         checked ? "bg-white/10" : "bg-white/5",
-                        "hover:bg-white/10 transition",
-                        "flex items-center justify-between",
+                        "hover:bg-white/10",
                       ].join(" ")}
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-xs text-white/85 truncate">
-                          {b.nome}
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate text-xs text-white/85">
+                          {block.nome}
                         </span>
-                        <span className="text-[10px] text-white/50 shrink-0">
-                          ({shortLabel(b.key)})
+
+                        <span className="shrink-0 text-[10px] text-white/45">
+                          ({shortLabel(block.key)})
                         </span>
                       </div>
 
                       <div
                         className={[
-                          "w-6 h-6 rounded-md border border-white/10",
-                          "flex items-center justify-center shrink-0",
-                          checked ? "bg-white/10" : "bg-white/0",
+                          "flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/10",
+                          checked ? "bg-white/10" : "bg-transparent",
                         ].join(" ")}
                       >
                         {checked && (
-                          <Check className="w-4 h-4 text-white/80" />
+                          <Check className="h-4 w-4 text-white/80" />
                         )}
                       </div>
                     </button>
@@ -334,31 +781,13 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                 })}
               </div>
 
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setVisible(ensureAtLeastOneVisible(defaultVisible))
-                  }
-                  className="h-10 sm:h-9 px-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-xs text-white/80 transition"
-                >
-                  Mostrar todos
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setVisible(
-                      ensureAtLeastOneVisible({
-                        loja: true,
-                        shopee: false,
-                        mlClassico: false,
-                        mlPremium: false,
-                      })
-                    )
-                  }
-                />
-              </div>
+              <button
+                type="button"
+                onClick={() => setVisible(defaultVisible)}
+                className="mt-2 h-9 w-full cursor-pointer rounded-lg border border-white/10 bg-white/5 text-xs text-white/80 transition hover:bg-white/10"
+              >
+                Mostrar todos
+              </button>
 
               <div className="mt-2 text-[10px] text-white/40">
                 Suas escolhas ficam salvas automaticamente.
@@ -367,176 +796,127 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
           )}
         </AnimatePresence>
 
-        <div className={gridClass}>
-          <AnimatePresence initial={false}>
-            {visible.loja && (
-              <motion.div
-                key="loja"
-                layout
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 18 }}
-                transition={{ duration: 0.18 }}
-                className="w-full min-w-0"
+        <div className="overflow-hidden rounded-xl border border-white/10">
+          <div className="hidden grid-cols-[220px_repeat(7,minmax(92px,1fr))_170px] border-b border-white/10 bg-[#181818] lg:grid">
+            <div className="px-4 py-4 text-sm font-semibold text-white">
+              Canal
+            </div>
+
+            {fields.map((field) => (
+              <div
+                key={field.key}
+                className="px-2 py-4 text-center text-sm font-semibold text-white"
               >
-                <PriceBlock
-                  nome="Preço Loja"
-                  blocoIndex={0}
-                  state={calculoLoja}
-                  setState={setCalculoLoja}
-                  preco={precoLoja}
-                  refs={calcLojaRefs}
-                  isEditing={isEditing}
-                  setEditing={setEditing}
-                  toDisplay={toDisplay}
-                  toInternal={toInternal}
-                  handleLinearNav={handleLinearNav}
-                  handleEmbalagemBlur={handleEmbalagemBlurShared}
-                  handleEmbalagemChange={handleEmbalagemChangeShared}
-                  onFieldChange={(key, internalValue) => {
-                    if (key === "desconto") {
-                      syncDescontoFromLoja(internalValue);
-                    } else {
-                      setCalculoLoja({
-                        ...calculoLoja,
-                        [key]: internalValue,
-                      });
-                    }
-                  }}
-                  onFieldBlur={(key, internalValue) => {
-                    if (key === "desconto") {
-                      syncDescontoFromLoja(internalValue);
-                    } else {
-                      setCalculoLoja({
-                        ...calculoLoja,
-                        [key]: internalValue,
-                      });
-                    }
-                  }}
-                  onMinimize={() => minimize("loja")}
-                />
-              </motion.div>
-            )}
+                {field.label}
+                <div className="mt-1 text-xs text-white/55">
+                  {field.unit}
+                </div>
+              </div>
+            ))}
 
-            {visible.shopee && (
-              <motion.div
-                key="Preço"
-                layout
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 18 }}
-                transition={{ duration: 0.18 }}
-                className="w-full min-w-0"
+            <div className="px-4 py-4 text-center text-sm font-semibold text-white">
+              Preço de Venda
+              <div className="mt-1 text-xs text-white/55">
+                Calculado (R$)
+              </div>
+            </div>
+          </div>
+
+          <div className="divide-y divide-white/10">
+            {visibleRows.map((row) => (
+              <div
+                key={row.key}
+                className="group/row grid grid-cols-1 gap-3 bg-[#151515] p-4 lg:grid-cols-[220px_repeat(7,minmax(92px,1fr))_170px] lg:items-center lg:gap-0 lg:p-0"
               >
-                <PriceBlock
-                  nome="Preço Shopee"
-                  blocoIndex={1}
-                  state={calculoShopee}
-                  setState={setCalculoShopee}
-                  preco={precoShopee}
-                  refs={calcShopeeRefs}
-                  isEditing={isEditing}
-                  setEditing={setEditing}
-                  toDisplay={toDisplay}
-                  toInternal={toInternal}
-                  handleLinearNav={handleLinearNav}
-                  handleEmbalagemBlur={handleEmbalagemBlurShopee}
-                  handleEmbalagemChange={handleEmbalagemChangeShopee}
-                  onFieldChange={(key, internalValue) => {
-                    if (key === "comissao") setUserEditedShopeeComissao(true);
-                    if (key === "frete") setUserEditedShopeeFrete(true);
-                    if (key === "imposto") setUserEditedShopeeImposto(true);
-                    if (key === "margem") setUserEditedShopeeMargem(true);
-                    if (key === "marketing") setUserEditedShopeeMarketing(true);
-                    if (key === "embalagem") setUserEditedShopeeEmbalagem(true);
+                <div className="flex items-center justify-between gap-3 lg:px-4 lg:py-5">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <ChannelIcon className={row.iconClassName}>
+                      {row.icon}
+                    </ChannelIcon>
 
-                    setCalculoShopee({
-                      ...calculoShopee,
-                      [key]: internalValue,
-                    });
-                  }}
-                  onFieldBlur={(key, internalValue) => {
-                    if (key === "comissao" && isEmptyOrZero(internalValue))
-                      setUserEditedShopeeComissao(false);
-                    if (key === "frete" && isEmptyOrZero(internalValue))
-                      setUserEditedShopeeFrete(false);
-                    if (key === "imposto" && isEmptyOrZero(internalValue))
-                      setUserEditedShopeeImposto(false);
-                    if (key === "margem" && isEmptyOrZero(internalValue))
-                      setUserEditedShopeeMargem(false);
-                    if (key === "marketing" && isEmptyOrZero(internalValue))
-                      setUserEditedShopeeMarketing(false);
-                    if (key === "embalagem" && isEmptyOrZero(internalValue))
-                      setUserEditedShopeeEmbalagem(false);
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-white">
+                        {row.title}
+                      </div>
 
-                    setCalculoShopee({
-                      ...calculoShopee,
-                      [key]: internalValue,
-                    });
-                  }}
-                  onMinimize={() => minimize("shopee")}
-                />
-              </motion.div>
-            )}
+                      <div className="mt-0.5 truncate text-xs text-white/45">
+                        {row.subtitle}
+                      </div>
+                    </div>
+                  </div>
 
-            {visible.mlClassico && (
-              <motion.div
-                key="mlClassico"
-                layout
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 18 }}
-                transition={{ duration: 0.18 }}
-                className="w-full min-w-0"
-              >
-                <PriceBlock
-                  nome="Preço ML Clássico"
-                  blocoIndex={2}
-                  state={calculoMLClassico}
-                  setState={setCalculoMLClassico}
-                  preco={precoMLClassico}
-                  refs={calcMLClassicoRefs}
-                  isEditing={isEditing}
-                  setEditing={setEditing}
-                  toDisplay={toDisplay}
-                  toInternal={toInternal}
-                  handleLinearNav={handleLinearNav}
-                  handleEmbalagemBlur={handleEmbalagemBlurShared}
-                  handleEmbalagemChange={handleEmbalagemChangeShared}
-                  onMinimize={() => minimize("mlClassico")}
-                />
-              </motion.div>
-            )}
+                  <button
+                    type="button"
+                    onClick={() => hideBlock(row.key)}
+                    className="flex h-7 w-7 cursor-pointer shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-white/40 opacity-0 transition hover:bg-white/[0.08] hover:text-white group-hover/row:opacity-100"
+                    title={`Ocultar ${row.title}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
 
-            {visible.mlPremium && (
-              <motion.div
-                key="mlPremium"
-                layout
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 18 }}
-                transition={{ duration: 0.18 }}
-                className="w-full min-w-0"
-              >
-                <PriceBlock
-                  nome="Preço ML Premium"
-                  blocoIndex={3}
-                  state={calculoMLPremium}
-                  setState={setCalculoMLPremium}
-                  preco={precoMLPremium}
-                  refs={calcMLPremiumRefs}
-                  isEditing={isEditing}
-                  setEditing={setEditing}
-                  toDisplay={toDisplay}
-                  toInternal={toInternal}
-                  handleLinearNav={handleLinearNav}
-                  handleEmbalagemBlur={handleEmbalagemBlurShared}
-                  handleEmbalagemChange={handleEmbalagemChangeShared}
-                  onMinimize={() => minimize("mlPremium")}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
+                {fields.map((field, index) => (
+                  <div
+                    key={`${row.key}-${field.key}`}
+                    className="lg:px-2 lg:py-5"
+                  >
+                    <div className="mb-1 text-xs font-medium text-white/45 lg:hidden">
+                      {field.label}
+                    </div>
+
+                    <FieldInput
+                      value={row.state[field.key]}
+                      fieldKey={field.key}
+                      editingKey={`${row.key}-${field.key}`}
+                      suffix={field.suffix}
+                      inputRef={(el) => {
+                        row.refs.current[index] = el!;
+                      }}
+                      navIndex={index}
+                      totalFields={totalFields}
+                      refs={row.refs}
+                      onChange={(key, value) => handleChange(row, key, value)}
+                      onBlur={(key, value) => handleBlur(row, key, value)}
+                      isEditing={isEditing}
+                      setEditing={setEditing}
+                      toDisplay={toDisplay}
+                      toInternal={toInternal}
+                      handleLinearNav={handleLinearNav}
+                    />
+                  </div>
+                ))}
+
+                <div className="group/price flex items-center justify-between border-t border-white/10 pt-3 lg:border-t-0 lg:px-4 lg:py-5">
+                  <span className="text-xs font-medium text-white/45 lg:hidden">
+                    Preço de Venda
+                  </span>
+
+                  <div className="flex w-full items-center justify-end gap-1.5">
+                    <span
+                      className={`text-xl font-bold tabular-nums ${getPriceClass(
+                        row
+                      )}`}
+                    >
+                      R$ <AnimatedNumber value={Number(row.preco || 0)} />
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCopyPrice(row)}
+                      className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-white/10 bg-white/[0.03] text-white/50 opacity-0 transition hover:bg-white/[0.08] hover:text-white group-hover/price:opacity-100"
+                      title="Copiar preço"
+                    >
+                      {copiedKey === row.key ? (
+                        <CheckCheck className="h-3.5 w-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <AnimatePresence>
@@ -547,63 +927,48 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 8 }}
               transition={{ duration: 0.18 }}
-              className={[
-                "mb-2",
-                "rounded-xl border border-white/10",
-                "bg-gradient-to-r black-70 from-black/40 to-black/40",
-                "backdrop-blur-lg shadow-lg",
-                "px-2 py-2",
-                "flex items-center justify-between gap-2 flex-wrap",
-              ].join(" ")}
+              className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#181818] px-3 py-2"
             >
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-white/60">Ocultos</span>
-                  <span className="text-[10px] px-2 py-[2px] rounded-full border border-white/10 bg-white/5 text-white/70">
-                    {hiddenBlocks.length}
-                  </span>
-                </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] text-white/50">Ocultos</span>
 
-                <div className="flex items-center gap-2 flex-wrap">
-                  {hiddenBlocks.map((b) => (
-                    <button
-                      key={b.key}
-                      type="button"
-                      onClick={() => restore(b.key)}
-                      className="h-9 sm:h-8 px-3 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white text-xs flex items-center gap-2 transition"
-                      title={`Restaurar ${b.nome}`}
-                    >
-                      <ArrowUpCircle className="w-4 h-4" />
-                      <span>{shortLabel(b.key)}</span>
-                    </button>
-                  ))}
-                </div>
+                {hiddenBlocks.map((block) => (
+                  <button
+                    key={block.key}
+                    type="button"
+                    onClick={() => restore(block.key)}
+                    className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 text-xs text-white/70 transition hover:bg-white/[0.08] hover:text-white"
+                    title={`Restaurar ${block.nome}`}
+                  >
+                    <ArrowUpCircle className="h-4 w-4" />
+                    {shortLabel(block.key)}
+                  </button>
+                ))}
               </div>
 
               <button
                 type="button"
-                onClick={() => hiddenBlocks.forEach((b) => restore(b.key))}
-                className="h-9 sm:h-8 px-3 rounded-lg border border-white/10 bg-white/0 hover:bg-white/5 text-xs text-white/60 hover:text-white transition"
-                title="Restaurar todos"
+                onClick={() => setVisible(defaultVisible)}
+                className="h-8 cursor-pointer rounded-lg border border-white/10 px-3 text-xs text-white/60 transition hover:bg-white/[0.05] hover:text-white"
               >
                 Restaurar todos
               </button>
             </motion.div>
           )}
         </AnimatePresence>
+      </section>
 
-        <AcrescimosSection
-          acrescimos={acrescimos}
-          setAcrescimos={setAcrescimos}
-          isEditing={isEditing}
-          setEditing={setEditing}
-          toDisplay={toDisplay}
-          toInternal={toInternal}
-          handleLinearNav={handleLinearNav}
-          acrescimosRefs={acrescimosRefs}
-          statusAcrescimo={statusAcrescimo}
-        />
-      </div>
-    </motion.div>
+      <AcrescimosSection
+        acrescimos={acrescimos}
+        setAcrescimos={setAcrescimos}
+        isEditing={isEditing}
+        setEditing={setEditing}
+        toDisplay={toDisplay}
+        toInternal={toInternal}
+        handleLinearNav={handleLinearNav}
+        acrescimosRefs={acrescimosRefs}
+        statusAcrescimo={statusAcrescimo}
+      />
+    </div>
   );
 };

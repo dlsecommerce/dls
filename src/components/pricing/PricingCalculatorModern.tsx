@@ -1,14 +1,13 @@
 "use client";
+
 import React, { useEffect, useState, useRef } from "react";
-import { motion } from "framer-motion";
-import { Layers } from "lucide-react";
 import { usePrecificacao } from "@/hooks/usePrecificacao";
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx-js-style";
 import { supabase } from "@/integrations/supabase/client";
 import { createNotification } from "@/lib/createNotification";
 
-import { HelpTooltip } from "./parts/HelpTooltip";
+import { ProductSection } from "./parts/ProductSection";
 import { CostComposition } from "./parts/CostComposition";
 import { PriceCalculationSection } from "./parts/PriceCalculationSection";
 
@@ -22,27 +21,42 @@ export type Calculo = {
   embalagem?: string;
 };
 
-type Sugestao = { codigo: string; custo: number };
+type Sugestao = {
+  codigo: string;
+  custo: number;
+  produto?: string;
+};
+
+type TipoBuscaProduto = "codigo" | "descricao";
 
 // =====================
 // Helpers de número
 // =====================
 const toInternal = (v: string): string => {
   if (!v) return "";
+
   let s = v.replace(/\s+/g, "");
-  if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+
+  if (s.includes(",")) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  }
+
   s = s.replace(/[^\d.-]/g, "");
+
   const parts = s.split(".");
   if (parts.length > 2) {
     s = parts.shift()! + "." + parts.join("");
   }
+
   return s;
 };
 
 const toDisplay = (v: string): string => {
   if (!v) return "";
+
   const num = Number(v);
   if (!isFinite(num)) return v;
+
   return num.toLocaleString("pt-BR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -54,10 +68,15 @@ const toDisplay = (v: string): string => {
 // =====================
 function debounce<T extends (...args: any[]) => any>(fn: T, delay: number) {
   let timer: ReturnType<typeof setTimeout>;
-  return (...args: Parameters<T>) => {
+
+  const debounced = (...args: Parameters<T>) => {
     clearTimeout(timer);
     timer = setTimeout(() => fn(...args), delay);
   };
+
+  debounced.cancel = () => clearTimeout(timer);
+
+  return debounced as T & { cancel: () => void };
 }
 
 export default function PricingCalculatorModern() {
@@ -71,6 +90,19 @@ export default function PricingCalculatorModern() {
     adicionarItem,
     removerItem,
   } = usePrecificacao();
+
+  const [produtoCodigo, setProdutoCodigo] = useState("");
+  const [produtoDescricao, setProdutoDescricao] = useState("");
+
+  // =====================
+  // Sugestões do Produto
+  // =====================
+  const [sugestoesProduto, setSugestoesProduto] = useState<Sugestao[]>([]);
+  const [produtoSugestaoAtiva, setProdutoSugestaoAtiva] = useState(false);
+  const [indiceProdutoSelecionado, setIndiceProdutoSelecionado] =
+    useState(-1);
+  const listaProdutoRef = useRef<HTMLDivElement>(null);
+  const ultimaBuscaProdutoRef = useRef("");
 
   // =====================
   // Cálculos por canal
@@ -90,6 +122,16 @@ export default function PricingCalculatorModern() {
     imposto: "12",
     margem: "15",
     frete: "4",
+    comissao: "20",
+    marketing: "3",
+    embalagem: "3",
+  });
+
+  const [calculoMagalu, setCalculoMagalu] = useState<Calculo>({
+    desconto: "",
+    imposto: "12",
+    margem: "10",
+    frete: "",
     comissao: "20",
     marketing: "3",
     embalagem: "3",
@@ -123,7 +165,6 @@ export default function PricingCalculatorModern() {
   const [userEditedShopeeComissao, setUserEditedShopeeComissao] =
     useState(false);
   const [userEditedShopeeFrete, setUserEditedShopeeFrete] = useState(false);
-
   const [userEditedShopeeImposto, setUserEditedShopeeImposto] =
     useState(false);
   const [userEditedShopeeMargem, setUserEditedShopeeMargem] = useState(false);
@@ -142,7 +183,7 @@ export default function PricingCalculatorModern() {
   }, [composicao]);
 
   // =====================
-  // Sugestões Supabase
+  // Sugestões Supabase da Composição
   // =====================
   const [sugestoes, setSugestoes] = useState<Sugestao[]>([]);
   const [campoAtivo, setCampoAtivo] = useState<number | null>(null);
@@ -152,58 +193,114 @@ export default function PricingCalculatorModern() {
   const inputRefs = useRef<HTMLInputElement[][]>([]);
   const calcLojaRefs = useRef<HTMLInputElement[]>([]);
   const calcShopeeRefs = useRef<HTMLInputElement[]>([]);
+  const calcMagaluRefs = useRef<HTMLInputElement[]>([]);
   const calcMLClassicoRefs = useRef<HTMLInputElement[]>([]);
   const calcMLPremiumRefs = useRef<HTMLInputElement[]>([]);
   const acrescimosRefs = useRef<HTMLInputElement[]>([]);
 
+  // =====================
   // Controle de edição
+  // =====================
   const [editingFields, setEditingFields] = useState<Set<string>>(new Set());
+
   const setEditing = (key: string, editing: boolean) => {
     setEditingFields((prev) => {
       const s = new Set(prev);
+
       if (editing) s.add(key);
       else s.delete(key);
+
       return s;
     });
   };
+
   const isEditing = (key: string) => editingFields.has(key);
 
-  // Fechar sugestões ao clicar fora
+  // =====================
+  // Fechar sugestões da composição ao clicar fora
+  // =====================
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (campoAtivo === null) return;
+
       const listaEl = listaRef.current;
       const inputEl = inputRefs.current[campoAtivo]?.[0];
       const target = e.target as Node;
+
       const clickDentroLista = !!(listaEl && listaEl.contains(target));
       const clickNoInputAtivo = !!(inputEl && inputEl.contains(target));
+
       if (!clickDentroLista && !clickNoInputAtivo) {
         if (sugestoes.length > 0) {
           const s = sugestoes[0];
-          confirmarSugestaoPrimeira(campoAtivo, s.codigo, s.custo);
+          confirmarSugestaoPrimeira(campoAtivo, s.codigo, s.custo, s.produto);
         }
+
         setSugestoes([]);
         setCampoAtivo(null);
         setIndiceSelecionado(-1);
         inputEl?.blur();
       }
     };
+
     document.addEventListener("mousedown", handleClickOutside);
+
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [campoAtivo, sugestoes]);
 
-  // Rolagem automática
+  // =====================
+  // Fechar sugestões do produto ao clicar fora
+  // =====================
+  useEffect(() => {
+    const handleClickOutsideProduto = (e: MouseEvent) => {
+      if (!produtoSugestaoAtiva) return;
+
+      const listaEl = listaProdutoRef.current;
+      const target = e.target as Node;
+
+      const clickDentroLista = !!(listaEl && listaEl.contains(target));
+
+      if (!clickDentroLista) {
+        setProdutoSugestaoAtiva(false);
+        setIndiceProdutoSelecionado(-1);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutsideProduto);
+
+    return () =>
+      document.removeEventListener("mousedown", handleClickOutsideProduto);
+  }, [produtoSugestaoAtiva]);
+
+  // =====================
+  // Rolagem automática da composição
+  // =====================
   useEffect(() => {
     if (listaRef.current && indiceSelecionado >= 0) {
       const el = listaRef.current.children[indiceSelecionado] as HTMLElement;
+
       if (el) el.scrollIntoView({ block: "nearest" });
     }
   }, [indiceSelecionado]);
+
+  // =====================
+  // Rolagem automática do produto
+  // =====================
+  useEffect(() => {
+    if (listaProdutoRef.current && indiceProdutoSelecionado >= 0) {
+      const el = listaProdutoRef.current.children[
+        indiceProdutoSelecionado
+      ] as HTMLElement;
+
+      if (el) el.scrollIntoView({ block: "nearest" });
+    }
+  }, [indiceProdutoSelecionado]);
 
   const ultimaBuscaRef = useRef("");
 
   const buscarSugestoes = async (termo: string, idx: number) => {
     const raw = termo.trim();
+
     ultimaBuscaRef.current = raw;
 
     if (!raw) {
@@ -213,7 +310,7 @@ export default function PricingCalculatorModern() {
 
     const exact = await supabase
       .from("custos")
-      .select('"Código", "Custo Atual"')
+      .select('"Código", "Custo Atual", "Produto"')
       .eq('"Código"', raw)
       .limit(5);
 
@@ -225,6 +322,7 @@ export default function PricingCalculatorModern() {
         exact.data.map((d) => ({
           codigo: d["Código"],
           custo: Number(d["Custo Atual"]) || 0,
+          produto: d["Produto"] || "",
         }))
       );
       setIndiceSelecionado(0);
@@ -233,7 +331,7 @@ export default function PricingCalculatorModern() {
 
     const starts = await supabase
       .from("custos")
-      .select('"Código", "Custo Atual"')
+      .select('"Código", "Custo Atual", "Produto"')
       .ilike('"Código"', `${raw}%`)
       .limit(5);
 
@@ -245,6 +343,7 @@ export default function PricingCalculatorModern() {
         starts.data.map((d) => ({
           codigo: d["Código"],
           custo: Number(d["Custo Atual"]) || 0,
+          produto: d["Produto"] || "",
         }))
       );
       setIndiceSelecionado(0);
@@ -253,7 +352,7 @@ export default function PricingCalculatorModern() {
 
     const partial = await supabase
       .from("custos")
-      .select('"Código", "Custo Atual"')
+      .select('"Código", "Custo Atual", "Produto"')
       .ilike('"Código"', `%${raw}%`)
       .limit(5);
 
@@ -264,6 +363,7 @@ export default function PricingCalculatorModern() {
       partial.data?.map((d) => ({
         codigo: d["Código"],
         custo: Number(d["Custo Atual"]) || 0,
+        produto: d["Produto"] || "",
       })) || []
     );
     setIndiceSelecionado(0);
@@ -272,25 +372,206 @@ export default function PricingCalculatorModern() {
   const buscarSugestoesDebounced = useRef(debounce(buscarSugestoes, 120))
     .current;
 
+  // =====================
+  // Busca de sugestão do Produto
+  // =====================
+  const buscarSugestoesProduto = async (
+    termo: string,
+    tipo: TipoBuscaProduto
+  ) => {
+    const raw = termo.trim();
+    const buscaAtual = `${tipo}:${raw}`;
+
+    ultimaBuscaProdutoRef.current = buscaAtual;
+
+    if (!raw) {
+      setSugestoesProduto([]);
+      setProdutoSugestaoAtiva(false);
+      setIndiceProdutoSelecionado(-1);
+      return;
+    }
+
+    const coluna = tipo === "codigo" ? "Código" : "Produto";
+
+    const mapResultados = (data: any[] | null) =>
+      data?.map((d) => ({
+        codigo: d["Código"],
+        custo: Number(d["Custo Atual"]) || 0,
+        produto: d["Produto"] || "",
+      })) || [];
+
+    const exact = await supabase
+      .from("custos")
+      .select('"Código", "Custo Atual", "Produto"')
+      .eq(`"${coluna}"`, raw)
+      .limit(8);
+
+    if (ultimaBuscaProdutoRef.current !== buscaAtual) return;
+
+    if (exact.data && exact.data.length > 0) {
+      const lista = mapResultados(exact.data);
+
+      setSugestoesProduto(lista);
+      setProdutoSugestaoAtiva(true);
+      setIndiceProdutoSelecionado(0);
+      return;
+    }
+
+    const starts = await supabase
+      .from("custos")
+      .select('"Código", "Custo Atual", "Produto"')
+      .ilike(`"${coluna}"`, `${raw}%`)
+      .limit(8);
+
+    if (ultimaBuscaProdutoRef.current !== buscaAtual) return;
+
+    if (starts.data && starts.data.length > 0) {
+      const lista = mapResultados(starts.data);
+
+      setSugestoesProduto(lista);
+      setProdutoSugestaoAtiva(true);
+      setIndiceProdutoSelecionado(0);
+      return;
+    }
+
+    const partial = await supabase
+      .from("custos")
+      .select('"Código", "Custo Atual", "Produto"')
+      .ilike(`"${coluna}"`, `%${raw}%`)
+      .limit(8);
+
+    if (ultimaBuscaProdutoRef.current !== buscaAtual) return;
+
+    const lista = mapResultados(partial.data);
+
+    setSugestoesProduto(lista);
+    setProdutoSugestaoAtiva(lista.length > 0);
+    setIndiceProdutoSelecionado(lista.length > 0 ? 0 : -1);
+  };
+
+  const buscarSugestoesProdutoDebounced = useRef(
+    debounce(buscarSugestoesProduto, 120)
+  ).current;
+
   const confirmarSugestaoPrimeira = (
     idx: number,
     codigo: string,
-    custo: number
+    custo: number,
+    produto?: string
   ) => {
     const novo = [...composicao];
-    novo[idx].codigo = codigo;
-    novo[idx].custo = (Number(custo) || 0).toFixed(2);
+
+    novo[idx] = {
+      ...novo[idx],
+      codigo,
+      produto: produto || novo[idx]?.produto || "",
+      descricao: produto || novo[idx]?.descricao || "",
+      custo: (Number(custo) || 0).toFixed(2),
+      quantidade: novo[idx]?.quantidade || "1",
+    };
+
     setComposicao(novo);
   };
 
-  const selecionarSugestao = (codigo: string, custo: number, idx: number) => {
-    confirmarSugestaoPrimeira(idx, codigo, custo);
+  const selecionarSugestao = (
+    codigo: string,
+    custo: number,
+    idx: number,
+    produto?: string
+  ) => {
+    confirmarSugestaoPrimeira(idx, codigo, custo, produto);
+
     setSugestoes([]);
     setCampoAtivo(null);
     setIndiceSelecionado(-1);
+
     setTimeout(() => {
       inputRefs.current[idx]?.[0]?.focus();
     }, 50);
+  };
+
+  const isLinhaVazia = (item: any) => {
+    return (
+      !String(item?.codigo || "").trim() &&
+      !String(item?.produto || "").trim() &&
+      !String(item?.descricao || "").trim() &&
+      !String(item?.custo || "").trim()
+    );
+  };
+
+  const limparProdutoBusca = () => {
+    setProdutoCodigo("");
+    setProdutoDescricao("");
+    setSugestoesProduto([]);
+    setProdutoSugestaoAtiva(false);
+    setIndiceProdutoSelecionado(-1);
+  };
+
+  const selecionarProdutoSugestao = (
+    codigo: string,
+    custo: number,
+    produto?: string
+  ) => {
+    setComposicao((prev: any[]) => {
+      const novoItem = {
+        codigo,
+        produto: produto || "",
+        descricao: produto || "",
+        quantidade: "1",
+        custo: (Number(custo) || 0).toFixed(2),
+      };
+
+      const indexVazio = prev.findIndex(isLinhaVazia);
+
+      if (indexVazio >= 0) {
+        const novo = [...prev];
+
+        novo[indexVazio] = {
+          ...novo[indexVazio],
+          ...novoItem,
+        };
+
+        return novo;
+      }
+
+      return [...prev, novoItem];
+    });
+
+    limparProdutoBusca();
+  };
+
+  const adicionarProdutoManualNaComposicao = () => {
+    const codigo = produtoCodigo.trim();
+    const descricao = produtoDescricao.trim();
+
+    if (!codigo && !descricao) return;
+
+    setComposicao((prev: any[]) => {
+      const novoItem = {
+        codigo: codigo || "Produto sem código",
+        produto: descricao,
+        descricao,
+        quantidade: "1",
+        custo: "0",
+      };
+
+      const indexVazio = prev.findIndex(isLinhaVazia);
+
+      if (indexVazio >= 0) {
+        const novo = [...prev];
+
+        novo[indexVazio] = {
+          ...novo[indexVazio],
+          ...novoItem,
+        };
+
+        return novo;
+      }
+
+      return [...prev, novoItem];
+    });
+
+    limparProdutoBusca();
   };
 
   const handleSugestoesKeys = (
@@ -301,31 +582,88 @@ export default function PricingCalculatorModern() {
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
+
       setIndiceSelecionado((prev) =>
         prev < sugestoes.length - 1 ? prev + 1 : 0
       );
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
+
       setIndiceSelecionado((prev) =>
         prev > 0 ? prev - 1 : sugestoes.length - 1
       );
     } else if (e.key === "Enter") {
       e.preventDefault();
+
       const i = indiceSelecionado >= 0 ? indiceSelecionado : 0;
       const s = sugestoes[i];
-      selecionarSugestao(s.codigo, s.custo, idx);
+
+      selecionarSugestao(s.codigo, s.custo, idx, s.produto);
     } else if (e.key === "Tab") {
       e.preventDefault();
+
       const i = indiceSelecionado >= 0 ? indiceSelecionado : 0;
-      confirmarSugestaoPrimeira(idx, sugestoes[i].codigo, sugestoes[i].custo);
+
+      confirmarSugestaoPrimeira(
+        idx,
+        sugestoes[i].codigo,
+        sugestoes[i].custo,
+        sugestoes[i].produto
+      );
+
       setSugestoes([]);
       setCampoAtivo(null);
       setIndiceSelecionado(-1);
     } else if (e.key === "Escape") {
       e.preventDefault();
+
       setSugestoes([]);
       setCampoAtivo(null);
       setIndiceSelecionado(-1);
+    }
+  };
+
+  const handleProdutoSugestoesKeys = (
+    e: React.KeyboardEvent<HTMLInputElement>
+  ) => {
+    if (!sugestoesProduto.length || !produtoSugestaoAtiva) return;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+
+      setIndiceProdutoSelecionado((prev) =>
+        prev < sugestoesProduto.length - 1 ? prev + 1 : 0
+      );
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+
+      setIndiceProdutoSelecionado((prev) =>
+        prev > 0 ? prev - 1 : sugestoesProduto.length - 1
+      );
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+
+      const index =
+        indiceProdutoSelecionado >= 0 ? indiceProdutoSelecionado : 0;
+      const item = sugestoesProduto[index];
+
+      if (item) {
+        selecionarProdutoSugestao(item.codigo, item.custo, item.produto);
+      }
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+
+      const index =
+        indiceProdutoSelecionado >= 0 ? indiceProdutoSelecionado : 0;
+      const item = sugestoesProduto[index];
+
+      if (item) {
+        selecionarProdutoSugestao(item.codigo, item.custo, item.produto);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+
+      limparProdutoBusca();
     }
   };
 
@@ -335,11 +673,14 @@ export default function PricingCalculatorModern() {
     col: number
   ) => {
     if (sugestoes.length && campoAtivo === row) return;
+
     const totalRows = composicao.length;
+
     const goNext = () => {
       const nextRow = row + 1 < totalRows ? row + 1 : 0;
       inputRefs.current[nextRow]?.[col]?.focus();
     };
+
     const goPrev = () => {
       const prevRow = row - 1 >= 0 ? row - 1 : totalRows - 1;
       inputRefs.current[prevRow]?.[col]?.focus();
@@ -379,6 +720,7 @@ export default function PricingCalculatorModern() {
   const syncDescontoFromLoja = (descontoInternal: string) => {
     setCalculoLoja((prev) => ({ ...prev, desconto: descontoInternal }));
     setCalculoShopee((prev) => ({ ...prev, desconto: descontoInternal }));
+    setCalculoMagalu((prev) => ({ ...prev, desconto: descontoInternal }));
     setCalculoMarketplaceClassico((prev) => ({
       ...prev,
       desconto: descontoInternal,
@@ -391,7 +733,9 @@ export default function PricingCalculatorModern() {
 
   const handleEmbalagemChangeShared = (raw: string) => {
     const v = toInternal(raw);
+
     setCalculoLoja((p) => ({ ...p, embalagem: v }));
+    setCalculoMagalu((p) => ({ ...p, embalagem: v }));
     setCalculoMarketplaceClassico((p) => ({ ...p, embalagem: v }));
     setCalculoMarketplacePremium((p) => ({ ...p, embalagem: v }));
   };
@@ -399,21 +743,28 @@ export default function PricingCalculatorModern() {
   const handleEmbalagemBlurShared = (raw: string) => {
     const internal = toInternal(raw || "3");
     const v = internal || "3";
+
     setCalculoLoja((p) => ({ ...p, embalagem: v }));
+    setCalculoMagalu((p) => ({ ...p, embalagem: v }));
     setCalculoMarketplaceClassico((p) => ({ ...p, embalagem: v }));
     setCalculoMarketplacePremium((p) => ({ ...p, embalagem: v }));
   };
 
   const handleEmbalagemChangeShopee = (raw: string) => {
     setUserEditedShopeeEmbalagem(true);
+
     const v = toInternal(raw);
+
     setCalculoShopee((p) => ({ ...p, embalagem: v }));
   };
 
   const handleEmbalagemBlurShopee = (raw: string) => {
     const internal = toInternal(raw || "");
+
     if (!internal) setUserEditedShopeeEmbalagem(false);
+
     const v = internal || "3";
+
     setCalculoShopee((p) => ({ ...p, embalagem: v }));
   };
 
@@ -435,13 +786,16 @@ export default function PricingCalculatorModern() {
 
     const custoLiquido = custo * (1 - desconto);
     const divisor = 1 - (imposto + margem + comissao + marketing);
+
     const preco =
       divisor > 0 ? (custoLiquido + frete + embalagem) / divisor : 0;
+
     return isFinite(preco) ? preco : 0;
   };
 
   const precoLoja = calcularPreco(calculoLoja);
   const precoShopee = calcularPreco(calculoShopee);
+  const precoMagalu = calcularPreco(calculoMagalu);
   const precoMLClassico = calcularPreco(calculoMarketplaceClassico);
   const precoMLPremium = calcularPreco(calculoMarketplacePremium);
 
@@ -507,6 +861,8 @@ export default function PricingCalculatorModern() {
     setAcrescimos((prev) => ({
       ...prev,
       precoLoja: precoLoja.toFixed(2),
+      precoShopee: precoShopee.toFixed(2),
+      precoMagalu: precoMagalu.toFixed(2),
       precoMercadoLivreClassico: precoMLClassico.toFixed(2),
       precoMercadoLivrePremium: precoMLPremium.toFixed(2),
       freteMercadoLivreClassico: calculoMarketplaceClassico.frete || "0",
@@ -514,10 +870,13 @@ export default function PricingCalculatorModern() {
     }));
   }, [
     precoLoja,
+    precoShopee,
+    precoMagalu,
     precoMLClassico,
     precoMLPremium,
     calculoMarketplaceClassico.frete,
     calculoMarketplacePremium.frete,
+    setAcrescimos,
   ]);
 
   const [isClearing, setIsClearing] = useState(false);
@@ -530,6 +889,13 @@ export default function PricingCalculatorModern() {
       if (newCount < 5) {
         setIsClearing(true);
         setComposicao([]);
+
+        setProdutoCodigo("");
+        setProdutoDescricao("");
+
+        setSugestoesProduto([]);
+        setProdutoSugestaoAtiva(false);
+        setIndiceProdutoSelecionado(-1);
 
         setCalculoLoja({
           desconto: "",
@@ -546,6 +912,16 @@ export default function PricingCalculatorModern() {
           imposto: "12",
           margem: "15",
           frete: "4",
+          comissao: "20",
+          marketing: "3",
+          embalagem: "3",
+        });
+
+        setCalculoMagalu({
+          desconto: "",
+          imposto: "12",
+          margem: "10",
+          frete: "",
           comissao: "20",
           marketing: "3",
           embalagem: "3",
@@ -573,6 +949,8 @@ export default function PricingCalculatorModern() {
 
         setAcrescimos({
           precoLoja: "",
+          precoShopee: "",
+          precoMagalu: "",
           precoMercadoLivreClassico: "",
           precoMercadoLivrePremium: "",
           freteMercadoLivreClassico: "",
@@ -600,13 +978,16 @@ export default function PricingCalculatorModern() {
 
   useEffect(() => {
     if (clicks === 0) return;
+
     const timer = setTimeout(() => setClicks(0), 5000);
+
     return () => clearTimeout(timer);
   }, [clicks]);
 
   const handleDownload = async () => {
     const now = new Date();
     const dataFormatada = now.toLocaleDateString("pt-BR").replace(/\//g, "-");
+
     const horaFormatada = `${now
       .getHours()
       .toString()
@@ -614,28 +995,34 @@ export default function PricingCalculatorModern() {
       .getMinutes()
       .toString()
       .padStart(2, "0")}m`;
+
     const fileName = `PRECIFICACAO_${dataFormatada}_${horaFormatada}.xlsx`;
 
     const composicaoRows: (string | number)[][] = [
       ["Composição de Custos"],
       ["Gerado em", now.toLocaleString("pt-BR")],
       [],
-      ["Código", "Quantidade", "Custo (R$)"],
+      ["Código", "Descrição", "Quantidade", "Custo Unitário (R$)"],
       ...composicao.map((i: any) => [
         i.codigo || "",
+        i.produto || i.descricao || "",
         i.quantidade || "",
         i.custo || "",
       ]),
     ];
+
     const composicaoSheet = XLSX.utils.aoa_to_sheet(composicaoRows);
 
     const resumoRows: (string | number)[][] = [
       ["Resumo de Precificação"],
       ["Gerado em", now.toLocaleString("pt-BR")],
       [],
+      ["Itens na composição", composicao.length],
+      [],
       ["Custo Total (R$)", custoTotal],
       ["Preço Loja (R$)", precoLoja],
       ["Preço Shopee (R$)", precoShopee],
+      ["Preço Magalu (R$)", precoMagalu],
       ["Preço ML Clássico (R$)", precoMLClassico],
       ["Preço ML Premium (R$)", precoMLPremium],
       [],
@@ -645,12 +1032,16 @@ export default function PricingCalculatorModern() {
       ["Regras Shopee"],
       ...Object.entries(calculoShopee),
       [],
+      ["Regras Magalu"],
+      ...Object.entries(calculoMagalu),
+      [],
       ["Regras Mercado Livre Clássico"],
       ...Object.entries(calculoMarketplaceClassico),
       [],
       ["Regras Mercado Livre Premium"],
       ...Object.entries(calculoMarketplacePremium),
     ];
+
     const resumoSheet = XLSX.utils.aoa_to_sheet(resumoRows);
 
     const headerStyle = {
@@ -678,19 +1069,27 @@ export default function PricingCalculatorModern() {
 
     const applyHeaderStyle = (sheet: any, headerRow: number, cols: number) => {
       const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
       for (let i = 0; i < cols; i++) {
         const cellRef = `${letters[i]}${headerRow}`;
         if (sheet[cellRef]) sheet[cellRef].s = headerStyle;
       }
     };
 
-    applyHeaderStyle(composicaoSheet, 4, 3);
+    applyHeaderStyle(composicaoSheet, 4, 4);
     applyHeaderStyle(resumoSheet, 1, 1);
 
-    composicaoSheet["!cols"] = [{ wch: 24 }, { wch: 16 }, { wch: 16 }];
+    composicaoSheet["!cols"] = [
+      { wch: 24 },
+      { wch: 44 },
+      { wch: 16 },
+      { wch: 18 },
+    ];
+
     resumoSheet["!cols"] = [{ wch: 32 }, { wch: 22 }];
 
     const wb = XLSX.utils.book_new();
+
     XLSX.utils.book_append_sheet(wb, composicaoSheet, "Composição");
     XLSX.utils.book_append_sheet(wb, resumoSheet, "Resumo");
 
@@ -699,6 +1098,7 @@ export default function PricingCalculatorModern() {
       type: "array",
       cellStyles: true,
     });
+
     const blob = new Blob([wbout], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
@@ -715,94 +1115,109 @@ export default function PricingCalculatorModern() {
   };
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-[#0a0a0a] via-[#0f0f0f] to-[#0a0a0a] px-2 pt-8 pb-24 sm:pb-4 sm:p-4 md:p-8 sm:pt-24">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-4 min-w-0">
-        <motion.div
-          className={`lg:col-span-6 min-w-0 p-3 sm:p-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-lg shadow-lg h-full relative ${
-            campoAtivo !== null ? "z-[120]" : "z-0"
-          }`}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <div className="flex items-center gap-2 mb-3 sm:mb-2 min-w-0">
-            <Layers className="w-5 h-5 text-[#1a8ceb] flex-shrink-0" />
-            <h3 className="text-base font-bold text-white flex items-center gap-2 min-w-0">
-              <span className="truncate">Composição</span>
-              <HelpTooltip text="Composição de Custos." />
-            </h3>
+    <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-[#070707] via-[#0c0c0c] to-[#070707] px-4 pb-24 pt-6 sm:px-6 sm:pb-8 lg:px-8">
+      <div className="mx-auto max-w-[1880px]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+          <div
+            className={`min-w-0 space-y-4 lg:col-span-3 ${
+              campoAtivo !== null || produtoSugestaoAtiva
+                ? "z-[120]"
+                : "z-0"
+            }`}
+          >
+            <ProductSection
+              codigo={produtoCodigo}
+              setCodigo={setProdutoCodigo}
+              descricao={produtoDescricao}
+              setDescricao={setProdutoDescricao}
+              sugestoesProduto={sugestoesProduto}
+              produtoSugestaoAtiva={produtoSugestaoAtiva}
+              indiceProdutoSelecionado={indiceProdutoSelecionado}
+              listaProdutoRef={listaProdutoRef}
+              buscarSugestoesProdutoDebounced={buscarSugestoesProdutoDebounced}
+              handleProdutoSugestoesKeys={handleProdutoSugestoesKeys}
+              selecionarProdutoSugestao={selecionarProdutoSugestao}
+              onAdicionarProduto={adicionarProdutoManualNaComposicao}
+            />
+
+            <CostComposition
+              composicao={composicao}
+              setComposicao={setComposicao}
+              custoTotal={custoTotal}
+              adicionarItem={adicionarItem}
+              removerItem={removerItem}
+              sugestoes={sugestoes}
+              campoAtivo={campoAtivo}
+              indiceSelecionado={indiceSelecionado}
+              listaRef={listaRef}
+              inputRefs={inputRefs}
+              buscarSugestoesDebounced={buscarSugestoesDebounced}
+              handleSugestoesKeys={handleSugestoesKeys}
+              handleGridNav={handleGridNav}
+              selecionarSugestao={selecionarSugestao}
+              confirmarSugestaoPrimeira={confirmarSugestaoPrimeira}
+              isEditing={isEditing}
+              setEditing={setEditing}
+              toDisplay={toDisplay}
+              toInternal={toInternal}
+            />
           </div>
 
-          <CostComposition
-            composicao={composicao}
-            setComposicao={setComposicao}
-            custoTotal={custoTotal}
-            adicionarItem={adicionarItem}
-            removerItem={removerItem}
-            sugestoes={sugestoes}
-            campoAtivo={campoAtivo}
-            indiceSelecionado={indiceSelecionado}
-            listaRef={listaRef}
-            inputRefs={inputRefs}
-            buscarSugestoesDebounced={buscarSugestoesDebounced}
-            handleSugestoesKeys={handleSugestoesKeys}
-            handleGridNav={handleGridNav}
-            selecionarSugestao={selecionarSugestao}
-            confirmarSugestaoPrimeira={confirmarSugestaoPrimeira}
-            isEditing={isEditing}
-            setEditing={setEditing}
-            toDisplay={toDisplay}
-            toInternal={toInternal}
-          />
-        </motion.div>
-
-        <PriceCalculationSection
-          calculoLoja={calculoLoja}
-          setCalculoLoja={setCalculoLoja}
-          calculoShopee={calculoShopee}
-          setCalculoShopee={setCalculoShopee}
-          calculoMLClassico={calculoMarketplaceClassico}
-          setCalculoMLClassico={setCalculoMarketplaceClassico}
-          calculoMLPremium={calculoMarketplacePremium}
-          setCalculoMLPremium={setCalculoMarketplacePremium}
-          precoLoja={precoLoja}
-          precoShopee={precoShopee}
-          precoMLClassico={precoMLClassico}
-          precoMLPremium={precoMLPremium}
-          acrescimos={acrescimos}
-          setAcrescimos={setAcrescimos}
-          isEditing={isEditing}
-          setEditing={setEditing}
-          toDisplay={toDisplay}
-          toInternal={toInternal}
-          handleLinearNav={handleLinearNav}
-          calcLojaRefs={calcLojaRefs}
-          calcShopeeRefs={calcShopeeRefs}
-          calcMLClassicoRefs={calcMLClassicoRefs}
-          calcMLPremiumRefs={calcMLPremiumRefs}
-          acrescimosRefs={acrescimosRefs}
-          handleEmbalagemBlurShared={handleEmbalagemBlurShared}
-          handleEmbalagemChangeShared={handleEmbalagemChangeShared}
-          handleEmbalagemBlurShopee={handleEmbalagemBlurShopee}
-          handleEmbalagemChangeShopee={handleEmbalagemChangeShopee}
-          handleDownload={handleDownload}
-          handleClearAll={handleClearAll}
-          isClearing={isClearing}
-          clicks={clicks}
-          statusAcrescimo={statusAcrescimo}
-          syncDescontoFromLoja={syncDescontoFromLoja}
-          userEditedShopeeComissao={userEditedShopeeComissao}
-          setUserEditedShopeeComissao={setUserEditedShopeeComissao}
-          userEditedShopeeFrete={userEditedShopeeFrete}
-          setUserEditedShopeeFrete={setUserEditedShopeeFrete}
-          userEditedShopeeImposto={userEditedShopeeImposto}
-          setUserEditedShopeeImposto={setUserEditedShopeeImposto}
-          userEditedShopeeMargem={userEditedShopeeMargem}
-          setUserEditedShopeeMargem={setUserEditedShopeeMargem}
-          userEditedShopeeMarketing={userEditedShopeeMarketing}
-          setUserEditedShopeeMarketing={setUserEditedShopeeMarketing}
-          userEditedShopeeEmbalagem={userEditedShopeeEmbalagem}
-          setUserEditedShopeeEmbalagem={setUserEditedShopeeEmbalagem}
-        />
+          <div className="min-w-0 lg:col-span-9">
+            <PriceCalculationSection
+              calculoLoja={calculoLoja}
+              setCalculoLoja={setCalculoLoja}
+              calculoShopee={calculoShopee}
+              setCalculoShopee={setCalculoShopee}
+              calculoMagalu={calculoMagalu}
+              setCalculoMagalu={setCalculoMagalu}
+              calculoMLClassico={calculoMarketplaceClassico}
+              setCalculoMLClassico={setCalculoMarketplaceClassico}
+              calculoMLPremium={calculoMarketplacePremium}
+              setCalculoMLPremium={setCalculoMarketplacePremium}
+              precoLoja={precoLoja}
+              precoShopee={precoShopee}
+              precoMagalu={precoMagalu}
+              precoMLClassico={precoMLClassico}
+              precoMLPremium={precoMLPremium}
+              acrescimos={acrescimos}
+              setAcrescimos={setAcrescimos}
+              isEditing={isEditing}
+              setEditing={setEditing}
+              toDisplay={toDisplay}
+              toInternal={toInternal}
+              handleLinearNav={handleLinearNav}
+              calcLojaRefs={calcLojaRefs}
+              calcShopeeRefs={calcShopeeRefs}
+              calcMagaluRefs={calcMagaluRefs}
+              calcMLClassicoRefs={calcMLClassicoRefs}
+              calcMLPremiumRefs={calcMLPremiumRefs}
+              acrescimosRefs={acrescimosRefs}
+              handleEmbalagemBlurShared={handleEmbalagemBlurShared}
+              handleEmbalagemChangeShared={handleEmbalagemChangeShared}
+              handleEmbalagemBlurShopee={handleEmbalagemBlurShopee}
+              handleEmbalagemChangeShopee={handleEmbalagemChangeShopee}
+              handleDownload={handleDownload}
+              handleClearAll={handleClearAll}
+              isClearing={isClearing}
+              clicks={clicks}
+              statusAcrescimo={statusAcrescimo}
+              syncDescontoFromLoja={syncDescontoFromLoja}
+              userEditedShopeeComissao={userEditedShopeeComissao}
+              setUserEditedShopeeComissao={setUserEditedShopeeComissao}
+              userEditedShopeeFrete={userEditedShopeeFrete}
+              setUserEditedShopeeFrete={setUserEditedShopeeFrete}
+              userEditedShopeeImposto={userEditedShopeeImposto}
+              setUserEditedShopeeImposto={setUserEditedShopeeImposto}
+              userEditedShopeeMargem={userEditedShopeeMargem}
+              setUserEditedShopeeMargem={setUserEditedShopeeMargem}
+              userEditedShopeeMarketing={userEditedShopeeMarketing}
+              setUserEditedShopeeMarketing={setUserEditedShopeeMarketing}
+              userEditedShopeeEmbalagem={userEditedShopeeEmbalagem}
+              setUserEditedShopeeEmbalagem={setUserEditedShopeeEmbalagem}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

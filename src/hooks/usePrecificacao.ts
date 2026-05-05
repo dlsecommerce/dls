@@ -1,10 +1,17 @@
 "use client";
+
 import { useState, useEffect } from "react";
 
+type ComposicaoItem = {
+  codigo: string;
+  quantidade: string;
+  custo: string;
+  produto?: string;
+  descricao?: string;
+};
+
 export function usePrecificacao() {
-  const [composicao, setComposicao] = useState([
-    { codigo: "", quantidade: "", custo: "" },
-  ]);
+  const [composicao, setComposicao] = useState<ComposicaoItem[]>([]);
 
   const [calculo, setCalculo] = useState({
     desconto: "",
@@ -15,10 +22,10 @@ export function usePrecificacao() {
     marketing: "",
   });
 
-  // ✅ NOVO FORMATO (OPÇÃO 1)
   const [acrescimos, setAcrescimos] = useState({
     precoLoja: "",
     precoShopee: "",
+    precoMagalu: "",
     precoMercadoLivreClassico: "",
     precoMercadoLivrePremium: "",
     freteMercadoLivreClassico: "",
@@ -39,18 +46,20 @@ export function usePrecificacao() {
   >([]);
 
   // ==================================================
-  // 🔹 Parser seguro
+  // Parser seguro
   // ==================================================
   const parseBR = (v: string | number | null | undefined): number => {
     if (v === null || v === undefined || v === "") return 0;
-    const s = String(v).trim();
 
     if (typeof v === "number") return v;
+
+    const s = String(v).trim();
 
     if (s.includes(",")) {
       if (s.match(/\.\d{3},/)) {
         return Number(s.replace(/\./g, "").replace(",", "."));
       }
+
       return Number(s.replace(",", "."));
     }
 
@@ -62,16 +71,17 @@ export function usePrecificacao() {
   };
 
   // ==================================================
-  // 💰 Custo total
+  // Custo total
   // ==================================================
   const EMBALAGEM_FIXA = 2.5;
+
   const custoTotal = composicao.reduce(
     (sum, item) => sum + parseBR(item.custo) * parseBR(item.quantidade),
     0
   );
 
   // ==================================================
-  // Fluxo antigo (mantido para compatibilidade)
+  // Fluxo antigo mantido para compatibilidade
   // ==================================================
   const desconto = parseBR(calculo.desconto) / 100;
   const imposto = parseBR(calculo.imposto) / 100;
@@ -82,11 +92,12 @@ export function usePrecificacao() {
 
   const custoLiquido = custoTotal * (1 - desconto);
   const divisor = 1 - (imposto + lucro + comissao + marketing);
+
   const precoVenda =
     divisor > 0 ? (custoLiquido + frete + EMBALAGEM_FIXA) / divisor : 0;
 
   // ==================================================
-  // 🟦 NOVO: CÁLCULO DE ACRÉSCIMO A1 (FUNCIONANDO)
+  // Cálculo de acréscimo
   // ==================================================
   useEffect(() => {
     const precoLoja = parseBR(acrescimos.precoLoja);
@@ -100,6 +111,7 @@ export function usePrecificacao() {
     const baseClassico = precoLoja + freteClassico;
 
     let acrescimoClassico = 0;
+
     if (baseClassico > 0 && precoClassico > 0) {
       acrescimoClassico = (precoClassico / baseClassico - 1) * 100;
     }
@@ -113,11 +125,11 @@ export function usePrecificacao() {
     const basePremium = precoLoja + fretePremium;
 
     let acrescimoPremium = 0;
+
     if (basePremium > 0 && precoPremium > 0) {
       acrescimoPremium = (precoPremium / basePremium - 1) * 100;
     }
 
-    // Atualiza os valores calculados
     setAcrescimos((prev) => ({
       ...prev,
       acrescimoClassico,
@@ -132,7 +144,7 @@ export function usePrecificacao() {
   ]);
 
   // ==================================================
-  // STATUS (baseado no Clássico)
+  // Status baseado no Clássico
   // ==================================================
   const statusAcrescimo =
     acrescimos.acrescimoClassico > 0
@@ -142,22 +154,34 @@ export function usePrecificacao() {
       : "Neutro";
 
   // ==================================================
-  // COMPOSIÇÃO
+  // Composição
   // ==================================================
   const adicionarItem = () => {
-    setComposicao([...composicao, { codigo: "", quantidade: "", custo: "" }]);
+    setComposicao((prev) => [
+      ...prev,
+      {
+        codigo: "",
+        produto: "",
+        descricao: "",
+        quantidade: "1",
+        custo: "",
+      },
+    ]);
+
     registrarAlteracao("Inclusão", "Item", "-", "Novo item", "Item adicionado");
   };
 
   const removerItem = (idx: number) => {
     const item = composicao[idx];
-    setComposicao(composicao.filter((_, i) => i !== idx));
+
+    setComposicao((prev) => prev.filter((_, i) => i !== idx));
+
     registrarAlteracao(
       "Exclusão",
       "Item",
-      item.codigo,
+      item?.codigo || "-",
       "-",
-      `Item removido (${item.codigo})`
+      `Item removido (${item?.codigo || "sem código"})`
     );
   };
 
