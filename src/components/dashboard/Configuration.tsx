@@ -19,8 +19,6 @@ import { logoutAction } from "@/app/actions/logout";
 
 import ProfileTab from "./tabs/ProfileTab";
 import SecurityTab from "./tabs/SecurityTab";
-import NotificationsTab from "./tabs/NotificationsTab";
-import PreferencesTab from "./tabs/PreferencesTab";
 import FeedbacksTab from "./tabs/FeedbacksTab";
 import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 
@@ -138,8 +136,6 @@ export default function Configuration() {
   const tabs = [
     { id: "perfil", label: "Perfil", icon: User },
     { id: "seguranca", label: "Segurança", icon: Shield },
-    { id: "notificacoes", label: "Notificações", icon: Bell },
-    { id: "preferencias", label: "Preferências", icon: Sliders },
     { id: "feedbacks", label: "Feedbacks", icon: MessageSquare },
   ];
 
@@ -220,31 +216,6 @@ export default function Configuration() {
                   />
                 </motion.div>
               )}
-
-              {tab === "notificacoes" && (
-                <motion.div
-                  key="notificacoes"
-                  initial={{ opacity: 0, x: 30 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -30 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <NotificationsTab />
-                </motion.div>
-              )}
-
-              {tab === "preferencias" && (
-                <motion.div
-                  key="preferencias"
-                  initial={{ opacity: 0, x: 30 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -30 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <PreferencesTab />
-                </motion.div>
-              )}
-
               {tab === "feedbacks" && (
                 <motion.div
                   key="feedbacks"
