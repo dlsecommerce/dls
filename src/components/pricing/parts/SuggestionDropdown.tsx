@@ -62,8 +62,6 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
               </div>
             )}
           </div>
-,
-
           <span className="shrink-0 text-right text-sm font-semibold text-[#1a8ceb]">
             R$ {s.custo.toFixed(2)}
           </span>

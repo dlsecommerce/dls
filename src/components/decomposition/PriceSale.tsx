@@ -2,23 +2,13 @@
 
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { DollarSign, HelpCircle, Download, Trash2 } from "lucide-react";
+import { Download, Trash2, Minus, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { createNotification } from "@/lib/createNotification";
 import { Item } from "@/components/decomposition/CompositionCosts";
 import { ResultadoView } from "@/components/decomposition/Results";
-
-const HelpTooltip = ({ text }: { text: string }) => (
-  <div className="relative group flex items-center">
-    <HelpCircle className="w-4 h-4 text-neutral-400 cursor-pointer" />
-    <div className="absolute left-6 top-1/2 -translate-y-1/2 text-neutral-400/70 text-xs whitespace-nowrap font-normal opacity-0 group-hover:opacity-100 transition pointer-events-none z-20">
-      {text}
-    </div>
-  </div>
-);
 
 type Props = {
   precoVenda: string;
@@ -28,6 +18,30 @@ type Props = {
   setComposicao: (v: Item[]) => void;
   resultados: ResultadoView[];
   setResultados: (v: ResultadoView[]) => void;
+};
+
+const parseBRNumber = (value: string | number) => {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+
+  const raw = String(value || "").trim();
+
+  if (!raw) return 0;
+
+  const normalized = raw.includes(",")
+    ? raw.replace(/\./g, "").replace(",", ".")
+    : raw;
+
+  const onlyNumber = normalized.replace(/[^\d.-]/g, "");
+  const parsed = Number(onlyNumber);
+
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const formatBR = (value: number) => {
+  return Number(value || 0).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 };
 
 export default function PrecoVenda({
@@ -41,6 +55,26 @@ export default function PrecoVenda({
 }: Props) {
   const [isClearing, setIsClearing] = useState(false);
   const [clicks, setClicks] = useState(0);
+
+  const precosRapidos = [9.99, 19.99, 29.99, 99.99];
+
+  const aplicarPrecoRapido = (valor: number) => {
+    setPrecoVenda(formatBR(valor));
+  };
+
+  const ajustarPreco = (delta: number) => {
+    const atual = parseBRNumber(precoVenda);
+    const novoValor = Math.max(0, atual + delta);
+
+    setPrecoVenda(formatBR(novoValor));
+  };
+
+  const handlePrecoKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      onBlurPrecoVenda();
+    }
+  };
 
   /* === DOWNLOAD XLSX COM ESTILO === */
   const handleDownload = async () => {
@@ -107,7 +141,10 @@ export default function PrecoVenda({
 
       headers.forEach((col) => {
         const cellRef = `${col}${headerRow}`;
-        if (sheet[cellRef]) sheet[cellRef].s = headerStyle;
+
+        if (sheet[cellRef]) {
+          sheet[cellRef].s = headerStyle;
+        }
       });
     };
 
@@ -152,6 +189,7 @@ export default function PrecoVenda({
         setPrecoVenda("");
         setComposicao([]);
         setResultados([]);
+
         setTimeout(() => setIsClearing(false), 300);
       } else {
         setIsClearing(true);
@@ -171,28 +209,33 @@ export default function PrecoVenda({
   }, [clicks]);
 
   return (
-    <div className="mb-4 sm:mb-3 relative">
-      {/* Cabeçalho */}
-      <div className="flex justify-between items-center mb-2 sm:mb-1 gap-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <DollarSign className="w-5 h-5 text-[#1a8ceb] shrink-0" />
+    <section className="flex h-full min-h-[216px] flex-col rounded-2xl border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#1a8ceb] text-xs font-bold text-white">
+            3.
+          </span>
 
-          <h3 className="text-white text-sm font-semibold flex items-center gap-2 min-w-0">
-            <span className="truncate">Preço de Venda</span>
-            <HelpTooltip text="Preço de Venda Total." />
-          </h3>
+          <h2 className="truncate text-base font-semibold text-white">
+            Preço de Venda
+          </h2>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex shrink-0 items-center gap-1.5">
           <motion.button
             whileTap={{ scale: 0.9 }}
             onClick={() => {
               void handleDownload();
             }}
             title="Baixar planilha Excel"
-            className="h-10 w-10 sm:h-auto sm:w-auto sm:p-2 flex items-center justify-center hover:bg-white/10 rounded-full transition-all"
+            className="
+              flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg
+              text-white/55 transition
+              hover:bg-white/10 hover:text-white
+              active:scale-[0.96]
+            "
           >
-            <Download className="w-4 h-4 text-white opacity-70 hover:opacity-100" />
+            <Download className="h-4 w-4" />
           </motion.button>
 
           <motion.button
@@ -204,14 +247,18 @@ export default function PrecoVenda({
                 ? "Botão bloqueado temporariamente após muitos cliques"
                 : "Limpar todos os dados"
             }
-            className={`h-10 w-10 sm:h-auto sm:w-auto sm:p-2 flex items-center justify-center rounded-full transition-all ${
-              isClearing
-                ? "bg-red-500/20 text-red-300 cursor-not-allowed"
-                : "hover:bg-red-500/10 text-red-400 hover:text-red-500"
-            }`}
+            className={`
+              flex h-8 w-8 items-center justify-center rounded-lg transition
+              active:scale-[0.96]
+              ${
+                isClearing
+                  ? "cursor-not-allowed bg-red-500/20 text-red-300"
+                  : "cursor-pointer text-red-400 hover:bg-red-500/10 hover:text-red-300"
+              }
+            `}
           >
             <Trash2
-              className={`w-4 h-4 transition-transform ${
+              className={`h-4 w-4 transition-transform ${
                 isClearing ? "animate-pulse" : ""
               }`}
             />
@@ -219,17 +266,105 @@ export default function PrecoVenda({
         </div>
       </div>
 
-      <Input
-        value={precoVenda}
-        placeholder="0,00"
-        onChange={(e) => setPrecoVenda(e.target.value)}
-        onBlur={onBlurPrecoVenda}
-        className="h-11 sm:h-auto bg-black/50 border-white/10 text-white text-base sm:text-xs rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
-      />
+      <div className="flex flex-1 flex-col justify-between gap-1.5">
+        <div className="flex h-[56px] overflow-hidden rounded-xl border border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+          <div className="flex h-full items-center border-r border-white/10 px-4 text-sm font-black text-white/45">
+            R$
+          </div>
 
-      <Label className="text-neutral-400 text-xs sm:text-[10px] mt-1.5 sm:mt-1 block">
-        Digite o preço final da venda
-      </Label>
-    </div>
+          <Input
+            value={precoVenda}
+            placeholder="0,00"
+            inputMode="decimal"
+            onChange={(e) => setPrecoVenda(e.target.value)}
+            onBlur={onBlurPrecoVenda}
+            onKeyDown={handlePrecoKeyDown}
+            className="
+              h-full flex-1 rounded-none border-0 bg-transparent px-4
+              text-3xl font-black text-white shadow-none outline-none
+              placeholder:text-white/20
+              focus-visible:ring-0 focus-visible:ring-offset-0
+            "
+          />
+        </div>
+
+        <div>
+          <div className="mb-1 text-[9px] font-bold uppercase leading-none tracking-wide text-white/35">
+            Valores rápidos
+          </div>
+
+          <div className="grid grid-cols-4 gap-1.5">
+            {precosRapidos.map((valor) => (
+              <button
+                key={valor}
+                type="button"
+                onClick={() => aplicarPrecoRapido(valor)}
+                className="
+                  h-7 cursor-pointer rounded-lg border border-white/10 bg-white/[0.03]
+                  text-[11px] font-bold text-white/60 transition
+                  hover:border-[#1a8ceb]/50 hover:bg-[#1a8ceb]/10 hover:text-[#1a8ceb]
+                  active:scale-[0.97]
+                "
+              >
+                R$ {formatBR(valor)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-1 text-[9px] font-bold uppercase leading-none tracking-wide text-white/35">
+            Ajustes rápidos
+          </div>
+
+          <div className="grid grid-cols-3 gap-1.5">
+            <button
+              type="button"
+              onClick={() => ajustarPreco(-1)}
+              className="
+                flex h-7 cursor-pointer items-center justify-center gap-1 rounded-lg
+                border border-white/10 bg-white/[0.03]
+                text-[11px] font-semibold text-white/55 transition
+                hover:bg-white/[0.07] hover:text-white
+                active:scale-[0.97]
+              "
+            >
+              <Minus className="h-3 w-3" />
+              R$ 1
+            </button>
+
+            <button
+              type="button"
+              onClick={() => ajustarPreco(1)}
+              className="
+                flex h-7 cursor-pointer items-center justify-center gap-1 rounded-lg
+                border border-white/10 bg-white/[0.03]
+                text-[11px] font-semibold text-white/55 transition
+                hover:bg-white/[0.07] hover:text-white
+                active:scale-[0.97]
+              "
+            >
+              <Plus className="h-3 w-3" />
+              R$ 1
+            </button>
+
+            <button
+              type="button"
+              onClick={() => ajustarPreco(5)}
+              className="
+                flex h-7 cursor-pointer items-center justify-center gap-1 rounded-lg
+                border border-white/10 bg-white/[0.03]
+                text-[11px] font-semibold text-white/55 transition
+                hover:bg-white/[0.07] hover:text-white
+                active:scale-[0.97]
+              "
+            >
+              <Plus className="h-3 w-3" />
+              R$ 5
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }

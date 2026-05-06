@@ -1,32 +1,29 @@
 import React from "react";
-import { Layers, HelpCircle, Plus, X } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { formatBR } from "@/components/decomposition/Decomposition";
 
 function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
   let timer: ReturnType<typeof setTimeout>;
+
   return (...args: Parameters<T>) => {
     clearTimeout(timer);
     timer = setTimeout(() => fn(...args), delay);
   };
 }
 
-export type Item = { codigo: string; quantidade: string; custo: string };
-
-const HelpTooltip = ({ text }: { text: string }) => (
-  <div className="relative group flex items-center">
-    <HelpCircle className="w-4 h-4 text-neutral-400 cursor-pointer" />
-    <div className="absolute left-6 top-1/2 -translate-y-1/2 text-neutral-400/70 text-xs font-normal whitespace-nowrap opacity-0 group-hover:opacity-100 transition pointer-events-none z-20">
-      {text}
-    </div>
-  </div>
-);
+export type Item = {
+  codigo: string;
+  quantidade: string;
+  custo: string;
+  descricao?: string;
+  produto?: string;
+};
 
 type Props = {
   composicao: Item[];
-  setComposicao: any;
+  setComposicao: React.Dispatch<React.SetStateAction<Item[]>>;
   codeRefs: React.MutableRefObject<HTMLInputElement[]>;
   qtyRefs: React.MutableRefObject<HTMLInputElement[]>;
   costRefs: React.MutableRefObject<HTMLInputElement[]>;
@@ -35,7 +32,7 @@ type Props = {
   setCampoAtivo: (v: number | null) => void;
   indiceSelecionado: number;
   setIndiceSelecionado: (v: number) => void;
-  sugestoes: { codigo: string; custo: number }[];
+  sugestoes: { codigo: string; custo: number; produto?: string }[];
   buscarSugestoes: (termo: string, idx: number) => void;
   selecionarSugestao: (codigo: string, custo: number, idx: number) => void;
   autoSelecionarPrimeiro: (idx: number) => Promise<void>;
@@ -51,6 +48,32 @@ type Props = {
   onBlurCusto: (idx: number) => void;
   adicionarItem: () => void;
 };
+
+const inputClass = `
+  h-10 min-w-0 rounded-lg border-white/10 bg-[#070707] px-3
+  text-sm font-semibold text-white shadow-none outline-none
+  placeholder:text-white/20
+  focus:border-[#1a8ceb]/70 focus:ring-1 focus:ring-[#1a8ceb]/30
+  focus-visible:ring-0 focus-visible:ring-offset-0
+`;
+
+const linhaVazia = (): Item => ({
+  codigo: "",
+  quantidade: "",
+  custo: "",
+});
+
+const itemTemConteudo = (item: Item) => {
+  return (
+    String(item?.codigo || "").trim() ||
+    String(item?.quantidade || "").trim() ||
+    String(item?.custo || "").trim() ||
+    String(item?.descricao || "").trim() ||
+    String(item?.produto || "").trim()
+  );
+};
+
+const isLinhaVazia = (item: Item) => !itemTemConteudo(item);
 
 export default function ComposicaoCustos({
   composicao,
@@ -71,21 +94,84 @@ export default function ComposicaoCustos({
   handleKeyDownQuantidade,
   onBlurQuantidade,
   onBlurCusto,
-  adicionarItem,
 }: Props) {
+  const ignoreBlur = React.useRef(false);
+  const focusIndexRef = React.useRef<number | null>(null);
+
+  const [mostrarInputs, setMostrarInputs] = React.useState(() =>
+    composicao.some(itemTemConteudo)
+  );
+
   const buscarSugestoesDebounced = React.useRef(
     debounce((termo: string, idx: number) => buscarSugestoes(termo, idx), 10)
   ).current;
 
-  const ignoreBlur = React.useRef(false);
+  const temAlgumItem = composicao.some(itemTemConteudo);
+  const deveMostrarTabela = mostrarInputs || temAlgumItem;
+  const shouldScrollComposition = composicao.length > 10;
 
-  const leftColScroll =
-    composicao.length > 10
-      ? "max-h-[360px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#1a8ceb]/30 scrollbar-track-transparent"
-      : "";
+  const handleAdicionarItem = () => {
+    setMostrarInputs(true);
+
+    setComposicao((prev) => {
+      const base = Array.isArray(prev) ? [...prev] : [];
+
+      if (!mostrarInputs && base.length === 1 && isLinhaVazia(base[0])) {
+        focusIndexRef.current = 0;
+        return base;
+      }
+
+      if (base.length === 0) {
+        focusIndexRef.current = 0;
+        return [linhaVazia()];
+      }
+
+      const novoIndex = base.length;
+      focusIndexRef.current = novoIndex;
+
+      return [...base, linhaVazia()];
+    });
+  };
+
+  React.useEffect(() => {
+    if (focusIndexRef.current === null) return;
+
+    const index = focusIndexRef.current;
+    focusIndexRef.current = null;
+
+    requestAnimationFrame(() => {
+      codeRefs.current[index]?.focus();
+    });
+  }, [composicao.length, codeRefs]);
 
   const removerItem = (idx: number) => {
-    setComposicao((prev: Item[]) => prev.filter((_, i) => i !== idx));
+    setComposicao((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+
+      return next.length > 0 ? next : [linhaVazia()];
+    });
+
+    setCampoAtivo((campoAtual) => {
+      if (campoAtual === null) return null;
+      if (campoAtual === idx) return null;
+      if (campoAtual > idx) return campoAtual - 1;
+
+      return campoAtual;
+    });
+
+    setIndiceSelecionado(-1);
+
+    setTimeout(() => {
+      setComposicao((current) => {
+        const temLinhaReal = current.some(itemTemConteudo);
+
+        if (!temLinhaReal && current.length === 1 && isLinhaVazia(current[0])) {
+          setMostrarInputs(false);
+        }
+
+        return current;
+      });
+    }, 0);
   };
 
   const handleKeyDownCusto = (
@@ -95,228 +181,280 @@ export default function ComposicaoCustos({
     if (e.key === "Tab" || e.key === "Enter") {
       e.preventDefault();
 
-      const item = composicao[idx];
-
-      const codigoOK = item.codigo.trim().length > 0;
-      const quantidadeOK = item.quantidade.trim().length > 0;
-      const custoOK = item.custo.trim().length > 0;
-
-      const isLast = idx === composicao.length - 1;
-
       ignoreBlur.current = true;
-
-      if (isLast && codigoOK && quantidadeOK && custoOK) {
-        setComposicao((prev: Item[]) => [
-          ...prev,
-          { codigo: "", quantidade: "", custo: "" },
-        ]);
-
-        setTimeout(() => {
-          ignoreBlur.current = false;
-          codeRefs.current[idx + 1]?.focus();
-        }, 0);
-        return;
-      }
 
       setTimeout(() => {
         ignoreBlur.current = false;
-        codeRefs.current[idx + 1]?.focus();
-      }, 0);
 
-      return;
+        const nextInput = codeRefs.current[idx + 1];
+
+        if (nextInput) {
+          nextInput.focus();
+        }
+      }, 0);
     }
   };
 
   return (
-    <div className="lg:col-span-7 p-3 rounded-xl bg-white/5 border border-white/10 shadow-lg">
-      <div className="flex items-center gap-2 mb-3">
-        <Layers className="w-5 h-5 text-[#1a8ceb]" />
-        <h3 className="text-base font-bold text-white flex items-center gap-2">
-          Composição
-          <HelpTooltip text="Composição de Custos." />
-        </h3>
+    <section className="flex h-full min-w-0 flex-col rounded-2xl border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#1a8ceb] text-xs font-bold text-white">
+            2.
+          </span>
+
+          <h2 className="truncate text-base font-semibold text-white">
+            Composição de Custo
+          </h2>
+        </div>
+
+        <Button
+          type="button"
+          onClick={handleAdicionarItem}
+          variant="outline"
+          className="
+            h-9 shrink-0 cursor-pointer rounded-lg border border-[#1a8ceb]/50
+            bg-transparent px-4 text-xs font-semibold text-[#1a8ceb]
+            shadow-none
+            hover:bg-[#1a8ceb]/10 hover:text-[#4da7f0]
+            active:scale-[0.97]
+          "
+        >
+          <Plus className="mr-2 h-4 w-4" />
+          Incluir Custos
+        </Button>
       </div>
 
-      <div className={`space-y-2 sm:space-y-1 ${leftColScroll}`}>
-        {composicao.map((item, idx) => (
-          <div
-            key={idx}
-            className="
-              relative
-              grid grid-cols-1 gap-2
-              sm:grid-cols-3
-              sm:gap-2
-              mb-1 p-2
-              rounded-lg
-              bg-black/30
-              border border-white/10
-            "
-          >
-            {idx > 0 && (
-              <button
-                type="button"
-                onClick={() => removerItem(idx)}
-                className="
-                  absolute -top-2 -right-2
-                  w-7 h-7 sm:w-5 sm:h-5
-                  p-0
-                  bg-red-500/20 hover:bg-red-500/30
-                  text-red-400
-                  rounded-full
-                  flex items-center justify-center
-                  transition-all
-                  z-20
-                "
-              >
-                <X className="w-4 h-4 sm:w-3 sm:h-3" />
-              </button>
-            )}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {deveMostrarTabela ? (
+          <div className="min-w-0 overflow-hidden rounded-xl border border-white/10">
+            <div
+              className="
+                hidden border-b border-white/10 bg-[#181818] lg:grid
+                lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1.45fr)_minmax(92px,0.7fr)_minmax(110px,0.85fr)_64px]
+              "
+            >
+              <div className="min-w-0 px-3 py-4 text-center text-sm font-semibold text-white">
+                Código / SKU
+              </div>
 
-            <div className="relative min-w-0">
-              <Label className="text-neutral-400 text-[10px] block mb-1">
-                Código
-              </Label>
-              <Input
-                ref={(el) => (codeRefs.current[idx] = el!)}
-                value={item.codigo}
-                placeholder="SKU"
-                onChange={(e) => {
-                  const novo = [...composicao];
-                  novo[idx].codigo = e.target.value;
-                  setComposicao(novo);
+              <div className="min-w-0 px-3 py-4 text-center text-sm font-semibold text-white">
+                Descrição
+              </div>
 
-                  setCampoAtivo(idx);
-                  setIndiceSelecionado(0);
-                  buscarSugestoesDebounced(e.target.value, idx);
-                }}
-                onKeyDown={(e) => handleKeyDownCodigo(e, idx)}
-                onBlur={() => {
-                  if (!ignoreBlur.current) autoSelecionarPrimeiro(idx);
-                }}
-                className="
-                  h-10 sm:h-auto
-                  bg-black/50
-                  border-white/10
-                  text-white text-xs
-                  rounded-md
-                  focus:border-[#1a8ceb]
-                  focus:ring-2 focus:ring-[#1a8ceb]
-                "
-              />
-
-              {campoAtivo === idx && sugestoes.length > 0 && (
-                <div
-                  ref={listaRef}
-                  className="
-                    absolute z-50 mt-1
-                    bg-[#0f0f0f]
-                    border border-white/10
-                    rounded-md shadow-lg
-                    w-full
-                    max-h-48 sm:max-h-40
-                    overflow-y-auto
-                  "
-                >
-                  {sugestoes.map((s, i) => (
-                    <div
-                      key={`${s.codigo}-${i}`}
-                      className={`px-2 py-2 sm:py-1 text-xs flex justify-between cursor-pointer ${
-                        i === indiceSelecionado
-                          ? "bg-[#1a8ceb]/30"
-                          : "hover:bg-[#1a8ceb]/20"
-                      }`}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        selecionarSugestao(s.codigo, s.custo, idx);
-                      }}
-                      onMouseEnter={() => setIndiceSelecionado(i)}
-                    >
-                      <span className="text-white truncate">{s.codigo}</span>
-                      <span className="text-[#1a8ceb] shrink-0 ml-3">
-                        R$ {formatBR(s.custo)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="min-w-0">
-              <Label className="text-neutral-400 text-[10px] block mb-1">
+              <div className="min-w-0 px-3 py-4 text-right text-sm font-semibold text-white">
                 Quantidade
-              </Label>
-              <Input
-                ref={(el) => (qtyRefs.current[idx] = el!)}
-                value={item.quantidade}
-                placeholder="1"
-                onChange={(e) => {
-                  const novo = [...composicao];
-                  novo[idx].quantidade = e.target.value;
-                  setComposicao(novo);
-                }}
-                onBlur={() => onBlurQuantidade(idx)}
-                onKeyDown={(e) => handleKeyDownQuantidade(e, idx)}
-                className="
-                  h-10 sm:h-auto
-                  bg-black/50
-                  border-white/10
-                  text-white text-xs
-                  rounded-md
-                  focus:border-[#1a8ceb]
-                  focus:ring-2 focus:ring-[#1a8ceb]
-                "
-              />
+              </div>
+
+              <div className="min-w-0 px-3 py-4 text-right text-sm font-semibold text-white">
+                Custo Unitário
+              </div>
+
+              <div className="min-w-0 px-3 py-4 text-right text-sm font-semibold text-white">
+                Ações
+              </div>
             </div>
 
-            <div className="min-w-0">
-              <Label className="text-neutral-400 text-[10px] block mb-1">
-                Custo (R$)
-              </Label>
-              <Input
-                ref={(el) => (costRefs.current[idx] = el!)}
-                value={item.custo}
-                placeholder="0,00"
-                onChange={(e) => {
-                  const novo = [...composicao];
-                  novo[idx].custo = e.target.value;
-                  setComposicao(novo);
-                }}
-                onBlur={() => {
-                  if (!ignoreBlur.current) onBlurCusto(idx);
-                }}
-                onKeyDown={(e) => handleKeyDownCusto(e, idx)}
-                className="
-                  h-10 sm:h-auto
-                  bg-black/50
-                  border-white/10
-                  text-white text-xs
-                  rounded-md
-                  focus:border-[#1a8ceb]
-                  focus:ring-2 focus:ring-[#1a8ceb]
-                "
-              />
+            <div
+              className={`
+                min-w-0 divide-y divide-white/10
+                ${
+                  shouldScrollComposition
+                    ? "max-h-[620px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#1a8ceb]/30 scrollbar-track-transparent"
+                    : ""
+                }
+              `}
+            >
+              {composicao.map((item, idx) => {
+                const descricao =
+                  item.produto || item.descricao || item.codigo || "";
+
+                return (
+                  <div
+                    key={`${idx}-${item.codigo || "item"}`}
+                    className="
+                      grid min-w-0 grid-cols-1 gap-3 bg-[#151515] p-4
+                      lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1.45fr)_minmax(92px,0.7fr)_minmax(110px,0.85fr)_64px]
+                      lg:items-center lg:gap-0 lg:p-0
+                    "
+                  >
+                    <div className="relative min-w-0 lg:px-3 lg:py-3">
+                      <label className="mb-1.5 block text-xs font-medium text-white/45 lg:hidden">
+                        Código / SKU
+                      </label>
+
+                      <Input
+                        ref={(el) => {
+                          if (el) codeRefs.current[idx] = el;
+                        }}
+                        value={item.codigo}
+                        placeholder="SKU"
+                        onChange={(e) => {
+                          const novo = [...composicao];
+
+                          novo[idx] = {
+                            ...novo[idx],
+                            codigo: e.target.value,
+                          };
+
+                          setComposicao(novo);
+                          setCampoAtivo(idx);
+                          setIndiceSelecionado(0);
+                          buscarSugestoesDebounced(e.target.value, idx);
+                        }}
+                        onKeyDown={(e) => handleKeyDownCodigo(e, idx)}
+                        onBlur={() => {
+                          if (!ignoreBlur.current && item.codigo.trim()) {
+                            autoSelecionarPrimeiro(idx);
+                          }
+                        }}
+                        className={`${inputClass} w-full text-center`}
+                      />
+
+                      {campoAtivo === idx && sugestoes.length > 0 && (
+                        <div
+                          ref={listaRef}
+                          className="
+                            absolute left-3 right-3 z-50 mt-1 max-h-48 overflow-y-auto
+                            rounded-md border border-white/10 bg-[#0f0f0f] shadow-xl
+                          "
+                        >
+                          {sugestoes.map((s, i) => (
+                            <div
+                              key={`${s.codigo}-${i}`}
+                              className={`flex cursor-pointer justify-between gap-3 px-3 py-2 text-xs ${
+                                i === indiceSelecionado
+                                  ? "bg-[#1a8ceb]/30"
+                                  : "hover:bg-[#1a8ceb]/20"
+                              }`}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                selecionarSugestao(s.codigo, s.custo, idx);
+                              }}
+                              onMouseEnter={() => setIndiceSelecionado(i)}
+                            >
+                              <span className="min-w-0 truncate font-semibold text-white">
+                                {s.codigo}
+                              </span>
+
+                              <span className="shrink-0 font-semibold text-[#1a8ceb]">
+                                R$ {formatBR(s.custo)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 lg:px-3 lg:py-3">
+                      <label className="mb-1.5 block text-xs font-medium text-white/45 lg:hidden">
+                        Descrição
+                      </label>
+
+                      <div className="flex h-10 min-w-0 max-w-full items-center overflow-hidden rounded-lg border border-white/10 bg-[#070707] px-3">
+                        <span
+                          title={descricao}
+                          className={`block w-full min-w-0 overflow-hidden truncate whitespace-nowrap text-center text-sm font-semibold ${
+                            descricao ? "text-white" : "text-white/20"
+                          }`}
+                        >
+                          {descricao || "Descrição do custo"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="min-w-0 lg:px-3 lg:py-3">
+                      <label className="mb-1.5 block text-xs font-medium text-white/45 lg:hidden">
+                        Quantidade
+                      </label>
+
+                      <Input
+                        ref={(el) => {
+                          if (el) qtyRefs.current[idx] = el;
+                        }}
+                        value={item.quantidade}
+                        placeholder="1"
+                        inputMode="decimal"
+                        onChange={(e) => {
+                          const novo = [...composicao];
+
+                          novo[idx] = {
+                            ...novo[idx],
+                            quantidade: e.target.value,
+                          };
+
+                          setComposicao(novo);
+                        }}
+                        onBlur={() => onBlurQuantidade(idx)}
+                        onKeyDown={(e) => handleKeyDownQuantidade(e, idx)}
+                        className={`${inputClass} w-full text-right tabular-nums`}
+                      />
+                    </div>
+
+                    <div className="min-w-0 lg:px-3 lg:py-3">
+                      <label className="mb-1.5 block text-xs font-medium text-white/45 lg:hidden">
+                        Custo Unitário
+                      </label>
+
+                      <Input
+                        ref={(el) => {
+                          if (el) costRefs.current[idx] = el;
+                        }}
+                        value={item.custo}
+                        placeholder="0,00"
+                        inputMode="decimal"
+                        onChange={(e) => {
+                          const novo = [...composicao];
+
+                          novo[idx] = {
+                            ...novo[idx],
+                            custo: e.target.value,
+                          };
+
+                          setComposicao(novo);
+                        }}
+                        onBlur={() => {
+                          if (!ignoreBlur.current) onBlurCusto(idx);
+                        }}
+                        onKeyDown={(e) => handleKeyDownCusto(e, idx)}
+                        className={`${inputClass} w-full text-right tabular-nums`}
+                      />
+                    </div>
+
+                    <div className="flex min-w-0 items-center justify-end lg:px-3 lg:py-3">
+                      <Button
+                        type="button"
+                        onClick={() => removerItem(idx)}
+                        variant="ghost"
+                        className="
+                          h-9 w-9 cursor-pointer rounded-lg border border-red-500/20
+                          bg-red-500/10 p-0 text-red-400 transition
+                          hover:bg-red-500/20 hover:text-red-300
+                          active:scale-[0.96]
+                        "
+                        title="Remover custo"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
-        ))}
-      </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-white/10 bg-[#181818] px-4 py-8 text-center">
+            <p className="text-sm font-semibold text-white/75">
+              Nenhum custo adicionado
+            </p>
 
-      <Button
-        onClick={adicionarItem}
-        variant="outline"
-        className="
-          w-full
-          h-11 sm:h-auto
-          border-white/10
-          text-white text-xs
-          hover:bg-white/5 hover:border-[#1a8ceb]/50
-          rounded-xl
-          transition-all
-          mt-2
-        "
-      >
-        <Plus className="w-3 h-3 mr-2" /> Incluir Custos
-      </Button>
-    </div>
+            <p className="mt-1 text-xs text-white/40">
+              Adicione produtos para calcular o custo total.
+            </p>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
