@@ -76,6 +76,12 @@ export default function PrecoVenda({
     }
   };
 
+  const getDescricaoItem = (item?: Item) => {
+    if (!item) return "";
+
+    return item.produto || item.descricao || "";
+  };
+
   /* === DOWNLOAD XLSX COM ESTILO === */
   const handleDownload = async () => {
     const now = new Date();
@@ -93,9 +99,10 @@ export default function PrecoVenda({
     const composicaoRows: (string | number)[][] = [
       ["Preço de Venda (R$)", precoVenda || "0,00"],
       [],
-      ["Código", "Quantidade", "Custo (R$)"],
+      ["Código", "Descrição", "Quantidade", "Custo (R$)"],
       ...composicao.map((i) => [
         i.codigo || "",
+        getDescricaoItem(i),
         i.quantidade || "",
         i.custo || "",
       ]),
@@ -107,8 +114,17 @@ export default function PrecoVenda({
       ["Resultados Calculados"],
       ["Gerado em", now.toLocaleString("pt-BR")],
       [],
-      ["Código", "Unitário (R$)", "Total (R$)"],
-      ...resultados.map((r) => [r.codigo, r.unitFmt, r.totalFmt]),
+      ["Código", "Descrição", "Unitário (R$)", "Total (R$)"],
+      ...resultados.map((r) => {
+        const item = composicao.find((i) => i.codigo === r.codigo);
+
+        return [
+          r.codigo || "",
+          getDescricaoItem(item),
+          r.unitFmt || "",
+          r.totalFmt || "",
+        ];
+      }),
     ];
 
     const resultadosSheet = XLSX.utils.aoa_to_sheet(resultadosRows);
@@ -136,10 +152,24 @@ export default function PrecoVenda({
       },
     };
 
-    const applyHeaderStyle = (sheet: any, headerRow: number) => {
-      const headers = ["A", "B", "C"];
+    const titleStyle = {
+      font: {
+        bold: true,
+        color: { rgb: "FFFFFF" },
+        sz: 12,
+      },
+      alignment: {
+        horizontal: "left",
+        vertical: "center",
+      },
+    };
 
-      headers.forEach((col) => {
+    const applyHeaderStyle = (
+      sheet: any,
+      headerRow: number,
+      columns: string[]
+    ) => {
+      columns.forEach((col) => {
         const cellRef = `${col}${headerRow}`;
 
         if (sheet[cellRef]) {
@@ -148,11 +178,25 @@ export default function PrecoVenda({
       });
     };
 
-    applyHeaderStyle(composicaoSheet, 3);
-    applyHeaderStyle(resultadosSheet, 4);
+    if (composicaoSheet["A1"]) composicaoSheet["A1"].s = titleStyle;
+    if (resultadosSheet["A1"]) resultadosSheet["A1"].s = titleStyle;
 
-    composicaoSheet["!cols"] = [{ wch: 18 }, { wch: 15 }, { wch: 15 }];
-    resultadosSheet["!cols"] = [{ wch: 18 }, { wch: 18 }, { wch: 18 }];
+    applyHeaderStyle(composicaoSheet, 3, ["A", "B", "C", "D"]);
+    applyHeaderStyle(resultadosSheet, 4, ["A", "B", "C", "D"]);
+
+    composicaoSheet["!cols"] = [
+      { wch: 18 },
+      { wch: 44 },
+      { wch: 15 },
+      { wch: 15 },
+    ];
+
+    resultadosSheet["!cols"] = [
+      { wch: 18 },
+      { wch: 44 },
+      { wch: 18 },
+      { wch: 18 },
+    ];
 
     const wb = XLSX.utils.book_new();
 

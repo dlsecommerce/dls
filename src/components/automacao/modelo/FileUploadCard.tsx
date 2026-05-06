@@ -3,7 +3,13 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
-import { Upload, CheckCircle2, FileSpreadsheet, X } from "lucide-react";
+import {
+  Upload,
+  CheckCircle2,
+  FileSpreadsheet,
+  X,
+  RefreshCw,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface FileUploadCardProps {
@@ -13,9 +19,21 @@ interface FileUploadCardProps {
   stepNumber: number;
   icon?: React.ReactNode;
 
-  /** ✅ desliga QUALQUER animação (ex.: Tray do Pikot) */
+  /** ✅ desliga QUALQUER animação */
   disableEffects?: boolean;
 }
+
+const formatFileSize = (size: number) => {
+  if (!size) return "";
+
+  const kb = size / 1024;
+
+  if (kb < 1024) {
+    return `${kb.toFixed(1)} KB`;
+  }
+
+  return `${(kb / 1024).toFixed(1)} MB`;
+};
 
 export const FileUploadCard = ({
   label,
@@ -28,157 +46,254 @@ export const FileUploadCard = ({
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const hasFile = Boolean(selectedFile);
+  const draggingActive = !disableEffects && isDragging;
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
-    if (file) onFileSelect(file);
+
+    if (file) {
+      onFileSelect(file);
+    }
+
+    /**
+     * Permite selecionar o mesmo arquivo novamente depois de remover/trocar.
+     */
+    e.target.value = "";
   };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    if (!disableEffects) setIsDragging(true);
+
+    if (!disableEffects) {
+      setIsDragging(true);
+    }
   };
 
-  const handleDragLeave = () => {
-    if (!disableEffects) setIsDragging(false);
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+
+    if (!disableEffects) {
+      setIsDragging(false);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    if (!disableEffects) setIsDragging(false);
-    const file = e.dataTransfer.files?.[0] || null;
-    if (file) onFileSelect(file);
-  };
-
-  const handleClick = () => fileInputRef.current?.click();
-
-  const handleRemove = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onFileSelect(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    if (!disableEffects) {
+      setIsDragging(false);
+    }
+
+    const file = e.dataTransfer.files?.[0] || null;
+
+    if (file) {
+      onFileSelect(file);
+    }
   };
 
-  const draggingActive = !disableEffects && isDragging;
+  const handleClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleRemove = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    onFileSelect(null);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleButtonClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    fileInputRef.current?.click();
+  };
 
   return (
     <>
-      {/* Desktop - original preservado */}
+      {/* Desktop */}
       <GlassmorphicCard
+        role="button"
+        tabIndex={0}
         onClick={handleClick}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleClick();
+          }
+        }}
         className={cn(
-          "relative w-full h-full overflow-hidden cursor-pointer hidden md:block",
-
-          // ❌ remove TODA transição quando disableEffects
-          disableEffects ? "" : "transition-all duration-300 group",
-
-          selectedFile
-            ? "bg-blue-500/10 border-none ring-1 ring-blue-500/40"
+          "relative hidden h-full w-full cursor-pointer overflow-hidden rounded-2xl border md:block",
+          "outline-none focus-visible:ring-2 focus-visible:ring-[#1A8CEB]/40",
+          disableEffects ? "" : "group transition-all duration-200",
+          hasFile
+            ? "border-[#1A8CEB]/35 bg-white/[0.035]"
             : draggingActive
-            ? "border-2 border-blue-400 bg-blue-400/10"
+            ? "border-[#1A8CEB]/60 bg-white/[0.05]"
             : cn(
-                "border-2 border-border",
+                "border-white/10 bg-white/[0.02]",
                 disableEffects
                   ? ""
-                  : "hover:border-blue-400/50 hover:shadow-lg hover:scale-[1.02]"
+                  : "hover:border-[#1A8CEB]/35 hover:bg-white/[0.035]"
               )
         )}
       >
-        {/* Badge */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx,.xls,.csv"
+          onChange={handleFileChange}
+          className="hidden"
+        />
+
         <div
           className={cn(
-            "absolute top-3 left-3 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md z-10",
-            selectedFile ? "bg-blue-500" : "bg-blue-400"
+            "absolute left-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white",
+            hasFile ? "bg-[#1A8CEB]" : "bg-white/15"
           )}
         >
           {stepNumber}
         </div>
 
-        {/* Remover */}
-        {selectedFile && (
+        <div
+          className={cn(
+            "absolute right-3 top-3 z-10 rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide",
+            hasFile
+              ? "border-[#1A8CEB]/25 bg-[#1A8CEB]/10 text-[#1A8CEB]"
+              : "border-white/10 bg-white/[0.03] text-white/35"
+          )}
+        >
+          {hasFile ? "Selecionado" : "Pendente"}
+        </div>
+
+        {hasFile && (
           <Button
+            type="button"
             variant="ghost"
             size="icon"
+            onClick={handleRemove}
+            title="Remover arquivo"
+            aria-label={`Remover arquivo de ${label}`}
             className={cn(
-              "absolute top-2 right-2 w-7 h-7 z-10",
+              "absolute bottom-3 right-3 z-20 h-8 w-8 cursor-pointer rounded-lg border border-red-500/20",
+              "bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300",
+              "active:scale-[0.96]",
               disableEffects
                 ? "opacity-100"
-                : "opacity-0 group-hover:opacity-100 transition-opacity",
-              "hover:bg-red-500 hover:text-white"
+                : "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
             )}
-            onClick={handleRemove}
           >
-            <X className="w-4 h-4" />
+            <X className="h-4 w-4" />
           </Button>
         )}
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".xlsx,.xls,.csv"
-          onChange={handleFileChange}
-          className="hidden"
-        />
-
-        {/* Conteúdo */}
-        <div className="p-6 flex flex-col items-center justify-center min-h-[200px] space-y-3">
+        <div className="flex min-h-[210px] flex-col items-center justify-center px-5 py-6 text-center">
           <div
             className={cn(
-              "rounded-full p-4",
-              selectedFile
-                ? "bg-blue-500 text-white"
-                : "bg-blue-500/10 text-blue-400",
-              // ❌ SEM scale quando disableEffects
-              disableEffects ? "" : selectedFile && "scale-110 transition-transform"
+              "mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border",
+              hasFile
+                ? "border-[#1A8CEB]/25 bg-[#1A8CEB]/10 text-[#1A8CEB]"
+                : "border-white/10 bg-white/[0.04] text-white/45"
             )}
           >
-            {selectedFile ? (
-              <CheckCircle2 className="w-8 h-8" />
+            {hasFile ? (
+              <CheckCircle2 className="h-8 w-8" />
             ) : (
-              icon || <FileSpreadsheet className="w-8 h-8" />
+              icon || <FileSpreadsheet className="h-8 w-8" />
             )}
           </div>
 
-          <div className="text-center space-y-1 w-full px-2">
-            <h3 className="font-semibold text-foreground">{label}</h3>
-            {selectedFile ? (
-              <p className="text-xs text-blue-500 font-medium truncate">
-                {selectedFile.name}
-              </p>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Clique ou arraste o arquivo
-              </p>
-            )}
-          </div>
+          <div className="w-full min-w-0">
+            <h3 className="truncate text-base font-bold text-foreground">
+              {label}
+            </h3>
 
-          <Upload
-            className={cn(
-              "w-5 h-5",
-              selectedFile ? "opacity-0 scale-0" : "opacity-40 scale-100",
-              disableEffects ? "" : "transition-all duration-300"
+            <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-white/35">
+              Arquivo obrigatório
+            </p>
+
+            {hasFile ? (
+              <div className="mt-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                <p className="truncate text-xs font-bold text-[#1A8CEB]">
+                  {selectedFile?.name}
+                </p>
+
+                <p className="mt-0.5 text-[10px] font-medium text-white/35">
+                  {selectedFile ? formatFileSize(selectedFile.size) : ""}
+                </p>
+              </div>
+            ) : (
+              <div className="mt-3">
+                <p className="text-xs text-muted-foreground">
+                  Clique ou arraste o arquivo
+                </p>
+
+                <p className="mt-1 text-[10px] text-white/30">
+                  Formatos aceitos: .xlsx, .xls ou .csv
+                </p>
+              </div>
             )}
-          />
+
+            <div
+              role="button"
+              tabIndex={-1}
+              onClick={handleButtonClick}
+              className={cn(
+                "mx-auto mt-4 flex h-9 max-w-[170px] cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-xs font-bold transition-colors",
+                hasFile
+                  ? "border-[#1A8CEB]/25 bg-[#1A8CEB]/10 text-[#1A8CEB]"
+                  : "border-white/10 bg-white/[0.035] text-white/55 group-hover:border-[#1A8CEB]/25 group-hover:text-[#1A8CEB]"
+              )}
+            >
+              {hasFile ? (
+                <>
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Trocar arquivo
+                </>
+              ) : (
+                <>
+                  <Upload className="h-3.5 w-3.5" />
+                  Selecionar arquivo
+                </>
+              )}
+            </div>
+          </div>
         </div>
       </GlassmorphicCard>
 
-      {/* Mobile - camada separada */}
+      {/* Mobile */}
       <GlassmorphicCard
+        role="button"
+        tabIndex={0}
         onClick={handleClick}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleClick();
+          }
+        }}
         className={cn(
-          "relative w-full overflow-hidden cursor-pointer md:hidden",
-          "rounded-2xl border-2 active:scale-[0.99]",
-          "min-h-[132px] touch-manipulation",
+          "relative w-full cursor-pointer overflow-hidden rounded-2xl border md:hidden",
+          "min-h-[142px] touch-manipulation outline-none active:scale-[0.99]",
+          "focus-visible:ring-2 focus-visible:ring-[#1A8CEB]/40",
           disableEffects ? "" : "transition-all duration-200",
-          selectedFile
-            ? "bg-blue-500/10 border-blue-500/40 ring-1 ring-blue-500/30"
+          hasFile
+            ? "border-[#1A8CEB]/35 bg-white/[0.035]"
             : draggingActive
-            ? "border-blue-400 bg-blue-400/10"
-           : "border-border bg-[#0a0a0a]"
+            ? "border-[#1A8CEB]/60 bg-white/[0.05]"
+            : "border-white/10 bg-[#0a0a0a]"
         )}
       >
         <input
@@ -189,26 +304,25 @@ export const FileUploadCard = ({
           className="hidden"
         />
 
-        <div className="p-4 pr-12 grid grid-cols-[48px_1fr] gap-4 items-center min-h-[132px]">
+        <div className="grid min-h-[142px] grid-cols-[52px_1fr] items-center gap-4 p-4 pr-12">
           <div
             className={cn(
-              "relative w-12 h-12 rounded-2xl flex items-center justify-center shrink-0",
-              selectedFile
-                ? "bg-blue-500 text-white shadow-md"
-                : "bg-blue-500/10 text-blue-400"
+              "relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border",
+              hasFile
+                ? "border-[#1A8CEB]/25 bg-[#1A8CEB]/10 text-[#1A8CEB]"
+                : "border-white/10 bg-white/[0.04] text-white/45"
             )}
           >
-            {selectedFile ? (
-              <CheckCircle2 className="w-6 h-6" />
+            {hasFile ? (
+              <CheckCircle2 className="h-6 w-6" />
             ) : (
-              icon || <FileSpreadsheet className="w-6 h-6" />
+              icon || <FileSpreadsheet className="h-6 w-6" />
             )}
 
             <div
               className={cn(
-                "absolute -top-2 -left-2 w-6 h-6 rounded-full flex items-center justify-center",
-                "text-[11px] font-bold text-white shadow-md",
-                selectedFile ? "bg-blue-500" : "bg-blue-400"
+                "absolute -left-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold text-white",
+                hasFile ? "bg-[#1A8CEB]" : "bg-white/15"
               )}
             >
               {stepNumber}
@@ -217,49 +331,81 @@ export const FileUploadCard = ({
 
           <div className="min-w-0 space-y-2">
             <div className="space-y-1">
-              <h3 className="font-semibold text-foreground leading-tight truncate">
-                {label}
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="truncate font-semibold leading-tight text-foreground">
+                  {label}
+                </h3>
 
-              {selectedFile ? (
-                <p className="text-xs text-blue-500 font-medium truncate">
-                  {selectedFile.name}
-                </p>
+                <span
+                  className={cn(
+                    "shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase",
+                    hasFile
+                      ? "border-[#1A8CEB]/25 bg-[#1A8CEB]/10 text-[#1A8CEB]"
+                      : "border-white/10 bg-muted/60 text-muted-foreground"
+                  )}
+                >
+                  {hasFile ? "OK" : "Pendente"}
+                </span>
+              </div>
+
+              {hasFile ? (
+                <>
+                  <p className="truncate text-xs font-medium text-[#1A8CEB]">
+                    {selectedFile?.name}
+                  </p>
+
+                  <p className="text-[10px] text-muted-foreground">
+                    {selectedFile ? formatFileSize(selectedFile.size) : ""}
+                  </p>
+                </>
               ) : (
-                <p className="text-xs text-muted-foreground leading-snug">
-                  Toque para selecionar sua planilha
-                </p>
+                <>
+                  <p className="text-xs leading-snug text-muted-foreground">
+                    Toque para selecionar sua planilha
+                  </p>
+
+                  <p className="text-[10px] text-muted-foreground/70">
+                    .xlsx, .xls ou .csv
+                  </p>
+                </>
               )}
             </div>
 
             <div
+              role="button"
+              tabIndex={-1}
+              onClick={handleButtonClick}
               className={cn(
-                "w-full rounded-xl px-3 py-2 text-xs font-semibold text-center",
-                selectedFile
-                  ? "bg-blue-500/10 text-blue-500"
+                "w-full cursor-pointer rounded-xl px-3 py-2 text-center text-xs font-semibold",
+                hasFile
+                  ? "bg-[#1A8CEB]/10 text-[#1A8CEB]"
                   : "bg-muted/70 text-muted-foreground"
               )}
             >
-              {selectedFile ? "Arquivo selecionado" : "Enviar arquivo"}
+              {hasFile ? "Trocar arquivo" : "Enviar arquivo"}
             </div>
           </div>
         </div>
 
-        {selectedFile ? (
+        {hasFile ? (
           <Button
+            type="button"
             variant="ghost"
             size="icon"
-            className={cn(
-              "absolute top-3 right-3 w-9 h-9 z-10 rounded-full",
-              "bg-[#0a0a0a] hover:bg-red-500 hover:text-white"
-            )}
             onClick={handleRemove}
+            title="Remover arquivo"
+            aria-label={`Remover arquivo de ${label}`}
+            className={cn(
+              "absolute right-3 top-3 z-20 h-9 w-9 cursor-pointer rounded-full",
+              "bg-[#0a0a0a] text-red-400 hover:bg-red-500 hover:text-white",
+              "active:scale-[0.96]"
+            )}
           >
-            <X className="w-4 h-4" />
+            <X className="h-4 w-4" />
           </Button>
         ) : (
-          <div className="absolute top-4 right-4 w-9 h-9 rounded-full bg-muted/70 flex items-center justify-center">
-            <Upload className="w-4 h-4 opacity-60" />
+          <div className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-muted/70">
+            <Upload className="h-4 w-4 opacity-60" />
           </div>
         )}
       </GlassmorphicCard>

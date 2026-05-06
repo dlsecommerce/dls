@@ -359,7 +359,7 @@ export default function ComposicaoCustos({
                             descricao ? "text-white" : "text-white/20"
                           }`}
                         >
-                          {descricao || "Descrição do custo"}
+                          {descricao || "PRODUTO"}
                         </span>
                       </div>
                     </div>

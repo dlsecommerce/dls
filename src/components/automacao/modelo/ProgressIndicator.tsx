@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { CheckCircle2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ProgressIndicatorProps {
   totalSteps: number;
   completedSteps: number;
-  loading?: boolean; // indica se está processando
+  loading?: boolean;
 }
 
 export const ProgressIndicator = ({
@@ -17,85 +18,152 @@ export const ProgressIndicator = ({
 }: ProgressIndicatorProps) => {
   const [progress, setProgress] = useState(0);
 
-  // 🔹 Simulação da barra animada de carregamento
   useEffect(() => {
     if (loading) {
       setProgress(0);
+
       const interval = setInterval(() => {
         setProgress((prev) => {
-          const next = prev + Math.random() * 12;
-          return next >= 100 ? 100 : next;
+          const next = prev + Math.random() * 10;
+          return next >= 96 ? 96 : next;
         });
       }, 300);
+
       return () => clearInterval(interval);
-    } else {
-      setProgress(0);
     }
+
+    setProgress(0);
   }, [loading]);
 
-  const allCompleted = completedSteps >= totalSteps;
+  const safeTotal = Math.max(totalSteps, 1);
+  const safeCompleted = Math.min(Math.max(completedSteps, 0), safeTotal);
+  const allCompleted = safeCompleted >= safeTotal;
+
+  const statusLabel = loading
+    ? "Processando"
+    : allCompleted
+    ? "Completo"
+    : safeCompleted === 0
+    ? "Pendente"
+    : "Em andamento";
 
   return (
     <>
-      {/* Desktop - original preservado */}
-      <div className="hidden md:flex relative w-3/4 mx-auto h-4 mt-2 items-center justify-center">
+      {/* Desktop */}
+      <div className="hidden w-full md:block">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            {loading ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#1A8CEB]" />
+            ) : allCompleted ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-green-400" />
+            ) : (
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-white/25" />
+            )}
+
+            <span
+              className={cn(
+                "truncate text-xs font-semibold",
+                loading
+                  ? "text-[#1A8CEB]"
+                  : allCompleted
+                  ? "text-green-400"
+                  : "text-white/45"
+              )}
+            >
+              {statusLabel}
+            </span>
+          </div>
+
+          <span className="shrink-0 text-xs font-bold text-white/45">
+          </span>
+        </div>
+
         <AnimatePresence mode="wait">
           {!loading ? (
             <motion.div
               key="steps"
-              initial={{ opacity: 0, y: -4 }}
+              initial={{ opacity: 0, y: -3 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
-              transition={{ duration: 0.25 }}
-              className="flex justify-between gap-1 w-full"
+              exit={{ opacity: 0, y: 3 }}
+              transition={{ duration: 0.2 }}
+              className="grid w-full gap-1.5"
+              style={{
+                gridTemplateColumns: `repeat(${safeTotal}, minmax(0, 1fr))`,
+              }}
             >
-              {Array.from({ length: totalSteps }).map((_, index) => (
-                <div
-                  key={index}
-                  className={cn(
-                    "flex-1 h-1.5 rounded-full transition-all duration-500",
-                    allCompleted
-                      ? "bg-green-500"
-                      : index < completedSteps
-                      ? "bg-blue-500"
-                      : "bg-neutral-300"
-                  )}
-                />
-              ))}
+              {Array.from({ length: safeTotal }).map((_, index) => {
+                const completed = index < safeCompleted;
+
+                return (
+                  <div
+                    key={index}
+                    className={cn(
+                      "h-2 rounded-full border transition-all duration-300",
+                      allCompleted
+                        ? "border-green-500/30 bg-green-500"
+                        : completed
+                        ? "border-[#1A8CEB]/35 bg-[#1A8CEB]"
+                        : "border-white/10 bg-white/[0.06]"
+                    )}
+                  />
+                );
+              })}
             </motion.div>
           ) : (
             <motion.div
               key="loading"
-              initial={{ opacity: 0, y: -4 }}
+              initial={{ opacity: 0, y: -3 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
-              transition={{ duration: 0.25 }}
-              className="w-full h-2 rounded-full bg-neutral-800/40 overflow-hidden"
+              exit={{ opacity: 0, y: 3 }}
+              transition={{ duration: 0.2 }}
+              className="h-2 w-full overflow-hidden rounded-full border border-white/10 bg-white/[0.06]"
             >
               <motion.div
                 animate={{ width: `${progress}%` }}
-                transition={{ duration: 0.4, ease: "easeInOut" }}
-                className="h-full bg-gradient-to-r bg-blue-500 rounded-full shadow-[0_0_10px_#3b82f6]"
+                transition={{ duration: 0.35, ease: "easeInOut" }}
+                className="h-full rounded-full bg-[#1A8CEB]"
               />
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {/* Mobile - camada separada */}
-      <div className="md:hidden relative w-full mx-auto h-auto mt-1">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-medium text-muted-foreground">
-            Progresso
-          </span>
+      {/* Mobile */}
+      <div className="relative mx-auto mt-1 w-full md:hidden">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            {loading ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#1A8CEB]" />
+            ) : allCompleted ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
+            ) : (
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground/40" />
+            )}
+
+            <span
+              className={cn(
+                "truncate text-xs font-semibold",
+                loading
+                  ? "text-[#1A8CEB]"
+                  : allCompleted
+                  ? "text-green-500"
+                  : "text-muted-foreground"
+              )}
+            >
+              {statusLabel}
+            </span>
+          </div>
 
           <span
             className={cn(
-              "text-xs font-semibold",
-              allCompleted ? "text-green-500" : "text-blue-500"
+              "shrink-0 rounded-full border px-2.5 py-1 text-xs font-bold",
+              allCompleted
+                ? "border-green-500/25 bg-green-500/10 text-green-500"
+                : "border-white/10 bg-white/[0.04] text-muted-foreground"
             )}
           >
-            {completedSteps}/{totalSteps}
+            {safeCompleted}/{safeTotal}
           </span>
         </div>
 
@@ -103,42 +171,46 @@ export const ProgressIndicator = ({
           {!loading ? (
             <motion.div
               key="steps-mobile"
-              initial={{ opacity: 0, y: -4 }}
+              initial={{ opacity: 0, y: -3 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
-              transition={{ duration: 0.25 }}
-              className="grid gap-1.5 w-full"
+              exit={{ opacity: 0, y: 3 }}
+              transition={{ duration: 0.2 }}
+              className="grid w-full gap-1.5"
               style={{
-                gridTemplateColumns: `repeat(${totalSteps}, minmax(0, 1fr))`,
+                gridTemplateColumns: `repeat(${safeTotal}, minmax(0, 1fr))`,
               }}
             >
-              {Array.from({ length: totalSteps }).map((_, index) => (
-                <div
-                  key={index}
-                  className={cn(
-                    "h-2 rounded-full transition-all duration-500",
-                    allCompleted
-                      ? "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.45)]"
-                      : index < completedSteps
-                      ? "bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.35)]"
-                      : "bg-neutral-700/60"
-                  )}
-                />
-              ))}
+              {Array.from({ length: safeTotal }).map((_, index) => {
+                const completed = index < safeCompleted;
+
+                return (
+                  <div
+                    key={index}
+                    className={cn(
+                      "h-2 rounded-full transition-all duration-300",
+                      allCompleted
+                        ? "bg-green-500"
+                        : completed
+                        ? "bg-[#1A8CEB]"
+                        : "bg-neutral-700/60"
+                    )}
+                  />
+                );
+              })}
             </motion.div>
           ) : (
             <motion.div
               key="loading-mobile"
-              initial={{ opacity: 0, y: -4 }}
+              initial={{ opacity: 0, y: -3 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
-              transition={{ duration: 0.25 }}
-              className="w-full h-2.5 rounded-full bg-neutral-800/70 overflow-hidden"
+              exit={{ opacity: 0, y: 3 }}
+              transition={{ duration: 0.2 }}
+              className="h-2.5 w-full overflow-hidden rounded-full bg-neutral-800/70"
             >
               <motion.div
                 animate={{ width: `${progress}%` }}
-                transition={{ duration: 0.4, ease: "easeInOut" }}
-                className="h-full bg-blue-500 rounded-full shadow-[0_0_14px_#3b82f6]"
+                transition={{ duration: 0.35, ease: "easeInOut" }}
+                className="h-full rounded-full bg-[#1A8CEB]"
               />
             </motion.div>
           )}
