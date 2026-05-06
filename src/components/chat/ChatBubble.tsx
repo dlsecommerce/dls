@@ -31,30 +31,18 @@ import { useProfile } from "@/context/ProfileContext";
 import { supabaseChatService, ChatMessage } from "@/services/supabaseChatService";
 import { supabase } from "@/integrations/supabase/client";
 
+type ManualStatus = "disponivel" | "ausente" | "ocupado" | "invisivel";
+type UiStatus = "online" | "ausente" | "ocupado" | "invisivel" | "offline";
+
 interface MiniUser {
   usuario_id: string;
   usuario_nome: string;
   avatar_url?: string | null;
-  status: "online" | "disponivel" | "ausente" | "ocupado" | "invisivel" | "offline";
+  status: ManualStatus;
+  status_message?: string | null;
+  last_seen_at?: string | null;
+  status_updated_at?: string | null;
 }
-
-type UiStatus = "online" | "ausente" | "ocupado" | "invisivel" | "offline";
-
-const normalizeStatus = (s: MiniUser["status"] | null | undefined): UiStatus => {
-  switch (s) {
-    case "disponivel":
-    case "online":
-      return "online";
-    case "ausente":
-      return "ausente";
-    case "ocupado":
-      return "ocupado";
-    case "invisivel":
-      return "invisivel";
-    default:
-      return "offline";
-  }
-};
 
 type FabPosition = {
   x: number;
@@ -67,7 +55,69 @@ const FAB_RIGHT = 24;
 const FAB_BOTTOM = 24;
 const FAB_SAFE = 8;
 
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+const PRESENCE_CHANNEL = "presence:site";
+const PRESENCE_TOUCH_INTERVAL_MS = 60_000;
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+const normalizeManualStatus = (status?: string | null): ManualStatus => {
+  if (
+    status === "disponivel" ||
+    status === "ausente" ||
+    status === "ocupado" ||
+    status === "invisivel"
+  ) {
+    return status;
+  }
+
+  return "disponivel";
+};
+
+const getStatusColor = (status: UiStatus) => {
+  switch (status) {
+    case "online":
+      return "#10b981";
+    case "ausente":
+      return "#f59e0b";
+    case "ocupado":
+      return "#ef4444";
+    case "invisivel":
+      return "#6b7280";
+    default:
+      return "#6b7280";
+  }
+};
+
+const getStatusText = (status: UiStatus) => {
+  switch (status) {
+    case "online":
+      return "Disponível";
+    case "ausente":
+      return "Ausente";
+    case "ocupado":
+      return "Ocupado";
+    case "invisivel":
+      return "Invisível";
+    default:
+      return "Offline";
+  }
+};
+
+const getStatusPriority = (status: UiStatus) => {
+  switch (status) {
+    case "online":
+      return 0;
+    case "ocupado":
+      return 1;
+    case "ausente":
+      return 2;
+    case "invisivel":
+      return 3;
+    default:
+      return 4;
+  }
+};
 
 export default function ChatBubble() {
   const { profile } = useProfile();
@@ -98,7 +148,6 @@ export default function ChatBubble() {
 
   const [fabPosition, setFabPosition] = useState<FabPosition>({ x: 0, y: 0 });
   const [isDraggingFab, setIsDraggingFab] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
 
   const fabDragRef = useRef({
     active: false,
@@ -112,28 +161,68 @@ export default function ChatBubble() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(
+    null
+  );
   const messagesChannelCleanup = useRef<null | (() => void)>(null);
-  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const inboxChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const presenceChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(
+    null
+  );
+  const inboxChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(
+    null
+  );
   const conversaIdRef = useRef<string>("");
 
   const myId = profile?.id || "";
   const myName = profile?.name || "User";
+  const myManualStatus = normalizeManualStatus(profile?.status);
+
+  const selectedUserLive = useMemo(() => {
+    if (!selectedUser?.usuario_id) return null;
+
+    return (
+      users.find((u) => u.usuario_id === selectedUser.usuario_id) ??
+      selectedUser
+    );
+  }, [users, selectedUser]);
 
   const conversaId = useMemo(() => {
-    if (!selectedUser?.usuario_id || !myId) return "";
-    if (selectedUser.usuario_id === myId) return "";
-    return supabaseChatService.conversationKeyDirect(myId, selectedUser.usuario_id);
-  }, [selectedUser?.usuario_id, myId]);
+    if (!selectedUserLive?.usuario_id || !myId) return "";
+    if (selectedUserLive.usuario_id === myId) return "";
 
-  const hasConversationSelected = Boolean(conversaId && selectedUser?.usuario_id);
+    return supabaseChatService.conversationKeyDirect(
+      myId,
+      selectedUserLive.usuario_id
+    );
+  }, [selectedUserLive?.usuario_id, myId]);
+
+  const hasConversationSelected = Boolean(
+    conversaId && selectedUserLive?.usuario_id
+  );
 
   useEffect(() => {
     conversaIdRef.current = conversaId || "";
   }, [conversaId]);
 
-  const hasAnyUnread = useMemo(() => Object.values(unreadByUser).some((n) => n > 0), [unreadByUser]);
+  const getEffectiveStatus = useCallback(
+    (u: MiniUser): UiStatus => {
+      const manualStatus = normalizeManualStatus(u.status);
+      const isPresent = onlineIds.has(u.usuario_id);
+
+      if (manualStatus === "invisivel") return "invisivel";
+      if (!isPresent) return "offline";
+      if (manualStatus === "ocupado") return "ocupado";
+      if (manualStatus === "ausente") return "ausente";
+
+      return "online";
+    },
+    [onlineIds]
+  );
+
+  const hasAnyUnread = useMemo(
+    () => Object.values(unreadByUser).some((n) => n > 0),
+    [unreadByUser]
+  );
 
   const getFabBounds = useCallback(() => {
     if (typeof window === "undefined") {
@@ -168,6 +257,7 @@ export default function ChatBubble() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+
         setFabPosition(
           clampFabPosition({
             x: Number.isFinite(parsed?.x) ? parsed.x : 0,
@@ -184,6 +274,7 @@ export default function ChatBubble() {
     };
 
     window.addEventListener("resize", handleResize);
+
     return () => window.removeEventListener("resize", handleResize);
   }, [clampFabPosition]);
 
@@ -266,83 +357,32 @@ export default function ChatBubble() {
     };
   }, [fabPosition, clampFabPosition]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const updateIsMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-
-    updateIsMobile();
-    window.addEventListener("resize", updateIsMobile);
-
-    return () => window.removeEventListener("resize", updateIsMobile);
-  }, []);
-
-  const ensureConversationParticipants = useCallback(async () => {    if (!conversaId || !myId || !selectedUser?.usuario_id) return;
+  const ensureConversationParticipants = useCallback(async () => {
+    if (!conversaId || !myId || !selectedUserLive?.usuario_id) return;
 
     const { error } = await supabase.rpc("ensure_dm_participants", {
       p_conversa_id: conversaId,
-      p_other_user: selectedUser.usuario_id,
+      p_other_user: selectedUserLive.usuario_id,
     });
 
     if (error) {
       console.error("[chat] ensure_dm_participants error:", error);
       throw error;
     }
-  }, [conversaId, myId, selectedUser?.usuario_id]);
-
-  const getStatusColor = (status: UiStatus) => {
-    switch (status) {
-      case "online":
-        return "#10b981";
-      case "ausente":
-        return "#f59e0b";
-      case "ocupado":
-        return "#ef4444";
-      case "invisivel":
-        return "#6b7280";
-      default:
-        return "#6b7280";
-    }
-  };
-
-  const getStatusText = (status: UiStatus) => {
-    switch (status) {
-      case "online":
-        return "Disponível";
-      case "ausente":
-        return "Ausente";
-      case "ocupado":
-        return "Ocupado";
-      case "invisivel":
-        return "Invisível";
-      default:
-        return "Offline";
-    }
-  };
+  }, [conversaId, myId, selectedUserLive?.usuario_id]);
 
   const getInitials = (name?: string) =>
-    name?.split(" ")
+    name
+      ?.split(" ")
       .map((n) => n[0])
       .join("")
       .substring(0, 2)
       .toUpperCase() || "??";
 
-  const getEffectiveStatus = useCallback(
-    (u: MiniUser): UiStatus => {
-      const normalized = normalizeStatus(u.status);
-
-      if (normalized === "invisivel") return "invisivel";
-      if (onlineIds.has(u.usuario_id)) return "online";
-
-      return normalized;
-    },
-    [onlineIds]
-  );
-
   useEffect(() => {
+    if (typeof window === "undefined") return;
     if (!("Notification" in window)) return;
+
     if (Notification.permission === "default") {
       Notification.requestPermission().catch(() => {});
     }
@@ -350,6 +390,7 @@ export default function ChatBubble() {
 
   const showNotification = useCallback(
     (title: string, body: string) => {
+      if (typeof window === "undefined") return;
       if (!notificationsEnabled) return;
       if (isOpen && !isMinimized) return;
 
@@ -366,6 +407,7 @@ export default function ChatBubble() {
 
   const playSound = useCallback(() => {
     if (!soundEnabled) return;
+    if (typeof window === "undefined") return;
 
     const audio = new Audio(
       "data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSmH0fPTgjMGHm7A7+OZRQ0PVqvl8LJeGAg+ltryxnIsBS59zvLaizsIGGS57OihUBELTKXh8LhlHAU2kdXzzn0pBSh+zPLZjT0HHnK/7eObRw4OWKzl8A=="
@@ -378,23 +420,27 @@ export default function ChatBubble() {
     const fetchProfiles = async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, name, avatar_url, status");
+        .select(
+          "id, name, avatar_url, status, status_message, last_seen_at, status_updated_at"
+        )
+        .order("name", { ascending: true });
 
       if (error) {
         console.error("[profiles] select error:", error);
         return;
       }
 
-      if (data) {
-        setUsers(
-          (data as any[]).map((u) => ({
-            usuario_id: u.id,
-            usuario_nome: u.name || "Usuário",
-            avatar_url: u.avatar_url,
-            status: (u.status as MiniUser["status"]) || "offline",
-          }))
-        );
-      }
+      setUsers(
+        ((data ?? []) as any[]).map((u) => ({
+          usuario_id: u.id,
+          usuario_nome: u.name || "Usuário",
+          avatar_url: u.avatar_url,
+          status: normalizeManualStatus(u.status),
+          status_message: u.status_message ?? null,
+          last_seen_at: u.last_seen_at ?? null,
+          status_updated_at: u.status_updated_at ?? null,
+        }))
+      );
     };
 
     fetchProfiles();
@@ -408,20 +454,25 @@ export default function ChatBubble() {
           const newRow: any = payload.new;
           if (!newRow?.id) return;
 
-          setUsers((prev) => {
-            const exists = prev.some((u) => u.usuario_id === newRow.id);
+          const mapped: MiniUser = {
+            usuario_id: newRow.id,
+            usuario_nome: newRow.name || "Usuário",
+            avatar_url: newRow.avatar_url,
+            status: normalizeManualStatus(newRow.status),
+            status_message: newRow.status_message ?? null,
+            last_seen_at: newRow.last_seen_at ?? null,
+            status_updated_at: newRow.status_updated_at ?? null,
+          };
 
-            const mapped: MiniUser = {
-              usuario_id: newRow.id,
-              usuario_nome: newRow.name || "Usuário",
-              avatar_url: newRow.avatar_url,
-              status:
-                (newRow.status as MiniUser["status"]) || "offline",
-            };
+          setUsers((prev) => {
+            const exists = prev.some(
+              (u) => u.usuario_id === mapped.usuario_id
+            );
 
             if (!exists) return [mapped, ...prev];
+
             return prev.map((u) =>
-              u.usuario_id === newRow.id ? { ...u, ...mapped } : u
+              u.usuario_id === mapped.usuario_id ? { ...u, ...mapped } : u
             );
           });
         }
@@ -436,7 +487,43 @@ export default function ChatBubble() {
   useEffect(() => {
     if (!myId) return;
 
-    const presence = supabase.channel("presence:site", {
+    const touchPresence = async () => {
+      try {
+        await supabase.rpc("touch_my_profile_presence");
+      } catch (error) {
+        console.warn("[presence] touch_my_profile_presence error:", error);
+      }
+    };
+
+    touchPresence();
+
+    const interval = window.setInterval(
+      touchPresence,
+      PRESENCE_TOUCH_INTERVAL_MS
+    );
+
+    return () => window.clearInterval(interval);
+  }, [myId]);
+
+  useEffect(() => {
+    if (!myId) return;
+
+    if (presenceChannelRef.current) {
+      supabase.removeChannel(presenceChannelRef.current);
+      presenceChannelRef.current = null;
+    }
+
+    if (myManualStatus === "invisivel") {
+      setOnlineIds((prev) => {
+        const next = new Set(prev);
+        next.delete(myId);
+        return next;
+      });
+
+      return;
+    }
+
+    const presence = supabase.channel(PRESENCE_CHANNEL, {
       config: { presence: { key: myId } },
     });
 
@@ -445,24 +532,39 @@ export default function ChatBubble() {
         const state = presence.presenceState();
         const ids = new Set<string>();
 
-        Object.keys(state).forEach((k) => ids.add(String(k)));
+        Object.keys(state).forEach((key) => {
+          const user = users.find((u) => u.usuario_id === String(key));
+          if (user?.status === "invisivel") return;
+          ids.add(String(key));
+        });
+
         setOnlineIds(ids);
       })
       .on("presence", { event: "join" }, ({ key }) => {
-        setOnlineIds((prev) => new Set([...prev, String(key)]));
+        const id = String(key);
+        const user = users.find((u) => u.usuario_id === id);
+
+        if (user?.status === "invisivel") return;
+
+        setOnlineIds((prev) => new Set([...prev, id]));
       })
       .on("presence", { event: "leave" }, ({ key }) => {
+        const id = String(key);
+
         setOnlineIds((prev) => {
           const next = new Set(prev);
-          next.delete(String(key));
+          next.delete(id);
           return next;
         });
       });
 
     presence.subscribe(async (status) => {
       if (status !== "SUBSCRIBED") return;
+
       await presence.track({
+        id: myId,
         nome: myName,
+        status: myManualStatus,
         at: new Date().toISOString(),
       });
     });
@@ -475,8 +577,9 @@ export default function ChatBubble() {
         presenceChannelRef.current = null;
       }
     };
-  }, [myId, myName]);
-    useEffect(() => {
+  }, [myId, myName, myManualStatus, users]);
+
+  useEffect(() => {
     if (!myId) return;
 
     if (inboxChannelRef.current) {
@@ -496,8 +599,8 @@ export default function ChatBubble() {
         },
         async (payload) => {
           const m: any = payload.new;
-          if (!m) return;
 
+          if (!m) return;
           if (m.remetente_id === myId) return;
 
           const currentOpenConversation = conversaIdRef.current || "";
@@ -505,15 +608,17 @@ export default function ChatBubble() {
             Boolean(currentOpenConversation) &&
             m.conversa_id === currentOpenConversation;
 
-          const shouldHighlightUser = !isThisConversationOpen;
-
-          if (shouldHighlightUser) {
+          if (!isThisConversationOpen) {
             setUnreadByUser((prev) => ({
               ...prev,
               [m.remetente_id]: (prev[m.remetente_id] ?? 0) + 1,
             }));
 
-            showNotification(m.remetente_nome ?? "Mensagem", m.mensagem ?? "");
+            showNotification(
+              m.remetente_nome ?? "Mensagem",
+              m.mensagem ?? m.conteudo ?? ""
+            );
+
             playSound();
           } else {
             try {
@@ -578,19 +683,24 @@ export default function ChatBubble() {
     messagesChannelCleanup.current = unsub;
 
     typingChannelRef.current?.unsubscribe();
+
     typingChannelRef.current = supabaseChatService.createTypingChannel(
       conversaId,
       myId,
-      { nome: myName }
+      {
+        nome: myName,
+      }
     );
 
     supabaseChatService.onTyping(typingChannelRef.current, setTypingUsers);
 
-    if (selectedUser?.usuario_id && selectedUser.usuario_id !== myId) {
+    if (selectedUserLive?.usuario_id && selectedUserLive.usuario_id !== myId) {
       setUnreadByUser((prev) => {
-        if (!prev[selectedUser.usuario_id]) return prev;
+        if (!prev[selectedUserLive.usuario_id]) return prev;
+
         const next = { ...prev };
-        delete next[selectedUser.usuario_id];
+        delete next[selectedUserLive.usuario_id];
+
         return next;
       });
 
@@ -603,7 +713,7 @@ export default function ChatBubble() {
     myId,
     myName,
     safeSortMessages,
-    selectedUser?.usuario_id,
+    selectedUserLive?.usuario_id,
   ]);
 
   useEffect(() => {
@@ -613,6 +723,7 @@ export default function ChatBubble() {
 
     return () => {
       messagesChannelCleanup.current?.();
+
       const ch = typingChannelRef.current;
       if (ch) supabase.removeChannel(ch);
     };
@@ -630,7 +741,7 @@ export default function ChatBubble() {
 
   const handleSend = useCallback(async () => {
     if (!newMessage.trim() || !myId) return;
-    if (!selectedUser?.usuario_id || !conversaId) return;
+    if (!selectedUserLive?.usuario_id || !conversaId) return;
 
     try {
       await ensureConversationParticipants();
@@ -641,7 +752,7 @@ export default function ChatBubble() {
         conversa_id_: conversaId,
         remetente_id: myId,
         remetente_nome: myName,
-        destinatario_id: selectedUser.usuario_id,
+        destinatario_id: selectedUserLive.usuario_id,
         mensagem: newMessage.trim(),
         reply_to: (replyingTo as any)?.id ?? null,
       } as any);
@@ -650,15 +761,13 @@ export default function ChatBubble() {
       setReplyingTo(null);
     } catch (e) {
       console.error("[chat] sendText error:", e);
-      alert(
-        "Não foi possível enviar a mensagem. Veja o console (F12) para o erro."
-      );
+      alert("Não foi possível enviar a mensagem. Veja o console (F12) para o erro.");
     }
   }, [
     newMessage,
     myId,
     myName,
-    selectedUser?.usuario_id,
+    selectedUserLive?.usuario_id,
     conversaId,
     replyingTo,
     ensureConversationParticipants,
@@ -667,7 +776,7 @@ export default function ChatBubble() {
   const handleFileSelect = useCallback(
     async (file: File) => {
       if (!myId) return;
-      if (!selectedUser?.usuario_id || !conversaId) return;
+      if (!selectedUserLive?.usuario_id || !conversaId) return;
 
       try {
         await ensureConversationParticipants();
@@ -677,22 +786,20 @@ export default function ChatBubble() {
           conversa_id: conversaId,
           remetente_id: myId,
           remetente_nome: myName,
-          destinatario_id: selectedUser.usuario_id,
+          destinatario_id: selectedUserLive.usuario_id,
           file,
         } as any);
 
         setUploadOverlay(false);
       } catch (e) {
         console.error("[chat] sendFile error:", e);
-        alert(
-          "Não foi possível enviar o arquivo. Veja o console (F12) para o erro."
-        );
+        alert("Não foi possível enviar o arquivo. Veja o console (F12) para o erro.");
       }
     },
     [
       myId,
       myName,
-      selectedUser?.usuario_id,
+      selectedUserLive?.usuario_id,
       conversaId,
       ensureConversationParticipants,
     ]
@@ -747,19 +854,51 @@ export default function ChatBubble() {
     setIsOpen(true);
   };
 
+  const selectUser = useCallback(
+    async (u: MiniUser) => {
+      if (u.usuario_id === myId) return;
+
+      setSelectedUser(u);
+
+      setUnreadByUser((prev) => {
+        if (!prev[u.usuario_id]) return prev;
+
+        const next = { ...prev };
+        delete next[u.usuario_id];
+
+        return next;
+      });
+
+      try {
+        const key = supabaseChatService.conversationKeyDirect(
+          myId,
+          u.usuario_id
+        );
+
+        await supabaseChatService.markAllRead(key, myId);
+      } catch {}
+    },
+    [myId]
+  );
+
   const filteredMessages = useMemo(() => {
     const base = messages;
 
     return searchTerm
       ? base.filter((m: any) =>
-          String(m.mensagem || "")
+          String(m.mensagem || m.conteudo || "")
             .toLowerCase()
             .includes(searchTerm.toLowerCase())
         )
       : base;
   }, [messages, searchTerm]);
 
-  const onlineCount = useMemo(() => onlineIds.size, [onlineIds]);
+  const onlineCount = useMemo(() => {
+    return users.filter((u) => {
+      const status = getEffectiveStatus(u);
+      return status !== "offline" && status !== "invisivel";
+    }).length;
+  }, [users, getEffectiveStatus]);
 
   const chatWidth = isFullscreen ? "w-full h-full" : "w-96 max-h-[600px]";
   const chatPosition = isFullscreen ? "inset-0" : "bottom-6 right-6";
@@ -770,45 +909,48 @@ export default function ChatBubble() {
     const others = users
       .filter((u) => u.usuario_id !== myId)
       .sort((a, b) => {
-        const haA = (unreadByUser[a.usuario_id] ?? 0) > 0 ? 0 : 1;
-        const haB = (unreadByUser[b.usuario_id] ?? 0) > 0 ? 0 : 1;
+        const unreadA = (unreadByUser[a.usuario_id] ?? 0) > 0 ? 0 : 1;
+        const unreadB = (unreadByUser[b.usuario_id] ?? 0) > 0 ? 0 : 1;
 
-        if (haA !== haB) return haA - haB;
+        if (unreadA !== unreadB) return unreadA - unreadB;
 
-        const ra = onlineIds.has(a.usuario_id) ? 0 : 1;
-        const rb = onlineIds.has(b.usuario_id) ? 0 : 1;
+        const statusA = getEffectiveStatus(a);
+        const statusB = getEffectiveStatus(b);
 
-        if (ra !== rb) return ra - rb;
+        const priorityA = getStatusPriority(statusA);
+        const priorityB = getStatusPriority(statusB);
+
+        if (priorityA !== priorityB) return priorityA - priorityB;
 
         return (a.usuario_nome || "").localeCompare(b.usuario_nome || "");
       });
 
     return me ? [me, ...others] : others;
-  }, [users, myId, onlineIds, unreadByUser]);
+  }, [users, myId, unreadByUser, getEffectiveStatus]);
 
   const selectedEffectiveStatus = useMemo((): UiStatus => {
-    if (!selectedUser) return "offline";
-    return getEffectiveStatus(selectedUser);
-  }, [selectedUser, getEffectiveStatus]);
+    if (!selectedUserLive) return "offline";
+
+    return getEffectiveStatus(selectedUserLive);
+  }, [selectedUserLive, getEffectiveStatus]);
 
   const typingForUI = useMemo(() => {
     return typingUsers
       .map((t: any) => ({
-        nome:
-          t?.nome ||
-          t?.name ||
-          t?.full_name ||
-          t?.user_name ||
-          "Alguém",
+        nome: t?.nome || t?.name || t?.full_name || t?.user_name || "Alguém",
       }))
       .filter((x: any) => x.nome);
   }, [typingUsers]);
 
+  const selectedTitle = selectedUserLive?.usuario_nome || "Selecione um usuário";
+  const selectedStatusLabel = getStatusText(selectedEffectiveStatus);
+  const selectedStatusColor = getStatusColor(selectedEffectiveStatus);
+
   return (
-    <>      <AnimatePresence>
+    <>
+      <AnimatePresence>
         {!isOpen && (
           <>
-            {/* Mobile FAB */}
             <motion.button
               initial={{ scale: 0, opacity: 0, y: 16 }}
               animate={{
@@ -843,11 +985,14 @@ export default function ChatBubble() {
               <motion.div
                 className="pointer-events-none absolute inset-0 rounded-full bg-[#2699fe]"
                 animate={{ scale: [1, 1.28, 1], opacity: [0.35, 0, 0.35] }}
-                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                transition={{
+                  duration: 2,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
               />
             </motion.button>
 
-            {/* Desktop FAB - original preservado */}
             <motion.button
               initial={{ scale: 0, opacity: 0 }}
               animate={{
@@ -881,7 +1026,11 @@ export default function ChatBubble() {
               <motion.div
                 className="pointer-events-none absolute inset-0 rounded-full bg-[#2699fe]"
                 animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0, 0.5] }}
-                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                transition={{
+                  duration: 2,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
               />
             </motion.button>
           </>
@@ -891,7 +1040,6 @@ export default function ChatBubble() {
       <AnimatePresence>
         {isOpen && (
           <>
-            {/* Mobile */}
             <motion.div
               initial={{ opacity: 0, y: "100%" }}
               animate={{ opacity: 1, y: 0 }}
@@ -905,6 +1053,7 @@ export default function ChatBubble() {
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#2699fe]">
                       <Users className="h-5 w-5 text-white" />
                     </div>
+
                     <div
                       className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#0a0a0a]"
                       style={{ backgroundColor: "#10b981" }}
@@ -913,9 +1062,11 @@ export default function ChatBubble() {
 
                   <div className="min-w-0">
                     <h3 className="truncate text-sm font-bold text-white">
-                      {selectedUser?.usuario_nome || "Selecione um usuário"}
+                      {selectedTitle}
                     </h3>
-                    <p className="text-xs text-white/70">{onlineCount} online</p>
+                    <p className="text-xs text-white/70">
+                      {onlineCount} online
+                    </p>
                   </div>
                 </div>
 
@@ -972,30 +1123,18 @@ export default function ChatBubble() {
                       const isMe = u.usuario_id === myId;
                       const effStatus = getEffectiveStatus(u);
                       const hasDot = (unreadByUser[u.usuario_id] ?? 0) > 0;
-                      const isSelected = selectedUser?.usuario_id === u.usuario_id;
+                      const isSelected =
+                        selectedUserLive?.usuario_id === u.usuario_id;
 
                       return (
                         <button
                           key={u.usuario_id}
                           disabled={isMe}
-                          onClick={async () => {
-                            if (isMe) return;
-
-                            setSelectedUser(u);
-
-                            setUnreadByUser((prev) => {
-                              if (!prev[u.usuario_id]) return prev;
-                              const next = { ...prev };
-                              delete next[u.usuario_id];
-                              return next;
-                            });
-
-                            try {
-                              const key = supabaseChatService.conversationKeyDirect(myId, u.usuario_id);
-                              await supabaseChatService.markAllRead(key, myId);
-                            } catch {}
-                          }}
+                          onClick={() => selectUser(u)}
                           className="flex shrink-0 flex-col items-center gap-1"
+                          title={`${isMe ? "Você" : u.usuario_nome} · ${getStatusText(
+                            effStatus
+                          )}`}
                         >
                           <div
                             className={[
@@ -1006,7 +1145,11 @@ export default function ChatBubble() {
                           >
                             <Avatar className="h-12 w-12 rounded-full">
                               {u.avatar_url ? (
-                                <AvatarImage className="rounded-full" src={u.avatar_url} alt={u.usuario_nome} />
+                                <AvatarImage
+                                  className="rounded-full"
+                                  src={u.avatar_url}
+                                  alt={u.usuario_nome}
+                                />
                               ) : (
                                 <AvatarFallback className="rounded-full bg-[#151515] text-xs font-bold text-white">
                                   {getInitials(u.usuario_nome)}
@@ -1020,7 +1163,9 @@ export default function ChatBubble() {
 
                             <div
                               className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#0a0a0a]"
-                              style={{ backgroundColor: getStatusColor(effStatus) }}
+                              style={{
+                                backgroundColor: getStatusColor(effStatus),
+                              }}
                             />
                           </div>
 
@@ -1046,40 +1191,68 @@ export default function ChatBubble() {
                 </div>
               ) : (
                 <>
-                  {selectedUser && selectedUser.usuario_id !== myId && (
+                  {selectedUserLive && selectedUserLive.usuario_id !== myId && (
                     <div className="border-b border-white/10 bg-[#0a0a0a] px-4 py-3">
                       <div className="flex items-center justify-between">
                         <div className="flex min-w-0 items-center gap-2">
                           <Avatar className="h-9 w-9 shrink-0">
-                            {selectedUser.avatar_url ? (
-                              <AvatarImage src={selectedUser.avatar_url} alt={selectedUser.usuario_nome} />
+                            {selectedUserLive.avatar_url ? (
+                              <AvatarImage
+                                src={selectedUserLive.avatar_url}
+                                alt={selectedUserLive.usuario_nome}
+                              />
                             ) : (
                               <AvatarFallback className="bg-[#2699fe] text-xs text-white">
-                                {getInitials(selectedUser.usuario_nome)}
+                                {getInitials(selectedUserLive.usuario_nome)}
                               </AvatarFallback>
                             )}
                           </Avatar>
 
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-white">{selectedUser.usuario_nome}</p>
+                            <p className="truncate text-sm font-medium text-white">
+                              {selectedUserLive.usuario_nome}
+                            </p>
+
                             <div className="flex items-center gap-1.5">
                               <div
                                 className="h-2 w-2 rounded-full"
-                                style={{ backgroundColor: getStatusColor(selectedEffectiveStatus) }}
+                                style={{ backgroundColor: selectedStatusColor }}
                               />
-                              <span className="text-xs text-white/50">{getStatusText(selectedEffectiveStatus)}</span>
+                              <span className="text-xs text-white/50">
+                                {selectedStatusLabel}
+                              </span>
                             </div>
+
+                            {selectedUserLive.status_message && (
+                              <p className="mt-0.5 max-w-[220px] truncate text-[11px] italic text-white/35">
+                                “{selectedUserLive.status_message}”
+                              </p>
+                            )}
                           </div>
                         </div>
 
                         <div className="flex gap-1">
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                          >
                             <Phone className="h-4 w-4 text-white/50" />
                           </Button>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                          >
                             <Video className="h-4 w-4 text-white/50" />
                           </Button>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                          >
                             <MoreVertical className="h-4 w-4 text-white/50" />
                           </Button>
                         </div>
@@ -1094,9 +1267,14 @@ export default function ChatBubble() {
                           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#151515]">
                             <MessageCircle className="h-7 w-7 text-white/70" />
                           </div>
-                          <p className="font-medium text-white">Selecione um usuário para conversar</p>
+
+                          <p className="font-medium text-white">
+                            Selecione um usuário para conversar
+                          </p>
+
                           <p className="mt-1 text-xs text-white/45">
-                            Online aparece automaticamente quando a pessoa estiver com o site aberto.
+                            O status manual é respeitado e a presença mostra
+                            quem está no site.
                           </p>
                         </div>
                       </div>
@@ -1114,12 +1292,15 @@ export default function ChatBubble() {
                             delay={idx * 0.03}
                           />
                         ))}
+
                         <div ref={messagesEndRef} />
                       </div>
                     )}
                   </ScrollArea>
 
-                  {typingForUI.length > 0 && hasConversationSelected && <TypingIndicator users={typingForUI as any} />}
+                  {typingForUI.length > 0 && hasConversationSelected && (
+                    <TypingIndicator users={typingForUI as any} />
+                  )}
 
                   {replyingTo && hasConversationSelected && (
                     <motion.div
@@ -1130,13 +1311,25 @@ export default function ChatBubble() {
                       <div className="flex items-center justify-between">
                         <div className="flex min-w-0 items-center gap-2">
                           <div className="h-10 w-1 rounded bg-[#2699fe]" />
+
                           <div className="min-w-0">
-                            <p className="text-xs text-white/45">Respondendo a {(replyingTo as any).remetente_nome}</p>
-                            <p className="truncate text-sm text-white">{(replyingTo as any).mensagem}</p>
+                            <p className="text-xs text-white/45">
+                              Respondendo a{" "}
+                              {(replyingTo as any).remetente_nome}
+                            </p>
+
+                            <p className="truncate text-sm text-white">
+                              {(replyingTo as any).mensagem}
+                            </p>
                           </div>
                         </div>
 
-                        <Button variant="ghost" size="sm" onClick={() => setReplyingTo(null)} className="h-8 w-8 p-0">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setReplyingTo(null)}
+                          className="h-8 w-8 p-0"
+                        >
                           <X className="h-4 w-4 text-white/70" />
                         </Button>
                       </div>
@@ -1145,7 +1338,10 @@ export default function ChatBubble() {
 
                   <div
                     className="border-t border-white/10 bg-[#0a0a0a] px-4 pt-3"
-                    style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+                    style={{
+                      paddingBottom:
+                        "calc(0.75rem + env(safe-area-inset-bottom))",
+                    }}
                   >
                     <div className="flex items-end gap-2">
                       <div className="relative flex-1">
@@ -1166,7 +1362,11 @@ export default function ChatBubble() {
                               handleTyping();
                             }
                           }}
-                          placeholder={hasConversationSelected ? "Digite sua mensagem..." : "Selecione um usuário..."}
+                          placeholder={
+                            hasConversationSelected
+                              ? "Digite sua mensagem..."
+                              : "Selecione um usuário..."
+                          }
                           className="h-12 rounded-2xl border-white/10 bg-[#151515] pr-24 text-white placeholder:text-white/40 disabled:opacity-60"
                         />
 
@@ -1177,6 +1377,7 @@ export default function ChatBubble() {
                             className="hidden"
                             onChange={async (e) => {
                               if (!hasConversationSelected) return;
+
                               const file = e.target.files?.[0];
                               if (!file) return;
 
@@ -1244,7 +1445,6 @@ export default function ChatBubble() {
               </AnimatePresence>
             </motion.div>
 
-            {/* Desktop - original preservado */}
             <motion.div
               initial={{ opacity: 0, y: 100, scale: 0.8 }}
               animate={{
@@ -1264,23 +1464,30 @@ export default function ChatBubble() {
                     <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
                       <Users className="w-5 h-5 text-white" />
                     </div>
+
                     <div
                       className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#2699fe]"
                       style={{ backgroundColor: "#10b981" }}
                     />
                   </div>
+
                   <div>
-                    <h3 className="font-bold text-white">
-                      {selectedUser?.usuario_nome ? selectedUser.usuario_nome : "Selecione um usuário"}
-                    </h3>
-                    <p className="text-xs text-white/80">{onlineCount} online</p>
+                    <h3 className="font-bold text-white">{selectedTitle}</h3>
+                    <p className="text-xs text-white/80">
+                      {onlineCount} online
+                    </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
                   {showSearch ? (
-                    <motion.div initial={{ width: 0, opacity: 0 }} animate={{ width: 200, opacity: 1 }} className="relative">
+                    <motion.div
+                      initial={{ width: 0, opacity: 0 }}
+                      animate={{ width: 200, opacity: 1 }}
+                      className="relative"
+                    >
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/60" />
+
                       <Input
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
@@ -1354,13 +1561,16 @@ export default function ChatBubble() {
                   ) : (
                     <div className="flex-1 flex overflow-hidden">
                       <div className="w-24 bg-[#0a0a0a] border-r border-white/10 p-3 overflow-y-auto">
-                        <p className="text-xs text-gray-500 font-semibold mb-3 uppercase">Equipe</p>
+                        <p className="text-xs text-gray-500 font-semibold mb-3 uppercase">
+                          Equipe
+                        </p>
 
                         <div className="space-y-3">
                           {usersOrdered.map((u, idx) => {
                             const isMe = u.usuario_id === myId;
                             const effStatus = getEffectiveStatus(u);
-                            const hasDot = (unreadByUser[u.usuario_id] ?? 0) > 0;
+                            const hasDot =
+                              (unreadByUser[u.usuario_id] ?? 0) > 0;
 
                             return (
                               <motion.button
@@ -1368,23 +1578,7 @@ export default function ChatBubble() {
                                 initial={{ opacity: 0, x: -20 }}
                                 animate={{ opacity: 1, x: 0 }}
                                 transition={{ delay: idx * 0.03 }}
-                                onClick={async () => {
-                                  if (isMe) return;
-
-                                  setSelectedUser(u);
-
-                                  setUnreadByUser((prev) => {
-                                    if (!prev[u.usuario_id]) return prev;
-                                    const next = { ...prev };
-                                    delete next[u.usuario_id];
-                                    return next;
-                                  });
-
-                                  try {
-                                    const key = supabaseChatService.conversationKeyDirect(myId, u.usuario_id);
-                                    await supabaseChatService.markAllRead(key, myId);
-                                  } catch {}
-                                }}
+                                onClick={() => selectUser(u)}
                                 disabled={isMe}
                                 whileHover={{ scale: isMe ? 1 : 1.05 }}
                                 whileTap={{ scale: isMe ? 1 : 0.95 }}
@@ -1392,11 +1586,21 @@ export default function ChatBubble() {
                                   "relative group w-12 h-12 flex items-center justify-center rounded-full",
                                   isMe ? "opacity-90 cursor-not-allowed" : "",
                                 ].join(" ")}
-                                title={isMe ? "Você" : u.usuario_nome}
+                                title={
+                                  isMe
+                                    ? `Você · ${getStatusText(effStatus)}`
+                                    : `${u.usuario_nome} · ${getStatusText(
+                                        effStatus
+                                      )}`
+                                }
                               >
                                 <Avatar className="w-12 h-12 rounded-full">
                                   {u.avatar_url ? (
-                                    <AvatarImage className="rounded-full" src={u.avatar_url} alt={u.usuario_nome} />
+                                    <AvatarImage
+                                      className="rounded-full"
+                                      src={u.avatar_url}
+                                      alt={u.usuario_nome}
+                                    />
                                   ) : (
                                     <AvatarFallback className="rounded-full bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] text-white font-bold text-xs">
                                       {getInitials(u.usuario_nome)}
@@ -1410,11 +1614,15 @@ export default function ChatBubble() {
 
                                 <div
                                   className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#0a0a0a]"
-                                  style={{ backgroundColor: getStatusColor(effStatus) }}
+                                  style={{
+                                    backgroundColor: getStatusColor(effStatus),
+                                  }}
                                 />
 
                                 <div className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                  <span className="text-[8px] text-white font-medium">{isMe ? "" : u.usuario_nome.split(" ")[0]}</span>
+                                  <span className="text-[8px] text-white font-medium">
+                                    {isMe ? "" : u.usuario_nome.split(" ")[0]}
+                                  </span>
                                 </div>
                               </motion.button>
                             );
@@ -1423,53 +1631,92 @@ export default function ChatBubble() {
                       </div>
 
                       <div className="flex-1 flex flex-col">
-                        {selectedUser && selectedUser.usuario_id !== myId && (
-                          <div className="p-3 border-b border-white/10 bg-[#0a0a0a]/50">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <Avatar className="w-8 h-8">
-                                  {selectedUser.avatar_url ? (
-                                    <AvatarImage src={selectedUser.avatar_url} alt={selectedUser.usuario_nome} />
-                                  ) : (
-                                    <AvatarFallback className="bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] text-white text-xs">
-                                      {getInitials(selectedUser.usuario_nome)}
-                                    </AvatarFallback>
-                                  )}
-                                </Avatar>
-                                <div>
-                                  <p className="text-sm font-medium text-white">{selectedUser.usuario_nome}</p>
-                                  <div className="flex items-center gap-1.5">
-                                    <div
-                                      className="w-2 h-2 rounded-full"
-                                      style={{ backgroundColor: getStatusColor(selectedEffectiveStatus) }}
-                                    />
-                                    <span className="text-xs text-gray-400">{getStatusText(selectedEffectiveStatus)}</span>
+                        {selectedUserLive &&
+                          selectedUserLive.usuario_id !== myId && (
+                            <div className="p-3 border-b border-white/10 bg-[#0a0a0a]/50">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Avatar className="w-8 h-8">
+                                    {selectedUserLive.avatar_url ? (
+                                      <AvatarImage
+                                        src={selectedUserLive.avatar_url}
+                                        alt={selectedUserLive.usuario_nome}
+                                      />
+                                    ) : (
+                                      <AvatarFallback className="bg-gradient-to-br from-[#2699fe] to-[#1a7dd9] text-white text-xs">
+                                        {getInitials(
+                                          selectedUserLive.usuario_nome
+                                        )}
+                                      </AvatarFallback>
+                                    )}
+                                  </Avatar>
+
+                                  <div>
+                                    <p className="text-sm font-medium text-white">
+                                      {selectedUserLive.usuario_nome}
+                                    </p>
+
+                                    <div className="flex items-center gap-1.5">
+                                      <div
+                                        className="w-2 h-2 rounded-full"
+                                        style={{
+                                          backgroundColor: selectedStatusColor,
+                                        }}
+                                      />
+
+                                      <span className="text-xs text-gray-400">
+                                        {selectedStatusLabel}
+                                      </span>
+                                    </div>
+
+                                    {selectedUserLive.status_message && (
+                                      <p className="mt-0.5 max-w-[220px] truncate text-[11px] italic text-gray-500">
+                                        “{selectedUserLive.status_message}”
+                                      </p>
+                                    )}
                                   </div>
                                 </div>
-                              </div>
 
-                              <div className="flex gap-1">
-                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                  <Phone className="w-4 h-4 text-gray-400" />
-                                </Button>
-                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                  <Video className="w-4 h-4 text-gray-400" />
-                                </Button>
-                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                  <MoreVertical className="w-4 h-4 text-gray-400" />
-                                </Button>
+                                <div className="flex gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    <Phone className="w-4 h-4 text-gray-400" />
+                                  </Button>
+
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    <Video className="w-4 h-4 text-gray-400" />
+                                  </Button>
+
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    <MoreVertical className="w-4 h-4 text-gray-400" />
+                                  </Button>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        )}
+                          )}
 
                         <ScrollArea className="flex-1 p-4">
                           {!hasConversationSelected ? (
                             <div className="h-full w-full flex items-center justify-center">
                               <div className="text-center">
-                                <p className="text-white font-medium">Selecione um usuário para conversar</p>
+                                <p className="text-white font-medium">
+                                  Selecione um usuário para conversar
+                                </p>
+
                                 <p className="text-xs text-gray-400 mt-1">
-                                  Online aparece automaticamente quando a pessoa estiver com o site aberto.
+                                  O status manual é respeitado e a presença
+                                  mostra quem está no site.
                                 </p>
                               </div>
                             </div>
@@ -1479,7 +1726,9 @@ export default function ChatBubble() {
                                 <MessageItem
                                   key={(msg as any).id ?? `${idx}`}
                                   message={msg as any}
-                                  currentUser={{ id: myId, full_name: myName } as any}
+                                  currentUser={
+                                    { id: myId, full_name: myName } as any
+                                  }
                                   onReply={setReplyingTo as any}
                                   onEdit={handleEdit as any}
                                   onDelete={handleDelete as any}
@@ -1487,12 +1736,15 @@ export default function ChatBubble() {
                                   delay={idx * 0.03}
                                 />
                               ))}
+
                               <div ref={messagesEndRef} />
                             </div>
                           )}
                         </ScrollArea>
 
-                        {typingForUI.length > 0 && hasConversationSelected && <TypingIndicator users={typingForUI as any} />}
+                        {typingForUI.length > 0 && hasConversationSelected && (
+                          <TypingIndicator users={typingForUI as any} />
+                        )}
 
                         {replyingTo && hasConversationSelected && (
                           <motion.div
@@ -1503,12 +1755,25 @@ export default function ChatBubble() {
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
                                 <div className="w-1 h-10 bg-[#2699fe] rounded" />
+
                                 <div>
-                                  <p className="text-xs text-gray-400">Respondendo a {(replyingTo as any).remetente_nome}</p>
-                                  <p className="text-sm text-white truncate max-w-xs">{(replyingTo as any).mensagem}</p>
+                                  <p className="text-xs text-gray-400">
+                                    Respondendo a{" "}
+                                    {(replyingTo as any).remetente_nome}
+                                  </p>
+
+                                  <p className="text-sm text-white truncate max-w-xs">
+                                    {(replyingTo as any).mensagem}
+                                  </p>
                                 </div>
                               </div>
-                              <Button variant="ghost" size="sm" onClick={() => setReplyingTo(null)} className="h-6 w-6 p-0">
+
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setReplyingTo(null)}
+                                className="h-6 w-6 p-0"
+                              >
                                 <X className="w-4 h-4" />
                               </Button>
                             </div>
@@ -1535,7 +1800,11 @@ export default function ChatBubble() {
                                     handleTyping();
                                   }
                                 }}
-                                placeholder={hasConversationSelected ? "Digite sua mensagem..." : "Selecione um usuário..."}
+                                placeholder={
+                                  hasConversationSelected
+                                    ? "Digite sua mensagem..."
+                                    : "Selecione um usuário..."
+                                }
                                 className="bg-white/5 border-white/10 text-white rounded-xl pr-24 h-11 resize-none disabled:opacity-60"
                               />
 
@@ -1546,6 +1815,7 @@ export default function ChatBubble() {
                                   className="hidden"
                                   onChange={async (e) => {
                                     if (!hasConversationSelected) return;
+
                                     const file = e.target.files?.[0];
                                     if (!file) return;
 
@@ -1577,10 +1847,16 @@ export default function ChatBubble() {
                             </div>
 
                             <motion.button
-                              whileHover={{ scale: hasConversationSelected ? 1.05 : 1 }}
-                              whileTap={{ scale: hasConversationSelected ? 0.95 : 1 }}
+                              whileHover={{
+                                scale: hasConversationSelected ? 1.05 : 1,
+                              }}
+                              whileTap={{
+                                scale: hasConversationSelected ? 0.95 : 1,
+                              }}
                               onClick={handleSend}
-                              disabled={!hasConversationSelected || !newMessage.trim()}
+                              disabled={
+                                !hasConversationSelected || !newMessage.trim()
+                              }
                               className="h-11 w-11 bg-gradient-to-r from-[#2699fe] to-[#1a7dd9] rounded-xl flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#2699fe]/30"
                             >
                               <Send className="w-5 h-5 text-white" />
