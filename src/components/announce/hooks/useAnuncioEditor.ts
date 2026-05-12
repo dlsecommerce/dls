@@ -30,6 +30,13 @@ export interface Anuncio {
   altura: number | null;
   largura: number | null;
   comprimento: number | null;
+
+  /**
+   * ✅ NOVO PADRÃO DE VARIAÇÕES
+   */
+  total_variacoes?: number;
+  variacoes?: any[];
+
   [key: string]: any;
 }
 
@@ -86,6 +93,20 @@ export const inferirOD = (referencia?: string | null): number => {
   if (ref.startsWith("PAI")) return 1;
   if (ref.startsWith("VAR")) return 2;
   return 3;
+};
+
+export const isProdutoPai = (referencia?: string | null): boolean => {
+  return String(referencia || "")
+    .trim()
+    .toUpperCase()
+    .startsWith("PAI");
+};
+
+export const isProdutoVariacao = (referencia?: string | null): boolean => {
+  return String(referencia || "")
+    .trim()
+    .toUpperCase()
+    .startsWith("VAR");
 };
 
 // =========================
@@ -185,20 +206,107 @@ export function lojaCodigoToNome(
   return null;
 }
 
+// ===========================================================
+// ✅ NOVO PADRÃO: buscar variações de um anúncio pai
+// - Usa a função SQL public.get_variacoes_anuncio(p_loja, p_id)
+// - Retorna [] se não for PAI ou se der erro
+// ===========================================================
+async function fetchVariacoesDoPai(
+  lojaCodigo: "PK" | "SB",
+  idPai: string | number,
+  referencia?: string | null
+): Promise<any[]> {
+  if (!isProdutoPai(referencia)) return [];
+
+  const idNumber = Number(idPai);
+  if (!Number.isFinite(idNumber) || idNumber <= 0) return [];
+
+  const { data, error } = await supabase.rpc("get_variacoes_anuncio", {
+    p_loja: lojaCodigo,
+    p_id: idNumber,
+  });
+
+  if (error) {
+    console.error("❌ Erro ao buscar variações do anúncio:", error);
+    return [];
+  }
+
+  if (Array.isArray(data)) return data;
+
+  if (typeof data === "string") {
+    try {
+      const parsed = JSON.parse(data);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return Array.isArray(data) ? data : [];
+}
+
 /**
  * 🔧 Hook responsável por carregar e editar anúncios conforme a loja.
  * - Aceita lojaParam em vários formatos (?loja=PK, ?loja=Pikot%20Shop, etc.)
  * - Mantém produto.loja sempre como "PK" | "SB" (consistente com a UI)
+ * - NOVO PADRÃO:
+ *   - Se o anúncio for PAI -, carrega suas variações via get_variacoes_anuncio
  */
 export function useAnuncioEditor(id?: string) {
   const [produto, setProduto] = useState<Anuncio | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const [variacoes, setVariacoes] = useState<any[]>([]);
+  const [loadingVariacoes, setLoadingVariacoes] = useState(false);
 
   const params = useSearchParams();
   const lojaParam = params.get("loja");
 
   const { composicao, setComposicao, custoTotal, setCalculo, setAcrescimos } =
     usePrecificacao();
+
+  const carregarVariacoes = useCallback(
+    async (
+      lojaCodigoParam?: "PK" | "SB",
+      idParam?: string | number,
+      referenciaParam?: string | null
+    ) => {
+      const lojaCodigo = lojaCodigoParam ?? lojaNomeToCodigo(lojaParam);
+      const idFinal = idParam ?? id;
+
+      if (!lojaCodigo || !idFinal) {
+        setVariacoes([]);
+        return [];
+      }
+
+      setLoadingVariacoes(true);
+
+      try {
+        const lista = await fetchVariacoesDoPai(
+          lojaCodigo,
+          idFinal,
+          referenciaParam ?? produto?.referencia
+        );
+
+        setVariacoes(lista);
+
+        setProduto((prev) =>
+          prev
+            ? {
+                ...prev,
+                total_variacoes: lista.length,
+                variacoes: lista,
+              }
+            : prev
+        );
+
+        return lista;
+      } finally {
+        setLoadingVariacoes(false);
+      }
+    },
+    [id, lojaParam, produto?.referencia]
+  );
 
   // ===========================================================
   // 🔹 CARREGAR ANÚNCIO
@@ -234,11 +342,20 @@ export function useAnuncioEditor(id?: string) {
           lojaCodigo
         );
         setProduto(null);
+        setVariacoes([]);
         return;
       }
 
       const row = data[0];
       const odInferido = inferirOD(row["Referência"]);
+
+      const listaVariacoes = await fetchVariacoesDoPai(
+        lojaCodigo,
+        row["ID"],
+        row["Referência"]
+      );
+
+      setVariacoes(listaVariacoes);
 
       setProduto({
         // ✅ FIX: sempre string (coluna "ID" no banco)
@@ -256,6 +373,10 @@ export function useAnuncioEditor(id?: string) {
         altura: parseValorBR(row["Altura"]),
         largura: parseValorBR(row["Largura"]),
         comprimento: parseValorBR(row["Comprimento"]),
+
+        // ✅ NOVO PADRÃO
+        total_variacoes: listaVariacoes.length,
+        variacoes: listaVariacoes,
       });
 
       // 🔹 Monta composição (custo como number puro)
@@ -326,5 +447,14 @@ export function useAnuncioEditor(id?: string) {
     carregarAnuncio,
     lojaCodigoToNome,
     lojaNomeToCodigo,
+
+    // ✅ NOVO PADRÃO DE VARIAÇÕES
+    variacoes,
+    setVariacoes,
+    totalVariacoes: variacoes.length,
+    loadingVariacoes,
+    carregarVariacoes,
+    isProdutoPai,
+    isProdutoVariacao,
   };
 }

@@ -18,7 +18,12 @@ function parsePositiveInt(value: string | null, fallback: number) {
 }
 
 function sanitizeTerm(input: string) {
-  return input.replace(/[%_]/g, "").replace(/"/g, "").trim();
+  /*
+    Mantém underline e hífen para permitir busca por padrões novos:
+    PAI-FIS-3754_3453
+    VAR-LIV-TN_5AM
+  */
+  return input.replace(/[%]/g, "").replace(/"/g, "").trim();
 }
 
 function parseSearchTokens(q: string) {
@@ -38,14 +43,25 @@ function buildOrSearchParts(tokens: string[]) {
   for (const term of tokens) {
     if (!term) continue;
 
+    /*
+      Variações úteis para buscar referência com:
+      - espaço
+      - hífen
+      - underline
+      - tudo junto
+    */
     const variants = Array.from(
       new Set([
         term,
         term.replace(/\s+/g, " "),
         term.replace(/\s+/g, "-"),
         term.replace(/\s+/g, ""),
+        term.replace(/_/g, " "),
+        term.replace(/_/g, "-"),
+        term.replace(/-/g, " "),
+        term.replace(/[-_\s]+/g, ""),
       ])
-    );
+    ).filter(Boolean);
 
     const isNumeric = /^[0-9]+$/.test(term);
 
@@ -91,6 +107,68 @@ function normalizeLojaToCode(value: string) {
   if (v === "sóbaquetas" || v === "sobaquetas" || v === "sb") return "SB";
 
   return value;
+}
+
+/* ===========================
+   Helper Tipo
+=========================== */
+
+function applyTipoFilter(query: any, tipo?: string) {
+  const selected = String(tipo || "Todos").trim();
+
+  /*
+    Aceita os dois padrões:
+
+    Antigo:
+    PAI - HICKORY
+    VAR - HICKORY
+
+    Novo:
+    PAI-FIS-3754_3453
+    VAR-FIS-3754_3453
+    PAI-LIV-TN_5AM
+    VAR-LIV-TN_5AM
+
+    Regra:
+    - Todos / Produtos:
+      mostra produtos principais, ou seja, simples + PAI.
+      Não mostra VAR na tela principal.
+
+    - Produtos simples:
+      referência que não começa com PAI nem VAR.
+
+    - Produtos com variações:
+      referência que começa com PAI - ou PAI-
+
+    - Variações:
+      referência que começa com VAR - ou VAR-
+  */
+
+  if (!selected || selected === "Todos" || selected === "Produtos") {
+    return query
+      .not("Referência", "ilike", "VAR -%")
+      .not("Referência", "ilike", "VAR-%");
+  }
+
+  if (selected === "Produtos simples") {
+    return query
+      .not("Referência", "ilike", "PAI -%")
+      .not("Referência", "ilike", "PAI-%")
+      .not("Referência", "ilike", "VAR -%")
+      .not("Referência", "ilike", "VAR-%");
+  }
+
+  if (selected === "Produtos com variações") {
+    return query.or('"Referência".ilike."PAI -%","Referência".ilike."PAI-%"');
+  }
+
+  if (selected === "Variações") {
+    return query.or('"Referência".ilike."VAR -%","Referência".ilike."VAR-%"');
+  }
+
+  return query
+    .not("Referência", "ilike", "VAR -%")
+    .not("Referência", "ilike", "VAR-%");
 }
 
 export function useAnunciosData(filters: AnuncioFilters) {
@@ -141,7 +219,7 @@ export function useAnunciosData(filters: AnuncioFilters) {
 
   const hydrateCategorias = async () => {
     const { data } = await supabase
-      .from("anuncios_all")
+      .from("anuncios_all_com_variacoes")
       .select("Categoria", { distinct: true })
       .not("Categoria", "is", null)
       .neq("Categoria", "")
@@ -166,8 +244,13 @@ export function useAnunciosData(filters: AnuncioFilters) {
       const from = (page - 1) * limit;
       const to = from + limit - 1;
 
+      /*
+        IMPORTANTE:
+        Esta view já precisa retornar total_variacoes.
+        O badge verde aparece na tabela quando total_variacoes > 0.
+      */
       let query = supabase
-        .from("anuncios_all")
+        .from("anuncios_all_com_variacoes")
         .select("*", { count: "exact" })
         .range(from, to);
 
@@ -199,17 +282,7 @@ export function useAnunciosData(filters: AnuncioFilters) {
       }
 
       /* ===== Tipo ===== */
-      if (filters.tipo && filters.tipo !== "Todos") {
-        if (filters.tipo === "Produtos") {
-          query = query.eq("Tipo", "PAI");
-        } else if (filters.tipo === "Produtos simples") {
-          query = query.eq("Tipo", "Produto simples");
-        } else if (filters.tipo === "Produtos com variações") {
-          query = query.eq("Tipo", "Produto com variações");
-        } else if (filters.tipo === "Variações") {
-          query = query.eq("Tipo", "Variação");
-        }
-      }
+      query = applyTipoFilter(query, filters.tipo);
 
       /* ===== Lojas Virtuais ===== */
       if (filters.lojasVirtuais && filters.lojasVirtuais !== "Todos") {
@@ -232,21 +305,18 @@ export function useAnunciosData(filters: AnuncioFilters) {
         if (primaryCol !== "ID") {
           query = query.order("ID", { ascending: true });
         }
+      } else if (filters.situacao === "Últimos Incluídos") {
+        query = query.order("ID", { ascending: false });
       } else {
-        query = query.order("ID", { ascending: false });
-      }
-
-      /* ===== Situação ===== */
-      if (filters.situacao === "Últimos Incluídos" && !primaryCol) {
-        query = query.order("ID", { ascending: false });
+        query = query.order("ID", { ascending: true });
       }
 
       const { data, count, error } = await query;
 
       if (error) throw error;
 
-      const mapped = (data || []).map((r: RowShape) => {
-        const anuncio = mapRowToAnuncio(r, "anuncios_all");
+      const mapped = (data || []).map((r: RowShape, index: number) => {
+        const anuncio = mapRowToAnuncio(r, "anuncios_all_com_variacoes");
 
         anuncio.loja =
           r.Loja === "PK"
@@ -255,7 +325,25 @@ export function useAnunciosData(filters: AnuncioFilters) {
             ? "Sóbaquetas"
             : r.Loja || "Desconhecida";
 
+        /*
+          IMPORTANTE:
+          anuncio.id continua sendo o ID real do banco.
+          Não troque para 1, 2, 3 aqui, porque excluir/editar depende do ID real.
+          Para mostrar numeração visual, use numeroLinha/idExibicao na tabela.
+        */
         anuncio.id = r.ID;
+
+        (anuncio as any).idReal = r.ID;
+        (anuncio as any).numeroLinha = from + index + 1;
+        (anuncio as any).idExibicao = from + index + 1;
+
+        /*
+          IMPORTANTE PARA O BADGE VERDE:
+          TableBodyRows mostra o badge quando total_variacoes > 0.
+        */
+        (anuncio as any).total_variacoes = Number(
+          (r as any).total_variacoes ?? 0
+        );
 
         return anuncio;
       });
@@ -300,7 +388,7 @@ export function useAnunciosData(filters: AnuncioFilters) {
 
           if (!tabela) return acc;
 
-          const id = String(row.id ?? row.ID ?? "").trim();
+          const id = String((row as any).idReal ?? row.id ?? row.ID ?? "").trim();
           if (!id) return acc;
 
           acc[tabela] = acc[tabela] || [];
@@ -460,13 +548,15 @@ export function useAnunciosData(filters: AnuncioFilters) {
     setSelectedRows((prev) =>
       prev.some(
         (r) =>
-          (r.id ?? r.ID) === (row.id ?? row.ID) &&
+          ((r as any).idReal ?? r.id ?? r.ID) ===
+            ((row as any).idReal ?? row.id ?? row.ID) &&
           (r.loja ?? r.Loja) === (row.loja ?? row.Loja)
       )
         ? prev.filter(
             (r) =>
               !(
-                (r.id ?? r.ID) === (row.id ?? row.ID) &&
+                ((r as any).idReal ?? r.id ?? r.ID) ===
+                  ((row as any).idReal ?? row.id ?? row.ID) &&
                 (r.loja ?? r.Loja) === (row.loja ?? row.Loja)
               )
           )
@@ -479,7 +569,8 @@ export function useAnunciosData(filters: AnuncioFilters) {
     rows.every((r) =>
       selectedRows.some(
         (s) =>
-          (s.id ?? s.ID) === (r.id ?? r.ID) &&
+          ((s as any).idReal ?? s.id ?? s.ID) ===
+            ((r as any).idReal ?? r.id ?? r.ID) &&
           (s.loja ?? s.Loja) === (r.loja ?? r.Loja)
       )
     );
@@ -490,7 +581,8 @@ export function useAnunciosData(filters: AnuncioFilters) {
         (r) =>
           !selectedRows.some(
             (s) =>
-              (s.id ?? s.ID) === (r.id ?? r.ID) &&
+              ((s as any).idReal ?? s.id ?? s.ID) ===
+                ((r as any).idReal ?? r.id ?? r.ID) &&
               (s.loja ?? s.Loja) === (r.loja ?? r.Loja)
           )
       );
@@ -500,7 +592,8 @@ export function useAnunciosData(filters: AnuncioFilters) {
         (s) =>
           !rows.some(
             (r) =>
-              (r.id ?? r.ID) === (s.id ?? s.ID) &&
+              ((r as any).idReal ?? r.id ?? r.ID) ===
+                ((s as any).idReal ?? s.id ?? s.ID) &&
               (r.loja ?? r.Loja) === (s.loja ?? s.Loja)
           )
       );

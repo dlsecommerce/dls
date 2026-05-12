@@ -1,47 +1,64 @@
 "use client";
 
-import React, { useRef, useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Layers, Plus, HelpCircle } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { Info, Plus, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 
-// ================================
-// Tooltip auxiliar
-// ================================
-const HelpTooltip = ({ text }: { text: string }) => (
-  <div className="relative group flex items-center">
-    <HelpCircle className="w-4 h-4 text-neutral-400 cursor-pointer" />
-    <div className="absolute left-6 top-1/2 -translate-y-1/2 text-neutral-400/70 text-xs whitespace-nowrap font-normal opacity-0 group-hover:opacity-100 transition pointer-events-none z-20">
-      {text}
-    </div>
-  </div>
-);
+type Sugestao = {
+  codigo: string;
+  custo: number;
+  produto?: string;
+  descricao?: string;
+};
+
+type CompositionSectionProps = {
+  composicao: any[];
+  setComposicao: any;
+  custoTotal: number | string;
+  AnimatedNumber?: React.ComponentType<{ value: number }>;
+
+  toInternal?: any;
+  toDisplay?: any;
+  supabase?: any;
+  anuncioData?: any;
+  setAnuncioData?: any;
+};
 
 // ================================
-// Helpers BR (state sempre NUMBER)
+// Fallback do AnimatedNumber
+// ================================
+const DefaultAnimatedNumber = ({ value }: { value: number }) => {
+  return (
+    <>
+      {Number(value || 0).toLocaleString("pt-BR", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}
+    </>
+  );
+};
+
+// ================================
+// Helpers BR
 // ================================
 const formatBR = (v: any) => {
   const num = typeof v === "number" ? v : Number(v);
+
   if (!Number.isFinite(num)) return "";
+
   return num.toLocaleString("pt-BR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
 };
 
-// ================================
-// Converte texto digitado (BR/US) para number puro
-// ⚠️ Agora retorna NaN em valor inválido
-// ================================
 const parseInputMoney = (raw: string): number => {
   if (!raw || !String(raw).trim()) return NaN;
 
   let str = String(raw).trim();
 
-  // deixa só dígitos, ponto, vírgula e sinal
   str = str.replace(/[^\d.,-]/g, "");
 
   const temVirgula = str.includes(",");
@@ -49,11 +66,9 @@ const parseInputMoney = (raw: string): number => {
 
   if (temVirgula && temPonto) {
     if (str.lastIndexOf(",") > str.lastIndexOf(".")) {
-      // padrão BR
       str = str.replace(/\./g, "");
       str = str.replace(",", ".");
     } else {
-      // padrão US
       str = str.replace(/,/g, "");
     }
   } else if (temVirgula) {
@@ -62,73 +77,549 @@ const parseInputMoney = (raw: string): number => {
   }
 
   const n = Number(str);
+
   return Number.isFinite(n) ? n : NaN;
 };
+
+const normalizeNumberString = (value: any) => {
+  if (value === null || value === undefined) return "";
+
+  return String(value).replace(".", ",");
+};
+
+const toInternal = (value: string) => {
+  if (value === null || value === undefined) return "";
+
+  return String(value).replace(/[^\d,.-]/g, "").replace(",", ".");
+};
+
+const getRowTitle = (item: any) => {
+  const codigo = String(item?.codigo || "").trim();
+
+  if (codigo) return codigo;
+
+  return "Novo custo";
+};
+
+const getRowDescription = (item: any) => {
+  const descricao = String(
+    item?.produto ||
+      item?.descricao ||
+      item?.Produto ||
+      item?.nome ||
+      item?.label ||
+      ""
+  ).trim();
+
+  return descricao;
+};
+
+// ================================
+// Dropdown de sugestões
+// ================================
+type SuggestionDropdownProps = {
+  isActive: boolean;
+  sugestoes: Sugestao[];
+  listaRef: React.RefObject<HTMLDivElement | null>;
+  indiceSelecionado: number;
+  onSelect: (
+    codigo: string,
+    custo: number,
+    produto?: string,
+    descricao?: string
+  ) => void;
+};
+
+const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
+  isActive,
+  sugestoes,
+  listaRef,
+  indiceSelecionado,
+  onSelect,
+}) => {
+  if (!isActive || sugestoes.length === 0) return null;
+
+  return (
+    <div
+      ref={listaRef}
+      className="
+        absolute left-0 top-full z-[9999] mt-1
+        max-h-60 w-full min-w-[280px] overflow-y-auto overscroll-contain
+        rounded-lg border border-white/10 bg-[#0f0f0f]
+        shadow-[0_18px_40px_rgba(0,0,0,0.55)]
+      "
+    >
+      {sugestoes.map((s, i) => (
+        <button
+          key={`${s.codigo}-${i}`}
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onSelect(s.codigo, s.custo, s.produto, s.descricao);
+          }}
+          className={`
+            flex min-h-[52px] w-full cursor-pointer items-center
+            justify-between gap-3 px-3 py-2 text-left transition
+            ${
+              i === indiceSelecionado
+                ? "bg-[#1a8ceb]/30"
+                : "hover:bg-[#1a8ceb]/20"
+            }
+          `}
+        >
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <div className="truncate text-sm font-semibold text-white">
+              {s.codigo || "Sem código"}
+            </div>
+
+            {(s.produto || s.descricao) && (
+              <div className="mt-0.5 truncate text-xs text-white/45">
+                {s.produto || s.descricao}
+              </div>
+            )}
+          </div>
+
+          <span className="shrink-0 text-right text-sm font-semibold text-[#1a8ceb]">
+            R$ {formatBR(s.custo)}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+};
+
+// ================================
+// Linha de custo
+// ================================
+type CostItemRowProps = {
+  item: any;
+  idx: number;
+  composicao: any[];
+  setComposicao: any;
+  removerItem: (idx: number) => void;
+
+  campoAtivo: number | null;
+  sugestoes: Sugestao[];
+  indiceSelecionado: number;
+  listaRef: React.RefObject<HTMLDivElement | null>;
+  buscarSugestoes: (termo: string, idx: number) => void;
+  handleSugestoesKeys: (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    idx: number
+  ) => boolean;
+  selecionarSugestao: (
+    codigo: string,
+    custo: number,
+    idx: number,
+    produto?: string,
+    descricao?: string
+  ) => void;
+
+  inputRefs: React.MutableRefObject<HTMLInputElement[][]>;
+  handleGridNav: (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    row: number,
+    col: number
+  ) => void;
+
+  editing: Record<string, boolean>;
+  setEditing: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+};
+
+const codeInputClass = `
+  !h-10 !rounded-lg !border !border-white/10 !bg-[#070707] !px-3
+  !text-sm !font-semibold !text-white !shadow-none !outline-none
+  placeholder:!text-white/30
+  focus:!border-[#1a8ceb]/70 focus:!ring-1 focus:!ring-[#1a8ceb]/30
+  focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none
+`;
+
+const cleanInnerInputClass = `
+  !h-full !border-0 !bg-transparent !p-0
+  !text-sm !font-semibold !text-white
+  !shadow-none !outline-none
+  placeholder:!text-white/25
+  focus:!ring-0 focus:!outline-none
+  focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none
+`;
+
+const CostItemRow: React.FC<CostItemRowProps> = ({
+  item,
+  idx,
+  composicao,
+  setComposicao,
+  removerItem,
+  campoAtivo,
+  sugestoes,
+  indiceSelecionado,
+  listaRef,
+  buscarSugestoes,
+  handleSugestoesKeys,
+  selecionarSugestao,
+  inputRefs,
+  handleGridNav,
+  editing,
+  setEditing,
+}) => {
+  const title = getRowTitle(item);
+  const description = getRowDescription(item);
+  const editingKey = `c-${idx}`;
+
+  const [codigoLocal, setCodigoLocal] = useState(item.codigo || "");
+
+  useEffect(() => {
+    setCodigoLocal(item.codigo || "");
+  }, [item.codigo]);
+
+  const salvarCodigoLocal = () => {
+    const codigoAtual = String(composicao[idx]?.codigo || "");
+
+    if (codigoAtual === codigoLocal) return;
+
+    const novo = [...composicao];
+
+    novo[idx] = {
+      ...novo[idx],
+      codigo: codigoLocal,
+    };
+
+    setComposicao(novo);
+  };
+
+  return (
+    <div className="group grid grid-cols-1 items-end gap-2 border-b border-white/10 py-2 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_82px_128px_auto] sm:gap-2.5">
+      <div className="relative min-w-0 self-center">
+        <div className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-white">
+            {title}
+          </span>
+
+          <span className="mt-0.5 block min-h-[16px] truncate text-xs font-medium text-white/45">
+            {description || "Sem descrição"}
+          </span>
+        </div>
+
+        <div className="relative mt-2">
+          <Input
+            ref={(el) => {
+              if (!inputRefs.current[idx]) inputRefs.current[idx] = [];
+              inputRefs.current[idx][0] = el!;
+            }}
+            type="text"
+            inputMode="text"
+            placeholder="Código do custo"
+            value={codigoLocal}
+            onChange={(e) => {
+              const value = e.target.value;
+
+              setCodigoLocal(value);
+              buscarSugestoes(value, idx);
+            }}
+            onBlur={() => {
+              salvarCodigoLocal();
+            }}
+            onKeyDown={(e) => {
+              const handled = handleSugestoesKeys(e, idx);
+
+              if (handled) return;
+
+              if (e.key === "Enter") {
+                e.preventDefault();
+                salvarCodigoLocal();
+                return;
+              }
+
+              handleGridNav(e, idx, 0);
+            }}
+            className={codeInputClass}
+          />
+
+          <SuggestionDropdown
+            isActive={campoAtivo === idx}
+            sugestoes={sugestoes}
+            listaRef={listaRef}
+            indiceSelecionado={indiceSelecionado}
+            onSelect={(codigo, custo, produto, descricao) =>
+              selecionarSugestao(codigo, custo, idx, produto, descricao)
+            }
+          />
+        </div>
+      </div>
+
+      <div className="min-w-0">
+        <label className="mb-1.5 block text-center text-xs font-medium text-white/50">
+          Quant.
+        </label>
+
+        <div className="flex h-10 items-center rounded-lg border border-white/10 bg-[#070707] px-3 focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+          <Input
+            ref={(el) => {
+              if (!inputRefs.current[idx]) inputRefs.current[idx] = [];
+              inputRefs.current[idx][1] = el!;
+            }}
+            type="text"
+            inputMode="decimal"
+            placeholder="1"
+            value={normalizeNumberString(item.quantidade || "")}
+            onChange={(e) => {
+              const novo = [...composicao];
+
+              novo[idx] = {
+                ...novo[idx],
+                quantidade: toInternal(e.target.value),
+              };
+
+              setComposicao(novo);
+            }}
+            onKeyDown={(e) => handleGridNav(e, idx, 1)}
+            className={`${cleanInnerInputClass} !text-center`}
+          />
+        </div>
+      </div>
+
+      <div className="min-w-0">
+        <label className="mb-1.5 block text-center text-xs font-medium text-white/50">
+          Custo
+        </label>
+
+        <div className="flex h-10 items-center rounded-lg border border-white/10 bg-[#070707] px-3 focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+          <span className="mr-1.5 text-sm font-semibold text-white/80">R$</span>
+
+          <Input
+            ref={(el) => {
+              if (!inputRefs.current[idx]) inputRefs.current[idx] = [];
+              inputRefs.current[idx][2] = el!;
+            }}
+            type="text"
+            inputMode="decimal"
+            placeholder="0,00"
+            value={
+              editing[editingKey]
+                ? normalizeNumberString(item.custo)
+                : formatBR(item.custo)
+            }
+            onFocus={() =>
+              setEditing((prev) => ({
+                ...prev,
+                [editingKey]: true,
+              }))
+            }
+            onBlur={(e) => {
+              setEditing((prev) => ({
+                ...prev,
+                [editingKey]: false,
+              }));
+
+              const novo = [...composicao];
+              const num = parseInputMoney(e.target.value);
+
+              novo[idx] = {
+                ...novo[idx],
+                custo: Number.isFinite(num) ? num : item.custo,
+              };
+
+              setComposicao(novo);
+            }}
+            onChange={(e) => {
+              const novo = [...composicao];
+
+              novo[idx] = {
+                ...novo[idx],
+                custo: toInternal(e.target.value),
+              };
+
+              setComposicao(novo);
+            }}
+            onKeyDown={(e) => handleGridNav(e, idx, 2)}
+            className={`${cleanInnerInputClass} !text-right`}
+          />
+        </div>
+      </div>
+
+      <Button
+        type="button"
+        onClick={() => removerItem(idx)}
+        size="sm"
+        variant="ghost"
+        className="
+          h-9 w-full cursor-pointer rounded-lg border border-red-500/20
+          bg-red-500/10 p-0 text-red-400 transition-all
+          hover:bg-red-500/20 hover:text-red-300
+          active:scale-[0.96]
+          sm:h-10 sm:w-10
+        "
+        title="Remover linha"
+      >
+        <X className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+};
+
+// ================================
+// Botão adicionar custo
+// ================================
+type AddCostButtonProps = {
+  onClick: () => void;
+};
+
+const AddCostButton: React.FC<AddCostButtonProps> = ({ onClick }) => (
+  <Button
+    type="button"
+    onClick={onClick}
+    variant="outline"
+    className="
+      mt-3 flex h-10 w-full items-center justify-center rounded-xl
+      border border-white/10 bg-transparent
+      px-4 text-xs font-semibold text-white/85
+      shadow-none transition-all duration-200
+      hover:border-white/20 hover:bg-white/[0.03] hover:text-white
+      active:scale-[0.99]
+      focus-visible:ring-1 focus-visible:ring-[#1a8ceb]/50
+      focus-visible:ring-offset-0
+      sm:h-9 sm:text-xs
+    "
+  >
+    <Plus className="mr-2 h-3.5 w-3.5 text-white/70" />
+    Adicionar item de custo
+  </Button>
+);
+
+// ================================
+// Card total
+// ================================
+type TotalCostCardProps = {
+  custoTotal: number | string;
+  AnimatedNumber?: React.ComponentType<{ value: number }>;
+};
+
+const TotalCostCard: React.FC<TotalCostCardProps> = ({
+  custoTotal,
+  AnimatedNumber = DefaultAnimatedNumber,
+}) => (
+  <div className="mt-3 rounded-xl border border-[#1a8ceb]/25 bg-[#101010] p-4 sm:p-3">
+    <div className="flex flex-col items-center justify-center">
+      <span className="mb-1 text-sm font-medium text-white/50 sm:text-xs">
+        Custo Total
+      </span>
+
+      <span className="text-center text-2xl font-bold tabular-nums text-[#1a8ceb] sm:text-xl">
+        R$ <AnimatedNumber value={Number(custoTotal || 0)} />
+      </span>
+    </div>
+  </div>
+);
 
 // ================================
 // Componente principal
 // ================================
-export const CompositionSection = ({
-  composicao,
+export const CompositionSection: React.FC<CompositionSectionProps> = ({
+  composicao = [],
   setComposicao,
-  custoTotal,
-  AnimatedNumber,
-}: any) => {
-  const gridRefs = useRef<HTMLInputElement[][]>([]);
-  const [sugestoes, setSugestoes] = useState<{ codigo: string; custo: number }[]>(
-    []
-  );
-  const [campoAtivo, setCampoAtivo] = useState<number | null>(null);
-  const [indiceSelecionado, setIndiceSelecionado] = useState<number>(-1);
+  custoTotal = 0,
+  AnimatedNumber = DefaultAnimatedNumber,
+}) => {
+  const inputRefs = useRef<HTMLInputElement[][]>([]);
   const listaRef = useRef<HTMLDivElement>(null);
 
+  const [sugestoes, setSugestoes] = useState<Sugestao[]>([]);
+  const [campoAtivo, setCampoAtivo] = useState<number | null>(null);
+  const [indiceSelecionado, setIndiceSelecionado] = useState<number>(-1);
+  const [editing, setEditing] = useState<Record<string, boolean>>({});
+
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const buscaIdRef = useRef(0);
+
+  const listScrollClass = "overflow-visible";
+
   // ================================
-  // Buscar custos do Supabase
+  // Buscar custos do Supabase com debounce
   // ================================
-  const buscarSugestoes = async (termo: string, idx: number) => {
-    if (!termo.trim()) {
-      setSugestoes([]);
-      return;
+  const buscarSugestoes = (termo: string, idx: number) => {
+    const termoLimpo = String(termo || "").trim();
+
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
     }
 
-    const { data, error } = await supabase
-      .from("custos")
-      .select('"Código", "Custo Atual"')
-      .ilike('"Código"', `%${termo}%`)
-      .limit(6);
-
-    if (error) {
-      console.error("Erro ao buscar custos:", error);
+    if (!termoLimpo) {
+      setSugestoes([]);
+      setCampoAtivo(null);
+      setIndiceSelecionado(-1);
       return;
     }
 
     setCampoAtivo(idx);
 
-    setSugestoes(
-      data?.map((d) => ({
-        codigo: d["Código"],
-        custo:
-          typeof d["Custo Atual"] === "number"
-            ? d["Custo Atual"]
-            : parseInputMoney(String(d["Custo Atual"] ?? "")),
-      })) || []
-    );
+    debounceRef.current = setTimeout(async () => {
+      const buscaAtual = buscaIdRef.current + 1;
+      buscaIdRef.current = buscaAtual;
 
-    setIndiceSelecionado(0);
+      const { data, error } = await supabase
+        .from("custos")
+        .select('"Código", "Custo Atual", "Produto"')
+        .ilike('"Código"', `%${termoLimpo}%`)
+        .limit(8);
+
+      if (buscaAtual !== buscaIdRef.current) return;
+
+      if (error) {
+        console.error("Erro ao buscar custos:", error);
+        setSugestoes([]);
+        setIndiceSelecionado(-1);
+        return;
+      }
+
+      const sugestoesFormatadas =
+        data?.map((d: any) => {
+          const codigo = String(d["Código"] ?? "").trim();
+          const produto = String(d["Produto"] ?? "").trim();
+
+          const custo =
+            typeof d["Custo Atual"] === "number"
+              ? d["Custo Atual"]
+              : parseInputMoney(String(d["Custo Atual"] ?? ""));
+
+          return {
+            codigo,
+            custo: Number.isFinite(custo) ? custo : 0,
+            produto,
+            descricao: produto,
+          };
+        }) || [];
+
+      setCampoAtivo(idx);
+      setSugestoes(sugestoesFormatadas);
+      setIndiceSelecionado(sugestoesFormatadas.length > 0 ? 0 : -1);
+    }, 250);
   };
 
   // ================================
   // Selecionar sugestão
   // ================================
-  const selecionarSugestao = (codigo: string, custo: number, idx: number) => {
+  const selecionarSugestao = (
+    codigo: string,
+    custo: number,
+    idx: number,
+    produto?: string,
+    descricao?: string
+  ) => {
+    const descricaoFinal =
+      produto ||
+      descricao ||
+      sugestoes.find((s) => s.codigo === codigo)?.produto ||
+      sugestoes.find((s) => s.codigo === codigo)?.descricao ||
+      "";
+
     const novo = [...composicao];
 
-    novo[idx].codigo = codigo;
-
-    // ✅ só atualiza custo se for válido e > 0
-    if (Number.isFinite(custo) && custo > 0) {
-      novo[idx].custo = custo;
-    }
+    novo[idx] = {
+      ...novo[idx],
+      codigo,
+      produto: descricaoFinal || novo[idx]?.produto || "",
+      descricao: descricaoFinal || novo[idx]?.descricao || "",
+      custo: Number.isFinite(custo) && custo > 0 ? custo : novo[idx]?.custo,
+    };
 
     setComposicao(novo);
     setSugestoes([]);
@@ -137,292 +628,200 @@ export const CompositionSection = ({
   };
 
   // ================================
-  // Fecha lista ao clicar fora
+  // Adicionar / remover
+  // ================================
+  const adicionarItem = () => {
+    setComposicao((prev: any[]) => [
+      ...(Array.isArray(prev) ? prev : []),
+      {
+        uid: crypto.randomUUID(),
+        codigo: "",
+        produto: "",
+        descricao: "",
+        quantidade: "",
+        custo: 0,
+      },
+    ]);
+  };
+
+  const removerItem = (idx: number) => {
+    setComposicao((prev: any[]) =>
+      Array.isArray(prev) ? prev.filter((_: any, i: number) => i !== idx) : []
+    );
+  };
+
+  // ================================
+  // Teclas da lista de sugestões
+  // ================================
+  const handleSugestoesKeys = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    idx: number
+  ) => {
+    if (campoAtivo !== idx || sugestoes.length === 0) return false;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setIndiceSelecionado((p) => (p < sugestoes.length - 1 ? p + 1 : 0));
+      return true;
+    }
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setIndiceSelecionado((p) => (p > 0 ? p - 1 : sugestoes.length - 1));
+      return true;
+    }
+
+    if (e.key === "Enter") {
+      e.preventDefault();
+
+      const s = sugestoes[indiceSelecionado];
+
+      if (s) {
+        selecionarSugestao(s.codigo, s.custo, idx, s.produto, s.descricao);
+      }
+
+      return true;
+    }
+
+    if (e.key === "Escape") {
+      setSugestoes([]);
+      setCampoAtivo(null);
+      setIndiceSelecionado(-1);
+      return true;
+    }
+
+    return false;
+  };
+
+  // ================================
+  // Navegação pelo grid
+  // ================================
+  const handleGridNav = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    row: number,
+    col: number
+  ) => {
+    const input = e.currentTarget;
+    const start = input.selectionStart ?? 0;
+    const end = input.selectionEnd ?? 0;
+    const len = input.value.length;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      inputRefs.current[row + 1]?.[col]?.focus();
+      return;
+    }
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      inputRefs.current[row - 1]?.[col]?.focus();
+      return;
+    }
+
+    if (e.key === "ArrowRight" && end === len) {
+      e.preventDefault();
+      inputRefs.current[row]?.[col + 1]?.focus();
+      return;
+    }
+
+    if (e.key === "ArrowLeft" && start === 0) {
+      e.preventDefault();
+      inputRefs.current[row]?.[col - 1]?.focus();
+    }
+  };
+
+  // ================================
+  // Fecha sugestões ao clicar fora
   // ================================
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (!listaRef.current?.contains(e.target as Node)) {
-        setSugestoes([]);
-        setCampoAtivo(null);
+      if (listaRef.current?.contains(e.target as Node)) {
+        return;
       }
+
+      setSugestoes([]);
+      setCampoAtivo(null);
+      setIndiceSelecionado(-1);
     };
 
     document.addEventListener("mousedown", handleClick);
 
     return () => {
       document.removeEventListener("mousedown", handleClick);
+
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
     };
   }, []);
 
-  // ================================
-  // Renderização principal
-  // ================================
+  const composicaoSegura = Array.isArray(composicao) ? composicao : [];
+
   return (
-    <motion.div
-      className="lg:col-span-7 p-3 md:p-2 rounded-xl bg-[#0f0f0f] md:bg-white/5 border border-white/10 shadow-lg h-auto md:h-full relative max-h-[calc(100dvh-120px)] md:max-h-none overflow-y-auto md:overflow-visible pb-[calc(env(safe-area-inset-bottom)+88px)] md:pb-2"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-    >
-      <div className="flex items-center gap-2 mb-3 md:mb-2">
-        <Layers className="w-5 h-5 text-[#1a8ceb]" />
-        <h3 className="text-base font-bold text-white flex items-center gap-2">
-          Composição <HelpTooltip text="Composição de Custos." />
-        </h3>
+    <section className="rounded-2xl border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
+      <div className="mb-4 flex items-center gap-2.5">
+        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#1a8ceb] text-xs font-bold text-white">
+          2.
+        </span>
+
+        <h2 className="text-base font-semibold text-white">
+          Composição de Custo
+        </h2>
       </div>
 
-      {/* LISTAGEM DE ITENS */}
-      <div
-        className={`space-y-3 md:space-y-1.5 ${
-          composicao.length > 10
-            ? "max-h-[calc(100dvh-310px)] md:max-h-[360px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-[#1a8ceb]/30 scrollbar-track-transparent"
-            : ""
-        }`}
-      >
-        <AnimatePresence initial={false}>
-          {composicao.map((item: any, idx: number) => (
-            <motion.div
-              key={idx}
-              layout
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.15 }}
-              className="relative grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-2 mb-2 md:mb-1 p-3 md:p-1.5 rounded-xl md:rounded-lg bg-black/40 md:bg-black/30 border border-white/10"
-            >
-              {/* Código */}
-              <div className="relative">
-                <Label className="text-neutral-400 text-[11px] md:text-[10px] mb-1.5 md:mb-1 block">
-                  Código
-                </Label>
+      <div className={`space-y-2 ${listScrollClass}`}>
+        {composicaoSegura.length > 0 ? (
+          composicaoSegura.map((item: any, idx: number) => (
+            <CostItemRow
+              key={item.uid || item.id || item.ID || `item-${idx}`}
+              item={item}
+              idx={idx}
+              composicao={composicaoSegura}
+              setComposicao={setComposicao}
+              removerItem={removerItem}
+              campoAtivo={campoAtivo}
+              sugestoes={sugestoes}
+              indiceSelecionado={indiceSelecionado}
+              listaRef={listaRef}
+              buscarSugestoes={buscarSugestoes}
+              handleSugestoesKeys={handleSugestoesKeys}
+              selecionarSugestao={selecionarSugestao}
+              inputRefs={inputRefs}
+              handleGridNav={handleGridNav}
+              editing={editing}
+              setEditing={setEditing}
+            />
+          ))
+        ) : (
+          <div className="rounded-xl border border-dashed border-white/10 bg-[#181818] px-4 py-5 text-center">
+            <p className="text-sm font-medium text-white/75">
+              Nenhum custo adicionado
+            </p>
 
-                <Input
-                  ref={(el) => {
-                    if (!gridRefs.current[idx]) gridRefs.current[idx] = [];
-                    gridRefs.current[idx][0] = el!;
-                  }}
-                  value={item.codigo}
-                  placeholder="SKU"
-                  onChange={(e) => {
-                    const novo = [...composicao];
-
-                    // ✅ altera só código
-                    novo[idx].codigo = e.target.value;
-
-                    // NÃO zera custo aqui enquanto digita
-                    setComposicao(novo);
-
-                    buscarSugestoes(e.target.value, idx);
-                  }}
-                  onKeyDown={(e) => {
-                    const input = e.currentTarget;
-                    const start = input.selectionStart ?? 0;
-                    const end = input.selectionEnd ?? 0;
-                    const len = input.value.length;
-
-                    // sugestões abertas
-                    if (campoAtivo === idx && sugestoes.length > 0) {
-                      if (e.key === "ArrowDown") {
-                        e.preventDefault();
-                        setIndiceSelecionado((p) =>
-                          p < sugestoes.length - 1 ? p + 1 : 0
-                        );
-                        return;
-                      }
-
-                      if (e.key === "ArrowUp") {
-                        e.preventDefault();
-                        setIndiceSelecionado((p) =>
-                          p > 0 ? p - 1 : sugestoes.length - 1
-                        );
-                        return;
-                      }
-
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        const s = sugestoes[indiceSelecionado];
-                        if (s) selecionarSugestao(s.codigo, s.custo, idx);
-                        return;
-                      }
-
-                      if (e.key === "Escape") {
-                        setSugestoes([]);
-                        setCampoAtivo(null);
-                        return;
-                      }
-                    }
-
-                    // navegação vertical
-                    if (e.key === "ArrowDown") {
-                      e.preventDefault();
-                      gridRefs.current[idx + 1]?.[0]?.focus();
-                      return;
-                    }
-
-                    if (e.key === "ArrowUp") {
-                      e.preventDefault();
-                      gridRefs.current[idx - 1]?.[0]?.focus();
-                      return;
-                    }
-
-                    // horizontal
-                    if (e.key === "ArrowRight" && end === len) {
-                      e.preventDefault();
-                      gridRefs.current[idx]?.[1]?.focus();
-                      return;
-                    }
-
-                    if (e.key === "ArrowLeft" && start === 0) {
-                      e.preventDefault();
-                      gridRefs.current[idx]?.[2]?.focus();
-                      return;
-                    }
-                  }}
-                  className="h-11 md:h-auto bg-black/50 border-white/10 text-white text-sm md:text-xs rounded-lg md:rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
-                />
-
-                {campoAtivo === idx && sugestoes.length > 0 && (
-                  <div
-                    ref={listaRef}
-                    className="absolute z-50 mt-1 bg-[#0f0f0f] border border-white/10 rounded-md shadow-lg w-full max-h-48 md:max-h-40 overflow-y-auto"
-                  >
-                    {sugestoes.map((s, i) => (
-                      <div
-                        key={i}
-                        className={`px-3 md:px-2 py-2 md:py-1 text-sm md:text-xs text-white cursor-pointer flex justify-between ${
-                          i === indiceSelecionado
-                            ? "bg-[#1a8ceb]/30"
-                            : "hover:bg-[#1a8ceb]/20"
-                        }`}
-                        onClick={() => selecionarSugestao(s.codigo, s.custo, idx)}
-                      >
-                        <span>{s.codigo}</span>
-                        <span className="text-[#1a8ceb]">
-                          R$ {formatBR(s.custo)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Quantidade */}
-              <div>
-                <Label className="text-neutral-400 text-[11px] md:text-[10px] mb-1.5 md:mb-1 block">
-                  Quantidade
-                </Label>
-
-                <Input
-                  ref={(el) => {
-                    if (!gridRefs.current[idx]) gridRefs.current[idx] = [];
-                    gridRefs.current[idx][1] = el!;
-                  }}
-                  value={item.quantidade}
-                  placeholder="1"
-                  onChange={(e) => {
-                    const novo = [...composicao];
-                    novo[idx].quantidade = e.target.value;
-                    setComposicao(novo);
-                  }}
-                  className="h-11 md:h-auto bg-black/50 border-white/10 text-white text-sm md:text-xs rounded-lg md:rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
-                />
-              </div>
-
-              {/* Custo */}
-              <div className="relative">
-                <Label className="text-neutral-400 text-[11px] md:text-[10px] mb-1.5 md:mb-1 block">
-                  Custo (R$)
-                </Label>
-
-                <Input
-                  ref={(el) => {
-                    if (!gridRefs.current[idx]) gridRefs.current[idx] = [];
-                    gridRefs.current[idx][2] = el!;
-                  }}
-                  value={formatBR(item.custo)}
-                  placeholder="100,00"
-                  onFocus={(e) => {
-                    const num =
-                      typeof item.custo === "number"
-                        ? item.custo
-                        : Number(item.custo);
-
-                    e.currentTarget.value = Number.isFinite(num)
-                      ? String(num.toFixed(2)).replace(".", ",")
-                      : "";
-                  }}
-                  onChange={(e) => {
-                    const novo = [...composicao];
-                    const num = parseInputMoney(e.target.value);
-
-                    // ✅ evita zerar enquanto digita
-                    if (Number.isFinite(num)) {
-                      novo[idx].custo = num;
-                      setComposicao(novo);
-                    }
-                  }}
-                  onBlur={(e) => {
-                    const novo = [...composicao];
-                    const num = parseInputMoney(e.target.value);
-
-                    // ✅ só salva se válido e > 0
-                    if (Number.isFinite(num) && num > 0) {
-                      novo[idx].custo = num;
-                      setComposicao(novo);
-                    }
-                  }}
-                  className="h-11 md:h-auto bg-black/50 border-white/10 text-white text-sm md:text-xs rounded-lg md:rounded-md focus:border-[#1a8ceb] focus:ring-2 focus:ring-[#1a8ceb]"
-                />
-
-                {/* Remover linha */}
-                {idx >= 1 && (
-                  <Button
-                    onClick={() =>
-                      setComposicao((prev: any) =>
-                        prev.filter((_: any, i: number) => i !== idx)
-                      )
-                    }
-                    size="sm"
-                    variant="ghost"
-                    className="absolute top-0 right-0 translate-x-1/2 -translate-y-1/2
-                      w-7 h-7 md:w-5 md:h-5 p-0 flex items-center justify-center
-                      bg-red-500/20 hover:bg-red-500/40 text-red-400
-                      border border-red-500/30 rounded-full shadow-sm
-                      transition-all cursor-pointer"
-                    title="Remover linha"
-                  >
-                    ×
-                  </Button>
-                )}
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
+            <p className="mt-1 text-xs text-white/40">
+              Adicione produtos para calcular o custo total.
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* Adicionar linha */}
-      <Button
-        onClick={() =>
-          setComposicao((prev: any) => [
-            ...prev,
-            { codigo: "", quantidade: "", custo: 0 },
-          ])
-        }
-        variant="outline"
-        className="w-full h-11 md:h-auto border-white/10 text-white text-sm md:text-xs hover:bg-white/5 hover:border-[#1a8ceb]/50 rounded-xl transition-all mt-3 md:mt-2"
-      >
-        <Plus className="w-4 h-4 md:w-3 md:h-3 mr-2" />
-        Incluir Custos
-      </Button>
+      <AddCostButton onClick={adicionarItem} />
 
-      {/* Total */}
-      <div className="mt-3 p-4 md:p-3 bg-gradient-to-br from-[#1a8ceb]/20 to-[#1a8ceb]/5 rounded-xl border border-[#1a8ceb]/30">
-        <div className="flex flex-col items-center justify-center">
-          <span className="text-neutral-300 text-xs mb-1">Custo Total</span>
-          <span className="text-2xl md:text-xl font-bold text-white">
-            R$ <AnimatedNumber value={custoTotal} />
-          </span>
+      <TotalCostCard
+        custoTotal={custoTotal || 0}
+        AnimatedNumber={AnimatedNumber}
+      />
+
+      <div className="mt-4 rounded-xl border border-white/10 bg-[#181818] px-4 py-3">
+        <div className="flex gap-2">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-white/40" />
+
+          <p className="text-xs leading-relaxed text-white/45">
+            Os valores de impostos e comissões podem variar conforme as políticas
+            de cada marketplace.
+          </p>
         </div>
       </div>
-    </motion.div>
+    </section>
   );
 };

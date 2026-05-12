@@ -56,8 +56,7 @@ export default function AnnounceTable() {
   };
 
   const [loadingDelete, setLoadingDelete] = React.useState(false);
-  const [filters, setFilters] =
-    React.useState<AnuncioFilters>(initialFilters);
+  const [filters, setFilters] = React.useState<AnuncioFilters>(initialFilters);
 
   const [openFiltersMobile, setOpenFiltersMobile] = React.useState(false);
   const [openActionsMobile, setOpenActionsMobile] = React.useState(false);
@@ -217,7 +216,9 @@ export default function AnnounceTable() {
             return acc;
           }
 
-          const id = String(row.id ?? row.ID ?? "").trim();
+          const id = String(
+            row.idReal ?? row.id ?? row.ID ?? ""
+          ).trim();
           if (!id) return acc;
 
           const key = `${tabela}|${lojaCodigo}`;
@@ -249,19 +250,24 @@ export default function AnnounceTable() {
       );
 
       await createNotification({
-  title:
-    selectedRowsSnapshot.length === 1
-      ? "Anúncio excluído"
-      : "Anúncios excluídos",
-  message: deleteMessage,
-  action: "delete",
-  entityType: "announcement",
-  entityId:
-    selectedRowsSnapshot.length === 1
-      ? String(selectedRowsSnapshot[0]?.id ?? selectedRowsSnapshot[0]?.ID ?? "")
-      : undefined,
-  link: "/dashboard/anuncios",
-});
+        title:
+          selectedRowsSnapshot.length === 1
+            ? "Anúncio excluído"
+            : "Anúncios excluídos",
+        message: deleteMessage,
+        action: "delete",
+        entityType: "announcement",
+        entityId:
+          selectedRowsSnapshot.length === 1
+            ? String(
+                selectedRowsSnapshot[0]?.idReal ??
+                  selectedRowsSnapshot[0]?.id ??
+                  selectedRowsSnapshot[0]?.ID ??
+                  ""
+              )
+            : undefined,
+        link: "/dashboard/anuncios",
+      });
 
       data.setOpenDelete(false);
       data.setSelectedRows([]);

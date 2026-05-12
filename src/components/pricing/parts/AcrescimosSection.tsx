@@ -1,5 +1,5 @@
 import React from "react";
-import { Copy, CheckCheck, Handshake } from "lucide-react";
+import { Copy, CheckCheck, Store } from "lucide-react";
 import { AnimatedNumber } from "./AnimatedNumber";
 
 type AcrescimosSectionProps = {
@@ -17,17 +17,6 @@ type AcrescimosSectionProps = {
   ) => void;
   acrescimosRefs: React.MutableRefObject<HTMLInputElement[]>;
   statusAcrescimo: any;
-};
-
-type CardVariant = "classico" | "premium" | "magalu";
-
-type AcrescimoCardProps = {
-  variant: CardVariant;
-  title: string;
-  percent: number;
-  difference: number;
-  copied: boolean;
-  onCopy: () => void;
 };
 
 const parseBR = (value: any): number => {
@@ -61,49 +50,28 @@ const formatPercentForCopy = (value: number) => {
   });
 };
 
-const getVariantClasses = (variant: CardVariant) => {
-  if (variant === "magalu") {
-    return {
-      card: "border-[#1a8ceb]/45 bg-gradient-to-br from-[#1a8ceb]/12 via-[#151515] to-[#151515]",
-      icon: "border-[#1a8ceb]/40 bg-[#1a8ceb]",
-      percent: "text-[#1a8ceb]",
-      difference: "text-[#1a8ceb]",
-    };
-  }
-
-  return {
-    card: "border-yellow-500/40 bg-gradient-to-br from-yellow-500/10 via-[#151515] to-[#151515]",
-    icon: "border-yellow-500/35 bg-yellow-500/80",
-    percent: "text-yellow-400",
-    difference: "text-yellow-400",
-  };
+const TrayIcon = () => {
+  return <Store className="h-5 w-5 text-white" />;
 };
 
-const MercadoLivreIcon = () => {
-  return <Handshake className="h-5 w-5 text-white" />;
-};
-
-const MagaluLogo = () => {
-  return (
-    <span className="select-none text-[8px] font-black leading-none tracking-tight text-white">
-      Magalu
-    </span>
-  );
-};
-
-const AcrescimoCard: React.FC<AcrescimoCardProps> = ({
-  variant,
-  title,
+const TrayCard = ({
   percent,
   difference,
   copied,
   onCopy,
+}: {
+  percent: number;
+  difference: number;
+  copied: boolean;
+  onCopy: () => void;
 }) => {
-  const styles = getVariantClasses(variant);
-
   return (
     <div
-      className={`group relative rounded-xl border px-3 py-2 transition-all duration-200 ${styles.card}`}
+      className="
+        group relative rounded-xl border border-[#1a8ceb]/45
+        bg-gradient-to-br from-[#1a8ceb]/12 via-[#151515] to-[#151515]
+        px-3 py-2 transition-all duration-200
+      "
     >
       <button
         type="button"
@@ -116,7 +84,7 @@ const AcrescimoCard: React.FC<AcrescimoCardProps> = ({
           group-hover:opacity-100
         "
         title="Copiar acréscimo"
-        aria-label={`Copiar acréscimo ${title}`}
+        aria-label="Copiar acréscimo Tray"
       >
         {copied ? (
           <CheckCheck className="h-3.5 w-3.5 text-emerald-400" />
@@ -125,25 +93,33 @@ const AcrescimoCard: React.FC<AcrescimoCardProps> = ({
         )}
       </button>
 
-      <div className="mb-1 flex items-center gap-1">
+      <div className="mb-1 flex items-center gap-2">
         <div
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border shadow-sm ${styles.icon}`}
+          className="
+            flex h-10 w-10 shrink-0 items-center justify-center
+            rounded-xl border border-[#1a8ceb]/40 bg-[#1a8ceb]
+            shadow-sm
+          "
         >
-          {variant === "magalu" ? <MagaluLogo /> : <MercadoLivreIcon />}
+          <TrayIcon />
         </div>
 
-        <h3 className="truncate pr-8 text-base font-semibold text-white">
-          {title}
-        </h3>
+        <div className="min-w-0 pr-8">
+          <h3 className="truncate text-base font-semibold text-white">
+            Tray
+          </h3>
+
+          <p className="mt-0.5 truncate text-xs text-white/45">
+            Marketplace / Anúncio
+          </p>
+        </div>
       </div>
 
       <div className="space-y-2">
         <div className="grid grid-cols-[84px_1fr] items-baseline gap-3">
           <span className="text-sm text-white/65">Acréscimo</span>
 
-          <span
-            className={`text-2xl font-black tabular-nums ${styles.percent}`}
-          >
+          <span className="text-2xl font-black tabular-nums text-[#1a8ceb]">
             {percent > 0 ? "+" : ""}
             <AnimatedNumber value={Number(percent || 0)} />%
           </span>
@@ -152,9 +128,7 @@ const AcrescimoCard: React.FC<AcrescimoCardProps> = ({
         <div className="grid grid-cols-[84px_1fr] items-baseline gap-3">
           <span className="text-sm text-white/65">Diferença</span>
 
-          <span
-            className={`text-lg font-bold tabular-nums ${styles.difference}`}
-          >
+          <span className="text-lg font-bold tabular-nums text-[#1a8ceb]">
             {difference < 0 ? "-" : ""}
             R$ <AnimatedNumber value={Math.abs(Number(difference || 0))} />
           </span>
@@ -167,28 +141,25 @@ const AcrescimoCard: React.FC<AcrescimoCardProps> = ({
 export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
   acrescimos,
 }) => {
-  const [copiedKey, setCopiedKey] = React.useState<CardVariant | null>(null);
+  const [copied, setCopied] = React.useState(false);
 
-  const precoLoja = parseBR(acrescimos.precoLoja);
+  const precoLoja = parseBR(acrescimos?.precoLoja);
 
-  const precoClassico = parseBR(acrescimos.precoMercadoLivreClassico);
-  const freteClassico = parseBR(acrescimos.freteMercadoLivreClassico);
-  const baseClassico = precoLoja + freteClassico;
-  const acrescimoClassico = getPercent(precoClassico, baseClassico);
-  const diferencaClassico = precoClassico - baseClassico;
+  const precoTray = parseBR(
+    acrescimos?.precoTray ||
+      acrescimos?.precoLoja ||
+      acrescimos?.precoMarketplace ||
+      acrescimos?.preco
+  );
 
-  const precoPremium = parseBR(acrescimos.precoMercadoLivrePremium);
-  const fretePremium = parseBR(acrescimos.freteMercadoLivrePremium);
-  const basePremium = precoLoja + fretePremium;
-  const acrescimoPremium = getPercent(precoPremium, basePremium);
-  const diferencaPremium = precoPremium - basePremium;
+  const freteTray = parseBR(acrescimos?.freteTray || acrescimos?.frete || 0);
 
-  const precoMagalu = parseBR(acrescimos.precoMagalu);
-  const acrescimoMagalu = getPercent(precoMagalu, precoLoja);
-  const diferencaMagalu = precoMagalu - precoLoja;
+  const baseTray = precoLoja + freteTray;
+  const acrescimoTray = getPercent(precoTray, baseTray);
+  const diferencaTray = precoTray - baseTray;
 
-  const copyCard = async (key: CardVariant, percent: number) => {
-    const text = formatPercentForCopy(percent);
+  const copyTray = async () => {
+    const text = formatPercentForCopy(acrescimoTray);
 
     try {
       await navigator.clipboard.writeText(text);
@@ -201,8 +172,8 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
       document.body.removeChild(textarea);
     }
 
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 1200);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
   };
 
   return (
@@ -217,32 +188,12 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
         </h2>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <AcrescimoCard
-          variant="classico"
-          title="Mercado Livre Clássico"
-          percent={acrescimoClassico}
-          difference={diferencaClassico}
-          copied={copiedKey === "classico"}
-          onCopy={() => copyCard("classico", acrescimoClassico)}
-        />
-
-        <AcrescimoCard
-          variant="premium"
-          title="Mercado Livre Premium"
-          percent={acrescimoPremium}
-          difference={diferencaPremium}
-          copied={copiedKey === "premium"}
-          onCopy={() => copyCard("premium", acrescimoPremium)}
-        />
-
-        <AcrescimoCard
-          variant="magalu"
-          title="Magalu"
-          percent={acrescimoMagalu}
-          difference={diferencaMagalu}
-          copied={copiedKey === "magalu"}
-          onCopy={() => copyCard("magalu", acrescimoMagalu)}
+      <div className="grid grid-cols-1 gap-4">
+        <TrayCard
+          percent={acrescimoTray}
+          difference={diferencaTray}
+          copied={copied}
+          onCopy={copyTray}
         />
       </div>
     </section>

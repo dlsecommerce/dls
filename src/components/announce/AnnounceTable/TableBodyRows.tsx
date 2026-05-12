@@ -42,6 +42,16 @@ export default function TableBodyRows({
     setTimeout(() => setCopiedId(null), 1500);
   };
 
+  const renderVariationBadge = (variationCount: number) => {
+    if (variationCount <= 0) return null;
+
+    return (
+      <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-xs font-semibold leading-none text-green-400">
+        {variationCount} {variationCount === 1 ? "variação" : "variações"}
+      </span>
+    );
+  };
+
   return (
     <>
       <div className="md:hidden space-y-3 px-2 pb-4">
@@ -71,17 +81,23 @@ export default function TableBodyRows({
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="text-xs font-medium text-green-400">
                       {a.loja || "-"}
                     </div>
 
-                    <div className="mt-1 flex min-w-0 items-center gap-1 text-base font-semibold text-white">
-                      <span className="truncate">{a.nome || "-"}</span>
+                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-base font-semibold text-white">
+                      <span className="max-w-full truncate">
+                        {a.nome || "-"}
+                      </span>
+
+                      {renderVariationBadge(variationCount)}
 
                       {a.nome && (
                         <button
-                          onClick={() => handleCopy(a.nome || "", `nome-mobile-${i}`)}
+                          onClick={() =>
+                            handleCopy(a.nome || "", `nome-mobile-${i}`)
+                          }
                           className="shrink-0 cursor-pointer"
                           type="button"
                         >
@@ -95,13 +111,6 @@ export default function TableBodyRows({
                         </button>
                       )}
                     </div>
-
-                    {variationCount > 0 && (
-                      <div className="mt-1 text-xs font-medium text-green-500">
-                        ({variationCount}{" "}
-                        {variationCount === 1 ? "variação" : "variações"})
-                      </div>
-                    )}
                   </div>
 
                   <input
@@ -120,7 +129,9 @@ export default function TableBodyRows({
                       <span className="truncate text-white">{a.id || "-"}</span>
                       {a.id && (
                         <button
-                          onClick={() => handleCopy(String(a.id), `id-mobile-${i}`)}
+                          onClick={() =>
+                            handleCopy(String(a.id), `id-mobile-${i}`)
+                          }
                           className="shrink-0 cursor-pointer"
                           type="button"
                         >
@@ -142,7 +153,9 @@ export default function TableBodyRows({
                       <span className="truncate text-white">{a.marca || "-"}</span>
                       {a.marca && (
                         <button
-                          onClick={() => handleCopy(a.marca || "", `marca-mobile-${i}`)}
+                          onClick={() =>
+                            handleCopy(a.marca || "", `marca-mobile-${i}`)
+                          }
                           className="shrink-0 cursor-pointer"
                           type="button"
                         >
@@ -302,7 +315,6 @@ export default function TableBodyRows({
                         : "hover:bg-white/5"
                     }`}
                   >
-                    {/* CHECKBOX */}
                     <TableCell className="w-[48px] text-center">
                       <input
                         type="checkbox"
@@ -313,7 +325,6 @@ export default function TableBodyRows({
                       />
                     </TableCell>
 
-                    {/* ID */}
                     <TableCell className="w-[120px] text-center text-white">
                       <div className="group inline-flex items-center gap-1">
                         <span className="truncate">{a.id || "-"}</span>
@@ -335,12 +346,10 @@ export default function TableBodyRows({
                       </div>
                     </TableCell>
 
-                    {/* LOJA */}
                     <TableCell className="w-[120px] text-left text-neutral-300">
                       <span className="truncate">{a.loja || "-"}</span>
                     </TableCell>
 
-                    {/* ID BLING */}
                     <TableCell className="w-[140px] text-left text-neutral-300">
                       <div className="group inline-flex max-w-full items-center gap-1">
                         <span className="truncate">{a.id_bling || "-"}</span>
@@ -364,7 +373,6 @@ export default function TableBodyRows({
                       </div>
                     </TableCell>
 
-                    {/* REFERÊNCIA */}
                     <TableCell className="w-[140px] text-left text-neutral-300">
                       <div className="group inline-flex max-w-full items-center gap-1">
                         <span className="truncate">{a.referencia || "-"}</span>
@@ -388,7 +396,6 @@ export default function TableBodyRows({
                       </div>
                     </TableCell>
 
-                    {/* ID TRAY */}
                     <TableCell className="w-[140px] text-left text-neutral-300">
                       <div className="group inline-flex max-w-full items-center gap-1">
                         <span className="truncate">{a.id_tray || "-"}</span>
@@ -412,22 +419,20 @@ export default function TableBodyRows({
                       </div>
                     </TableCell>
 
-                    {/* NOME */}
                     <TableCell className="min-w-[260px] text-left text-neutral-300">
-                      <div className="group inline-flex max-w-full items-center gap-1">
-                        <span className="truncate">{a.nome || "-"}</span>
+                      <div className="group inline-flex max-w-full items-center gap-2 align-middle">
+                        <span className="max-w-[520px] truncate">
+                          {a.nome || "-"}
+                        </span>
 
-                        {variationCount > 0 && (
-                          <span className="shrink-0 whitespace-nowrap text-sm font-medium text-green-500">
-                            ({variationCount}{" "}
-                            {variationCount === 1 ? "variação" : "variações"})
-                          </span>
-                        )}
+                        {renderVariationBadge(variationCount)}
 
                         {a.nome && (
                           <button
-                            onClick={() => handleCopy(a.nome || "", `nome-${i}`)}
-                            className="cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
+                            onClick={() =>
+                              handleCopy(a.nome || "", `nome-${i}`)
+                            }
+                            className="shrink-0 cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
                             type="button"
                           >
                             <CopyIcon
@@ -442,7 +447,6 @@ export default function TableBodyRows({
                       </div>
                     </TableCell>
 
-                    {/* MARCA */}
                     <TableCell className="w-[160px] text-left text-neutral-300">
                       <div className="group inline-flex max-w-full items-center gap-1">
                         <span className="truncate">{a.marca || "-"}</span>
@@ -466,7 +470,6 @@ export default function TableBodyRows({
                       </div>
                     </TableCell>
 
-                    {/* AÇÕES */}
                     <TableCell className="w-[120px] text-center">
                       <div className="flex justify-center gap-2">
                         <Button

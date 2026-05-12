@@ -2,16 +2,6 @@ import React from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { formatBR } from "@/components/decomposition/Decomposition";
-
-function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
-  let timer: ReturnType<typeof setTimeout>;
-
-  return (...args: Parameters<T>) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), delay);
-  };
-}
 
 export type Item = {
   codigo: string;
@@ -27,15 +17,6 @@ type Props = {
   codeRefs: React.MutableRefObject<HTMLInputElement[]>;
   qtyRefs: React.MutableRefObject<HTMLInputElement[]>;
   costRefs: React.MutableRefObject<HTMLInputElement[]>;
-  listaRef: React.RefObject<HTMLDivElement>;
-  campoAtivo: number | null;
-  setCampoAtivo: (v: number | null) => void;
-  indiceSelecionado: number;
-  setIndiceSelecionado: (v: number) => void;
-  sugestoes: { codigo: string; custo: number; produto?: string }[];
-  buscarSugestoes: (termo: string, idx: number) => void;
-  selecionarSugestao: (codigo: string, custo: number, idx: number) => void;
-  autoSelecionarPrimeiro: (idx: number) => Promise<void>;
   handleKeyDownCodigo: (
     e: React.KeyboardEvent<HTMLInputElement>,
     idx: number
@@ -46,7 +27,6 @@ type Props = {
   ) => void;
   onBlurQuantidade: (idx: number) => void;
   onBlurCusto: (idx: number) => void;
-  adicionarItem: () => void;
 };
 
 const inputClass = `
@@ -61,6 +41,8 @@ const linhaVazia = (): Item => ({
   codigo: "",
   quantidade: "",
   custo: "",
+  descricao: "",
+  produto: "",
 });
 
 const itemTemConteudo = (item: Item) => {
@@ -75,21 +57,33 @@ const itemTemConteudo = (item: Item) => {
 
 const isLinhaVazia = (item: Item) => !itemTemConteudo(item);
 
+const atualizarItem = (
+  setComposicao: React.Dispatch<React.SetStateAction<Item[]>>,
+  idx: number,
+  dados: Partial<Item>
+) => {
+  setComposicao((prev) => {
+    const base = Array.isArray(prev) ? [...prev] : [];
+
+    if (!base[idx]) {
+      return base;
+    }
+
+    base[idx] = {
+      ...base[idx],
+      ...dados,
+    };
+
+    return base;
+  });
+};
+
 export default function ComposicaoCustos({
   composicao,
   setComposicao,
   codeRefs,
   qtyRefs,
   costRefs,
-  listaRef,
-  campoAtivo,
-  setCampoAtivo,
-  indiceSelecionado,
-  setIndiceSelecionado,
-  sugestoes,
-  buscarSugestoes,
-  selecionarSugestao,
-  autoSelecionarPrimeiro,
   handleKeyDownCodigo,
   handleKeyDownQuantidade,
   onBlurQuantidade,
@@ -102,10 +96,6 @@ export default function ComposicaoCustos({
     composicao.some(itemTemConteudo)
   );
 
-  const buscarSugestoesDebounced = React.useRef(
-    debounce((termo: string, idx: number) => buscarSugestoes(termo, idx), 10)
-  ).current;
-
   const temAlgumItem = composicao.some(itemTemConteudo);
   const deveMostrarTabela = mostrarInputs || temAlgumItem;
   const shouldScrollComposition = composicao.length > 10;
@@ -116,14 +106,14 @@ export default function ComposicaoCustos({
     setComposicao((prev) => {
       const base = Array.isArray(prev) ? [...prev] : [];
 
-      if (!mostrarInputs && base.length === 1 && isLinhaVazia(base[0])) {
-        focusIndexRef.current = 0;
-        return base;
-      }
-
       if (base.length === 0) {
         focusIndexRef.current = 0;
         return [linhaVazia()];
+      }
+
+      if (!mostrarInputs && base.length === 1 && isLinhaVazia(base[0])) {
+        focusIndexRef.current = 0;
+        return base;
       }
 
       const novoIndex = base.length;
@@ -142,36 +132,23 @@ export default function ComposicaoCustos({
     requestAnimationFrame(() => {
       codeRefs.current[index]?.focus();
     });
-  }, [composicao.length, codeRefs]);
+  }, [composicao.length, mostrarInputs, codeRefs]);
 
   const removerItem = (idx: number) => {
     setComposicao((prev) => {
-      const next = prev.filter((_, i) => i !== idx);
+      const base = Array.isArray(prev) ? prev : [];
+      const next = base.filter((_, i) => i !== idx);
 
-      return next.length > 0 ? next : [linhaVazia()];
-    });
-
-    setCampoAtivo((campoAtual) => {
-      if (campoAtual === null) return null;
-      if (campoAtual === idx) return null;
-      if (campoAtual > idx) return campoAtual - 1;
-
-      return campoAtual;
-    });
-
-    setIndiceSelecionado(-1);
-
-    setTimeout(() => {
-      setComposicao((current) => {
-        const temLinhaReal = current.some(itemTemConteudo);
-
-        if (!temLinhaReal && current.length === 1 && isLinhaVazia(current[0])) {
+      if (next.length === 0) {
+        window.setTimeout(() => {
           setMostrarInputs(false);
-        }
+        }, 0);
 
-        return current;
-      });
-    }, 0);
+        return [linhaVazia()];
+      }
+
+      return next;
+    });
   };
 
   const handleKeyDownCusto = (
@@ -183,7 +160,7 @@ export default function ComposicaoCustos({
 
       ignoreBlur.current = true;
 
-      setTimeout(() => {
+      window.setTimeout(() => {
         ignoreBlur.current = false;
 
         const nextInput = codeRefs.current[idx + 1];
@@ -266,12 +243,11 @@ export default function ComposicaoCustos({
               `}
             >
               {composicao.map((item, idx) => {
-                const descricao =
-                  item.produto || item.descricao || item.codigo || "";
+                const descricao = item.produto || item.descricao || "";
 
                 return (
                   <div
-                    key={`${idx}-${item.codigo || "item"}`}
+                    key={idx}
                     className="
                       grid min-w-0 grid-cols-1 gap-3 bg-[#151515] p-4
                       lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1.45fr)_minmax(92px,0.7fr)_minmax(110px,0.85fr)_64px]
@@ -290,61 +266,15 @@ export default function ComposicaoCustos({
                         value={item.codigo}
                         placeholder="SKU"
                         onChange={(e) => {
-                          const novo = [...composicao];
-
-                          novo[idx] = {
-                            ...novo[idx],
+                          atualizarItem(setComposicao, idx, {
                             codigo: e.target.value,
-                          };
-
-                          setComposicao(novo);
-                          setCampoAtivo(idx);
-                          setIndiceSelecionado(0);
-                          buscarSugestoesDebounced(e.target.value, idx);
+                            produto: "",
+                            descricao: "",
+                          });
                         }}
                         onKeyDown={(e) => handleKeyDownCodigo(e, idx)}
-                        onBlur={() => {
-                          if (!ignoreBlur.current && item.codigo.trim()) {
-                            autoSelecionarPrimeiro(idx);
-                          }
-                        }}
                         className={`${inputClass} w-full text-center`}
                       />
-
-                      {campoAtivo === idx && sugestoes.length > 0 && (
-                        <div
-                          ref={listaRef}
-                          className="
-                            absolute left-3 right-3 z-50 mt-1 max-h-48 overflow-y-auto
-                            rounded-md border border-white/10 bg-[#0f0f0f] shadow-xl
-                          "
-                        >
-                          {sugestoes.map((s, i) => (
-                            <div
-                              key={`${s.codigo}-${i}`}
-                              className={`flex cursor-pointer justify-between gap-3 px-3 py-2 text-xs ${
-                                i === indiceSelecionado
-                                  ? "bg-[#1a8ceb]/30"
-                                  : "hover:bg-[#1a8ceb]/20"
-                              }`}
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                selecionarSugestao(s.codigo, s.custo, idx);
-                              }}
-                              onMouseEnter={() => setIndiceSelecionado(i)}
-                            >
-                              <span className="min-w-0 truncate font-semibold text-white">
-                                {s.codigo}
-                              </span>
-
-                              <span className="shrink-0 font-semibold text-[#1a8ceb]">
-                                R$ {formatBR(s.custo)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
                     </div>
 
                     <div className="min-w-0 lg:px-3 lg:py-3">
@@ -377,14 +307,9 @@ export default function ComposicaoCustos({
                         placeholder="1"
                         inputMode="decimal"
                         onChange={(e) => {
-                          const novo = [...composicao];
-
-                          novo[idx] = {
-                            ...novo[idx],
+                          atualizarItem(setComposicao, idx, {
                             quantidade: e.target.value,
-                          };
-
-                          setComposicao(novo);
+                          });
                         }}
                         onBlur={() => onBlurQuantidade(idx)}
                         onKeyDown={(e) => handleKeyDownQuantidade(e, idx)}
@@ -405,17 +330,14 @@ export default function ComposicaoCustos({
                         placeholder="0,00"
                         inputMode="decimal"
                         onChange={(e) => {
-                          const novo = [...composicao];
-
-                          novo[idx] = {
-                            ...novo[idx],
+                          atualizarItem(setComposicao, idx, {
                             custo: e.target.value,
-                          };
-
-                          setComposicao(novo);
+                          });
                         }}
                         onBlur={() => {
-                          if (!ignoreBlur.current) onBlurCusto(idx);
+                          if (!ignoreBlur.current) {
+                            onBlurCusto(idx);
+                          }
                         }}
                         onKeyDown={(e) => handleKeyDownCusto(e, idx)}
                         className={`${inputClass} w-full text-right tabular-nums`}

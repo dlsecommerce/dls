@@ -1,5 +1,7 @@
 "use client";
 
+import * as React from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Select,
   SelectContent,
@@ -26,6 +28,26 @@ interface TableControlsProps {
   selectedCount?: number;
 }
 
+const PAGE_SIZE_OPTIONS = [10, 20, 50];
+
+function clampPage(page: number, totalPages: number) {
+  const safeTotalPages = Math.max(1, Number(totalPages) || 1);
+
+  if (!Number.isFinite(page)) return 1;
+  if (page < 1) return 1;
+  if (page > safeTotalPages) return safeTotalPages;
+
+  return page;
+}
+
+function getSafeItemsPerPage(itemsPerPage: number) {
+  if (!Number.isFinite(itemsPerPage) || itemsPerPage <= 0) {
+    return PAGE_SIZE_OPTIONS[0];
+  }
+
+  return itemsPerPage;
+}
+
 export function TableControls({
   currentPage,
   totalPages,
@@ -35,8 +57,133 @@ export function TableControls({
   onItemsPerPageChange,
   selectedCount = 0,
 }: TableControlsProps) {
-  const startItem = totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
-  const endItem = Math.min(currentPage * itemsPerPage, totalItems);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const safeTotalPages = Math.max(1, Number(totalPages) || 1);
+  const safeItemsPerPage = getSafeItemsPerPage(itemsPerPage);
+  const safeTotalItems = Math.max(0, Number(totalItems) || 0);
+  const safeCurrentPage = clampPage(Number(currentPage) || 1, safeTotalPages);
+
+  const [pageInput, setPageInput] = React.useState(
+    safeCurrentPage.toString()
+  );
+
+  const startItem =
+    safeTotalItems === 0
+      ? 0
+      : (safeCurrentPage - 1) * safeItemsPerPage + 1;
+
+  const endItem = Math.min(
+    safeCurrentPage * safeItemsPerPage,
+    safeTotalItems
+  );
+
+  const updatePaginationUrl = React.useCallback(
+    (page: number, limit: number) => {
+      const params = new URLSearchParams(searchParams.toString());
+
+      params.set("page", String(page));
+      params.set("limit", String(limit));
+
+      router.replace(`${pathname}?${params.toString()}`, {
+        scroll: false,
+      });
+    },
+    [pathname, router, searchParams]
+  );
+
+  const applyPageChange = React.useCallback(
+    (page: number) => {
+      const nextPage = clampPage(page, safeTotalPages);
+
+      setPageInput(nextPage.toString());
+      onPageChange(nextPage);
+      updatePaginationUrl(nextPage, safeItemsPerPage);
+    },
+    [onPageChange, safeItemsPerPage, safeTotalPages, updatePaginationUrl]
+  );
+
+  const handleItemsPerPageChange = React.useCallback(
+    (value: string) => {
+      const nextItemsPerPage = Number(value);
+
+      if (!Number.isFinite(nextItemsPerPage) || nextItemsPerPage <= 0) {
+        return;
+      }
+
+      setPageInput("1");
+      onItemsPerPageChange(nextItemsPerPage);
+      onPageChange(1);
+      updatePaginationUrl(1, nextItemsPerPage);
+    },
+    [onItemsPerPageChange, onPageChange, updatePaginationUrl]
+  );
+
+  const handlePageInputChange = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const value = event.target.value;
+
+    if (value === "") {
+      setPageInput("");
+      return;
+    }
+
+    const onlyNumbers = value.replace(/\D/g, "");
+    setPageInput(onlyNumbers);
+  };
+
+  const handlePageInputKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement>
+  ) => {
+    if (event.key !== "Enter") return;
+
+    event.preventDefault();
+
+    const typedPage = Number(pageInput);
+    const nextPage = clampPage(typedPage, safeTotalPages);
+
+    applyPageChange(nextPage);
+  };
+
+  const handlePageInputBlur = () => {
+    if (pageInput.trim() === "") {
+      setPageInput(safeCurrentPage.toString());
+      return;
+    }
+
+    const typedPage = Number(pageInput);
+    const nextPage = clampPage(typedPage, safeTotalPages);
+
+    setPageInput(nextPage.toString());
+  };
+
+  React.useEffect(() => {
+    setPageInput(safeCurrentPage.toString());
+  }, [safeCurrentPage]);
+
+  React.useEffect(() => {
+    const urlPage = Number(searchParams.get("page"));
+    const urlLimit = Number(searchParams.get("limit"));
+
+    const hasValidUrlPage =
+      Number.isFinite(urlPage) && urlPage >= 1 && urlPage <= safeTotalPages;
+
+    const hasValidUrlLimit =
+      Number.isFinite(urlLimit) && urlLimit > 0;
+
+    if (!hasValidUrlPage || !hasValidUrlLimit) {
+      updatePaginationUrl(safeCurrentPage, safeItemsPerPage);
+    }
+  }, [
+    safeCurrentPage,
+    safeItemsPerPage,
+    safeTotalPages,
+    searchParams,
+    updatePaginationUrl,
+  ]);
 
   return (
     <div
@@ -55,7 +202,7 @@ export function TableControls({
             Mostrando{" "}
             <span className="font-medium text-white">{startItem}</span> a{" "}
             <span className="font-medium text-white">{endItem}</span> de{" "}
-            <span className="font-medium text-white">{totalItems}</span>{" "}
+            <span className="font-medium text-white">{safeTotalItems}</span>{" "}
             produtos
           </p>
 
@@ -83,8 +230,8 @@ export function TableControls({
             </p>
 
             <Select
-              value={itemsPerPage.toString()}
-              onValueChange={(value) => onItemsPerPageChange(Number(value))}
+              value={safeItemsPerPage.toString()}
+              onValueChange={handleItemsPerPageChange}
             >
               <SelectTrigger
                 className="
@@ -101,7 +248,7 @@ export function TableControls({
               </SelectTrigger>
 
               <SelectContent className="rounded-xl border border-neutral-700 bg-[#111111] text-white shadow-lg">
-                {[10, 20, 50].map((num) => (
+                {PAGE_SIZE_OPTIONS.map((num) => (
                   <SelectItem
                     key={num}
                     value={num.toString()}
@@ -118,10 +265,11 @@ export function TableControls({
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-1">
             <div className="grid grid-cols-4 gap-2 sm:flex sm:items-center sm:gap-1">
               <Button
+                type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => onPageChange(1)}
-                disabled={currentPage === 1}
+                onClick={() => applyPageChange(1)}
+                disabled={safeCurrentPage === 1 || safeTotalPages <= 1}
                 className="
                   h-10 w-full p-0
                   border-neutral-700
@@ -136,10 +284,11 @@ export function TableControls({
               </Button>
 
               <Button
+                type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => onPageChange(currentPage - 1)}
-                disabled={currentPage === 1}
+                onClick={() => applyPageChange(safeCurrentPage - 1)}
+                disabled={safeCurrentPage === 1 || safeTotalPages <= 1}
                 className="
                   h-10 w-full p-0
                   border-neutral-700
@@ -154,10 +303,13 @@ export function TableControls({
               </Button>
 
               <Button
+                type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => onPageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
+                onClick={() => applyPageChange(safeCurrentPage + 1)}
+                disabled={
+                  safeCurrentPage === safeTotalPages || safeTotalPages <= 1
+                }
                 className="
                   h-10 w-full p-0
                   border-neutral-700
@@ -172,10 +324,13 @@ export function TableControls({
               </Button>
 
               <Button
+                type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => onPageChange(totalPages)}
-                disabled={currentPage === totalPages}
+                onClick={() => applyPageChange(safeTotalPages)}
+                disabled={
+                  safeCurrentPage === safeTotalPages || safeTotalPages <= 1
+                }
                 className="
                   h-10 w-full p-0
                   border-neutral-700
@@ -194,14 +349,13 @@ export function TableControls({
               <span className="text-sm text-neutral-400">Página</span>
 
               <input
-                type="number"
-                min={1}
-                max={totalPages}
-                value={currentPage}
-                onChange={(e) => {
-                  const page = Number(e.target.value);
-                  if (page >= 1 && page <= totalPages) onPageChange(page);
-                }}
+                type="text"
+                inputMode="numeric"
+                value={pageInput}
+                onChange={handlePageInputChange}
+                onKeyDown={handlePageInputKeyDown}
+                onBlur={handlePageInputBlur}
+                aria-label="Número da página"
                 className="
                   h-10 w-16
                   rounded-lg border border-neutral-700
@@ -212,7 +366,9 @@ export function TableControls({
                 "
               />
 
-              <span className="text-sm text-neutral-400">de {totalPages}</span>
+              <span className="text-sm text-neutral-400">
+                de {safeTotalPages}
+              </span>
             </div>
           </div>
         </div>
