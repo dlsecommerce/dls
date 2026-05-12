@@ -2,7 +2,6 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
-import { flushSync } from "react-dom";
 
 import { Button } from "@/components/ui/button";
 import { ProductInfoSection } from "./ProductInfoSection";
@@ -19,7 +18,7 @@ type VariationModalProps = {
   AnimatedNumber: React.ComponentType<{ value: number }>;
   isEditing: boolean;
   onClose: () => void;
-  onSave: () => void;
+  onSave: (variationAtualizada?: any) => void;
 };
 
 const removerAcentos = (value: string) => {
@@ -149,11 +148,8 @@ export const VariationModal = ({
       custo_total: custoTotal,
     };
 
-    flushSync(() => {
-      setVariation(variationAtualizada);
-    });
-
-    onSave();
+    setVariation(variationAtualizada);
+    onSave(variationAtualizada);
   };
 
   return (

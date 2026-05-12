@@ -115,6 +115,14 @@ const parseNumero = (value: any) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const normalizarQuantidade = (value: any) => {
+  if (value === null || value === undefined || value === "") return 1;
+
+  const numero = parseNumero(value);
+
+  return numero > 0 ? numero : 1;
+};
+
 const normalizarCodigoBaseNovoPadrao = (
   referencia?: string | null
 ): string => {
@@ -183,14 +191,14 @@ const normalizarComposicao = (composicao: any[]) => {
     codigo: item?.codigo ?? "",
     produto: item?.produto ?? item?.Produto ?? item?.descricao ?? "",
     descricao: item?.descricao ?? item?.produto ?? item?.Produto ?? "",
-    quantidade: parseNumero(item?.quantidade),
+    quantidade: normalizarQuantidade(item?.quantidade),
     custo: parseNumero(item?.custo),
   }));
 };
 
 const calcCustoTotal = (composicao: any[]) => {
   return normalizarComposicao(composicao).reduce((total, item) => {
-    const quantidade = parseNumero(item?.quantidade);
+    const quantidade = normalizarQuantidade(item?.quantidade);
     const custo = parseNumero(item?.custo);
 
     return total + quantidade * custo;
@@ -395,8 +403,10 @@ export const VariationsSection = ({
           variation["Referência"] ??
           "",
         composicao: composicaoNormalizada,
-        custoTotal: variation.custoTotal ?? variation.custo_total ?? custoCalculado,
-        custo_total: variation.custo_total ?? variation.custoTotal ?? custoCalculado,
+        custoTotal:
+          variation.custoTotal ?? variation.custo_total ?? custoCalculado,
+        custo_total:
+          variation.custo_total ?? variation.custoTotal ?? custoCalculado,
       },
       produto
     );
@@ -421,26 +431,28 @@ export const VariationsSection = ({
     setVariationComposicao([]);
   };
 
-  const saveVariation = () => {
-    if (!variationDraft) return;
+  const saveVariation = (draftAtualizado?: Variation) => {
+    const draft = draftAtualizado ?? variationDraft;
+
+    if (!draft) return;
 
     const composicaoNormalizada = normalizarComposicao(variationComposicao);
     const custoTotalNormalizado = calcCustoTotal(composicaoNormalizada);
 
     const variationToSave: Variation = normalizarVariationParaSalvar(
       {
-        ...variationDraft,
+        ...draft,
         sku:
-          variationDraft.sku ||
-          variationDraft.referencia ||
-          variationDraft.Referencia ||
-          variationDraft["Referência"] ||
+          draft.sku ||
+          draft.referencia ||
+          draft.Referencia ||
+          draft["Referência"] ||
           "",
         referencia:
-          variationDraft.referencia ||
-          variationDraft.sku ||
-          variationDraft.Referencia ||
-          variationDraft["Referência"] ||
+          draft.referencia ||
+          draft.sku ||
+          draft.Referencia ||
+          draft["Referência"] ||
           "",
         composicao: composicaoNormalizada,
         custoTotal: custoTotalNormalizado,
@@ -572,7 +584,9 @@ export const VariationsSection = ({
                           <div className="flex items-center justify-between gap-3">
                             <button
                               type="button"
-                              onClick={() => openEditVariation(variation, index)}
+                              onClick={() =>
+                                openEditVariation(variation, index)
+                              }
                               className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
                             >
                               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#1a8ceb]/20 bg-[#1a8ceb]/10">

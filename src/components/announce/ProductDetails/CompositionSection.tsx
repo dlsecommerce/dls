@@ -705,7 +705,7 @@ export const CompositionSection: React.FC<CompositionSectionProps> = ({
         codigo: "",
         produto: "",
         descricao: "",
-        quantidade: "",
+        quantidade: 1,
         custo: 0,
       },
     ]);
