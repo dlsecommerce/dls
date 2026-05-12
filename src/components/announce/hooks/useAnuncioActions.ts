@@ -170,15 +170,12 @@ function normalizarQuantidadeComposicao(value: any, temCodigo: boolean) {
 
   if (!isNaN(qtdNum) && qtdNum > 0) return qtdNum;
 
+  /**
+   * IMPORTANTE:
+   * Se existe código, mas quantidade veio vazia, salva 1.
+   * Isso evita a variação calcular custo como 0 ao carregar novamente.
+   */
   return temCodigo ? 1 : null;
-}
-
-function normalizarCustoComposicao(value: any) {
-  const custoNum = parseValorBR(value);
-
-  if (!isNaN(custoNum) && custoNum > 0) return custoNum;
-
-  return null;
 }
 
 function montarCamposComposicao(composicao: any[], isInsert: boolean) {
@@ -186,14 +183,15 @@ function montarCamposComposicao(composicao: any[], isInsert: boolean) {
 
   /**
    * IMPORTANTE:
-   * Sempre limpamos os 10 campos.
-   * Antes, no update, se uma variação removesse um item de custo,
-   * campos antigos podiam continuar no banco.
+   * O banco tem somente Código 1 / Quantidade 1 ... Código 10 / Quantidade 10.
+   * Não adiciona Custo 1, porque essa coluna não existe.
+   *
+   * Também limpamos os 10 pares sempre, inclusive em update.
+   * Assim, se remover um item da composição da variação, o item antigo não fica preso no banco.
    */
   for (let i = 1; i <= 10; i++) {
     camposComposicao[`Código ${i}`] = null;
     camposComposicao[`Quantidade ${i}`] = null;
-    camposComposicao[`Custo ${i}`] = null;
   }
 
   const itens = Array.isArray(composicao) ? composicao.slice(0, 10) : [];
@@ -217,17 +215,8 @@ function montarCamposComposicao(composicao: any[], isInsert: boolean) {
       Boolean(codigo)
     );
 
-    const custo = normalizarCustoComposicao(
-      c?.custo ??
-        c?.Custo ??
-        c?.custo_atual ??
-        c?.["Custo Atual"] ??
-        ""
-    );
-
     camposComposicao[`Código ${idx}`] = codigo;
     camposComposicao[`Quantidade ${idx}`] = quantidade;
-    camposComposicao[`Custo ${idx}`] = custo;
   });
 
   return camposComposicao;
@@ -500,6 +489,14 @@ export function useAnuncioActions() {
 
           const isNovaVariacao = !idVariacaoStr;
 
+          /**
+           * IMPORTANTE:
+           * Para variação, salva a composição própria da variação.
+           * Se ela não tiver composição, cai para a composição do pai.
+           *
+           * O custo não é salvo aqui porque não existe coluna Custo 1.
+           * O custo deve ser recuperado depois pela tabela custos usando Código 1, Código 2...
+           */
           const composicaoVariacao = Array.isArray(variacao?.composicao)
             ? variacao.composicao
             : composicao;

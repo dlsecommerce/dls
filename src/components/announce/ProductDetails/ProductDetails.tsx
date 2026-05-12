@@ -115,13 +115,17 @@ const buildComposicaoFromAnuncio = (anuncio: any) => {
       `quantidade${i}`
     );
 
-    const custo = getField(anuncio, `Custo ${i}`, `custo_${i}`, `custo${i}`);
-
+    /**
+     * IMPORTANTE:
+     * Seu banco não tem Custo 1, Custo 2...
+     * Então o custo começa como 0 e será buscado na tabela custos
+     * usando o código.
+     */
     if (String(codigo || "").trim()) {
       itens.push({
         codigo,
         quantidade: normalizarQuantidade(quantidade),
-        custo: parseNumero(custo),
+        custo: 0,
         produto: "",
         descricao: "",
       });
@@ -129,6 +133,56 @@ const buildComposicaoFromAnuncio = (anuncio: any) => {
   }
 
   return itens;
+};
+
+const carregarCustosDaComposicao = async (composicao: any[]) => {
+  const itens = Array.isArray(composicao)
+    ? composicao.map(normalizarItemComposicao)
+    : [];
+
+  const codigos = Array.from(
+    new Set(
+      itens
+        .map((item) => String(item?.codigo || "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (codigos.length === 0) return itens;
+
+  const { data, error } = await supabase
+    .from("custos")
+    .select('"Código", "Custo Atual", "Produto"')
+    .in("Código", codigos);
+
+  if (error) {
+    console.error("Erro ao carregar custos da composição:", error);
+    return itens;
+  }
+
+  const custosPorCodigo = new Map(
+    (data || []).map((row: any) => [
+      String(row?.["Código"] || "").trim(),
+      {
+        custo: parseNumero(row?.["Custo Atual"]),
+        produto: row?.["Produto"] || "",
+      },
+    ])
+  );
+
+  return itens.map((item) => {
+    const codigo = String(item?.codigo || "").trim();
+    const encontrado = custosPorCodigo.get(codigo);
+
+    return {
+      ...item,
+      codigo,
+      quantidade: normalizarQuantidade(item?.quantidade),
+      custo: encontrado?.custo ?? parseNumero(item?.custo),
+      produto: encontrado?.produto || item?.produto || "",
+      descricao: encontrado?.produto || item?.descricao || "",
+    };
+  });
 };
 
 const normalizeVariation = (variation: any) => {
@@ -140,27 +194,13 @@ const normalizeVariation = (variation: any) => {
     composicaoExistente ?? buildComposicaoFromAnuncio(variation)
   ).map(normalizarItemComposicao);
 
-  const custoCalculadoPelaComposicao =
-    calcCustoTotalComposicao(composicaoNormalizada);
-
-  const custoSalvo = parseNumero(
-    getField(
-      variation,
-      "custoTotal",
-      "custo_total",
-      "custo",
-      "Custo"
-    )
-  );
-
   /**
-   * IMPORTANTE:
-   * Se a composição tem custo calculável, ela tem prioridade.
-   * Isso evita carregar a variação com custo 0 quando o banco/RPC retorna
-   * custo_total, custo ou Custo como 0, mas os itens da composição têm valor.
+   * Aqui ainda não calculamos o custo final, porque o banco só tem Código e Quantidade.
+   * O custo real será buscado depois na tabela custos.
    */
-  const custoFinal =
-    custoCalculadoPelaComposicao > 0 ? custoCalculadoPelaComposicao : custoSalvo;
+  const custoSalvo = parseNumero(
+    getField(variation, "custoTotal", "custo_total", "custo", "Custo")
+  );
 
   return {
     ...variation,
@@ -212,10 +252,10 @@ const normalizeVariation = (variation: any) => {
 
     composicao: composicaoNormalizada,
 
-    custoTotal: custoFinal,
-    custo_total: custoFinal,
-    custo: custoFinal,
-    Custo: custoFinal,
+    custoTotal: custoSalvo,
+    custo_total: custoSalvo,
+    custo: custoSalvo,
+    Custo: custoSalvo,
   };
 };
 
@@ -320,9 +360,31 @@ export default function ProductDetails() {
           return;
         }
 
-        const variacoes = Array.isArray(data)
+        const variacoesBase = Array.isArray(data)
           ? data.map(normalizeVariation)
           : [];
+
+        const variacoes = await Promise.all(
+          variacoesBase.map(async (variacao: any) => {
+            const composicaoComCustos = await carregarCustosDaComposicao(
+              Array.isArray(variacao.composicao) ? variacao.composicao : []
+            );
+
+            const custoTotalVariacao =
+              calcCustoTotalComposicao(composicaoComCustos);
+
+            return {
+              ...variacao,
+              composicao: composicaoComCustos,
+              custoTotal: custoTotalVariacao,
+              custo_total: custoTotalVariacao,
+              custo: custoTotalVariacao,
+              Custo: custoTotalVariacao,
+            };
+          })
+        );
+
+        if (cancelled) return;
 
         setProduto((p: any) => ({
           ...p,
