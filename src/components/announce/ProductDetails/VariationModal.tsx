@@ -19,13 +19,7 @@ type VariationModalProps = {
   AnimatedNumber: React.ComponentType<{ value: number }>;
   isEditing: boolean;
   onClose: () => void;
-
-  /**
-   * IMPORTANTE:
-   * Agora o onSave recebe a variação já atualizada.
-   * Assim o componente pai não precisa depender do state antigo.
-   */
-  onSave: (variationAtualizada: any) => void;
+  onSave: () => void;
 };
 
 const removerAcentos = (value: string) => {
@@ -117,21 +111,6 @@ const getReferenciaVariation = (variation: any) => {
   );
 };
 
-const toNumberSafe = (value: number | string | null | undefined) => {
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? value : 0;
-  }
-
-  const normalized = String(value ?? "")
-    .replace(/\./g, "")
-    .replace(",", ".")
-    .trim();
-
-  const parsed = Number(normalized);
-
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
 export const VariationModal = ({
   open,
   variation,
@@ -153,10 +132,6 @@ export const VariationModal = ({
       getReferenciaVariation(variation)
     );
 
-    const custoNumerico = toNumberSafe(custoTotal);
-
-    const composicaoAtualizada = Array.isArray(composicao) ? composicao : [];
-
     const variationAtualizada = {
       ...variation,
 
@@ -167,30 +142,18 @@ export const VariationModal = ({
       "Referência": referenciaNormalizada,
       sku: referenciaNormalizada,
 
-      /**
-       * IMPORTANTE:
-       * Mantém a composição e o custo dentro desta variação.
-       * Também salva em várias chaves para evitar custo zerado
-       * caso outro arquivo leia um nome diferente.
-       */
-      composicao: composicaoAtualizada,
-
-      custoTotal: custoNumerico,
-      custo_total: custoNumerico,
-      custo: custoNumerico,
-      Custo: custoNumerico,
+      // IMPORTANTE:
+      // Mantém a composição e o custo dentro desta variação.
+      composicao: Array.isArray(composicao) ? composicao : [],
+      custoTotal,
+      custo_total: custoTotal,
     };
 
     flushSync(() => {
       setVariation(variationAtualizada);
     });
 
-    /**
-     * IMPORTANTE:
-     * Envia a variação pronta diretamente para o componente pai.
-     * Assim o pai não usa a variation antiga com custo zerado.
-     */
-    onSave(variationAtualizada);
+    onSave();
   };
 
   return (
@@ -320,7 +283,7 @@ export const VariationModal = ({
                 <CompositionSection
                   composicao={composicao}
                   setComposicao={setComposicao}
-                  custoTotal={custoNumerico}
+                  custoTotal={custoTotal}
                   AnimatedNumber={AnimatedNumber}
                 />
               </div>

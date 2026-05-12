@@ -10,7 +10,6 @@ import {
   Pencil,
   Hash,
   Package,
-  DollarSign,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -67,11 +66,8 @@ type Variation = {
   Comprimento?: string | number;
 
   composicao?: any[];
-
   custoTotal?: number | string;
   custo_total?: number | string;
-  custo?: number | string;
-  Custo?: number | string;
 
   [key: string]: any;
 };
@@ -117,15 +113,6 @@ const parseNumero = (value: any) => {
   const n = Number(str);
 
   return Number.isFinite(n) ? n : 0;
-};
-
-const formatCurrencyBR = (value: any) => {
-  const numero = parseNumero(value);
-
-  return numero.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
 };
 
 const normalizarCodigoBaseNovoPadrao = (
@@ -210,16 +197,6 @@ const calcCustoTotal = (composicao: any[]) => {
   }, 0);
 };
 
-const getCustoVariation = (variation: Variation) => {
-  return parseNumero(
-    variation?.custoTotal ??
-      variation?.custo_total ??
-      variation?.custo ??
-      variation?.Custo ??
-      0
-  );
-};
-
 const normalizarVariationParaSalvar = (
   variation: Variation,
   produtoPai?: any
@@ -245,13 +222,7 @@ const normalizarVariationParaSalvar = (
   const custoTotalNormalizado =
     variation.custoTotal !== undefined && variation.custoTotal !== null
       ? parseNumero(variation.custoTotal)
-      : variation.custo_total !== undefined && variation.custo_total !== null
-        ? parseNumero(variation.custo_total)
-        : variation.custo !== undefined && variation.custo !== null
-          ? parseNumero(variation.custo)
-          : variation.Custo !== undefined && variation.Custo !== null
-            ? parseNumero(variation.Custo)
-            : calcCustoTotal(composicaoNormalizada);
+      : calcCustoTotal(composicaoNormalizada);
 
   return {
     ...variation,
@@ -267,11 +238,8 @@ const normalizarVariationParaSalvar = (
     "Referência": referenciaNormalizada,
 
     composicao: composicaoNormalizada,
-
     custoTotal: custoTotalNormalizado,
     custo_total: custoTotalNormalizado,
-    custo: custoTotalNormalizado,
-    Custo: custoTotalNormalizado,
   };
 };
 
@@ -346,13 +314,9 @@ const createEmptyVariation = (produto: any): Variation => {
     Comprimento: comprimento,
 
     estoque: "",
-
     composicao: [],
-
     custoTotal: 0,
     custo_total: 0,
-    custo: 0,
-    Custo: 0,
   };
 };
 
@@ -415,14 +379,6 @@ export const VariationsSection = ({
 
     const custoCalculado = calcCustoTotal(composicaoNormalizada);
 
-    const custoExistente = parseNumero(
-      variation.custoTotal ??
-        variation.custo_total ??
-        variation.custo ??
-        variation.Custo ??
-        custoCalculado
-    );
-
     const normalizedVariation = normalizarVariationParaSalvar(
       {
         ...variation,
@@ -439,10 +395,8 @@ export const VariationsSection = ({
           variation["Referência"] ??
           "",
         composicao: composicaoNormalizada,
-        custoTotal: custoExistente,
-        custo_total: custoExistente,
-        custo: custoExistente,
-        Custo: custoExistente,
+        custoTotal: variation.custoTotal ?? variation.custo_total ?? custoCalculado,
+        custo_total: variation.custo_total ?? variation.custoTotal ?? custoCalculado,
       },
       produto
     );
@@ -467,53 +421,30 @@ export const VariationsSection = ({
     setVariationComposicao([]);
   };
 
-  const saveVariation = (variationAtualizada?: Variation) => {
-    const baseVariation = variationAtualizada ?? variationDraft;
+  const saveVariation = () => {
+    if (!variationDraft) return;
 
-    if (!baseVariation) return;
-
-    const composicaoNormalizada = normalizarComposicao(
-      Array.isArray(baseVariation.composicao)
-        ? baseVariation.composicao
-        : variationComposicao
-    );
-
-    const custoTotalNormalizado =
-      baseVariation.custoTotal !== undefined && baseVariation.custoTotal !== null
-        ? parseNumero(baseVariation.custoTotal)
-        : baseVariation.custo_total !== undefined &&
-            baseVariation.custo_total !== null
-          ? parseNumero(baseVariation.custo_total)
-          : baseVariation.custo !== undefined && baseVariation.custo !== null
-            ? parseNumero(baseVariation.custo)
-            : baseVariation.Custo !== undefined && baseVariation.Custo !== null
-              ? parseNumero(baseVariation.Custo)
-              : calcCustoTotal(composicaoNormalizada);
+    const composicaoNormalizada = normalizarComposicao(variationComposicao);
+    const custoTotalNormalizado = calcCustoTotal(composicaoNormalizada);
 
     const variationToSave: Variation = normalizarVariationParaSalvar(
       {
-        ...baseVariation,
-
+        ...variationDraft,
         sku:
-          baseVariation.sku ||
-          baseVariation.referencia ||
-          baseVariation.Referencia ||
-          baseVariation["Referência"] ||
+          variationDraft.sku ||
+          variationDraft.referencia ||
+          variationDraft.Referencia ||
+          variationDraft["Referência"] ||
           "",
-
         referencia:
-          baseVariation.referencia ||
-          baseVariation.sku ||
-          baseVariation.Referencia ||
-          baseVariation["Referência"] ||
+          variationDraft.referencia ||
+          variationDraft.sku ||
+          variationDraft.Referencia ||
+          variationDraft["Referência"] ||
           "",
-
         composicao: composicaoNormalizada,
-
         custoTotal: custoTotalNormalizado,
         custo_total: custoTotalNormalizado,
-        custo: custoTotalNormalizado,
-        Custo: custoTotalNormalizado,
       },
       produto
     );
@@ -625,8 +556,6 @@ export const VariationsSection = ({
                         variation.id ||
                         "Não informado";
 
-                      const custoDaVariacao = getCustoVariation(variation);
-
                       return (
                         <div
                           key={
@@ -667,11 +596,6 @@ export const VariationsSection = ({
                                   <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-white/45">
                                     <Hash className="h-3 w-3 text-[#1a8ceb]/70" />
                                     ID variação: {idVar}
-                                  </span>
-
-                                  <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-white/45">
-                                    <DollarSign className="h-3 w-3 text-[#1a8ceb]/70" />
-                                    Custo: {formatCurrencyBR(custoDaVariacao)}
                                   </span>
 
                                   {variation.estoque !== undefined &&
