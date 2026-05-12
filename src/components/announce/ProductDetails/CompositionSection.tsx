@@ -26,9 +26,6 @@ type CompositionSectionProps = {
   setAnuncioData?: any;
 };
 
-// ================================
-// Fallback do AnimatedNumber
-// ================================
 const DefaultAnimatedNumber = ({ value }: { value: number }) => {
   return (
     <>
@@ -40,9 +37,6 @@ const DefaultAnimatedNumber = ({ value }: { value: number }) => {
   );
 };
 
-// ================================
-// Helpers BR
-// ================================
 const formatBR = (v: any) => {
   const num = typeof v === "number" ? v : Number(v);
 
@@ -114,40 +108,79 @@ const getRowDescription = (item: any) => {
   return descricao;
 };
 
+const normalizarCustoRow = (row: any) => {
+  const codigo = String(row?.["Código"] ?? row?.codigo ?? "").trim();
+  const produto = String(row?.["Produto"] ?? row?.produto ?? "").trim();
+
+  const custoRaw =
+    row?.["Custo Atual"] ??
+    row?.["Custo"] ??
+    row?.custo_atual ??
+    row?.custo ??
+    0;
+
+  const custo =
+    typeof custoRaw === "number"
+      ? custoRaw
+      : parseInputMoney(String(custoRaw ?? ""));
+
+  return {
+    codigo,
+    produto,
+    descricao: produto,
+    custo: Number.isFinite(custo) ? custo : 0,
+  };
+};
+
 const buscarCustoExatoPorCodigo = async (codigo: string) => {
   const codigoLimpo = String(codigo || "").trim();
 
   if (!codigoLimpo) return null;
 
-  const { data, error } = await supabase
+  /**
+   * IMPORTANTE:
+   * Em filtros do supabase-js, use o nome da coluna SEM aspas internas:
+   * .eq("Código", codigo)
+   *
+   * Errado:
+   * .eq('"Código"', codigo)
+   */
+  const { data: dataExata, error: errorExata } = await supabase
     .from("custos")
     .select('"Código", "Custo Atual", "Produto"')
-    .eq('"Código"', codigoLimpo)
-    .maybeSingle();
+    .eq("Código", codigoLimpo)
+    .limit(1);
 
-  if (error) {
-    console.error("Erro ao buscar custo exato:", error);
+  if (errorExata) {
+    console.error("Erro ao buscar custo exato:", errorExata);
+  }
+
+  if (Array.isArray(dataExata) && dataExata.length > 0) {
+    return normalizarCustoRow(dataExata[0]);
+  }
+
+  /**
+   * Fallback:
+   * se não achou exato, tenta ilike sem aspas internas.
+   */
+  const { data: dataLike, error: errorLike } = await supabase
+    .from("custos")
+    .select('"Código", "Custo Atual", "Produto"')
+    .ilike("Código", codigoLimpo)
+    .limit(1);
+
+  if (errorLike) {
+    console.error("Erro ao buscar custo por ilike:", errorLike);
     return null;
   }
 
-  if (!data) return null;
+  if (Array.isArray(dataLike) && dataLike.length > 0) {
+    return normalizarCustoRow(dataLike[0]);
+  }
 
-  const custo =
-    typeof data["Custo Atual"] === "number"
-      ? data["Custo Atual"]
-      : parseInputMoney(String(data["Custo Atual"] ?? ""));
-
-  return {
-    codigo: String(data["Código"] ?? "").trim(),
-    produto: String(data["Produto"] ?? "").trim(),
-    descricao: String(data["Produto"] ?? "").trim(),
-    custo: Number.isFinite(custo) ? custo : 0,
-  };
+  return null;
 };
 
-// ================================
-// Dropdown de sugestões
-// ================================
 type SuggestionDropdownProps = {
   isActive: boolean;
   sugestoes: Sugestao[];
@@ -219,9 +252,6 @@ const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
   );
 };
 
-// ================================
-// Linha de custo
-// ================================
 type CostItemRowProps = {
   item: any;
   idx: number;
@@ -343,8 +373,8 @@ const CostItemRow: React.FC<CostItemRowProps> = ({
         novo[idx]?.produto ||
         "",
       custo:
-        custoEncontrado && custoEncontrado.custo > 0
-          ? custoEncontrado.custo
+        custoEncontrado && Number(custoEncontrado.custo) > 0
+          ? Number(custoEncontrado.custo)
           : Number(novo[idx]?.custo || 0),
     };
 
@@ -521,9 +551,6 @@ const CostItemRow: React.FC<CostItemRowProps> = ({
   );
 };
 
-// ================================
-// Botão adicionar custo
-// ================================
 type AddCostButtonProps = {
   onClick: () => void;
 };
@@ -550,9 +577,6 @@ const AddCostButton: React.FC<AddCostButtonProps> = ({ onClick }) => (
   </Button>
 );
 
-// ================================
-// Card total
-// ================================
 type TotalCostCardProps = {
   custoTotal: number | string;
   AnimatedNumber?: React.ComponentType<{ value: number }>;
@@ -575,9 +599,6 @@ const TotalCostCard: React.FC<TotalCostCardProps> = ({
   </div>
 );
 
-// ================================
-// Componente principal
-// ================================
 export const CompositionSection: React.FC<CompositionSectionProps> = ({
   composicao = [],
   setComposicao,
@@ -597,9 +618,6 @@ export const CompositionSection: React.FC<CompositionSectionProps> = ({
 
   const listScrollClass = "overflow-visible";
 
-  // ================================
-  // Buscar custos do Supabase com debounce
-  // ================================
   const buscarSugestoes = (termo: string, idx: number) => {
     const termoLimpo = String(termo || "").trim();
 
@@ -620,10 +638,15 @@ export const CompositionSection: React.FC<CompositionSectionProps> = ({
       const buscaAtual = buscaIdRef.current + 1;
       buscaIdRef.current = buscaAtual;
 
+      /**
+       * IMPORTANTE:
+       * Em filtros do supabase-js, use o nome da coluna SEM aspas internas:
+       * .ilike("Código", ...)
+       */
       const { data, error } = await supabase
         .from("custos")
         .select('"Código", "Custo Atual", "Produto"')
-        .ilike('"Código"', `%${termoLimpo}%`)
+        .ilike("Código", `%${termoLimpo}%`)
         .limit(8);
 
       if (buscaAtual !== buscaIdRef.current) return;
@@ -636,22 +659,7 @@ export const CompositionSection: React.FC<CompositionSectionProps> = ({
       }
 
       const sugestoesFormatadas =
-        data?.map((d: any) => {
-          const codigo = String(d["Código"] ?? "").trim();
-          const produto = String(d["Produto"] ?? "").trim();
-
-          const custo =
-            typeof d["Custo Atual"] === "number"
-              ? d["Custo Atual"]
-              : parseInputMoney(String(d["Custo Atual"] ?? ""));
-
-          return {
-            codigo,
-            custo: Number.isFinite(custo) ? custo : 0,
-            produto,
-            descricao: produto,
-          };
-        }) || [];
+        data?.map((d: any) => normalizarCustoRow(d)) || [];
 
       setCampoAtivo(idx);
       setSugestoes(sugestoesFormatadas);
@@ -659,9 +667,6 @@ export const CompositionSection: React.FC<CompositionSectionProps> = ({
     }, 250);
   };
 
-  // ================================
-  // Selecionar sugestão
-  // ================================
   const selecionarSugestao = (
     codigo: string,
     custo: number,
@@ -683,7 +688,7 @@ export const CompositionSection: React.FC<CompositionSectionProps> = ({
       codigo,
       produto: descricaoFinal || novo[idx]?.produto || "",
       descricao: descricaoFinal || novo[idx]?.descricao || "",
-      custo: Number.isFinite(custo) && custo > 0 ? custo : novo[idx]?.custo,
+      custo: Number.isFinite(Number(custo)) ? Number(custo) : 0,
     };
 
     setComposicao(novo);
@@ -692,9 +697,6 @@ export const CompositionSection: React.FC<CompositionSectionProps> = ({
     setIndiceSelecionado(-1);
   };
 
-  // ================================
-  // Adicionar / remover
-  // ================================
   const adicionarItem = () => {
     setComposicao((prev: any[]) => [
       ...(Array.isArray(prev) ? prev : []),
@@ -715,9 +717,6 @@ export const CompositionSection: React.FC<CompositionSectionProps> = ({
     );
   };
 
-  // ================================
-  // Teclas da lista de sugestões
-  // ================================
   const handleSugestoesKeys = (
     e: React.KeyboardEvent<HTMLInputElement>,
     idx: number
@@ -758,9 +757,6 @@ export const CompositionSection: React.FC<CompositionSectionProps> = ({
     return false;
   };
 
-  // ================================
-  // Navegação pelo grid
-  // ================================
   const handleGridNav = (
     e: React.KeyboardEvent<HTMLInputElement>,
     row: number,
@@ -795,9 +791,6 @@ export const CompositionSection: React.FC<CompositionSectionProps> = ({
     }
   };
 
-  // ================================
-  // Fecha sugestões ao clicar fora
-  // ================================
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (listaRef.current?.contains(e.target as Node)) {
