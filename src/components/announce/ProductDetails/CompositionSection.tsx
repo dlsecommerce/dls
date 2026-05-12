@@ -114,6 +114,37 @@ const getRowDescription = (item: any) => {
   return descricao;
 };
 
+const buscarCustoExatoPorCodigo = async (codigo: string) => {
+  const codigoLimpo = String(codigo || "").trim();
+
+  if (!codigoLimpo) return null;
+
+  const { data, error } = await supabase
+    .from("custos")
+    .select('"Código", "Custo Atual", "Produto"')
+    .eq('"Código"', codigoLimpo)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Erro ao buscar custo exato:", error);
+    return null;
+  }
+
+  if (!data) return null;
+
+  const custo =
+    typeof data["Custo Atual"] === "number"
+      ? data["Custo Atual"]
+      : parseInputMoney(String(data["Custo Atual"] ?? ""));
+
+  return {
+    codigo: String(data["Código"] ?? "").trim(),
+    produto: String(data["Produto"] ?? "").trim(),
+    descricao: String(data["Produto"] ?? "").trim(),
+    custo: Number.isFinite(custo) ? custo : 0,
+  };
+};
+
 // ================================
 // Dropdown de sugestões
 // ================================
@@ -271,16 +302,50 @@ const CostItemRow: React.FC<CostItemRowProps> = ({
     setCodigoLocal(item.codigo || "");
   }, [item.codigo]);
 
-  const salvarCodigoLocal = () => {
-    const codigoAtual = String(composicao[idx]?.codigo || "");
+  const salvarCodigoLocal = async () => {
+    const codigoAtual = String(composicao[idx]?.codigo || "").trim();
+    const codigoNovo = String(codigoLocal || "").trim();
 
-    if (codigoAtual === codigoLocal) return;
+    if (!codigoNovo) {
+      const novo = [...composicao];
+
+      novo[idx] = {
+        ...novo[idx],
+        codigo: "",
+        produto: "",
+        descricao: "",
+        custo: 0,
+      };
+
+      setComposicao(novo);
+      return;
+    }
+
+    const custoAtual = Number(composicao[idx]?.custo || 0);
+
+    if (codigoAtual === codigoNovo && custoAtual > 0) return;
+
+    const custoEncontrado = await buscarCustoExatoPorCodigo(codigoNovo);
 
     const novo = [...composicao];
 
     novo[idx] = {
       ...novo[idx],
-      codigo: codigoLocal,
+      codigo: custoEncontrado?.codigo || codigoNovo,
+      produto:
+        custoEncontrado?.produto ||
+        novo[idx]?.produto ||
+        novo[idx]?.Produto ||
+        "",
+      descricao:
+        custoEncontrado?.descricao ||
+        novo[idx]?.descricao ||
+        novo[idx]?.produto ||
+        "",
+      custo:
+        custoEncontrado && custoEncontrado.custo > 0
+          ? custoEncontrado.custo
+          : Number(novo[idx]?.custo || 0),
     };
 
     setComposicao(novo);
@@ -316,7 +381,7 @@ const CostItemRow: React.FC<CostItemRowProps> = ({
               buscarSugestoes(value, idx);
             }}
             onBlur={() => {
-              salvarCodigoLocal();
+              void salvarCodigoLocal();
             }}
             onKeyDown={(e) => {
               const handled = handleSugestoesKeys(e, idx);
@@ -325,7 +390,7 @@ const CostItemRow: React.FC<CostItemRowProps> = ({
 
               if (e.key === "Enter") {
                 e.preventDefault();
-                salvarCodigoLocal();
+                void salvarCodigoLocal();
                 return;
               }
 

@@ -115,23 +115,6 @@ const parseNumero = (value: any) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-/**
- * PADRÃO REAL:
- *
- * Pai pode ser composto:
- * PAI-VDR-6001800020_6001800010
- *
- * Variações podem ser individuais:
- * VAR-VDR-6001800010
- * VAR-VDR-6001800020
- *
- * Regras:
- * - Sem espaços.
- * - Prefixo PAI- ou VAR-.
- * - Marca abreviada, exemplo VDR.
- * - Hífen depois da marca.
- * - Underline apenas quando existir mais de um código junto.
- */
 const normalizarCodigoBaseNovoPadrao = (
   referencia?: string | null
 ): string => {
@@ -214,19 +197,6 @@ const calcCustoTotal = (composicao: any[]) => {
   }, 0);
 };
 
-/**
- * IMPORTANTE:
- * A variação NÃO deve copiar a referência composta do pai.
- *
- * Errado:
- * Pai:      PAI-VDR-6001800020_6001800010
- * Variação: VAR-VDR-6001800020_6001800010
- *
- * Certo:
- * Pai:      PAI-VDR-6001800020_6001800010
- * Variação: VAR-VDR-6001800010
- * Variação: VAR-VDR-6001800020
- */
 const normalizarVariationParaSalvar = (
   variation: Variation,
   produtoPai?: any
@@ -383,9 +353,6 @@ export const VariationsSection = ({
       ...p,
       tipo_anuncio: "variacoes",
 
-      // Garante que o pai fique no padrão novo.
-      // Exemplo:
-      // PAI-VDR-6001800020_6001800010
       referencia: referenciaPaiNormalizada,
       Referencia: referenciaPaiNormalizada,
       "Referência": referenciaPaiNormalizada,
@@ -410,6 +377,8 @@ export const VariationsSection = ({
       Array.isArray(variation.composicao) ? variation.composicao : []
     );
 
+    const custoCalculado = calcCustoTotal(composicaoNormalizada);
+
     const normalizedVariation = normalizarVariationParaSalvar(
       {
         ...variation,
@@ -426,14 +395,8 @@ export const VariationsSection = ({
           variation["Referência"] ??
           "",
         composicao: composicaoNormalizada,
-        custoTotal:
-          variation.custoTotal ??
-          variation.custo_total ??
-          calcCustoTotal(composicaoNormalizada),
-        custo_total:
-          variation.custo_total ??
-          variation.custoTotal ??
-          calcCustoTotal(composicaoNormalizada),
+        custoTotal: variation.custoTotal ?? variation.custo_total ?? custoCalculado,
+        custo_total: variation.custo_total ?? variation.custoTotal ?? custoCalculado,
       },
       produto
     );
@@ -593,11 +556,6 @@ export const VariationsSection = ({
                         variation.id ||
                         "Não informado";
 
-                      const custoDaVariacao =
-                        variation.custoTotal ??
-                        variation.custo_total ??
-                        calcCustoTotal(variation.composicao ?? []);
-
                       return (
                         <div
                           key={
@@ -638,17 +596,6 @@ export const VariationsSection = ({
                                   <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-white/45">
                                     <Hash className="h-3 w-3 text-[#1a8ceb]/70" />
                                     ID variação: {idVar}
-                                  </span>
-
-                                  <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-white/45">
-                                    Custo: R${" "}
-                                    {Number(custoDaVariacao || 0).toLocaleString(
-                                      "pt-BR",
-                                      {
-                                        minimumFractionDigits: 2,
-                                        maximumFractionDigits: 2,
-                                      }
-                                    )}
                                   </span>
 
                                   {variation.estoque !== undefined &&
