@@ -31,6 +31,65 @@ const getField = (obj: any, ...keys: string[]) => {
   return "";
 };
 
+const parseNumero = (value: any) => {
+  if (value === null || value === undefined || value === "") return 0;
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  let str = String(value).trim();
+
+  str = str.replace(/[^\d.,-]/g, "");
+
+  const temVirgula = str.includes(",");
+  const temPonto = str.includes(".");
+
+  if (temVirgula && temPonto) {
+    if (str.lastIndexOf(",") > str.lastIndexOf(".")) {
+      str = str.replace(/\./g, "");
+      str = str.replace(",", ".");
+    } else {
+      str = str.replace(/,/g, "");
+    }
+  } else if (temVirgula) {
+    str = str.replace(/\./g, "");
+    str = str.replace(",", ".");
+  }
+
+  const n = Number(str);
+
+  return Number.isFinite(n) ? n : 0;
+};
+
+const normalizarQuantidade = (value: any) => {
+  if (value === null || value === undefined || value === "") return 1;
+
+  const numero = parseNumero(value);
+
+  return numero > 0 ? numero : 1;
+};
+
+const normalizarItemComposicao = (item: any) => {
+  return {
+    ...item,
+    codigo: item?.codigo ?? item?.["Código"] ?? "",
+    produto: item?.produto ?? item?.Produto ?? item?.descricao ?? "",
+    descricao: item?.descricao ?? item?.produto ?? item?.Produto ?? "",
+    quantidade: normalizarQuantidade(item?.quantidade ?? item?.Quantidade),
+    custo: parseNumero(item?.custo ?? item?.Custo),
+  };
+};
+
+const calcCustoTotalComposicao = (composicao: any[]) => {
+  return (Array.isArray(composicao) ? composicao : []).reduce((total, item) => {
+    const quantidade = normalizarQuantidade(item?.quantidade);
+    const custo = parseNumero(item?.custo);
+
+    return total + quantidade * custo;
+  }, 0);
+};
+
 const normalizeLoja = (value: any) => {
   const v = String(value ?? "")
     .trim()
@@ -56,11 +115,13 @@ const buildComposicaoFromAnuncio = (anuncio: any) => {
       `quantidade${i}`
     );
 
+    const custo = getField(anuncio, `Custo ${i}`, `custo_${i}`, `custo${i}`);
+
     if (String(codigo || "").trim()) {
       itens.push({
         codigo,
-        quantidade: quantidade || "",
-        custo: getField(anuncio, `Custo ${i}`, `custo_${i}`, `custo${i}`) || 0,
+        quantidade: normalizarQuantidade(quantidade),
+        custo: parseNumero(custo),
         produto: "",
         descricao: "",
       });
@@ -74,6 +135,32 @@ const normalizeVariation = (variation: any) => {
   const composicaoExistente = Array.isArray(variation?.composicao)
     ? variation.composicao
     : null;
+
+  const composicaoNormalizada = (
+    composicaoExistente ?? buildComposicaoFromAnuncio(variation)
+  ).map(normalizarItemComposicao);
+
+  const custoCalculadoPelaComposicao =
+    calcCustoTotalComposicao(composicaoNormalizada);
+
+  const custoSalvo = parseNumero(
+    getField(
+      variation,
+      "custoTotal",
+      "custo_total",
+      "custo",
+      "Custo"
+    )
+  );
+
+  /**
+   * IMPORTANTE:
+   * Se a composição tem custo calculável, ela tem prioridade.
+   * Isso evita carregar a variação com custo 0 quando o banco/RPC retorna
+   * custo_total, custo ou Custo como 0, mas os itens da composição têm valor.
+   */
+  const custoFinal =
+    custoCalculadoPelaComposicao > 0 ? custoCalculadoPelaComposicao : custoSalvo;
 
   return {
     ...variation,
@@ -123,39 +210,12 @@ const normalizeVariation = (variation: any) => {
     sku: getField(variation, "sku", "referencia", "Referência"),
     valor: getField(variation, "valor", "id_var", "ID Var"),
 
-    composicao: composicaoExistente ?? buildComposicaoFromAnuncio(variation),
+    composicao: composicaoNormalizada,
 
-    custoTotal: getField(
-      variation,
-      "custoTotal",
-      "custo_total",
-      "custo",
-      "Custo"
-    ) || 0,
-
-    custo_total: getField(
-      variation,
-      "custo_total",
-      "custoTotal",
-      "custo",
-      "Custo"
-    ) || 0,
-
-    custo: getField(
-      variation,
-      "custo",
-      "Custo",
-      "custoTotal",
-      "custo_total"
-    ) || 0,
-
-    Custo: getField(
-      variation,
-      "Custo",
-      "custo",
-      "custoTotal",
-      "custo_total"
-    ) || 0,
+    custoTotal: custoFinal,
+    custo_total: custoFinal,
+    custo: custoFinal,
+    Custo: custoFinal,
   };
 };
 
