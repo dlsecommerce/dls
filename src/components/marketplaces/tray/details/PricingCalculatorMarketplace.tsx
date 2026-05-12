@@ -19,7 +19,7 @@ import { useMarketplaceDetails } from "@/components/marketplaces/tray/hooks/useM
 import { useKeyboardShortcuts } from "@/components/announce/hooks/useKeyboardShortcuts";
 
 /* ============================================================
-   HELPERS
+   Helper para normalizar o parâmetro "loja" da URL, garantindo que variações comuns sejam tratadas como equivalentes.
 ============================================================ */
 function normalizeLojaParam(lojaParam: string | null) {
   const lojaNormalizada = lojaParam
