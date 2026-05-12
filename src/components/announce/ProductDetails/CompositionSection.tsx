@@ -344,7 +344,6 @@ const CostItemRow: React.FC<CostItemRowProps> = ({
         codigo: "",
         produto: "",
         descricao: "",
-        quantidade: novo[idx]?.quantidade || 1,
         custo: 0,
       };
 
@@ -373,12 +372,6 @@ const CostItemRow: React.FC<CostItemRowProps> = ({
         novo[idx]?.descricao ||
         novo[idx]?.produto ||
         "",
-      quantidade:
-        novo[idx]?.quantidade === "" ||
-        novo[idx]?.quantidade === undefined ||
-        novo[idx]?.quantidade === null
-          ? 1
-          : novo[idx]?.quantidade,
       custo:
         custoEncontrado && Number(custoEncontrado.custo) > 0
           ? Number(custoEncontrado.custo)
@@ -469,17 +462,6 @@ const CostItemRow: React.FC<CostItemRowProps> = ({
               novo[idx] = {
                 ...novo[idx],
                 quantidade: toInternal(e.target.value),
-              };
-
-              setComposicao(novo);
-            }}
-            onBlur={(e) => {
-              const novo = [...composicao];
-              const value = String(e.target.value || "").trim();
-
-              novo[idx] = {
-                ...novo[idx],
-                quantidade: value ? toInternal(value) : 1,
               };
 
               setComposicao(novo);
@@ -706,12 +688,6 @@ export const CompositionSection: React.FC<CompositionSectionProps> = ({
       codigo,
       produto: descricaoFinal || novo[idx]?.produto || "",
       descricao: descricaoFinal || novo[idx]?.descricao || "",
-      quantidade:
-        novo[idx]?.quantidade === "" ||
-        novo[idx]?.quantidade === undefined ||
-        novo[idx]?.quantidade === null
-          ? 1
-          : novo[idx]?.quantidade,
       custo: Number.isFinite(Number(custo)) ? Number(custo) : 0,
     };
 
@@ -729,7 +705,7 @@ export const CompositionSection: React.FC<CompositionSectionProps> = ({
         codigo: "",
         produto: "",
         descricao: "",
-        quantidade: 1,
+        quantidade: "",
         custo: 0,
       },
     ]);
