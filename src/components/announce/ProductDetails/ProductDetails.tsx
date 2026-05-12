@@ -124,7 +124,38 @@ const normalizeVariation = (variation: any) => {
     valor: getField(variation, "valor", "id_var", "ID Var"),
 
     composicao: composicaoExistente ?? buildComposicaoFromAnuncio(variation),
-    custoTotal: getField(variation, "custoTotal", "custo_total") || 0,
+
+    custoTotal: getField(
+      variation,
+      "custoTotal",
+      "custo_total",
+      "custo",
+      "Custo"
+    ) || 0,
+
+    custo_total: getField(
+      variation,
+      "custo_total",
+      "custoTotal",
+      "custo",
+      "Custo"
+    ) || 0,
+
+    custo: getField(
+      variation,
+      "custo",
+      "Custo",
+      "custoTotal",
+      "custo_total"
+    ) || 0,
+
+    Custo: getField(
+      variation,
+      "Custo",
+      "custo",
+      "custoTotal",
+      "custo_total"
+    ) || 0,
   };
 };
 
@@ -133,10 +164,11 @@ export default function ProductDetails() {
   const searchParams = useSearchParams();
 
   const id = searchParams.get("id") || undefined;
+  const lojaParam = searchParams.get("loja");
 
   const lojaCodigo = useMemo(() => {
-    return lojaNomeToCodigo(searchParams.get("loja")) ?? "PK";
-  }, [searchParams]);
+    return lojaNomeToCodigo(lojaParam) ?? "PK";
+  }, [lojaParam]);
 
   const loadingBarRef = useRef<any>(null);
   const variacoesLoadedKeyRef = useRef<string>("");
@@ -158,6 +190,23 @@ export default function ProductDetails() {
   } = editor as any;
 
   const produtoTela = produto ?? {};
+
+  /**
+   * IMPORTANTE:
+   * Valores estáveis para evitar que a busca das variações rode de novo
+   * a cada alteração em qualquer campo do produto.
+   */
+  const produtoId = useMemo(() => {
+    return getField(produtoTela, "ID", "id");
+  }, [produtoTela?.ID, produtoTela?.id]);
+
+  const lojaRealProduto = useMemo(() => {
+    return (
+      normalizeLoja(getField(produtoTela, "Loja", "loja")) ||
+      normalizeLoja(lojaParam) ||
+      lojaCodigo
+    );
+  }, [produtoTela?.Loja, produtoTela?.loja, lojaParam, lojaCodigo]);
 
   const tituloPagina =
     produtoTela?.nome?.trim?.() ||
@@ -185,31 +234,26 @@ export default function ProductDetails() {
 
   useEffect(() => {
     if (!isEditing) return;
-    if (!produto) return;
     if (loading) return;
-
-    const produtoId = getField(produto, "ID", "id");
-
-    const lojaReal =
-      normalizeLoja(getField(produto, "Loja", "loja")) ||
-      normalizeLoja(searchParams.get("loja")) ||
-      lojaCodigo;
-
     if (!produtoId) return;
-    if (!lojaReal) return;
+    if (!lojaRealProduto) return;
 
-    const loadKey = `${lojaReal}-${produtoId}`;
+    const loadKey = `${lojaRealProduto}-${produtoId}`;
 
     if (variacoesLoadedKeyRef.current === loadKey) return;
 
     variacoesLoadedKeyRef.current = loadKey;
 
+    let cancelled = false;
+
     const carregarVariacoes = async () => {
       try {
         const { data, error } = await supabase.rpc("get_variacoes_anuncio", {
-          p_loja: lojaReal,
+          p_loja: lojaRealProduto,
           p_id: Number(produtoId),
         });
+
+        if (cancelled) return;
 
         if (error) {
           console.error("Erro ao buscar variações do anúncio:", error);
@@ -224,19 +268,25 @@ export default function ProductDetails() {
           ...p,
 
           // mantém a loja real do anúncio
-          loja: normalizeLoja(getField(p, "loja", "Loja")) || lojaReal,
-          Loja: normalizeLoja(getField(p, "Loja", "loja")) || lojaReal,
+          loja: normalizeLoja(getField(p, "loja", "Loja")) || lojaRealProduto,
+          Loja: normalizeLoja(getField(p, "Loja", "loja")) || lojaRealProduto,
 
           variacoes,
           tipo_anuncio: variacoes.length > 0 ? "variacoes" : p?.tipo_anuncio,
         }));
       } catch (error) {
-        console.error("Erro inesperado ao carregar variações:", error);
+        if (!cancelled) {
+          console.error("Erro inesperado ao carregar variações:", error);
+        }
       }
     };
 
     carregarVariacoes();
-  }, [isEditing, produto, loading, lojaCodigo, searchParams, setProduto]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditing, loading, produtoId, lojaRealProduto, setProduto]);
 
   const { handleSave, saving } = useAnuncioActions();
 

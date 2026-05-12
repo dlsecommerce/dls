@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { usePrecificacao } from "@/hooks/usePrecificacao";
 import { useSearchParams } from "next/navigation";
@@ -8,13 +8,13 @@ import { useSearchParams } from "next/navigation";
 export interface Anuncio {
   /**
    * ✅ ID do anúncio no banco (coluna "ID").
-   * Mantemos como string para evitar NaN / inconsistências (IDs às vezes vêm como texto).
+   * Mantemos como string para evitar NaN / inconsistências.
    */
   id: string;
 
   /**
    * ✅ CONTRATO DO FRONT:
-   * - UI e estado React trabalham com "PK" | "SB"
+   * UI e estado React trabalham com "PK" | "SB".
    */
   loja: "PK" | "SB";
 
@@ -31,9 +31,6 @@ export interface Anuncio {
   largura: number | null;
   comprimento: number | null;
 
-  /**
-   * ✅ NOVO PADRÃO DE VARIAÇÕES
-   */
   total_variacoes?: number;
   variacoes?: any[];
 
@@ -48,12 +45,48 @@ interface CustoRow {
   custo?: number | string;
 }
 
+const ANUNCIO_SELECT = `
+  "ID",
+  "Loja",
+  "ID Bling",
+  "ID Tray",
+  "ID Var",
+  "Referência",
+  "Nome",
+  "Marca",
+  "Categoria",
+  "Peso",
+  "Altura",
+  "Largura",
+  "Comprimento",
+  "Código 1",
+  "Quantidade 1",
+  "Código 2",
+  "Quantidade 2",
+  "Código 3",
+  "Quantidade 3",
+  "Código 4",
+  "Quantidade 4",
+  "Código 5",
+  "Quantidade 5",
+  "Código 6",
+  "Quantidade 6",
+  "Código 7",
+  "Quantidade 7",
+  "Código 8",
+  "Quantidade 8",
+  "Código 9",
+  "Quantidade 9",
+  "Código 10",
+  "Quantidade 10"
+`;
+
 // =========================
 // helpers de número BR
 // =========================
 export const parseValorBR = (v: string | number | null | undefined): number => {
   if (v === null || v === undefined || v === "") return 0;
-  if (typeof v === "number") return v;
+  if (typeof v === "number") return Number.isFinite(v) ? v : 0;
 
   let str = String(v).trim();
   str = str.replace(/[^\d.,-]/g, "");
@@ -74,11 +107,12 @@ export const parseValorBR = (v: string | number | null | undefined): number => {
   }
 
   const num = parseFloat(str);
-  return isNaN(num) ? 0 : num;
+  return Number.isFinite(num) ? num : 0;
 };
 
 export const formatValorBR = (v: number | string): string => {
   if (v === null || v === undefined || isNaN(Number(v))) return "0,00";
+
   return Number(v).toLocaleString("pt-BR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -90,8 +124,10 @@ export const formatValorBR = (v: number | string): string => {
 // =========================
 export const inferirOD = (referencia?: string | null): number => {
   const ref = (referencia || "").trim().toUpperCase();
+
   if (ref.startsWith("PAI")) return 1;
   if (ref.startsWith("VAR")) return 2;
+
   return 3;
 };
 
@@ -109,31 +145,53 @@ export const isProdutoVariacao = (referencia?: string | null): boolean => {
     .startsWith("VAR");
 };
 
+const uniqueCleanCodes = (codigos: string[]) => {
+  return Array.from(
+    new Set(
+      codigos
+        .map((c) => String(c || "").trim())
+        .filter(Boolean)
+    )
+  );
+};
+
 // =========================
 // ler e adicionar custos
 // =========================
 async function fetchOrAddCustos(
-  codigos: string[]
+  codigosInput: string[]
 ): Promise<Record<string, number>> {
+  const codigos = uniqueCleanCodes(codigosInput);
+
   if (codigos.length === 0) return {};
 
-  // 🔹 Busca custos existentes
-  const { data, error } = await supabase
-    .from("custos")
-    .select("*")
-    .in("Código", codigos);
-
-  let rows: CustoRow[] = data || [];
-
-  // 🔁 Se não achar na coluna "Código", tenta "Codigo"
-  if (error || rows.length === 0) {
-    const alt = await supabase.from("custos").select("*").in("Codigo", codigos);
-    if (!alt.error && alt.data) rows = alt.data as any;
-  }
-
-  // 🔹 Mapeia os custos encontrados
   const map: Record<string, number> = {};
   const codigosEncontrados = new Set<string>();
+
+  /**
+   * ✅ Mais rápido que select("*"):
+   * buscamos só as colunas necessárias.
+   */
+  const { data, error } = await supabase
+    .from("custos")
+    .select('"Código", "Custo Atual", "Produto"')
+    .in("Código", codigos);
+
+  let rows: CustoRow[] = Array.isArray(data) ? (data as any) : [];
+
+  /**
+   * Fallback para bases antigas que possam ter "Codigo".
+   */
+  if (error || rows.length === 0) {
+    const alt = await supabase
+      .from("custos")
+      .select('"Codigo", "Custo_Atual"')
+      .in("Codigo", codigos);
+
+    if (!alt.error && Array.isArray(alt.data)) {
+      rows = alt.data as any;
+    }
+  }
 
   for (const r of rows) {
     const codigo = (r.Código || r.Codigo || "").toString().trim();
@@ -141,12 +199,11 @@ async function fetchOrAddCustos(
     const custoNum = parseValorBR(custoRaw as any);
 
     if (codigo) {
-      map[codigo] = isNaN(custoNum) ? 0 : custoNum;
+      map[codigo] = Number.isFinite(custoNum) ? custoNum : 0;
       codigosEncontrados.add(codigo);
     }
   }
 
-  // 🔹 Identifica códigos que não existem na tabela "custos"
   const novosCodigos = codigos.filter((c) => !codigosEncontrados.has(c));
 
   if (novosCodigos.length > 0) {
@@ -155,26 +212,30 @@ async function fetchOrAddCustos(
       "Custo Atual": 0,
     }));
 
-    // 🔹 Insere novos custos no Supabase
-    const { error: insertError } = await supabase.from("custos").insert(novos);
-    if (insertError)
-      console.warn("⚠️ Erro ao inserir novos custos:", insertError);
-    else
-      console.info(
-        `✅ Custos criados para códigos: ${novosCodigos.join(", ")}`
-      );
+    /**
+     * ✅ upsert evita erro se outro processo criou o custo ao mesmo tempo.
+     */
+    const { error: insertError } = await supabase
+      .from("custos")
+      .upsert(novos, {
+        onConflict: "Código",
+        ignoreDuplicates: true,
+      });
 
-    // Adiciona os novos ao map (com custo 0)
-    novosCodigos.forEach((c) => (map[c] = 0));
+    if (insertError) {
+      console.warn("⚠️ Erro ao inserir novos custos:", insertError);
+    }
+
+    novosCodigos.forEach((c) => {
+      if (map[c] === undefined) map[c] = 0;
+    });
   }
 
   return map;
 }
 
 // ===========================================================
-// ✅ NORMALIZAÇÃO DE LOJA (CENTRALIZADA)
-// - Aceita: "PK"/"SB" OU "Pikot Shop"/"Sóbaquetas"/"Sobaquetas" (com/sem acento)
-// - Retorna: "PK" | "SB" | null
+// ✅ NORMALIZAÇÃO DE LOJA
 // ===========================================================
 export function lojaNomeToCodigo(
   value: string | null | undefined
@@ -193,23 +254,17 @@ export function lojaNomeToCodigo(
   return null;
 }
 
-// ===========================================================
-// ✅ CONVERSÃO PARA O NOME (apenas se algum ponto do app precisar exibir)
-// - Recebe: "PK" | "SB"
-// - Retorna: "Pikot Shop" | "Sóbaquetas" | null
-// ===========================================================
 export function lojaCodigoToNome(
   codigo: "PK" | "SB" | null | undefined
 ): "Pikot Shop" | "Sóbaquetas" | null {
   if (codigo === "PK") return "Pikot Shop";
   if (codigo === "SB") return "Sóbaquetas";
+
   return null;
 }
 
 // ===========================================================
-// ✅ NOVO PADRÃO: buscar variações de um anúncio pai
-// - Usa a função SQL public.get_variacoes_anuncio(p_loja, p_id)
-// - Retorna [] se não for PAI ou se der erro
+// ✅ Buscar variações manualmente quando necessário
 // ===========================================================
 async function fetchVariacoesDoPai(
   lojaCodigo: "PK" | "SB",
@@ -219,6 +274,7 @@ async function fetchVariacoesDoPai(
   if (!isProdutoPai(referencia)) return [];
 
   const idNumber = Number(idPai);
+
   if (!Number.isFinite(idNumber) || idNumber <= 0) return [];
 
   const { data, error } = await supabase.rpc("get_variacoes_anuncio", {
@@ -242,15 +298,105 @@ async function fetchVariacoesDoPai(
     }
   }
 
-  return Array.isArray(data) ? data : [];
+  return [];
 }
+
+const montarComposicaoInicial = (row: any) => {
+  const compTmp: Array<{
+    codigo: string;
+    quantidade: string;
+    custo: number;
+  }> = [];
+
+  for (let i = 1; i <= 10; i++) {
+    const codigo = row[`Código ${i}`];
+    const quantidade = row[`Quantidade ${i}`];
+
+    if (String(codigo || "").trim()) {
+      compTmp.push({
+        codigo: String(codigo).trim(),
+        quantidade:
+          !quantidade || quantidade === ""
+            ? "1"
+            : String(quantidade).replace(".", ","),
+        custo: 0,
+      });
+    }
+  }
+
+  return compTmp;
+};
+
+const montarProdutoFromRow = (
+  row: any,
+  lojaCodigo: "PK" | "SB"
+): Anuncio => {
+  const referencia = row["Referência"] ?? null;
+  const odInferido = inferirOD(referencia);
+
+  return {
+    id: String(row["ID"] ?? "").trim(),
+
+    loja: lojaCodigo,
+    Loja: lojaCodigo,
+
+    od: odInferido,
+    OD: odInferido,
+
+    id_bling: row["ID Bling"] ?? null,
+    "ID Bling": row["ID Bling"] ?? null,
+
+    id_tray: row["ID Tray"] ?? null,
+    "ID Tray": row["ID Tray"] ?? null,
+
+    id_var: row["ID Var"] ?? null,
+    "ID Var": row["ID Var"] ?? null,
+
+    referencia,
+    Referencia: referencia,
+    "Referência": referencia,
+    sku: referencia,
+
+    nome: row["Nome"] ?? null,
+    Nome: row["Nome"] ?? null,
+
+    marca: row["Marca"] ?? null,
+    Marca: row["Marca"] ?? null,
+
+    categoria: row["Categoria"] ?? null,
+    Categoria: row["Categoria"] ?? null,
+
+    peso: parseValorBR(row["Peso"]),
+    Peso: parseValorBR(row["Peso"]),
+
+    altura: parseValorBR(row["Altura"]),
+    Altura: parseValorBR(row["Altura"]),
+
+    largura: parseValorBR(row["Largura"]),
+    Largura: parseValorBR(row["Largura"]),
+
+    comprimento: parseValorBR(row["Comprimento"]),
+    Comprimento: parseValorBR(row["Comprimento"]),
+
+    /**
+     * ✅ Não carregamos variações automaticamente aqui.
+     * O ProductDetails já faz isso de forma otimizada para evitar busca duplicada.
+     */
+    total_variacoes: 0,
+    variacoes: [],
+  };
+};
 
 /**
  * 🔧 Hook responsável por carregar e editar anúncios conforme a loja.
- * - Aceita lojaParam em vários formatos (?loja=PK, ?loja=Pikot%20Shop, etc.)
- * - Mantém produto.loja sempre como "PK" | "SB" (consistente com a UI)
- * - NOVO PADRÃO:
- *   - Se o anúncio for PAI -, carrega suas variações via get_variacoes_anuncio
+ *
+ * Otimizações:
+ * - Não usa select("*").
+ * - Não busca variações automaticamente aqui para evitar duplicidade.
+ * - Mostra o produto assim que o anúncio chega.
+ * - Busca custos depois e atualiza a composição.
+ * - Deduplica códigos antes de consultar a tabela custos.
+ * - Evita execução duplicada no Strict Mode/React.
  */
 export function useAnuncioEditor(id?: string) {
   const [produto, setProduto] = useState<Anuncio | null>(null);
@@ -262,8 +408,23 @@ export function useAnuncioEditor(id?: string) {
   const params = useSearchParams();
   const lojaParam = params.get("loja");
 
+  const lojaCodigo = useMemo(() => {
+    return lojaNomeToCodigo(lojaParam);
+  }, [lojaParam]);
+
+  const loadingKeyRef = useRef<string>("");
+  const mountedRef = useRef(true);
+
   const { composicao, setComposicao, custoTotal, setCalculo, setAcrescimos } =
     usePrecificacao();
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const carregarVariacoes = useCallback(
     async (
@@ -271,10 +432,11 @@ export function useAnuncioEditor(id?: string) {
       idParam?: string | number,
       referenciaParam?: string | null
     ) => {
-      const lojaCodigo = lojaCodigoParam ?? lojaNomeToCodigo(lojaParam);
+      const lojaFinal = lojaCodigoParam ?? lojaCodigo;
       const idFinal = idParam ?? id;
+      const referenciaFinal = referenciaParam ?? produto?.referencia;
 
-      if (!lojaCodigo || !idFinal) {
+      if (!lojaFinal || !idFinal) {
         setVariacoes([]);
         return [];
       }
@@ -283,10 +445,12 @@ export function useAnuncioEditor(id?: string) {
 
       try {
         const lista = await fetchVariacoesDoPai(
-          lojaCodigo,
+          lojaFinal,
           idFinal,
-          referenciaParam ?? produto?.referencia
+          referenciaFinal
         );
+
+        if (!mountedRef.current) return [];
 
         setVariacoes(lista);
 
@@ -296,115 +460,90 @@ export function useAnuncioEditor(id?: string) {
                 ...prev,
                 total_variacoes: lista.length,
                 variacoes: lista,
+                tipo_anuncio:
+                  lista.length > 0 ? "variacoes" : prev?.tipo_anuncio,
               }
             : prev
         );
 
         return lista;
       } finally {
-        setLoadingVariacoes(false);
+        if (mountedRef.current) {
+          setLoadingVariacoes(false);
+        }
       }
     },
-    [id, lojaParam, produto?.referencia]
+    [id, lojaCodigo, produto?.referencia]
   );
 
   // ===========================================================
   // 🔹 CARREGAR ANÚNCIO
   // ===========================================================
   const carregarAnuncio = useCallback(async () => {
-    if (!id || !lojaParam) return;
+    if (!id || !lojaCodigo) return;
+
+    const idLimpo = String(id).trim();
+    const loadKey = `${lojaCodigo}-${idLimpo}`;
+
+    /**
+     * ✅ Evita chamadas duplicadas em renderizações próximas/Strict Mode.
+     */
+    if (loadingKeyRef.current === loadKey) return;
+
+    loadingKeyRef.current = loadKey;
     setLoading(true);
 
     try {
-      const lojaCodigo = lojaNomeToCodigo(lojaParam);
-      if (!lojaCodigo) return;
-
       const tabela = lojaCodigo === "PK" ? "anuncios_pk" : "anuncios_sb";
 
-      // 🔹 Busca o anúncio
-      const { data, error } = await supabase
+      const { data: row, error } = await supabase
         .from(tabela)
-        .select("*")
-        .eq("ID", String(id).trim())
+        .select(ANUNCIO_SELECT)
+        .eq("ID", idLimpo)
         .eq("Loja", lojaCodigo)
-        .limit(1);
+        .maybeSingle();
+
+      if (!mountedRef.current) return;
 
       if (error) {
         console.error("❌ Erro ao buscar anúncio:", error);
-        return;
-      }
-
-      if (!data || data.length === 0) {
-        console.warn(
-          "⚠️ Nenhum dado encontrado para ID:",
-          id,
-          "Loja:",
-          lojaCodigo
-        );
         setProduto(null);
         setVariacoes([]);
         return;
       }
 
-      const row = data[0];
-      const odInferido = inferirOD(row["Referência"]);
+      if (!row) {
+        console.warn(
+          "⚠️ Nenhum dado encontrado para ID:",
+          idLimpo,
+          "Loja:",
+          lojaCodigo
+        );
 
-      const listaVariacoes = await fetchVariacoesDoPai(
-        lojaCodigo,
-        row["ID"],
-        row["Referência"]
-      );
-
-      setVariacoes(listaVariacoes);
-
-      setProduto({
-        // ✅ FIX: sempre string (coluna "ID" no banco)
-        id: String(row["ID"] ?? "").trim(),
-        loja: lojaCodigo, // ✅ sempre PK/SB no estado
-        od: odInferido,
-        id_bling: row["ID Bling"] ?? null,
-        id_tray: row["ID Tray"] ?? null,
-        id_var: row["ID Var"] ?? null,
-        referencia: row["Referência"] ?? null,
-        nome: row["Nome"] ?? null,
-        marca: row["Marca"] ?? null,
-        categoria: row["Categoria"] ?? null,
-        peso: parseValorBR(row["Peso"]),
-        altura: parseValorBR(row["Altura"]),
-        largura: parseValorBR(row["Largura"]),
-        comprimento: parseValorBR(row["Comprimento"]),
-
-        // ✅ NOVO PADRÃO
-        total_variacoes: listaVariacoes.length,
-        variacoes: listaVariacoes,
-      });
-
-      // 🔹 Monta composição (custo como number puro)
-      const compTmp: Array<{
-        codigo: string;
-        quantidade: string;
-        custo: number;
-      }> = [];
-
-      for (let i = 1; i <= 10; i++) {
-        const codigo = row[`Código ${i}`];
-        const quantidade = row[`Quantidade ${i}`];
-
-        if (codigo) {
-          compTmp.push({
-            codigo: String(codigo).trim(),
-            quantidade:
-              !quantidade || quantidade === ""
-                ? "1"
-                : String(quantidade).replace(".", ","),
-            custo: 0,
-          });
-        }
+        setProduto(null);
+        setVariacoes([]);
+        setComposicao([]);
+        return;
       }
 
-      // 🔹 Busca custos e adiciona novos se não existirem
+      /**
+       * ✅ Produto aparece na tela assim que o anúncio é encontrado.
+       * Os custos entram logo em seguida.
+       */
+      const produtoBase = montarProdutoFromRow(row, lojaCodigo);
+
+      setProduto(produtoBase);
+      setVariacoes([]);
+
+      const compTmp = montarComposicaoInicial(row);
+
+      setComposicao(compTmp as any);
+      setAcrescimos((prev) => ({ ...prev, acrescimo: 0 }));
+
       const codigos = compTmp.map((c) => c.codigo);
       const custosMap = await fetchOrAddCustos(codigos);
+
+      if (!mountedRef.current) return;
 
       const compFinal = compTmp.map((c) => ({
         ...c,
@@ -412,9 +551,7 @@ export function useAnuncioEditor(id?: string) {
       }));
 
       setComposicao(compFinal as any);
-      setAcrescimos((prev) => ({ ...prev, acrescimo: 0 }));
 
-      // 🔹 Calcula custo total
       const total = compFinal.reduce(
         (sum, item) => sum + parseValorBR(item.quantidade) * Number(item.custo),
         0
@@ -426,34 +563,49 @@ export function useAnuncioEditor(id?: string) {
         frete: prev?.frete ?? "0",
       }));
     } finally {
-      setLoading(false);
+      if (mountedRef.current) {
+        setLoading(false);
+      }
+
+      /**
+       * Permite recarregar manualmente o mesmo anúncio se necessário.
+       */
+      loadingKeyRef.current = "";
     }
-  }, [id, lojaParam, setComposicao, setAcrescimos, setCalculo]);
+  }, [
+    id,
+    lojaCodigo,
+    setComposicao,
+    setAcrescimos,
+    setCalculo,
+  ]);
 
   useEffect(() => {
-    if (id && lojaParam) carregarAnuncio();
-  }, [id, lojaParam, carregarAnuncio]);
+    if (id && lojaCodigo) {
+      carregarAnuncio();
+    }
+  }, [id, lojaCodigo, carregarAnuncio]);
 
-  // ===========================================================
-  // 🔁 RETORNO
-  // ===========================================================
   return {
     produto,
     setProduto,
+
     composicao,
     setComposicao,
     custoTotal,
+
     loading,
     carregarAnuncio,
+
     lojaCodigoToNome,
     lojaNomeToCodigo,
 
-    // ✅ NOVO PADRÃO DE VARIAÇÕES
     variacoes,
     setVariacoes,
     totalVariacoes: variacoes.length,
     loadingVariacoes,
     carregarVariacoes,
+
     isProdutoPai,
     isProdutoVariacao,
   };
