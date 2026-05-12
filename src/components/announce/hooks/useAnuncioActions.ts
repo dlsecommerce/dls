@@ -165,33 +165,69 @@ function criarReferenciaUniversal(
   return `${tipo}-${base}`;
 }
 
+function normalizarQuantidadeComposicao(value: any, temCodigo: boolean) {
+  const qtdNum = parseValorBR(value);
+
+  if (!isNaN(qtdNum) && qtdNum > 0) return qtdNum;
+
+  return temCodigo ? 1 : null;
+}
+
+function normalizarCustoComposicao(value: any) {
+  const custoNum = parseValorBR(value);
+
+  if (!isNaN(custoNum) && custoNum > 0) return custoNum;
+
+  return null;
+}
+
 function montarCamposComposicao(composicao: any[], isInsert: boolean) {
   const camposComposicao: Record<string, any> = {};
 
-  if (isInsert) {
-    for (let i = 1; i <= 10; i++) {
-      camposComposicao[`Código ${i}`] = null;
-      camposComposicao[`Quantidade ${i}`] = null;
-    }
+  /**
+   * IMPORTANTE:
+   * Sempre limpamos os 10 campos.
+   * Antes, no update, se uma variação removesse um item de custo,
+   * campos antigos podiam continuar no banco.
+   */
+  for (let i = 1; i <= 10; i++) {
+    camposComposicao[`Código ${i}`] = null;
+    camposComposicao[`Quantidade ${i}`] = null;
+    camposComposicao[`Custo ${i}`] = null;
   }
 
-  composicao?.slice?.(0, 10)?.forEach?.((c: any, i: number) => {
+  const itens = Array.isArray(composicao) ? composicao.slice(0, 10) : [];
+
+  itens.forEach((c: any, i: number) => {
     const idx = i + 1;
 
-    const codigo = normalizeStr(c?.codigo);
-    const qtdNum = parseValorBR(c?.quantidade);
+    const codigo = normalizeStr(
+      c?.codigo ??
+        c?.["Código"] ??
+        c?.Codigo ??
+        c?.cod ??
+        ""
+    );
 
-    if (codigo) {
-      camposComposicao[`Código ${idx}`] = codigo;
-    } else if (isInsert) {
-      camposComposicao[`Código ${idx}`] = null;
-    }
+    const quantidade = normalizarQuantidadeComposicao(
+      c?.quantidade ??
+        c?.Quantidade ??
+        c?.qtd ??
+        "",
+      Boolean(codigo)
+    );
 
-    if (!isNaN(qtdNum) && qtdNum > 0) {
-      camposComposicao[`Quantidade ${idx}`] = qtdNum;
-    } else if (isInsert) {
-      camposComposicao[`Quantidade ${idx}`] = null;
-    }
+    const custo = normalizarCustoComposicao(
+      c?.custo ??
+        c?.Custo ??
+        c?.custo_atual ??
+        c?.["Custo Atual"] ??
+        ""
+    );
+
+    camposComposicao[`Código ${idx}`] = codigo;
+    camposComposicao[`Quantidade ${idx}`] = quantidade;
+    camposComposicao[`Custo ${idx}`] = custo;
   });
 
   return camposComposicao;
