@@ -6,7 +6,6 @@ import { Save, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import InfoGeraisBox from "./InfoGeraisBox";
-import MedidasBox from "./MedidasBox";
 import MarketplaceSection from "./MarketplaceSection";
 import CalculoPrecoBox from "./CalculoPrecoBox";
 import { CompositionSection } from "@/components/announce/ProductDetails/CompositionSection";
@@ -251,12 +250,6 @@ export const VariationMarketplaceModal = ({
                     produto={variation}
                     saving={false}
                     handleClearLocal={handleClearLocal}
-                  />
-
-                  <MedidasBox
-                    produto={variation}
-                    setProduto={setVariation}
-                    loading={false}
                   />
                 </aside>
               </div>

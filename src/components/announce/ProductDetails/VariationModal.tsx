@@ -42,11 +42,6 @@ const normalizarReferenciaAnuncio = (
     .replace(/\s+/g, " ")
     .trim();
 
-  // Remove prefixo PAI/VAR em qualquer formato:
-  // PAI-VDR...
-  // VAR-VDR...
-  // PAI - VDR...
-  // VAR VDR...
   while (/^\s*(PAI|VAR)\s*[-_\s]*/i.test(ref)) {
     ref = ref.replace(/^\s*(PAI|VAR)\s*[-_\s]*/i, "").trim();
   }
@@ -67,26 +62,10 @@ const normalizarReferenciaAnuncio = (
 
   const marca = partes[0];
 
-  /**
-   * Caso com marca + 1 código:
-   * VDR 6001800010
-   * VDR-6001800010
-   *
-   * Resultado:
-   * VAR-VDR-6001800010
-   */
   if (partes.length === 2) {
     return `${tipo}-${marca}-${partes[1]}`;
   }
 
-  /**
-   * Caso com marca + vários códigos:
-   * VDR 6001800020 6001800010
-   * VDR-6001800020_6001800010
-   *
-   * Resultado:
-   * PAI-VDR-6001800020_6001800010
-   */
   if (partes.length >= 3) {
     return `${tipo}-${marca}-${partes.slice(1).join("_")}`;
   }

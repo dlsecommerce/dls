@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   Table as ShadTable,
   TableBody,
@@ -292,8 +291,6 @@ function RowsBody({
   openEditor,
   handleEditFull,
 }: TableRowsProps) {
-  const router = useRouter();
-
   const lojaLabel = (loja: string) =>
     loja === "PK" ? "Pikot" : loja === "SB" ? "Sóbaq." : loja;
 
@@ -452,9 +449,6 @@ function RowsBody({
                 type="button"
                 onClick={() => {
                   handleEditFull(row);
-                  router.push(
-                    `/dashboard/marketplaces/tray/details?id=${row.ID}&loja=${row.Loja}`
-                  );
                 }}
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-neutral-700 text-white active:scale-[0.98]"
               >
@@ -480,7 +474,10 @@ function RowsBody({
                     <button
                       type="button"
                       onClick={() =>
-                        handleCopy(String(row["ID Tray"]), `tray-mobile-${row.ID}`)
+                        handleCopy(
+                          String(row["ID Tray"]),
+                          `tray-mobile-${row.ID}`
+                        )
                       }
                       className="shrink-0 cursor-pointer"
                     >
@@ -627,7 +624,9 @@ function RowsBody({
 
             <TableCell className={BODY_CELL}>
               <div className="group flex min-w-0 items-center justify-center gap-0.5">
-                <span className="min-w-0 truncate">{row["ID Tray"] || "-"}</span>
+                <span className="min-w-0 truncate">
+                  {row["ID Tray"] || "-"}
+                </span>
 
                 {row["ID Tray"] && (
                   <button
@@ -688,7 +687,9 @@ function RowsBody({
             <CellEditable row={row} field="Marketing" suffix="%" />
 
             <TableCell className={`${BODY_CELL} text-white`}>
-              <span className="block min-w-0 truncate">R$ {toBR(row.Custo)}</span>
+              <span className="block min-w-0 truncate">
+                R$ {toBR(row.Custo)}
+              </span>
             </TableCell>
 
             <TableCell className={`${BODY_CELL} font-semibold text-green-400`}>
@@ -723,9 +724,6 @@ function RowsBody({
                 type="button"
                 onClick={() => {
                   handleEditFull(row);
-                  router.push(
-                    `/dashboard/marketplaces/tray/details?id=${row.ID}&loja=${row.Loja}`
-                  );
                 }}
                 className="inline-flex cursor-pointer items-center justify-end text-white transition hover:text-[#1A8CEB]"
               >

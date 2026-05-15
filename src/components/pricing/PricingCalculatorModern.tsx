@@ -109,7 +109,7 @@ export default function PricingCalculatorModern() {
   // =====================
   const [calculoLoja, setCalculoLoja] = useState<Calculo>({
     desconto: "",
-    imposto: "12",
+    imposto: "14",
     margem: "15",
     frete: "",
     comissao: "6",
@@ -119,7 +119,7 @@ export default function PricingCalculatorModern() {
 
   const [calculoShopee, setCalculoShopee] = useState<Calculo>({
     desconto: "",
-    imposto: "12",
+    imposto: "14",
     margem: "15",
     frete: "4",
     comissao: "20",
@@ -129,7 +129,7 @@ export default function PricingCalculatorModern() {
 
   const [calculoMagalu, setCalculoMagalu] = useState<Calculo>({
     desconto: "",
-    imposto: "12",
+    imposto: "14",
     margem: "10",
     frete: "",
     comissao: "20",
@@ -140,7 +140,7 @@ export default function PricingCalculatorModern() {
   const [calculoMarketplaceClassico, setCalculoMarketplaceClassico] =
     useState<Calculo>({
       desconto: "",
-      imposto: "12",
+      imposto: "14",
       margem: "15",
       frete: "",
       comissao: "11",
@@ -151,7 +151,7 @@ export default function PricingCalculatorModern() {
   const [calculoMarketplacePremium, setCalculoMarketplacePremium] =
     useState<Calculo>({
       desconto: "",
-      imposto: "12",
+      imposto: "14",
       margem: "15",
       frete: "",
       comissao: "16",
@@ -803,7 +803,7 @@ export default function PricingCalculatorModern() {
     let regras = {
       embalagem: "3",
       frete: "4",
-      imposto: "12",
+      imposto: "14",
       comissao: "20",
       margem: "15",
       marketing: "3",
@@ -813,7 +813,7 @@ export default function PricingCalculatorModern() {
       regras = {
         embalagem: "3",
         frete: "16",
-        imposto: "12",
+        imposto: "14",
         comissao: "14",
         margem: "15",
         marketing: "3",
@@ -822,7 +822,7 @@ export default function PricingCalculatorModern() {
       regras = {
         embalagem: "3",
         frete: "20",
-        imposto: "12",
+        imposto: "14",
         comissao: "14",
         margem: "15",
         marketing: "3",
@@ -831,7 +831,7 @@ export default function PricingCalculatorModern() {
       regras = {
         embalagem: "3",
         frete: "26",
-        imposto: "12",
+        imposto: "14",
         comissao: "14",
         margem: "15",
         marketing: "3",
@@ -899,7 +899,7 @@ export default function PricingCalculatorModern() {
 
         setCalculoLoja({
           desconto: "",
-          imposto: "12",
+          imposto: "14",
           margem: "15",
           frete: "",
           comissao: "6",
@@ -909,7 +909,7 @@ export default function PricingCalculatorModern() {
 
         setCalculoShopee({
           desconto: "",
-          imposto: "12",
+          imposto: "14",
           margem: "15",
           frete: "4",
           comissao: "20",
@@ -919,7 +919,7 @@ export default function PricingCalculatorModern() {
 
         setCalculoMagalu({
           desconto: "",
-          imposto: "12",
+          imposto: "14",
           margem: "10",
           frete: "",
           comissao: "20",
@@ -929,7 +929,7 @@ export default function PricingCalculatorModern() {
 
         setCalculoMarketplaceClassico({
           desconto: "",
-          imposto: "12",
+          imposto: "14",
           margem: "15",
           frete: "",
           comissao: "11",
@@ -939,7 +939,7 @@ export default function PricingCalculatorModern() {
 
         setCalculoMarketplacePremium({
           desconto: "",
-          imposto: "12",
+          imposto: "14",
           margem: "15",
           frete: "",
           comissao: "16",

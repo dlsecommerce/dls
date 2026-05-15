@@ -168,7 +168,11 @@ function buildOrSearchParts(tokens: string[]) {
 }
 
 function normalizeLojaCode(lojaRaw: unknown): "PK" | "SB" | null {
-  const s = String(lojaRaw ?? "").trim().toUpperCase();
+  const s = String(lojaRaw ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
 
   if (s === "PK" || s.startsWith("PK")) return "PK";
   if (s === "SB" || s.startsWith("SB")) return "SB";
@@ -596,8 +600,8 @@ export default function PricingTable() {
       let OD = 3;
       const ref = String(r.Referência || "").trim();
 
-      if (ref.startsWith("PAI -")) OD = 1;
-      else if (ref.startsWith("VAR -")) OD = 2;
+      if (ref.startsWith("PAI -") || ref.startsWith("PAI-")) OD = 1;
+      else if (ref.startsWith("VAR -") || ref.startsWith("VAR-")) OD = 2;
 
       return {
         ...r,
@@ -678,6 +682,44 @@ export default function PricingTable() {
     setCopiedId(key);
     setTimeout(() => setCopiedId(null), 1200);
   }, []);
+
+  const handleEditFull = useCallback(
+    (row: Row) => {
+      // Mesmo padrão da tela de anúncios:
+      // edit?id=13948&loja=Pikot%20Shop
+      // Aqui o id da URL é o ID interno/lógico da coluna "ID",
+      // não o "ID Tray" e não o UUID da linha.
+      const idParam = String((row as any).ID || "").trim();
+
+      const lojaCode = normalizeLojaCode((row as any).Loja);
+
+      const lojaParam =
+        lojaCode === "PK"
+          ? "Pikot Shop"
+          : lojaCode === "SB"
+          ? "Sóbaquetas"
+          : String((row as any).Loja || "").trim();
+
+      if (!idParam) {
+        console.error("❌ Sem ID interno para abrir marketplace:", row);
+        alert("Não foi possível abrir este anúncio: ID interno não encontrado.");
+        return;
+      }
+
+      if (!lojaParam) {
+        console.error("❌ Sem loja para abrir marketplace:", row);
+        alert("Não foi possível abrir este anúncio: loja não encontrada.");
+        return;
+      }
+
+      router.push(
+        `/dashboard/marketplaces/tray/edit?id=${encodeURIComponent(
+          idParam
+        )}&loja=${encodeURIComponent(lojaParam)}`
+      );
+    },
+    [router]
+  );
 
   const openEditor = useCallback(
     (row: Row, field: keyof Row, isMoney: boolean, e: React.MouseEvent) => {
@@ -1030,7 +1072,7 @@ export default function PricingTable() {
                       editedId={null}
                       handleCopy={handleCopy}
                       openEditor={openEditor}
-                      handleEditFull={() => {}}
+                      handleEditFull={handleEditFull}
                     />
                   </TableBody>
                 </Table>

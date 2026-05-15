@@ -246,7 +246,7 @@ const InfoGeraisBox = ({ produto, setProduto, loading }: any) => {
   }, [produto?.id_var, isEditing, setProduto, produto?.tipo_anuncio]);
 
   return (
-    <div className="mt-6 space-y-4">
+    <div className="space-y-4">
       <FormBlock
         number={1}
         title="Identificação"
