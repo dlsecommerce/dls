@@ -6,8 +6,6 @@ import { ArrowLeft, CheckCircle2 } from "lucide-react";
 
 import AnimatedNumber from "@/components/marketplaces/tray/details/AnimatedNumber";
 import CalculoPrecoBox from "@/components/marketplaces/tray/details/CalculoPrecoBox";
-import MedidasBox from "@/components/marketplaces/tray/details/MedidasBox";
-import InfoGeraisBox from "@/components/marketplaces/tray/details/InfoGeraisBox";
 import MarketplaceSection from "@/components/marketplaces/tray/details/MarketplaceSection";
 import { VariationMarketplaceSection } from "@/components/marketplaces/tray/details/VariationMarketplaceSection";
 
@@ -274,12 +272,6 @@ function PricingCalculatorMarketplaceInternal({
             </aside>
 
             <main className="min-w-0 space-y-4">
-              <InfoGeraisBox
-                produto={produtoTela}
-                setProduto={setProduto}
-                loading={loading}
-              />
-
               <MarketplaceSection
                 marketplaces={produtoTela?.marketplaces || []}
                 setMarketplaces={setMarketplaces}
@@ -295,12 +287,6 @@ function PricingCalculatorMarketplaceInternal({
                 produto={produtoTela}
                 saving={saving}
                 handleClearLocal={handleClearLocal}
-              />
-
-              <MedidasBox
-                produto={produtoTela}
-                setProduto={setProduto}
-                loading={loading}
               />
 
               <VariationMarketplaceSection
