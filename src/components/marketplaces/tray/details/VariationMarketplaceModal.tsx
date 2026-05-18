@@ -1,14 +1,24 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Save, X } from "lucide-react";
+import { X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import InfoGeraisBox from "./InfoGeraisBox";
 import MarketplaceSection from "./MarketplaceSection";
 import CalculoPrecoBox from "./CalculoPrecoBox";
 import { CompositionSection } from "@/components/announce/ProductDetails/CompositionSection";
+
+type CalculoLoja = {
+  desconto: string;
+  embalagem: string;
+  frete: string;
+  imposto: string;
+  margem: string;
+  comissao: string;
+  marketing: string;
+};
 
 type VariationMarketplaceModalProps = {
   open: boolean;
@@ -20,7 +30,245 @@ type VariationMarketplaceModalProps = {
   AnimatedNumber: React.ComponentType<{ value: number }>;
   isEditing: boolean;
   onClose: () => void;
-  onSave: () => void;
+  onSave: (variationAtualizada?: any) => void | Promise<void>;
+};
+
+const removerAcentos = (value: string) => {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+};
+
+const parseNumero = (value: any) => {
+  if (value === null || value === undefined || value === "") return 0;
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  let str = String(value).trim();
+
+  str = str.replace(/[^\d.,-]/g, "");
+
+  const temVirgula = str.includes(",");
+  const temPonto = str.includes(".");
+
+  if (temVirgula && temPonto) {
+    if (str.lastIndexOf(",") > str.lastIndexOf(".")) {
+      str = str.replace(/\./g, "");
+      str = str.replace(",", ".");
+    } else {
+      str = str.replace(/,/g, "");
+    }
+  } else if (temVirgula) {
+    str = str.replace(/\./g, "");
+    str = str.replace(",", ".");
+  }
+
+  const n = Number(str);
+
+  return Number.isFinite(n) ? n : 0;
+};
+
+const normalizarQuantidade = (value: any) => {
+  if (value === null || value === undefined || value === "") return 1;
+
+  const numero = parseNumero(value);
+
+  return numero > 0 ? numero : 1;
+};
+
+const normalizarComposicao = (composicao: any[]) => {
+  return (Array.isArray(composicao) ? composicao : []).map((item: any) => ({
+    ...item,
+    codigo: item?.codigo ?? item?.Codigo ?? item?.Código ?? "",
+    produto: item?.produto ?? item?.Produto ?? item?.descricao ?? "",
+    descricao: item?.descricao ?? item?.produto ?? item?.Produto ?? "",
+    quantidade: normalizarQuantidade(item?.quantidade ?? item?.Quantidade),
+    custo: parseNumero(item?.custo ?? item?.Custo),
+  }));
+};
+
+const calcCustoTotal = (composicao: any[]) => {
+  return normalizarComposicao(composicao).reduce((total, item) => {
+    const quantidade = normalizarQuantidade(item?.quantidade);
+    const custo = parseNumero(item?.custo);
+
+    return total + quantidade * custo;
+  }, 0);
+};
+
+const normalizarReferenciaMarketplace = (
+  referencia: string | null | undefined,
+  tipo: "PAI" | "VAR"
+) => {
+  let ref = removerAcentos(String(referencia || ""))
+    .trim()
+    .toUpperCase();
+
+  if (!ref) return "";
+
+  ref = ref
+    .replace(/[–—−]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  while (/^\s*(PAI|VAR)\s*[-_\s]*/i.test(ref)) {
+    ref = ref.replace(/^\s*(PAI|VAR)\s*[-_\s]*/i, "").trim();
+  }
+
+  ref = ref
+    .replace(/\s*-\s*/g, "-")
+    .replace(/\s*_\s*/g, "_")
+    .trim();
+
+  const partes = ref
+    .replace(/_/g, " ")
+    .replace(/-/g, " ")
+    .split(/\s+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (partes.length === 0) return "";
+
+  const marca = partes[0];
+
+  if (partes.length === 2) {
+    return `${tipo}-${marca}-${partes[1]}`;
+  }
+
+  if (partes.length >= 3) {
+    return `${tipo}-${marca}-${partes.slice(1).join("_")}`;
+  }
+
+  return `${tipo}-${ref.replace(/\s+/g, "")}`;
+};
+
+const getReferenciaVariation = (variation: any) => {
+  return (
+    variation?.referencia ??
+    variation?.Referencia ??
+    variation?.["Referência"] ??
+    variation?.sku ??
+    variation?.dados?.referencia ??
+    variation?.dados?.Referencia ??
+    variation?.dados?.["Referência"] ??
+    variation?.dados?.sku ??
+    ""
+  );
+};
+
+const getInitialCalculoLoja = (variation: any): CalculoLoja => {
+  return {
+    desconto: String(
+      variation?.calculoLoja?.desconto ??
+        variation?.desconto ??
+        variation?.Desconto ??
+        variation?.dados?.calculoLoja?.desconto ??
+        variation?.dados?.desconto ??
+        variation?.dados?.Desconto ??
+        ""
+    ),
+    embalagem: String(
+      variation?.calculoLoja?.embalagem ??
+        variation?.embalagem ??
+        variation?.Embalagem ??
+        variation?.dados?.calculoLoja?.embalagem ??
+        variation?.dados?.embalagem ??
+        variation?.dados?.Embalagem ??
+        ""
+    ),
+    frete: String(
+      variation?.calculoLoja?.frete ??
+        variation?.frete ??
+        variation?.Frete ??
+        variation?.dados?.calculoLoja?.frete ??
+        variation?.dados?.frete ??
+        variation?.dados?.Frete ??
+        ""
+    ),
+    imposto: String(
+      variation?.calculoLoja?.imposto ??
+        variation?.imposto ??
+        variation?.Imposto ??
+        variation?.dados?.calculoLoja?.imposto ??
+        variation?.dados?.imposto ??
+        variation?.dados?.Imposto ??
+        ""
+    ),
+    margem: String(
+      variation?.calculoLoja?.margem ??
+        variation?.margem ??
+        variation?.margem_lucro ??
+        variation?.["Margem de Lucro"] ??
+        variation?.dados?.calculoLoja?.margem ??
+        variation?.dados?.margem ??
+        variation?.dados?.margem_lucro ??
+        variation?.dados?.["Margem de Lucro"] ??
+        ""
+    ),
+    comissao: String(
+      variation?.calculoLoja?.comissao ??
+        variation?.comissao ??
+        variation?.Comissão ??
+        variation?.Comissao ??
+        variation?.dados?.calculoLoja?.comissao ??
+        variation?.dados?.comissao ??
+        variation?.dados?.Comissão ??
+        variation?.dados?.Comissao ??
+        ""
+    ),
+    marketing: String(
+      variation?.calculoLoja?.marketing ??
+        variation?.marketing ??
+        variation?.Marketing ??
+        variation?.dados?.calculoLoja?.marketing ??
+        variation?.dados?.marketing ??
+        variation?.dados?.Marketing ??
+        ""
+    ),
+  };
+};
+
+const sanitizeCalculoLoja = (calculoLoja: CalculoLoja): CalculoLoja => {
+  return {
+    desconto: String(calculoLoja.desconto ?? "").replace(/[^\d.,-]/g, ""),
+    embalagem: String(calculoLoja.embalagem ?? "").replace(/[^\d.,-]/g, ""),
+    frete: String(calculoLoja.frete ?? "").replace(/[^\d.,-]/g, ""),
+    imposto: String(calculoLoja.imposto ?? "").replace(/[^\d.,-]/g, ""),
+    margem: String(calculoLoja.margem ?? "").replace(/[^\d.,-]/g, ""),
+    comissao: String(calculoLoja.comissao ?? "").replace(/[^\d.,-]/g, ""),
+    marketing: String(calculoLoja.marketing ?? "").replace(/[^\d.,-]/g, ""),
+  };
+};
+
+const montarCamposPercentuaisParaSalvar = (calculoLoja: CalculoLoja) => {
+  return {
+    calculoLoja,
+
+    desconto: calculoLoja.desconto,
+    Desconto: calculoLoja.desconto,
+
+    embalagem: calculoLoja.embalagem,
+    Embalagem: calculoLoja.embalagem,
+
+    frete: calculoLoja.frete,
+    Frete: calculoLoja.frete,
+
+    imposto: calculoLoja.imposto,
+    Imposto: calculoLoja.imposto,
+
+    margem: calculoLoja.margem,
+    margem_lucro: calculoLoja.margem,
+    "Margem de Lucro": calculoLoja.margem,
+
+    comissao: calculoLoja.comissao,
+    Comissao: calculoLoja.comissao,
+    Comissão: calculoLoja.comissao,
+
+    marketing: calculoLoja.marketing,
+    Marketing: calculoLoja.marketing,
+  };
 };
 
 export const VariationMarketplaceModal = ({
@@ -35,7 +283,7 @@ export const VariationMarketplaceModal = ({
   onClose,
   onSave,
 }: VariationMarketplaceModalProps) => {
-  const [calculoLoja, setCalculoLoja] = useState({
+  const [calculoLoja, setCalculoLoja] = useState<CalculoLoja>({
     desconto: "",
     embalagem: "",
     frete: "",
@@ -45,9 +293,72 @@ export const VariationMarketplaceModal = ({
     marketing: "",
   });
 
-  const composicaoTela = Array.isArray(composicao) ? composicao : [];
+  const [savingLocal, setSavingLocal] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      onClose();
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [open, onClose]);
+
+  useEffect(() => {
+    if (!variation || !open) return;
+
+    setCalculoLoja(getInitialCalculoLoja(variation));
+  }, [variation, open]);
+
+  const composicaoTela = useMemo(() => {
+    return normalizarComposicao(Array.isArray(composicao) ? composicao : []);
+  }, [composicao]);
+
+  const custoTotalCalculado = useMemo(() => {
+    const custoDaComposicao = calcCustoTotal(composicaoTela);
+
+    if (custoDaComposicao > 0) return custoDaComposicao;
+
+    const custoInformado =
+      custoTotal ??
+      variation?.custoTotal ??
+      variation?.custo_total ??
+      variation?.custo ??
+      variation?.Custo ??
+      variation?.dados?.custoTotal ??
+      variation?.dados?.custo_total ??
+      variation?.dados?.custo ??
+      variation?.dados?.Custo ??
+      0;
+
+    return parseNumero(custoInformado);
+  }, [
+    composicaoTela,
+    custoTotal,
+    variation?.custoTotal,
+    variation?.custo_total,
+    variation?.custo,
+    variation?.Custo,
+    variation?.dados?.custoTotal,
+    variation?.dados?.custo_total,
+    variation?.dados?.custo,
+    variation?.dados?.Custo,
+  ]);
 
   const setMarketplaces = (value: any) => {
+    if (isEditing) return;
+
     if (typeof value === "function") {
       setVariation((p: any) => ({
         ...p,
@@ -64,41 +375,301 @@ export const VariationMarketplaceModal = ({
   };
 
   const precoLoja = useMemo(() => {
-    const custo = Number(
-      variation?.custoTotal || variation?.custo || custoTotal || 0
+    const custo = parseNumero(
+      custoTotalCalculado ||
+        variation?.custoTotal ||
+        variation?.custo_total ||
+        variation?.custo ||
+        variation?.Custo ||
+        variation?.dados?.custoTotal ||
+        variation?.dados?.custo_total ||
+        variation?.dados?.custo ||
+        variation?.dados?.Custo ||
+        0
     );
 
     if (!custo) return 0;
 
-    const parse = (v: any) => parseFloat(String(v).replace(",", ".")) || 0;
+    const calculoSeguro = sanitizeCalculoLoja(calculoLoja);
 
-    const d = parse(calculoLoja?.desconto) / 100;
-    const i = parse(calculoLoja?.imposto) / 100;
-    const m = parse(calculoLoja?.margem) / 100;
-    const c = parse(calculoLoja?.comissao) / 100;
-    const mk = parse(calculoLoja?.marketing) / 100;
-    const f = parse(calculoLoja?.frete);
+    const d = parseNumero(calculoSeguro.desconto) / 100;
+    const i = parseNumero(calculoSeguro.imposto) / 100;
+    const m = parseNumero(calculoSeguro.margem) / 100;
+    const c = parseNumero(calculoSeguro.comissao) / 100;
+    const mk = parseNumero(calculoSeguro.marketing) / 100;
+    const f = parseNumero(calculoSeguro.frete);
 
     const divisor = 1 - (i + m + c + mk);
+
     const preco = divisor > 0 ? (custo * (1 - d) + f + 2.5) / divisor : 0;
 
-    return isFinite(preco) ? preco : 0;
-  }, [variation?.custoTotal, variation?.custo, custoTotal, calculoLoja]);
+    return Number.isFinite(preco) ? preco : 0;
+  }, [
+    custoTotalCalculado,
+    variation?.custoTotal,
+    variation?.custo_total,
+    variation?.custo,
+    variation?.Custo,
+    variation?.dados?.custoTotal,
+    variation?.dados?.custo_total,
+    variation?.dados?.custo,
+    variation?.dados?.Custo,
+    calculoLoja,
+  ]);
 
   const handleClearLocal = () => {
+    setCalculoLoja({
+      desconto: "",
+      embalagem: "",
+      frete: "",
+      imposto: "",
+      margem: "",
+      comissao: "",
+      marketing: "",
+    });
+
+    if (isEditing) {
+      return;
+    }
+
     setVariation((p: any) => ({
       ...p,
       referencia: "",
+      Referencia: "",
+      "Referência": "",
+      sku: "",
+
       nome: "",
+      Nome: "",
+      titulo: "",
+
       marca: "",
+      Marca: "",
+
       categoria: "",
+      Categoria: "",
+
       peso: "",
+      Peso: "",
+
       altura: "",
+      Altura: "",
+
       largura: "",
+      Largura: "",
+
       comprimento: "",
+      Comprimento: "",
+
+      custoTotal: 0,
+      custo_total: 0,
+      custo: 0,
+      Custo: 0,
+
+      preco: "",
+      precoLoja: "",
+      preco_loja: "",
+      "Preço de Venda": "",
+
+      dados: {
+        ...(p?.dados || {}),
+        referencia: "",
+        Referencia: "",
+        "Referência": "",
+        sku: "",
+
+        nome: "",
+        Nome: "",
+        titulo: "",
+
+        marca: "",
+        Marca: "",
+
+        categoria: "",
+        Categoria: "",
+
+        peso: "",
+        Peso: "",
+
+        altura: "",
+        Altura: "",
+
+        largura: "",
+        Largura: "",
+
+        comprimento: "",
+        Comprimento: "",
+
+        custoTotal: 0,
+        custo_total: 0,
+        custo: 0,
+        Custo: 0,
+
+        preco: "",
+        precoLoja: "",
+        preco_loja: "",
+        "Preço de Venda": "",
+      },
     }));
 
     setComposicao([{ codigo: "", quantidade: "", custo: "" }]);
+  };
+
+  const handleSaveVariation = async () => {
+    if (!variation || savingLocal) return;
+
+    setSavingLocal(true);
+
+    try {
+      const referenciaNormalizada = normalizarReferenciaMarketplace(
+        getReferenciaVariation(variation),
+        "VAR"
+      );
+
+      const composicaoNormalizada = normalizarComposicao(composicaoTela);
+      const custoDaComposicao = calcCustoTotal(composicaoNormalizada);
+      const custoFinal =
+        custoDaComposicao > 0 ? custoDaComposicao : custoTotalCalculado;
+
+      const calculoSeguro = sanitizeCalculoLoja(calculoLoja);
+      const camposPercentuais =
+        montarCamposPercentuaisParaSalvar(calculoSeguro);
+
+      const referenciaFinal = isEditing
+        ? getReferenciaVariation(variation)
+        : referenciaNormalizada;
+
+      const composicaoFinal = isEditing
+        ? normalizarComposicao(
+            Array.isArray(variation?.composicao)
+              ? variation.composicao
+              : Array.isArray(variation?.dados?.composicao)
+                ? variation.dados.composicao
+                : []
+          )
+        : composicaoNormalizada;
+
+      const custoFinalSeguro = isEditing
+        ? parseNumero(
+            variation?.custoTotal ??
+              variation?.custo_total ??
+              variation?.custo ??
+              variation?.Custo ??
+              variation?.dados?.custoTotal ??
+              variation?.dados?.custo_total ??
+              variation?.dados?.custo ??
+              variation?.dados?.Custo ??
+              custoFinal
+          )
+        : custoFinal;
+
+      const precoFinal = precoLoja;
+
+      const variationAtualizada = {
+        ...variation,
+
+        marketplace_id:
+          variation?.marketplace_id ??
+          variation?.id_marketplace ??
+          variation?.id ??
+          variation?.dados?.marketplace_id ??
+          variation?.dados?.id_marketplace ??
+          variation?.dados?.id ??
+          "",
+
+        anuncio_id:
+          variation?.anuncio_id ??
+          variation?.ID ??
+          variation?.dados?.anuncio_id ??
+          variation?.dados?.ID ??
+          "",
+
+        id_logico:
+          variation?.id_logico ??
+          variation?.ID ??
+          variation?.dados?.id_logico ??
+          variation?.dados?.ID ??
+          "",
+
+        tipo_anuncio: "variacoes",
+
+        referencia: referenciaFinal,
+        Referencia: referenciaFinal,
+        "Referência": referenciaFinal,
+        sku: referenciaFinal,
+
+        composicao: composicaoFinal,
+
+        custoTotal: custoFinalSeguro,
+        custo_total: custoFinalSeguro,
+        custo: custoFinalSeguro,
+        Custo: custoFinalSeguro,
+
+        ...camposPercentuais,
+
+        preco: precoFinal,
+        precoLoja: precoFinal,
+        preco_loja: precoFinal,
+        "Preço de Venda": precoFinal,
+
+        marketplaces: Array.isArray(variation?.marketplaces)
+          ? variation.marketplaces
+          : [],
+
+        dados: {
+          ...(variation?.dados || {}),
+
+          marketplace_id:
+            variation?.marketplace_id ??
+            variation?.id_marketplace ??
+            variation?.id ??
+            variation?.dados?.marketplace_id ??
+            variation?.dados?.id_marketplace ??
+            variation?.dados?.id ??
+            "",
+
+          anuncio_id:
+            variation?.anuncio_id ??
+            variation?.ID ??
+            variation?.dados?.anuncio_id ??
+            variation?.dados?.ID ??
+            "",
+
+          id_logico:
+            variation?.id_logico ??
+            variation?.ID ??
+            variation?.dados?.id_logico ??
+            variation?.dados?.ID ??
+            "",
+
+          tipo_anuncio: "variacoes",
+
+          referencia: referenciaFinal,
+          Referencia: referenciaFinal,
+          "Referência": referenciaFinal,
+          sku: referenciaFinal,
+
+          composicao: composicaoFinal,
+
+          custoTotal: custoFinalSeguro,
+          custo_total: custoFinalSeguro,
+          custo: custoFinalSeguro,
+          Custo: custoFinalSeguro,
+
+          ...camposPercentuais,
+
+          preco: precoFinal,
+          precoLoja: precoFinal,
+          preco_loja: precoFinal,
+          "Preço de Venda": precoFinal,
+        },
+      };
+
+      setVariation(variationAtualizada);
+      await onSave(variationAtualizada);
+    } finally {
+      setSavingLocal(false);
+    }
   };
 
   return (
@@ -164,7 +735,10 @@ export const VariationMarketplaceModal = ({
                   </div>
 
                   <p className="mt-2 truncate text-xs text-white/45">
-                    {variation?.referencia || variation?.sku || "Nova variação"}
+                    {normalizarReferenciaMarketplace(
+                      getReferenciaVariation(variation),
+                      "VAR"
+                    ) || "Nova variação"}
                   </p>
                 </div>
 
@@ -173,10 +747,12 @@ export const VariationMarketplaceModal = ({
                     type="button"
                     onClick={onClose}
                     variant="outline"
+                    disabled={savingLocal}
                     className="
                       h-10 cursor-pointer rounded-xl border-white/10
                       bg-transparent px-4 text-xs font-semibold text-white/75
                       shadow-none hover:bg-white/[0.03] hover:text-white
+                      disabled:cursor-wait disabled:opacity-60
                     "
                   >
                     Cancelar
@@ -184,25 +760,28 @@ export const VariationMarketplaceModal = ({
 
                   <Button
                     type="button"
-                    onClick={onSave}
+                    onClick={handleSaveVariation}
+                    disabled={savingLocal}
                     className="
                       h-10 cursor-pointer rounded-xl bg-[#1a8ceb]
-                      px-4 text-xs font-semibold text-white
+                      px-5 text-xs font-semibold text-white
                       shadow-none hover:bg-[#157bd0]
+                      disabled:cursor-wait disabled:opacity-60
                     "
                   >
-                    <Save className="mr-2 h-3.5 w-3.5" />
-                    Salvar variação
+                    {savingLocal ? "Salvando..." : "Salvar"}
                   </Button>
 
                   <Button
                     type="button"
                     onClick={onClose}
                     variant="ghost"
+                    disabled={savingLocal}
                     className="
                       h-10 w-10 cursor-pointer rounded-xl border border-white/10
                       bg-white/[0.03] p-0 text-white/55
                       hover:bg-white/[0.06] hover:text-white
+                      disabled:cursor-wait disabled:opacity-60
                     "
                     title="Fechar"
                   >
@@ -219,26 +798,58 @@ export const VariationMarketplaceModal = ({
                   xl:grid-cols-[430px_minmax(700px,1fr)_430px]
                 "
               >
-                <aside className="min-w-0">
+                <aside
+                  className={`
+                    min-w-0
+                    ${
+                      isEditing
+                        ? "pointer-events-none select-none opacity-45"
+                        : ""
+                    }
+                  `}
+                  aria-disabled={isEditing}
+                >
                   <CompositionSection
                     composicao={composicaoTela}
                     setComposicao={setComposicao}
-                    custoTotal={custoTotal}
+                    custoTotal={custoTotalCalculado}
                     AnimatedNumber={AnimatedNumber}
                   />
                 </aside>
 
-                <main className="min-w-0 space-y-4">
+                <main
+                  className={`
+                    min-w-0 space-y-4
+                    ${
+                      isEditing
+                        ? "pointer-events-none select-none opacity-45"
+                        : ""
+                    }
+                  `}
+                  aria-disabled={isEditing}
+                >
                   <InfoGeraisBox
-                    produto={variation}
+                    produto={{
+                      ...variation,
+                      custoTotal: custoTotalCalculado,
+                      custo_total: custoTotalCalculado,
+                      custo: custoTotalCalculado,
+                      Custo: custoTotalCalculado,
+                      preco: precoLoja,
+                      precoLoja,
+                      preco_loja: precoLoja,
+                      "Preço de Venda": precoLoja,
+                    }}
                     setProduto={setVariation}
                     loading={false}
+                    bloquearEdicao={isEditing}
                   />
 
                   <MarketplaceSection
                     marketplaces={variation?.marketplaces || []}
                     setMarketplaces={setMarketplaces}
                     loading={false}
+                    bloquearEdicao={isEditing}
                   />
                 </main>
 
@@ -247,8 +858,18 @@ export const VariationMarketplaceModal = ({
                     calculoLoja={calculoLoja}
                     setCalculoLoja={setCalculoLoja}
                     precoLoja={precoLoja}
-                    produto={variation}
-                    saving={false}
+                    produto={{
+                      ...variation,
+                      custoTotal: custoTotalCalculado,
+                      custo_total: custoTotalCalculado,
+                      custo: custoTotalCalculado,
+                      Custo: custoTotalCalculado,
+                      preco: precoLoja,
+                      precoLoja,
+                      preco_loja: precoLoja,
+                      "Preço de Venda": precoLoja,
+                    }}
+                    saving={savingLocal}
                     handleClearLocal={handleClearLocal}
                   />
                 </aside>

@@ -45,14 +45,14 @@ const inputClass = `
   placeholder:text-white/20
   focus:border-[#1a8ceb]/70 focus:ring-1 focus:ring-[#1a8ceb]/30
   focus-visible:ring-0 focus-visible:ring-offset-0
-  disabled:cursor-not-allowed disabled:opacity-60
+  disabled:cursor-not-allowed disabled:border-white/5 disabled:bg-[#0b0b0b] disabled:text-white/35 disabled:opacity-100
 `;
 
 const selectTriggerClass = `
   h-10 rounded-lg border-white/10 bg-[#101010]
   px-3 text-sm font-semibold text-white shadow-none outline-none
   focus:border-[#1a8ceb]/70 focus:ring-1 focus:ring-[#1a8ceb]/30
-  disabled:cursor-not-allowed disabled:opacity-60
+  disabled:cursor-not-allowed disabled:border-white/5 disabled:bg-[#0b0b0b] disabled:text-white/35 disabled:opacity-100
 `;
 
 const FieldLabel = ({
@@ -195,6 +195,7 @@ const TextField = ({
           maxLength={maxLength}
           disabled={disabled}
           placeholder={placeholder}
+          title={disabled ? "Campo bloqueado para edição" : undefined}
           onChange={(e) =>
             !disabled &&
             setProduto((p: any) => ({
@@ -215,8 +216,13 @@ const TextField = ({
   );
 };
 
-const InfoGeraisBox = ({ produto, setProduto, loading }: any) => {
-  const disabled = loading;
+const InfoGeraisBox = ({
+  produto,
+  setProduto,
+  loading,
+  bloquearEdicao = false,
+}: any) => {
+  const disabled = Boolean(loading || bloquearEdicao);
   const isEditing = Boolean(produto?.id);
 
   const lojaSelectValue = useMemo(() => {
@@ -267,7 +273,10 @@ const InfoGeraisBox = ({ produto, setProduto, loading }: any) => {
                 }))
               }
             >
-              <SelectTrigger className={selectTriggerClass}>
+              <SelectTrigger
+                className={selectTriggerClass}
+                title={disabled ? "Campo bloqueado para edição" : undefined}
+              >
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
 
@@ -292,7 +301,10 @@ const InfoGeraisBox = ({ produto, setProduto, loading }: any) => {
                 }))
               }
             >
-              <SelectTrigger className={selectTriggerClass}>
+              <SelectTrigger
+                className={selectTriggerClass}
+                title={disabled ? "Campo bloqueado para edição" : undefined}
+              >
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
 
@@ -309,7 +321,7 @@ const InfoGeraisBox = ({ produto, setProduto, loading }: any) => {
             produto={produto}
             setProduto={setProduto}
             icon={FileText}
-            placeholder="Ex: Baqueta Liverpool"
+            placeholder="Ex: Triturador Forrageiro Trapp a Gasolina 15 HP TRF 750G"
             className="md:col-span-2"
             maxLength={240}
             disabled={disabled}
@@ -321,7 +333,7 @@ const InfoGeraisBox = ({ produto, setProduto, loading }: any) => {
             produto={produto}
             setProduto={setProduto}
             icon={ClipboardList}
-            placeholder="Ex: TN 5AM"
+            placeholder="Ex: PAI - 2935418-T"
             disabled={disabled}
           />
 
@@ -331,7 +343,7 @@ const InfoGeraisBox = ({ produto, setProduto, loading }: any) => {
             produto={produto}
             setProduto={setProduto}
             icon={Hash}
-            placeholder="Ex: Simples"
+            placeholder="Ex: 17475"
             disabled={disabled}
           />
         </div>
@@ -349,7 +361,7 @@ const InfoGeraisBox = ({ produto, setProduto, loading }: any) => {
             produto={produto}
             setProduto={setProduto}
             icon={BadgeInfo}
-            placeholder="Ex: 16564189746"
+            placeholder="Ex: 16631563671"
             disabled={disabled}
           />
 
@@ -359,7 +371,7 @@ const InfoGeraisBox = ({ produto, setProduto, loading }: any) => {
             produto={produto}
             setProduto={setProduto}
             icon={Hash}
-            placeholder="Ex: 2932555"
+            placeholder="Ex: 2940857"
             disabled={disabled}
           />
 
@@ -369,7 +381,7 @@ const InfoGeraisBox = ({ produto, setProduto, loading }: any) => {
             produto={produto}
             setProduto={setProduto}
             icon={Hash}
-            placeholder="Ex: 1"
+            placeholder="Ex: 2"
             disabled={disabled}
           />
         </div>
@@ -387,7 +399,7 @@ const InfoGeraisBox = ({ produto, setProduto, loading }: any) => {
             produto={produto}
             setProduto={setProduto}
             icon={Package}
-            placeholder="Ex: Baqueta"
+            placeholder="Ex: Trituradores"
             disabled={disabled}
           />
 
@@ -397,7 +409,7 @@ const InfoGeraisBox = ({ produto, setProduto, loading }: any) => {
             produto={produto}
             setProduto={setProduto}
             icon={ShieldCheck}
-            placeholder="Ex: Liverpool"
+            placeholder="Ex: Trapp"
             disabled={disabled}
           />
         </div>

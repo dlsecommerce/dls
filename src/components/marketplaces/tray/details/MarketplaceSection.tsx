@@ -16,6 +16,7 @@ type MarketplaceSectionProps = {
   marketplaces: MarketplaceItem[];
   setMarketplaces: any;
   loading?: boolean;
+  bloquearEdicao?: boolean;
 };
 
 // ================================
@@ -46,7 +47,7 @@ const cleanInputClass = `
   placeholder:!text-white/30
   focus:!border-[#1a8ceb]/70 focus:!ring-1 focus:!ring-[#1a8ceb]/30
   focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none
-  disabled:!cursor-not-allowed disabled:!opacity-60
+  disabled:!cursor-not-allowed disabled:!border-white/5 disabled:!bg-[#0b0b0b] disabled:!text-white/35 disabled:!opacity-100
 `;
 
 const cleanInnerInputClass = `
@@ -56,7 +57,7 @@ const cleanInnerInputClass = `
   placeholder:!text-white/25
   focus:!ring-0 focus:!outline-none
   focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none
-  disabled:!cursor-not-allowed disabled:!opacity-60
+  disabled:!cursor-not-allowed disabled:!text-white/35 disabled:!opacity-100
 `;
 
 // ================================
@@ -118,6 +119,7 @@ const MarketplaceItemRow: React.FC<MarketplaceItemRowProps> = ({
               placeholder="Marketplace"
               value={item.marketplace || ""}
               disabled={disabled}
+              title={disabled ? "Campo bloqueado para edição" : undefined}
               onChange={(e) => updateField("marketplace", e.target.value)}
               className={`${cleanInputClass} !pl-9`}
             />
@@ -134,6 +136,7 @@ const MarketplaceItemRow: React.FC<MarketplaceItemRowProps> = ({
               placeholder="Link do anúncio"
               value={item.link || ""}
               disabled={disabled}
+              title={disabled ? "Campo bloqueado para edição" : undefined}
               onChange={(e) => updateField("link", e.target.value)}
               className={`${cleanInputClass} !pl-9`}
             />
@@ -146,7 +149,16 @@ const MarketplaceItemRow: React.FC<MarketplaceItemRowProps> = ({
           ID anúncio
         </label>
 
-        <div className="flex h-10 items-center rounded-lg border border-white/10 bg-[#070707] px-3 focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+        <div
+          className={`
+            flex h-10 items-center rounded-lg border px-3
+            ${
+              disabled
+                ? "border-white/5 bg-[#0b0b0b]"
+                : "border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30"
+            }
+          `}
+        >
           <Hash className="mr-2 h-3.5 w-3.5 shrink-0 text-white/35" />
 
           <Input
@@ -155,6 +167,7 @@ const MarketplaceItemRow: React.FC<MarketplaceItemRowProps> = ({
             placeholder="000000"
             value={item.id_anuncio || ""}
             disabled={disabled}
+            title={disabled ? "Campo bloqueado para edição" : undefined}
             onChange={(e) => updateField("id_anuncio", e.target.value)}
             className={`${cleanInnerInputClass} !text-center`}
           />
@@ -166,7 +179,16 @@ const MarketplaceItemRow: React.FC<MarketplaceItemRowProps> = ({
           SKU
         </label>
 
-        <div className="flex h-10 items-center rounded-lg border border-white/10 bg-[#070707] px-3 focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+        <div
+          className={`
+            flex h-10 items-center rounded-lg border px-3
+            ${
+              disabled
+                ? "border-white/5 bg-[#0b0b0b]"
+                : "border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30"
+            }
+          `}
+        >
           <Tag className="mr-2 h-3.5 w-3.5 shrink-0 text-white/35" />
 
           <Input
@@ -175,6 +197,7 @@ const MarketplaceItemRow: React.FC<MarketplaceItemRowProps> = ({
             placeholder="SKU"
             value={item.sku || ""}
             disabled={disabled}
+            title={disabled ? "Campo bloqueado para edição" : undefined}
             onChange={(e) => updateField("sku", e.target.value)}
             className={`${cleanInnerInputClass} !text-center`}
           />
@@ -192,10 +215,10 @@ const MarketplaceItemRow: React.FC<MarketplaceItemRowProps> = ({
           bg-red-500/10 p-0 text-red-400 transition-all
           hover:bg-red-500/20 hover:text-red-300
           active:scale-[0.96]
-          disabled:cursor-not-allowed disabled:opacity-50
+          disabled:cursor-not-allowed disabled:border-white/5 disabled:bg-white/[0.02] disabled:text-white/25 disabled:opacity-100
           sm:h-10 sm:w-10
         "
-        title="Remover marketplace"
+        title={disabled ? "Remoção bloqueada" : "Remover marketplace"}
       >
         <X className="h-4 w-4" />
       </Button>
@@ -210,8 +233,9 @@ const MarketplaceSection: React.FC<MarketplaceSectionProps> = ({
   marketplaces = [],
   setMarketplaces,
   loading,
+  bloquearEdicao = false,
 }) => {
-  const disabled = loading;
+  const disabled = Boolean(loading || bloquearEdicao);
 
   const marketplacesSeguros = Array.isArray(marketplaces) ? marketplaces : [];
 
@@ -229,6 +253,13 @@ const MarketplaceSection: React.FC<MarketplaceSectionProps> = ({
 
   return (
     <div className="space-y-2 overflow-visible">
+      {bloquearEdicao && (
+        <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-xs font-medium text-amber-100/80">
+          Marketplace bloqueado para edição. Edite apenas os percentuais no
+          cálculo de preço.
+        </div>
+      )}
+
       {marketplacesSeguros.map((item: MarketplaceItem, idx: number) => (
         <MarketplaceItemRow
           key={`${item.marketplace || "marketplace"}-${idx}`}

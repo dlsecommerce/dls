@@ -16,9 +16,10 @@ import { LoadingBar } from "@/components/ui/loading-bar";
 
 import { useMarketplaceDetails } from "@/components/marketplaces/tray/hooks/useMarketplaceDetails";
 import { useKeyboardShortcuts } from "@/components/announce/hooks/useKeyboardShortcuts";
+import { toastCustom } from "@/utils/toastCustom";
 
 /* ============================================================
-   Helper para normalizar o parâmetro "loja" da URL, garantindo que variações comuns sejam tratadas como equivalentes.
+   Helper para normalizar o parâmetro "loja" da URL
 ============================================================ */
 function normalizeLojaParam(lojaParam: string | null) {
   const lojaNormalizada = lojaParam
@@ -35,6 +36,32 @@ function normalizeLojaParam(lojaParam: string | null) {
   if (lojaNormalizada === "SOBAQUETAS") return "SB";
 
   return lojaNormalizada || "";
+}
+
+/* ============================================================
+   Helper para identificar produto pai com variações
+============================================================ */
+function isProdutoPaiComVariacoes(produto: any) {
+  const referencia = String(
+    produto?.referencia ??
+      produto?.Referencia ??
+      produto?.["Referência"] ??
+      produto?.sku ??
+      ""
+  )
+    .trim()
+    .toUpperCase();
+
+  const tipoAnuncio = String(produto?.tipo_anuncio ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (referencia.startsWith("PAI-")) return true;
+  if (tipoAnuncio === "variacoes") return true;
+  if (tipoAnuncio === "com variações") return true;
+  if (tipoAnuncio === "com variacoes") return true;
+
+  return false;
 }
 
 /* ============================================================
@@ -69,7 +96,11 @@ function PricingCalculatorMarketplaceInternal({
   const router = useRouter();
   const loadingBarRef = useRef<any>(null);
 
+  const [variationModalOpen, setVariationModalOpen] = React.useState(false);
+
   const {
+    loading: loadingHook,
+    saving,
     produto,
     setProduto,
     composicao,
@@ -77,6 +108,7 @@ function PricingCalculatorMarketplaceInternal({
     custoTotal,
     calculoLoja,
     setCalculoLoja,
+    save,
 
     campoAtivo,
     sugestoes,
@@ -90,12 +122,15 @@ function PricingCalculatorMarketplaceInternal({
   const produtoTela = produto ?? {};
   const composicaoTela = Array.isArray(composicao) ? composicao : [];
 
+  const loading = Boolean(loadingHook || !produto);
+
+  const bloquearTelaPai = Boolean(
+    !loading && isProdutoPaiComVariacoes(produtoTela)
+  );
+
   const tituloPagina = useMemo(() => {
     return produtoTela?.nome?.trim() || "Marketplace";
   }, [produtoTela?.nome]);
-
-  const loading = !produto;
-  const saving = false;
 
   React.useEffect(() => {
     if (loading) loadingBarRef.current?.start?.();
@@ -125,6 +160,20 @@ function PricingCalculatorMarketplaceInternal({
   const precoLoja = calcularPreco();
 
   const handleClearLocal = () => {
+    if (bloquearTelaPai) {
+      setCalculoLoja({
+        desconto: "",
+        embalagem: "",
+        frete: "",
+        imposto: "",
+        margem: "",
+        comissao: "",
+        marketing: "",
+      });
+
+      return;
+    }
+
     if (window.confirm("Tem certeza?")) {
       setProduto((p: any) => ({
         ...p,
@@ -142,14 +191,31 @@ function PricingCalculatorMarketplaceInternal({
     }
   };
 
-  const handleSave = () => {
-    // Coloque aqui sua função real de salvar marketplace, se existir.
-    console.log("Salvar marketplace", {
-      produto: produtoTela,
-      composicao: composicaoTela,
-      calculoLoja,
-    });
-  };
+  const handleSave = React.useCallback(async () => {
+    if (saving || loading) return;
+
+    const { error } = await save();
+
+    if (error) {
+      console.error("Erro ao salvar marketplace:", error);
+
+      toastCustom.error(
+        "Erro ao salvar precificação",
+        "Não foi possível salvar os percentuais."
+      );
+
+      return;
+    }
+
+    toastCustom.success(
+      "Precificação salva com sucesso",
+      "As alterações foram gravadas no sistema."
+    );
+
+    setTimeout(() => {
+      router.push("/dashboard/marketplaces/tray");
+    }, 700);
+  }, [saving, loading, save, router]);
 
   const { showExitModal, confirmExit, setShowExitModal } = useKeyboardShortcuts({
     saving,
@@ -158,7 +224,40 @@ function PricingCalculatorMarketplaceInternal({
     sugestoesLength: sugestoes?.length || 0,
   });
 
+  React.useEffect(() => {
+    if (!variationModalOpen) return;
+
+    if (showExitModal) {
+      setShowExitModal(false);
+    }
+  }, [variationModalOpen, showExitModal, setShowExitModal]);
+
+  const handleVariationModalOpenChange = React.useCallback(
+    (open: boolean) => {
+      setVariationModalOpen(open);
+
+      if (open) {
+        setShowExitModal(false);
+      }
+    },
+    [setShowExitModal]
+  );
+
+  const handleConfirmExitOpenChange = React.useCallback(
+    (open: boolean) => {
+      if (variationModalOpen) {
+        setShowExitModal(false);
+        return;
+      }
+
+      setShowExitModal(open);
+    },
+    [variationModalOpen, setShowExitModal]
+  );
+
   const setMarketplaces = (value: any) => {
+    if (bloquearTelaPai) return;
+
     if (typeof value === "function") {
       setProduto((p: any) => ({
         ...p,
@@ -210,7 +309,9 @@ function PricingCalculatorMarketplaceInternal({
                   <span>
                     {loading
                       ? "Carregando dados..."
-                      : "Última alteração: agora há pouco"}
+                      : saving
+                        ? "Salvando alterações..."
+                        : "Última alteração: agora há pouco"}
                   </span>
                 </div>
               </div>
@@ -259,8 +360,18 @@ function PricingCalculatorMarketplaceInternal({
               ${campoAtivo !== null ? "relative z-[120]" : ""}
             `}
           >
-            {/* COLUNA ESQUERDA */}
-            <aside className="min-w-0">
+            {/* COLUNA ESQUERDA - COMPOSIÇÃO DO PAI */}
+            <aside
+              className={`
+                min-w-0
+                ${
+                  bloquearTelaPai
+                    ? "pointer-events-none select-none opacity-45"
+                    : ""
+                }
+              `}
+              aria-disabled={bloquearTelaPai}
+            >
               <CompositionSection
                 composicao={composicaoTela}
                 setComposicao={setComposicao}
@@ -276,22 +387,34 @@ function PricingCalculatorMarketplaceInternal({
               />
             </aside>
 
-            {/* COLUNA CENTRAL */}
-            <main className="min-w-0 space-y-4">
+            {/* COLUNA CENTRAL - DADOS DO PAI */}
+            <main
+              className={`
+                min-w-0 space-y-4
+                ${
+                  bloquearTelaPai
+                    ? "pointer-events-none select-none opacity-45"
+                    : ""
+                }
+              `}
+              aria-disabled={bloquearTelaPai}
+            >
               <InfoGeraisBox
                 produto={produtoTela}
                 setProduto={setProduto}
                 loading={loading}
+                bloquearEdicao={bloquearTelaPai}
               />
 
               <MarketplaceSection
                 marketplaces={produtoTela?.marketplaces || []}
                 setMarketplaces={setMarketplaces}
                 loading={loading}
+                bloquearEdicao={bloquearTelaPai}
               />
             </main>
 
-            {/* COLUNA DIREITA */}
+            {/* COLUNA DIREITA - CÁLCULO E VARIAÇÕES */}
             <aside className="min-w-0 space-y-4">
               <CalculoPrecoBox
                 calculoLoja={calculoLoja}
@@ -306,17 +429,20 @@ function PricingCalculatorMarketplaceInternal({
                 produto={produtoTela}
                 setProduto={setProduto}
                 AnimatedNumber={AnimatedNumber}
+                onModalOpenChange={handleVariationModalOpenChange}
               />
             </aside>
           </div>
         </div>
       </div>
 
-      <ConfirmExitModal
-        open={showExitModal}
-        onOpenChange={setShowExitModal}
-        onConfirm={confirmExit}
-      />
+      {!variationModalOpen && (
+        <ConfirmExitModal
+          open={showExitModal}
+          onOpenChange={handleConfirmExitOpenChange}
+          onConfirm={confirmExit}
+        />
+      )}
     </>
   );
 }
