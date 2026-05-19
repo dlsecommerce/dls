@@ -9,7 +9,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useProfile } from "@/context/ProfileContext";
@@ -259,9 +258,10 @@ export function UserProfileDropdown() {
 
       <DropdownMenuContent
         align="end"
-        className="w-[calc(100vw-24px)] max-w-72 border-0 bg-transparent p-0 shadow-none sm:w-72"
+        sideOffset={8}
+        className="w-[calc(100vw-24px)] max-w-72 overflow-hidden rounded-xl border border-white/10 bg-neutral-900 p-0 text-white shadow-2xl sm:w-72"
       >
-        <GlassmorphicCard className="rounded-xl p-2">
+        <div className="rounded-xl bg-neutral-900 p-2">
           <div className="relative flex items-center gap-3 border-b border-white/10 px-3 py-3">
             <div className="relative flex-shrink-0">
               <Image
@@ -296,14 +296,14 @@ export function UserProfileDropdown() {
           </div>
 
           {errorMessage && (
-            <div className="mx-2 mt-2 rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            <div className="mx-2 mt-2 rounded-md border border-red-500/30 bg-red-950 px-3 py-2 text-xs text-red-300">
               {errorMessage}
             </div>
           )}
 
           <DropdownMenuItem
             disabled
-            className="mt-2 text-[11px] uppercase tracking-wide text-neutral-400"
+            className="mt-2 text-[11px] uppercase tracking-wide text-neutral-400 opacity-100"
           >
             Status
           </DropdownMenuItem>
@@ -313,7 +313,7 @@ export function UserProfileDropdown() {
               key={opt.key}
               onClick={() => handleChangeStatus(opt.key)}
               disabled={changingStatus}
-              className="flex cursor-pointer items-center justify-between rounded-md px-3 py-2 hover:bg-white/5 focus:bg-white/5"
+              className="flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-white hover:bg-neutral-800 focus:bg-neutral-800"
             >
               <div className="flex min-w-0 items-center gap-2">
                 <span
@@ -333,7 +333,7 @@ export function UserProfileDropdown() {
 
           <DropdownMenuItem
             onClick={() => router.push("/dashboard/configuracao?tab=perfil")}
-            className="cursor-pointer rounded-md hover:bg-white/5 focus:bg-white/5"
+            className="cursor-pointer rounded-md text-white hover:bg-neutral-800 focus:bg-neutral-800"
           >
             <User className="mr-2 h-4 w-4 flex-shrink-0" />
             Perfil
@@ -341,7 +341,7 @@ export function UserProfileDropdown() {
 
           <DropdownMenuItem
             onClick={() => router.push("/dashboard/configuracao")}
-            className="cursor-pointer rounded-md hover:bg-white/5 focus:bg-white/5"
+            className="cursor-pointer rounded-md text-white hover:bg-neutral-800 focus:bg-neutral-800"
           >
             <Settings className="mr-2 h-4 w-4 flex-shrink-0" />
             Configurações
@@ -351,12 +351,12 @@ export function UserProfileDropdown() {
 
           <DropdownMenuItem
             onClick={handleSignOut}
-            className="cursor-pointer rounded-md text-red-500 hover:bg-red-500/10 focus:bg-red-500/10"
+            className="cursor-pointer rounded-md text-red-500 hover:bg-red-950 focus:bg-red-950"
           >
             <LogOut className="mr-2 h-4 w-4 flex-shrink-0" />
             Sair
           </DropdownMenuItem>
-        </GlassmorphicCard>
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );

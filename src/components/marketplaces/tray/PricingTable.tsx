@@ -25,7 +25,6 @@ import PricingHeaderTray from "@/components/marketplaces/tray/PricingHeaderTray"
 import PricingMassEditionModal from "@/components/marketplaces/tray/PricingMassEditionModal";
 
 import { toBR, parseBR } from "@/components/marketplaces/tray/hooks/helpers";
-import { calcPrecoVenda } from "@/components/marketplaces/tray/hooks/calcPrecoVenda";
 import { Row } from "@/components/marketplaces/tray/hooks/types";
 
 import {
@@ -143,7 +142,7 @@ function buildOrSearchParts(tokens: string[]) {
         t.replace(/\s+/g, " "),
         t.replace(/\s+/g, "-"),
         t.replace(/\s+/g, ""),
-      ])
+      ]),
     );
 
     for (const v of variants) {
@@ -249,6 +248,57 @@ function parseBRNullable(value: any) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function parseNumero(value: any) {
+  if (value === null || value === undefined || value === "") return 0;
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  let str = String(value).trim();
+
+  str = str.replace(/[^\d.,-]/g, "");
+
+  const temVirgula = str.includes(",");
+  const temPonto = str.includes(".");
+
+  if (temVirgula && temPonto) {
+    if (str.lastIndexOf(",") > str.lastIndexOf(".")) {
+      str = str.replace(/\./g, "");
+      str = str.replace(",", ".");
+    } else {
+      str = str.replace(/,/g, "");
+    }
+  } else if (temVirgula) {
+    str = str.replace(/\./g, "");
+    str = str.replace(",", ".");
+  }
+
+  const n = Number(str);
+
+  return Number.isFinite(n) ? n : 0;
+}
+
+function calcPrecoVendaTray(row: any) {
+  const custo = parseNumero(row?.Custo);
+  const desconto = parseNumero(row?.Desconto) / 100;
+  const embalagem = parseNumero(row?.Embalagem);
+  const frete = parseNumero(row?.Frete);
+
+  const imposto = parseNumero(row?.Imposto) / 100;
+  const margem = parseNumero(row?.["Margem de Lucro"]) / 100;
+  const comissao = parseNumero(row?.Comissão) / 100;
+  const marketing = parseNumero(row?.Marketing) / 100;
+
+  const divisor = 1 - (imposto + margem + comissao + marketing);
+
+  if (custo <= 0 || divisor <= 0) return 0;
+
+  const preco = (custo * (1 - desconto) + embalagem + frete) / divisor;
+
+  return Number.isFinite(preco) ? Number(preco.toFixed(2)) : 0;
+}
+
 function getTrayPricingLabel(row: any, fallbackId: string) {
   return row?.Nome || row?.Referência || row?.ID || fallbackId || "anúncio";
 }
@@ -294,10 +344,10 @@ export default function PricingTable() {
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
 
   const [sortColumn, setSortColumn] = useState<string | null>(
-    initialSortColumn
+    initialSortColumn,
   );
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">(
-    initialSortDirection
+    initialSortDirection,
   );
 
   const [isPending, startTransition] = useTransition();
@@ -324,7 +374,7 @@ export default function PricingTable() {
       "Marketing",
       "Margem de Lucro",
     ],
-    []
+    [],
   );
 
   useEffect(() => {
@@ -332,11 +382,11 @@ export default function PricingTable() {
     const nextBrands = filters.marca.trim() ? [filters.marca.trim()] : [];
 
     setSelectedLoja((prev) =>
-      arraysEqual(prev, nextLojas) ? prev : nextLojas
+      arraysEqual(prev, nextLojas) ? prev : nextLojas,
     );
 
     setSelectedBrands((prev) =>
-      arraysEqual(prev, nextBrands) ? prev : nextBrands
+      arraysEqual(prev, nextBrands) ? prev : nextBrands,
     );
   }, [filters.lojasVirtuais, filters.marca]);
 
@@ -365,14 +415,14 @@ export default function PricingTable() {
     setItemsPerPage((prev) => (prev !== urlPerPage ? urlPerPage : prev));
     setSelectedLoja((prev) => (arraysEqual(prev, urlLojas) ? prev : urlLojas));
     setSelectedBrands((prev) =>
-      arraysEqual(prev, urlBrands) ? prev : urlBrands
+      arraysEqual(prev, urlBrands) ? prev : urlBrands,
     );
     setSortColumn((prev) => (prev !== urlSortColumn ? urlSortColumn : prev));
     setSortDirection((prev) =>
-      prev !== urlSortDirection ? urlSortDirection : prev
+      prev !== urlSortDirection ? urlSortDirection : prev,
     );
     setFilters((prev) =>
-      JSON.stringify(prev) === JSON.stringify(urlFilters) ? prev : urlFilters
+      JSON.stringify(prev) === JSON.stringify(urlFilters) ? prev : urlFilters,
     );
 
     didHydrateFromUrlRef.current = true;
@@ -467,183 +517,186 @@ export default function PricingTable() {
       sortDirection,
       filters.situacao,
       filters.tipo,
-    ]
+    ],
   );
 
-  const loadData = useCallback(async () => {
-    const myReqId = ++reqIdRef.current;
+  const loadData = useCallback(
+    async (options?: { force?: boolean }) => {
+      const myReqId = ++reqIdRef.current;
 
-    const cached = getCache(cacheKey);
+      const cached = options?.force ? null : getCache(cacheKey);
 
-    if (cached) {
-      startTransition(() => {
-        const safe = (cached.rows || []).filter(isValidRow);
-        setRows(safe);
-        setFilteredRows(safe);
-        setTotalItems(cached.totalItems);
+      if (cached) {
+        startTransition(() => {
+          const safe = (cached.rows || []).filter(isValidRow);
+          setRows(safe);
+          setFilteredRows(safe);
+          setTotalItems(cached.totalItems);
+          setLoading(false);
+        });
+        return;
+      }
+
+      setLoading(true);
+
+      const { data: sess } = await supabase.auth.getSession();
+
+      if (!sess.session) {
+        if (myReqId !== reqIdRef.current) return;
+
+        setRows([]);
+        setFilteredRows([]);
+        setTotalItems(0);
         setLoading(false);
-      });
-      return;
-    }
+        return;
+      }
 
-    setLoading(true);
+      const start = (currentPage - 1) * itemsPerPage;
+      const end = start + itemsPerPage - 1;
 
-    const { data: sess } = await supabase.auth.getSession();
+      let query = supabase
+        .from("marketplace_tray_all")
+        .select(
+          `
+          id,
+          anuncio_id,
+          ID,
+          Loja,
+          "ID Tray",
+          "ID Var",
+          "ID Bling",
+          Nome,
+          Marca,
+          Referência,
+          Categoria,
+          Desconto,
+          Embalagem,
+          Frete,
+          Comissão,
+          Imposto,
+          Marketing,
+          "Margem de Lucro",
+          Custo,
+          "Preço de Venda",
+          "Atualizado em"
+        `,
+          { count: "exact" },
+        );
 
-    if (!sess.session) {
+      if (selectedLoja.length) query = query.in("Loja", selectedLoja);
+      if (selectedBrands.length) query = query.in("Marca", selectedBrands);
+
+      if (filters.tipo && filters.tipo !== "Todos") {
+        if (filters.tipo === "Produtos") {
+          query = query.ilike("Referência", "%PAI%");
+        } else if (filters.tipo === "Produtos simples") {
+          query = query
+            .not("Referência", "ilike", "%PAI%")
+            .not("Referência", "ilike", "%VAR%");
+        } else if (filters.tipo === "Produtos com variações") {
+          query = query.ilike("Referência", "%PAI%");
+        } else if (filters.tipo === "Variações") {
+          query = query.ilike("Referência", "%VAR%");
+        }
+      }
+
+      if (debouncedSearch) {
+        const tokens = parseSearchTokens(debouncedSearch);
+        const orParts = buildOrSearchParts(tokens);
+
+        if (orParts.length) query = query.or(orParts.join(","));
+      }
+
+      if (filters.situacao === "Últimos Incluídos") {
+        query = query
+          .order("ID", { ascending: false })
+          .order("Atualizado em", { ascending: false })
+          .order("id", { ascending: false });
+      } else if (sortColumn) {
+        query = query
+          .order(sortColumn, {
+            ascending: sortDirection === "asc",
+            nullsFirst: true,
+          })
+          .order("Atualizado em", { ascending: false })
+          .order("id", { ascending: false });
+      } else {
+        query = query
+          .order("Atualizado em", { ascending: false })
+          .order("id", { ascending: false });
+      }
+
+      const { data, error, count } = await query.range(start, end);
+
       if (myReqId !== reqIdRef.current) return;
 
-      setRows([]);
-      setFilteredRows([]);
-      setTotalItems(0);
-      setLoading(false);
-      return;
-    }
+      if (error) {
+        console.error(
+          "❌ Supabase error:",
+          error.message,
+          error.details,
+          error.hint,
+        );
 
-    const start = (currentPage - 1) * itemsPerPage;
-    const end = start + itemsPerPage - 1;
-
-    let query = supabase
-      .from("marketplace_tray_all")
-      .select(
-        `
-        id,
-        anuncio_id,
-        ID,
-        Loja,
-        "ID Tray",
-        "ID Var",
-        "ID Bling",
-        Nome,
-        Marca,
-        Referência,
-        Categoria,
-        Desconto,
-        Embalagem,
-        Frete,
-        Comissão,
-        Imposto,
-        Marketing,
-        "Margem de Lucro",
-        Custo,
-        "Preço de Venda",
-        "Atualizado em"
-      `,
-        { count: "exact" }
-      );
-
-    if (selectedLoja.length) query = query.in("Loja", selectedLoja);
-    if (selectedBrands.length) query = query.in("Marca", selectedBrands);
-
-    if (filters.tipo && filters.tipo !== "Todos") {
-      if (filters.tipo === "Produtos") {
-        query = query.ilike("Referência", "%PAI%");
-      } else if (filters.tipo === "Produtos simples") {
-        query = query
-          .not("Referência", "ilike", "%PAI%")
-          .not("Referência", "ilike", "%VAR%");
-      } else if (filters.tipo === "Produtos com variações") {
-        query = query.ilike("Referência", "%PAI%");
-      } else if (filters.tipo === "Variações") {
-        query = query.ilike("Referência", "%VAR%");
+        setRows([]);
+        setFilteredRows([]);
+        setTotalItems(0);
+        setLoading(false);
+        return;
       }
-    }
 
-    if (debouncedSearch) {
-      const tokens = parseSearchTokens(debouncedSearch);
-      const orParts = buildOrSearchParts(tokens);
+      const safeData = (data || []).filter(isValidRow);
 
-      if (orParts.length) query = query.or(orParts.join(","));
-    }
+      const normalized = safeData.map((r: any) => {
+        let OD = 3;
+        const ref = String(r.Referência || "").trim();
 
-    if (filters.situacao === "Últimos Incluídos") {
-      query = query
-        .order("ID", { ascending: false })
-        .order("Atualizado em", { ascending: false })
-        .order("id", { ascending: false });
-    } else if (sortColumn) {
-      query = query
-        .order(sortColumn, {
-          ascending: sortDirection === "asc",
-          nullsFirst: true,
-        })
-        .order("Atualizado em", { ascending: false })
-        .order("id", { ascending: false });
-    } else {
-      query = query
-        .order("Atualizado em", { ascending: false })
-        .order("id", { ascending: false });
-    }
+        if (ref.startsWith("PAI -") || ref.startsWith("PAI-")) OD = 1;
+        else if (ref.startsWith("VAR -") || ref.startsWith("VAR-")) OD = 2;
 
-    const { data, error, count } = await query.range(start, end);
+        return {
+          ...r,
+          id: String(r.id),
+          anuncio_id: r.anuncio_id,
+          OD,
+          Desconto: r.Desconto ?? null,
+          Embalagem: r.Embalagem ?? null,
+          Frete: r.Frete ?? null,
+          Comissão: r.Comissão ?? null,
+          Imposto: r.Imposto ?? null,
+          Marketing: r.Marketing ?? null,
+          "Margem de Lucro": r["Margem de Lucro"] ?? null,
+          Custo: r.Custo ?? null,
+          "Preço de Venda": r["Preço de Venda"] ?? null,
+        } as Row;
+      });
 
-    if (myReqId !== reqIdRef.current) return;
+      setCache(cacheKey, {
+        rows: normalized as any,
+        totalItems: count || 0,
+        savedAt: Date.now(),
+      });
 
-    if (error) {
-      console.error(
-        "❌ Supabase error:",
-        error.message,
-        error.details,
-        error.hint
-      );
-
-      setRows([]);
-      setFilteredRows([]);
-      setTotalItems(0);
-      setLoading(false);
-      return;
-    }
-
-    const safeData = (data || []).filter(isValidRow);
-
-    const normalized = safeData.map((r: any) => {
-      let OD = 3;
-      const ref = String(r.Referência || "").trim();
-
-      if (ref.startsWith("PAI -") || ref.startsWith("PAI-")) OD = 1;
-      else if (ref.startsWith("VAR -") || ref.startsWith("VAR-")) OD = 2;
-
-      return {
-        ...r,
-        id: String(r.id),
-        anuncio_id: r.anuncio_id,
-        OD,
-        Desconto: r.Desconto ?? null,
-        Embalagem: r.Embalagem ?? null,
-        Frete: r.Frete ?? null,
-        Comissão: r.Comissão ?? null,
-        Imposto: r.Imposto ?? null,
-        Marketing: r.Marketing ?? null,
-        "Margem de Lucro": r["Margem de Lucro"] ?? null,
-        Custo: r.Custo ?? null,
-        "Preço de Venda": r["Preço de Venda"] ?? null,
-      } as any;
-    });
-
-    setCache(cacheKey, {
-      rows: normalized as any,
-      totalItems: count || 0,
-      savedAt: Date.now(),
-    });
-
-    startTransition(() => {
-      setRows(normalized as any);
-      setFilteredRows(normalized as any);
-      setTotalItems(count || 0);
-      setLoading(false);
-    });
-  }, [
-    cacheKey,
-    currentPage,
-    itemsPerPage,
-    sortColumn,
-    sortDirection,
-    selectedLoja,
-    selectedBrands,
-    debouncedSearch,
-    filters.tipo,
-    filters.situacao,
-  ]);
+      startTransition(() => {
+        setRows(normalized as any);
+        setFilteredRows(normalized as any);
+        setTotalItems(count || 0);
+        setLoading(false);
+      });
+    },
+    [
+      cacheKey,
+      currentPage,
+      itemsPerPage,
+      sortColumn,
+      sortDirection,
+      selectedLoja,
+      selectedBrands,
+      debouncedSearch,
+      filters.tipo,
+      filters.situacao,
+    ],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -666,6 +719,25 @@ export default function PricingTable() {
     };
   }, [cacheKey, loadData]);
 
+  useEffect(() => {
+    let precisaRecarregar = false;
+
+    try {
+      precisaRecarregar = Boolean(
+        sessionStorage.getItem("tray-pricing-precisa-recarregar"),
+      );
+
+      if (precisaRecarregar) {
+        sessionStorage.removeItem("tray-pricing-precisa-recarregar");
+      }
+    } catch {}
+
+    if (!precisaRecarregar) return;
+
+    clearTrayCache();
+    void loadData({ force: true });
+  }, [loadData]);
+
   const handleSort = (col: string) => {
     if (sortColumn === col) {
       setSortDirection((p) => (p === "asc" ? "desc" : "asc"));
@@ -685,10 +757,6 @@ export default function PricingTable() {
 
   const handleEditFull = useCallback(
     (row: Row) => {
-      // Mesmo padrão da tela de anúncios:
-      // edit?id=13948&loja=Pikot%20Shop
-      // Aqui o id da URL é o ID interno/lógico da coluna "ID",
-      // não o "ID Tray" e não o UUID da linha.
       const idParam = String((row as any).ID || "").trim();
 
       const lojaCode = normalizeLojaCode((row as any).Loja);
@@ -697,8 +765,8 @@ export default function PricingTable() {
         lojaCode === "PK"
           ? "Pikot Shop"
           : lojaCode === "SB"
-          ? "Sóbaquetas"
-          : String((row as any).Loja || "").trim();
+            ? "Sóbaquetas"
+            : String((row as any).Loja || "").trim();
 
       if (!idParam) {
         console.error("❌ Sem ID interno para abrir marketplace:", row);
@@ -714,11 +782,11 @@ export default function PricingTable() {
 
       router.push(
         `/dashboard/marketplaces/tray/edit?id=${encodeURIComponent(
-          idParam
-        )}&loja=${encodeURIComponent(lojaParam)}`
+          idParam,
+        )}&loja=${encodeURIComponent(lojaParam)}`,
       );
     },
-    [router]
+    [router],
   );
 
   const openEditor = useCallback(
@@ -738,7 +806,7 @@ export default function PricingTable() {
         anchorRect: rect,
       });
     },
-    []
+    [],
   );
 
   const confirmEdit = useCallback(async () => {
@@ -796,7 +864,7 @@ export default function PricingTable() {
       };
 
       if (shouldRecalcPV) {
-        updated["Preço de Venda"] = calcPrecoVenda(updated);
+        updated["Preço de Venda"] = calcPrecoVendaTray(updated);
       }
 
       newRowUpdated = updated as Row;
@@ -881,7 +949,7 @@ export default function PricingTable() {
         title: "Precificação Tray atualizada",
         message: `O campo "${String(field)}" do anúncio "${getTrayPricingLabel(
           currentRow,
-          dbIdStr
+          dbIdStr,
         )}" foi atualizado.`,
         action: "update",
         entityType: "tray_pricing",
@@ -913,9 +981,9 @@ export default function PricingTable() {
     async (_data: any[]) => {
       setOpenPricingModal(false);
       clearTrayCache();
-      await loadData();
+      await loadData({ force: true });
     },
-    [loadData]
+    [loadData],
   );
 
   const handleExportAll = useCallback(async () => {
@@ -1230,7 +1298,7 @@ export default function PricingTable() {
               value={editing.value}
               onChange={(e) =>
                 setEditing((prev: any) =>
-                  prev ? { ...prev, value: e.target.value } : prev
+                  prev ? { ...prev, value: e.target.value } : prev,
                 )
               }
               onKeyDown={(e) => {

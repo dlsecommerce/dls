@@ -109,10 +109,6 @@ function parseNumero(value: any) {
   return Number.isFinite(n) ? n : 0;
 }
 
-/* ============================================================
-   Helpers para Supabase
-   Evita erro: invalid input syntax for type numeric: ""
-============================================================ */
 function toNumericOrNull(value: any) {
   if (value === null || value === undefined) return null;
 
@@ -145,8 +141,6 @@ function sanitizeCalculoLoja(calculoLoja: Partial<CalculoLoja>): CalculoLoja {
   };
 }
 
-const TAXA_FIXA_TRAY = 2.5;
-
 function calcularPrecoLoja(params: {
   custo: any;
   calculoLoja: Partial<CalculoLoja>;
@@ -160,30 +154,23 @@ function calcularPrecoLoja(params: {
   const comissao = parseNumero(calculoSeguro.comissao) / 100;
   const marketing = parseNumero(calculoSeguro.marketing) / 100;
 
-  // Frete e Embalagem entram como valor fixo em R$.
-  // Desconto, Imposto, Margem, Comissão e Marketing entram como percentual
-  // sobre o preço de venda.
-  const frete = parseNumero(calculoSeguro.frete);
   const embalagem = parseNumero(calculoSeguro.embalagem);
+  const frete = parseNumero(calculoSeguro.frete);
 
-  const custoBase = custo + frete + embalagem + TAXA_FIXA_TRAY;
-  const percentualTotal = desconto + imposto + margem + comissao + marketing;
-  const divisor = 1 - percentualTotal;
+  const divisor = 1 - (imposto + margem + comissao + marketing);
 
-  if (custoBase <= 0 || divisor <= 0) return 0;
+  if (custo <= 0 || divisor <= 0) return 0;
 
-  const preco = custoBase / divisor;
+  const preco = (custo * (1 - desconto) + embalagem + frete) / divisor;
 
   return Number.isFinite(preco) ? Number(preco.toFixed(2)) : 0;
 }
 
-function dispararAtualizacaoTabelaTray() {
+function marcarTabelaTrayParaRecarregar() {
   if (typeof window === "undefined") return;
 
-  window.dispatchEvent(new Event("tray-pricing-updated"));
-
   try {
-    localStorage.setItem("tray-pricing-updated-at", String(Date.now()));
+    sessionStorage.setItem("tray-pricing-precisa-recarregar", String(Date.now()));
   } catch {}
 }
 
@@ -325,31 +312,33 @@ function montarCamposPercentuaisSupabase(calculo: CalculoLoja) {
 }
 
 function montarCamposPercentuaisSistema(calculo: CalculoLoja) {
+  const calculoSeguro = sanitizeCalculoLoja(calculo);
+
   return {
-    calculoLoja: calculo,
+    calculoLoja: calculoSeguro,
 
-    desconto: calculo.desconto,
-    Desconto: calculo.desconto,
+    desconto: calculoSeguro.desconto,
+    Desconto: calculoSeguro.desconto,
 
-    embalagem: calculo.embalagem,
-    Embalagem: calculo.embalagem,
+    embalagem: calculoSeguro.embalagem,
+    Embalagem: calculoSeguro.embalagem,
 
-    frete: calculo.frete,
-    Frete: calculo.frete,
+    frete: calculoSeguro.frete,
+    Frete: calculoSeguro.frete,
 
-    imposto: calculo.imposto,
-    Imposto: calculo.imposto,
+    imposto: calculoSeguro.imposto,
+    Imposto: calculoSeguro.imposto,
 
-    margem: calculo.margem,
-    margem_lucro: calculo.margem,
-    "Margem de Lucro": calculo.margem,
+    margem: calculoSeguro.margem,
+    margem_lucro: calculoSeguro.margem,
+    "Margem de Lucro": calculoSeguro.margem,
 
-    comissao: calculo.comissao,
-    Comissao: calculo.comissao,
-    Comissão: calculo.comissao,
+    comissao: calculoSeguro.comissao,
+    Comissao: calculoSeguro.comissao,
+    Comissão: calculoSeguro.comissao,
 
-    marketing: calculo.marketing,
-    Marketing: calculo.marketing,
+    marketing: calculoSeguro.marketing,
+    Marketing: calculoSeguro.marketing,
   };
 }
 
@@ -363,29 +352,6 @@ function normalizarCalculoItem(calculo: CalculoLoja): CalculoLoja {
     comissao: calculo.comissao,
     marketing: calculo.marketing,
   });
-}
-
-function calculosIguais(a: CalculoLoja, b: CalculoLoja) {
-  const na = sanitizeCalculoLoja(a);
-  const nb = sanitizeCalculoLoja(b);
-
-  return (
-    na.desconto === nb.desconto &&
-    na.embalagem === nb.embalagem &&
-    na.frete === nb.frete &&
-    na.imposto === nb.imposto &&
-    na.margem === nb.margem &&
-    na.comissao === nb.comissao &&
-    na.marketing === nb.marketing
-  );
-}
-
-function getChaveItem(item: any) {
-  return (
-    getIdMarketplaceItem(item) ||
-    getIdLogicoItem(item) ||
-    getReferenciaItem(item)
-  );
 }
 
 function normalizarQuantidade(value: any) {
@@ -475,7 +441,6 @@ export function useMarketplaceDetails(
   const listaRef = useRef<HTMLDivElement | null>(null);
   const inputRefs = useRef<any[]>([]);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
-  const calculosOriginaisVariacoesRef = useRef<Record<string, CalculoLoja>>({});
 
   const buscarSugestoes = async (termo: string, idx: number) => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -717,7 +682,7 @@ export function useMarketplaceDetails(
 
     return Array.isArray(data)
       ? data.map((item) => {
-          const calc = mapPercentuaisDoMarketplace(item);
+          const calc = normalizarCalculoItem(mapPercentuaisDoMarketplace(item));
           const custo = getCustoItem(item);
           const preco = calcularPrecoLoja({
             custo,
@@ -735,7 +700,7 @@ export function useMarketplaceDetails(
 
             referencia: item?.["Referência"] ?? "",
             Referencia: item?.["Referência"] ?? "",
-            Referência: item?.["Referência"] ?? "",
+            "Referência": item?.["Referência"] ?? "",
             sku: item?.["Referência"] ?? "",
 
             nome: item?.Nome ?? "",
@@ -760,7 +725,7 @@ export function useMarketplaceDetails(
               tipo_anuncio: "variacoes",
               referencia: item?.["Referência"] ?? "",
               Referencia: item?.["Referência"] ?? "",
-              Referência: item?.["Referência"] ?? "",
+              "Referência": item?.["Referência"] ?? "",
               sku: item?.["Referência"] ?? "",
               preco,
               precoLoja: preco,
@@ -821,7 +786,7 @@ export function useMarketplaceDetails(
       }
 
       const compArr = await montarComposicao(anuncio);
-      const pct = mapPercentuaisDoMarketplace(mp);
+      const pct = normalizarCalculoItem(mapPercentuaisDoMarketplace(mp));
 
       let odFinal = anuncio["OD"] ?? "";
 
@@ -838,19 +803,11 @@ export function useMarketplaceDetails(
 
       const referenciaFinal = anuncio["Referência"] || mp["Referência"] || "";
       const tipoAnuncioFinal = detectarTipoAnuncio(referenciaFinal);
-
       const variacoes = await buscarVariacoesDoPai(referenciaFinal, lojaCode);
-
-      calculosOriginaisVariacoesRef.current = {};
-
-      for (const variacao of variacoes) {
-        const chave = getChaveItem(variacao);
-
-        if (chave) {
-          calculosOriginaisVariacoesRef.current[chave] =
-            getCalculoItem(variacao);
-        }
-      }
+      const precoPai = calcularPrecoLoja({
+        custo: calcCustoTotal(compArr),
+        calculoLoja: pct,
+      });
 
       setProduto({
         marketplace_id: mp.id || "",
@@ -863,7 +820,7 @@ export function useMarketplaceDetails(
         id_var: anuncio["ID Var"] || mp["ID Var"] || "",
         referencia: referenciaFinal,
         Referencia: referenciaFinal,
-        Referência: referenciaFinal,
+        "Referência": referenciaFinal,
         sku: referenciaFinal,
 
         tipo_anuncio: tipoAnuncioFinal,
@@ -877,7 +834,12 @@ export function useMarketplaceDetails(
         largura: anuncio["Largura"] ?? "",
         comprimento: anuncio["Comprimento"] ?? "",
 
-        embalagem: pct.embalagem || anuncio["Embalagem"] || "",
+        embalagem: pct.embalagem,
+
+        preco: precoPai,
+        precoLoja: precoPai,
+        preco_loja: precoPai,
+        "Preço de Venda": precoPai,
 
         ...montarCamposPercentuaisSistema(pct),
 
@@ -886,7 +848,7 @@ export function useMarketplaceDetails(
 
       setCalculoLoja({
         desconto: pct.desconto,
-        embalagem: pct.embalagem || anuncio["Embalagem"] || "",
+        embalagem: pct.embalagem,
         imposto: pct.imposto,
         margem: pct.margem,
         frete: pct.frete,
@@ -1008,11 +970,12 @@ export function useMarketplaceDetails(
 
     const tipoAnuncioFinal = detectarTipoAnuncio(produto.referencia);
 
-    const calculoPai = sanitizeCalculoLoja(calculoLoja);
+    const calculoPai = normalizarCalculoItem(calculoLoja);
     const precoPai = calcularPrecoLoja({
       custo: custoTotal || calcCustoTotal(composicao),
       calculoLoja: calculoPai,
     });
+
     const camposPercentuaisPai = {
       ...montarCamposPercentuaisSupabase(calculoPai),
       "Preço de Venda": precoPai,
@@ -1047,6 +1010,8 @@ export function useMarketplaceDetails(
         ? produto.variacoes
         : [];
 
+      const variacoesAtualizadas = [];
+
       for (const variacao of variacoes) {
         const referenciaVariacao = getReferenciaItem(variacao);
         const calculoVariacao = normalizarCalculoItem(getCalculoItem(variacao));
@@ -1068,6 +1033,8 @@ export function useMarketplaceDetails(
           !getIdLogicoItem(variacao)
         ) {
           console.warn("Variação sem identificador para salvar:", variacao);
+
+          variacoesAtualizadas.push(variacao);
           continue;
         }
 
@@ -1083,6 +1050,30 @@ export function useMarketplaceDetails(
             Referência: toTextOrNull(referenciaVariacao),
           },
         });
+
+        const variacaoAtualizada = {
+          ...variacao,
+
+          ...montarCamposPercentuaisSistema(calculoVariacao),
+
+          preco: precoVariacao,
+          precoLoja: precoVariacao,
+          preco_loja: precoVariacao,
+          "Preço de Venda": precoVariacao,
+
+          dados: {
+            ...(variacao?.dados || {}),
+
+            ...montarCamposPercentuaisSistema(calculoVariacao),
+
+            preco: precoVariacao,
+            precoLoja: precoVariacao,
+            preco_loja: precoVariacao,
+            "Preço de Venda": precoVariacao,
+          },
+        };
+
+        variacoesAtualizadas.push(variacaoAtualizada);
       }
 
       setProduto((prev: any) => ({
@@ -1098,8 +1089,10 @@ export function useMarketplaceDetails(
         preco_loja: precoPai,
         "Preço de Venda": precoPai,
 
-        variacoes: prev?.variacoes,
+        variacoes: variacoesAtualizadas,
       }));
+
+      setCalculoLoja(calculoPai);
 
       await createNotification({
         title: "Precificação Tray atualizada",
@@ -1115,7 +1108,7 @@ export function useMarketplaceDetails(
         }),
       });
 
-      dispararAtualizacaoTabelaTray();
+      marcarTabelaTrayParaRecarregar();
       await carregar();
 
       return { error: null };
