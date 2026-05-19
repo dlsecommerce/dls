@@ -141,7 +141,7 @@ function buildOrSearchParts(tokens: string[]) {
         t.replace(/\s+/g, " "),
         t.replace(/\s+/g, "-"),
         t.replace(/\s+/g, ""),
-      ])
+      ]),
     );
 
     for (const v of variants) {
@@ -166,7 +166,11 @@ function buildOrSearchParts(tokens: string[]) {
 }
 
 function normalizeLojaCode(lojaRaw: unknown): "PK" | "SB" | null {
-  const s = String(lojaRaw ?? "").trim().toUpperCase();
+  const s = String(lojaRaw ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
 
   if (s === "PK" || s.startsWith("PK")) return "PK";
   if (s === "SB" || s.startsWith("SB")) return "SB";
@@ -189,8 +193,7 @@ function isValidRow(r: any) {
   const sid = pick(r?.id);
 
   const hasSomeId =
-    (sID && sID !== "0" && sID !== "-") ||
-    (sid && sid !== "0" && sid !== "-");
+    (sID && sID !== "0" && sID !== "-") || (sid && sid !== "0" && sid !== "-");
 
   return Boolean(hasSomeId);
 }
@@ -281,10 +284,10 @@ export default function PricingTable() {
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
 
   const [sortColumn, setSortColumn] = useState<string | null>(
-    initialSortColumn
+    initialSortColumn,
   );
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">(
-    initialSortDirection
+    initialSortDirection,
   );
 
   const [isPending, startTransition] = useTransition();
@@ -298,7 +301,11 @@ export default function PricingTable() {
   const lastUrlRef = useRef("");
   const reqIdRef = useRef(0);
 
-  const impExp = useTrayImportExport(filteredRows, selectedLoja, selectedBrands);
+  const impExp = useTrayImportExport(
+    filteredRows,
+    selectedLoja,
+    selectedBrands,
+  );
 
   const PREC_FIELDS: Array<keyof Row> = useMemo(
     () => [
@@ -311,7 +318,7 @@ export default function PricingTable() {
       "Marketing",
       "Margem de Lucro",
     ],
-    []
+    [],
   );
 
   useEffect(() => {
@@ -319,11 +326,11 @@ export default function PricingTable() {
     const nextBrands = filters.marca.trim() ? [filters.marca.trim()] : [];
 
     setSelectedLoja((prev) =>
-      arraysEqual(prev, nextLojas) ? prev : nextLojas
+      arraysEqual(prev, nextLojas) ? prev : nextLojas,
     );
 
     setSelectedBrands((prev) =>
-      arraysEqual(prev, nextBrands) ? prev : nextBrands
+      arraysEqual(prev, nextBrands) ? prev : nextBrands,
     );
   }, [filters.lojasVirtuais, filters.marca]);
 
@@ -353,14 +360,14 @@ export default function PricingTable() {
     setItemsPerPage((prev) => (prev !== urlPerPage ? urlPerPage : prev));
     setSelectedLoja((prev) => (arraysEqual(prev, urlLojas) ? prev : urlLojas));
     setSelectedBrands((prev) =>
-      arraysEqual(prev, urlBrands) ? prev : urlBrands
+      arraysEqual(prev, urlBrands) ? prev : urlBrands,
     );
     setSortColumn((prev) => (prev !== urlSortColumn ? urlSortColumn : prev));
     setSortDirection((prev) =>
-      prev !== urlSortDirection ? urlSortDirection : prev
+      prev !== urlSortDirection ? urlSortDirection : prev,
     );
     setFilters((prev) =>
-      JSON.stringify(prev) === JSON.stringify(urlFilters) ? prev : urlFilters
+      JSON.stringify(prev) === JSON.stringify(urlFilters) ? prev : urlFilters,
     );
 
     didHydrateFromUrlRef.current = true;
@@ -455,45 +462,44 @@ export default function PricingTable() {
       sortDirection,
       filters.situacao,
       filters.tipo,
-    ]
+    ],
   );
 
-  const loadData = useCallback(async () => {
-    const myReqId = ++reqIdRef.current;
+  const loadData = useCallback(
+    async (options?: { force?: boolean }) => {
+      const myReqId = ++reqIdRef.current;
 
-    const cached = getCache(cacheKey);
+      const cached = options?.force ? null : getCache(cacheKey);
 
-    if (cached) {
-      startTransition(() => {
-        const safe = (cached.rows || []).filter(isValidRow);
-        setRows(safe);
-        setFilteredRows(safe);
-        setTotalItems(cached.totalItems);
+      if (cached) {
+        startTransition(() => {
+          const safe = (cached.rows || []).filter(isValidRow);
+          setRows(safe);
+          setFilteredRows(safe);
+          setTotalItems(cached.totalItems);
+          setLoading(false);
+        });
+        return;
+      }
+
+      setLoading(true);
+
+      const { data: sess } = await supabase.auth.getSession();
+
+      if (!sess.session) {
+        if (myReqId !== reqIdRef.current) return;
+
+        setRows([]);
+        setFilteredRows([]);
+        setTotalItems(0);
         setLoading(false);
-      });
-      return;
-    }
+        return;
+      }
 
-    setLoading(true);
+      const start = (currentPage - 1) * itemsPerPage;
+      const end = start + itemsPerPage - 1;
 
-    const { data: sess } = await supabase.auth.getSession();
-
-    if (!sess.session) {
-      if (myReqId !== reqIdRef.current) return;
-
-      setRows([]);
-      setFilteredRows([]);
-      setTotalItems(0);
-      setLoading(false);
-      return;
-    }
-
-    const start = (currentPage - 1) * itemsPerPage;
-    const end = start + itemsPerPage - 1;
-
-    let query = supabase
-      .from("marketplace_shopee_all")
-      .select(
+      let query = supabase.from("marketplace_shopee_all").select(
         `
         id,
         anuncio_id,
@@ -517,121 +523,123 @@ export default function PricingTable() {
         "Preço de Venda",
         "Atualizado em"
       `,
-        { count: "exact" }
+        { count: "exact" },
       );
 
-    if (selectedLoja.length) query = query.in("Loja", selectedLoja);
-    if (selectedBrands.length) query = query.in("Marca", selectedBrands);
+      if (selectedLoja.length) query = query.in("Loja", selectedLoja);
+      if (selectedBrands.length) query = query.in("Marca", selectedBrands);
 
-    if (filters.tipo && filters.tipo !== "Todos") {
-      if (filters.tipo === "Produtos") {
-        query = query.ilike("Referência", "%PAI%");
-      } else if (filters.tipo === "Produtos simples") {
-        query = query
-          .not("Referência", "ilike", "%PAI%")
-          .not("Referência", "ilike", "%VAR%");
-      } else if (filters.tipo === "Produtos com variações") {
-        query = query.ilike("Referência", "%PAI%");
-      } else if (filters.tipo === "Variações") {
-        query = query.ilike("Referência", "%VAR%");
+      if (filters.tipo && filters.tipo !== "Todos") {
+        if (filters.tipo === "Produtos") {
+          query = query.ilike("Referência", "%PAI%");
+        } else if (filters.tipo === "Produtos simples") {
+          query = query
+            .not("Referência", "ilike", "%PAI%")
+            .not("Referência", "ilike", "%VAR%");
+        } else if (filters.tipo === "Produtos com variações") {
+          query = query.ilike("Referência", "%PAI%");
+        } else if (filters.tipo === "Variações") {
+          query = query.ilike("Referência", "%VAR%");
+        }
       }
-    }
 
-    if (debouncedSearch) {
-      const tokens = parseSearchTokens(debouncedSearch);
-      const orParts = buildOrSearchParts(tokens);
+      if (debouncedSearch) {
+        const tokens = parseSearchTokens(debouncedSearch);
+        const orParts = buildOrSearchParts(tokens);
 
-      if (orParts.length) query = query.or(orParts.join(","));
-    }
+        if (orParts.length) query = query.or(orParts.join(","));
+      }
 
-    if (filters.situacao === "Últimos Incluídos") {
-      query = query
-        .order("ID", { ascending: false })
-        .order("Atualizado em", { ascending: false })
-        .order("id", { ascending: false });
-    } else if (sortColumn) {
-      query = query
-        .order(sortColumn, {
-          ascending: sortDirection === "asc",
-          nullsFirst: true,
-        })
-        .order("Atualizado em", { ascending: false })
-        .order("id", { ascending: false });
-    } else {
-      query = query
-        .order("Atualizado em", { ascending: false })
-        .order("id", { ascending: false });
-    }
+      if (filters.situacao === "Últimos Incluídos") {
+        query = query
+          .order("ID", { ascending: false })
+          .order("Atualizado em", { ascending: false })
+          .order("id", { ascending: false });
+      } else if (sortColumn) {
+        query = query
+          .order(sortColumn, {
+            ascending: sortDirection === "asc",
+            nullsFirst: true,
+          })
+          .order("Atualizado em", { ascending: false })
+          .order("id", { ascending: false });
+      } else {
+        query = query
+          .order("Atualizado em", { ascending: false })
+          .order("id", { ascending: false });
+      }
 
-    const { data, error, count } = await query.range(start, end);
+      const { data, error, count } = await query.range(start, end);
 
-    if (myReqId !== reqIdRef.current) return;
+      if (myReqId !== reqIdRef.current) return;
 
-    if (error) {
-      console.error(
-        "❌ Supabase error:",
-        error.message,
-        error.details,
-        error.hint
-      );
+      if (error) {
+        console.error(
+          "❌ Supabase error:",
+          error.message,
+          error.details,
+          error.hint,
+        );
 
-      setRows([]);
-      setFilteredRows([]);
-      setTotalItems(0);
-      setLoading(false);
-      return;
-    }
+        setRows([]);
+        setFilteredRows([]);
+        setTotalItems(0);
+        setLoading(false);
+        return;
+      }
 
-    const safeData = (data || []).filter(isValidRow);
+      const safeData = (data || []).filter(isValidRow);
 
-    const normalized = safeData.map((r: any) => {
-      let OD = 3;
-      const ref = String(r.Referência || "").trim();
+      const normalized = safeData.map((r: any) => {
+        let OD = 3;
+        const ref = String(r.Referência || "").trim();
 
-      if (ref.startsWith("PAI -")) OD = 1;
-      else if (ref.startsWith("VAR -")) OD = 2;
+        if (ref.startsWith("PAI -") || ref.startsWith("PAI-")) OD = 1;
+        else if (ref.startsWith("VAR -") || ref.startsWith("VAR-")) OD = 2;
 
-      return {
-        ...r,
-        id: String(r.id),
-        anuncio_id: r.anuncio_id,
-        OD,
-        Desconto: r.Desconto ?? null,
-        Embalagem: r.Embalagem ?? null,
-        Frete: r.Frete ?? null,
-        Comissão: r.Comissão ?? null,
-        Imposto: r.Imposto ?? null,
-        Marketing: r.Marketing ?? null,
-        "Margem de Lucro": r["Margem de Lucro"] ?? null,
-        Custo: r.Custo ?? null,
-        "Preço de Venda": r["Preço de Venda"] ?? null,
-      } as any;
-    });
+        return {
+          ...r,
+          id: String(r.id),
+          anuncio_id: r.anuncio_id,
+          OD,
+          Desconto: r.Desconto ?? null,
+          Embalagem: r.Embalagem ?? null,
+          Frete: r.Frete ?? null,
+          Comissão: r.Comissão ?? null,
+          Imposto: r.Imposto ?? null,
+          Marketing: r.Marketing ?? null,
+          "Margem de Lucro": r["Margem de Lucro"] ?? null,
+          Custo: r.Custo ?? null,
+          "Preço de Venda": r["Preço de Venda"] ?? null,
+        } as any;
+      });
 
-    setCache(cacheKey, {
-      rows: normalized as any,
-      totalItems: count || 0,
-      savedAt: Date.now(),
-    });
+      setCache(cacheKey, {
+        rows: normalized as any,
+        totalItems: count || 0,
+        savedAt: Date.now(),
+      });
 
-    startTransition(() => {
-      setRows(normalized as any);
-      setFilteredRows(normalized as any);
-      setTotalItems(count || 0);
-      setLoading(false);
-    });
-  }, [
-    cacheKey,
-    currentPage,
-    itemsPerPage,
-    sortColumn,
-    sortDirection,
-    selectedLoja,
-    selectedBrands,
-    debouncedSearch,
-    filters.tipo,
-    filters.situacao,
-  ]);
+      startTransition(() => {
+        setRows(normalized as any);
+        setFilteredRows(normalized as any);
+        setTotalItems(count || 0);
+        setLoading(false);
+      });
+    },
+    [
+      cacheKey,
+      currentPage,
+      itemsPerPage,
+      sortColumn,
+      sortDirection,
+      selectedLoja,
+      selectedBrands,
+      debouncedSearch,
+      filters.tipo,
+      filters.situacao,
+    ],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -654,6 +662,25 @@ export default function PricingTable() {
     };
   }, [cacheKey, loadData]);
 
+  useEffect(() => {
+    let precisaRecarregar = false;
+
+    try {
+      precisaRecarregar = Boolean(
+        sessionStorage.getItem("shopee-pricing-precisa-recarregar"),
+      );
+
+      if (precisaRecarregar) {
+        sessionStorage.removeItem("shopee-pricing-precisa-recarregar");
+      }
+    } catch {}
+
+    if (!precisaRecarregar) return;
+
+    clearShopeeCache();
+    void loadData({ force: true });
+  }, [loadData]);
+
   const handleSort = (col: string) => {
     if (sortColumn === col) {
       setSortDirection((p) => (p === "asc" ? "desc" : "asc"));
@@ -670,6 +697,42 @@ export default function PricingTable() {
     setCopiedId(key);
     setTimeout(() => setCopiedId(null), 1200);
   }, []);
+
+  const handleEditFull = useCallback(
+    (row: Row) => {
+      const idParam = String((row as any).ID || "").trim();
+
+      const lojaCode = normalizeLojaCode((row as any).Loja);
+
+      const lojaParam =
+        lojaCode === "PK"
+          ? "Pikot Shop"
+          : lojaCode === "SB"
+            ? "Sóbaquetas"
+            : String((row as any).Loja || "").trim();
+
+      if (!idParam) {
+        console.error("❌ Sem ID interno para abrir marketplace:", row);
+        alert(
+          "Não foi possível abrir este anúncio: ID interno não encontrado.",
+        );
+        return;
+      }
+
+      if (!lojaParam) {
+        console.error("❌ Sem loja para abrir marketplace:", row);
+        alert("Não foi possível abrir este anúncio: loja não encontrada.");
+        return;
+      }
+
+      router.push(
+        `/dashboard/marketplaces/shopee/edit?id=${encodeURIComponent(
+          idParam,
+        )}&loja=${encodeURIComponent(lojaParam)}`,
+      );
+    },
+    [router],
+  );
 
   const openEditor = useCallback(
     (row: Row, field: keyof Row, isMoney: boolean, e: React.MouseEvent) => {
@@ -688,7 +751,7 @@ export default function PricingTable() {
         anchorRect: rect,
       });
     },
-    []
+    [],
   );
 
   const confirmEdit = useCallback(async () => {
@@ -735,8 +798,7 @@ export default function PricingTable() {
 
     const updatedRows = rows.map((r: any) => {
       const isSame =
-        String((r as any).id) === dbIdStr ||
-        String((r as any).ID) === dbIdStr;
+        String((r as any).id) === dbIdStr || String((r as any).ID) === dbIdStr;
 
       if (!isSame) return r;
 
@@ -845,7 +907,7 @@ export default function PricingTable() {
         title: "Precificação Shopee atualizada",
         message: `O campo "${String(field)}" do anúncio "${getShopeePricingLabel(
           currentRow,
-          dbIdStr
+          dbIdStr,
         )}" foi atualizado.`,
         action: "update",
         entityType: "shopee_pricing",
@@ -877,9 +939,9 @@ export default function PricingTable() {
     async (_data: any[]) => {
       setOpenPricingModal(false);
       clearShopeeCache();
-      await loadData();
+      await loadData({ force: true });
     },
-    [loadData]
+    [loadData],
   );
 
   const handleExportAll = useCallback(async () => {
@@ -902,7 +964,8 @@ export default function PricingTable() {
       while (true) {
         let exportQuery = supabase
           .from("marketplace_shopee_all")
-          .select(`
+          .select(
+            `
             id,
             anuncio_id,
             ID,
@@ -924,7 +987,8 @@ export default function PricingTable() {
             Custo,
             "Preço de Venda",
             "Atualizado em"
-          `)
+          `,
+          )
           .order("Atualizado em", { ascending: false })
           .order("id", { ascending: false })
           .range(page * pageSize, (page + 1) * pageSize - 1);
@@ -1034,7 +1098,7 @@ export default function PricingTable() {
                       editedId={null}
                       handleCopy={handleCopy}
                       openEditor={openEditor}
-                      handleEditFull={() => {}}
+                      handleEditFull={handleEditFull}
                     />
                   </TableBody>
                 </Table>
@@ -1064,6 +1128,10 @@ export default function PricingTable() {
               exporting={exporting}
               onExport={handleExportAll}
               onImportOpen={() => setOpenPricingModal(true)}
+              onMassEditOpen={() => setOpenPricingModal(true)}
+              selectedCount={0}
+              onDeleteSelected={() => {}}
+              onClearSelection={() => {}}
             />
           </div>
         </aside>
@@ -1155,6 +1223,13 @@ export default function PricingTable() {
                   setOpenActionsMobile(false);
                   setOpenPricingModal(true);
                 }}
+                onMassEditOpen={() => {
+                  setOpenActionsMobile(false);
+                  setOpenPricingModal(true);
+                }}
+                selectedCount={0}
+                onDeleteSelected={() => {}}
+                onClearSelection={() => {}}
               />
             </div>
           </div>
@@ -1181,7 +1256,7 @@ export default function PricingTable() {
               value={editing.value}
               onChange={(e) =>
                 setEditing((p: any) =>
-                  p ? { ...p, value: e.target.value } : p
+                  p ? { ...p, value: e.target.value } : p,
                 )
               }
               onKeyDown={(e) => {

@@ -3,35 +3,408 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { usePrecificacao } from "@/hooks/usePrecificacao";
+import { createNotification } from "@/lib/createNotification";
+
+type LojaCode = "PK" | "SB" | "";
+
+type CalculoLoja = {
+  desconto: string;
+  embalagem: string;
+  frete: string;
+  imposto: string;
+  margem: string;
+  comissao: string;
+  marketing: string;
+};
 
 function detectarTipoAnuncio(ref: string = "") {
-  if (!ref) return "Simples";
-  const r = ref.toUpperCase();
-  const ehPai = r.includes("PAI -");
-  const ehVar = r.includes("VAR -");
-  return ehPai || ehVar ? "Com variações" : "Simples";
+  const r = String(ref ?? "")
+    .trim()
+    .toUpperCase();
+
+  if (!r) return "Simples";
+
+  const temPaiOuVar =
+    r.includes("PAI-") ||
+    r.includes("VAR-") ||
+    r.includes("PAI -") ||
+    r.includes("VAR -");
+
+  return temPaiOuVar ? "Com variações" : "Simples";
+}
+
+function normalizeLojaCode(lojaRaw: string | null | undefined): LojaCode {
+  const s = String(lojaRaw ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/\s+/g, "");
+
+  if (s === "PK" || s.startsWith("PK") || s.includes("PIKOT")) return "PK";
+  if (s === "SB" || s.startsWith("SB") || s.includes("SOBA")) return "SB";
+
+  return "";
+}
+
+function getLojaLabel(lojaCode: string) {
+  if (lojaCode === "SB") return "Sóbaquetas";
+  if (lojaCode === "PK") return "Pikot Shop";
+  return lojaCode;
+}
+
+function getShopeeNotificationLink(params: {
+  marketplaceId: string;
+  loja: string;
+}) {
+  return `/dashboard/marketplaces/shopee/edit?id=${encodeURIComponent(
+    params.marketplaceId,
+  )}&loja=${encodeURIComponent(params.loja)}`;
+}
+
+function getProdutoLabel(produto: any) {
+  return (
+    produto?.nome ||
+    produto?.referencia ||
+    produto?.id_logico ||
+    produto?.marketplace_id ||
+    "anúncio"
+  );
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value || ""),
+  );
+}
+
+function parseNumero(value: any) {
+  if (value === null || value === undefined || value === "") return 0;
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  let str = String(value).trim();
+
+  str = str.replace(/[^\d.,-]/g, "");
+
+  const temVirgula = str.includes(",");
+  const temPonto = str.includes(".");
+
+  if (temVirgula && temPonto) {
+    if (str.lastIndexOf(",") > str.lastIndexOf(".")) {
+      str = str.replace(/\./g, "");
+      str = str.replace(",", ".");
+    } else {
+      str = str.replace(/,/g, "");
+    }
+  } else if (temVirgula) {
+    str = str.replace(/\./g, "");
+    str = str.replace(",", ".");
+  }
+
+  const n = Number(str);
+
+  return Number.isFinite(n) ? n : 0;
+}
+
+function toNumericOrNull(value: any) {
+  if (value === null || value === undefined) return null;
+
+  const raw = String(value).trim();
+
+  if (raw === "") return null;
+
+  const parsed = parseNumero(raw);
+
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toTextOrNull(value: any) {
+  if (value === null || value === undefined) return null;
+
+  const raw = String(value).trim();
+
+  return raw === "" ? null : raw;
+}
+
+function sanitizeCalculoLoja(calculoLoja: Partial<CalculoLoja>): CalculoLoja {
+  return {
+    desconto: String(calculoLoja.desconto ?? "").replace(/[^\d.,-]/g, ""),
+    embalagem: String(calculoLoja.embalagem ?? "").replace(/[^\d.,-]/g, ""),
+    frete: String(calculoLoja.frete ?? "").replace(/[^\d.,-]/g, ""),
+    imposto: String(calculoLoja.imposto ?? "").replace(/[^\d.,-]/g, ""),
+    margem: String(calculoLoja.margem ?? "").replace(/[^\d.,-]/g, ""),
+    comissao: String(calculoLoja.comissao ?? "").replace(/[^\d.,-]/g, ""),
+    marketing: String(calculoLoja.marketing ?? "").replace(/[^\d.,-]/g, ""),
+  };
+}
+
+function calcularPrecoLoja(params: {
+  custo: any;
+  calculoLoja: Partial<CalculoLoja>;
+}) {
+  const custo = parseNumero(params.custo);
+  const calculoSeguro = sanitizeCalculoLoja(params.calculoLoja);
+
+  const desconto = parseNumero(calculoSeguro.desconto) / 100;
+  const imposto = parseNumero(calculoSeguro.imposto) / 100;
+  const margem = parseNumero(calculoSeguro.margem) / 100;
+  const comissao = parseNumero(calculoSeguro.comissao) / 100;
+  const marketing = parseNumero(calculoSeguro.marketing) / 100;
+
+  const embalagem = parseNumero(calculoSeguro.embalagem);
+  const frete = parseNumero(calculoSeguro.frete);
+
+  const divisor = 1 - (imposto + margem + comissao + marketing);
+
+  if (custo <= 0 || divisor <= 0) return 0;
+
+  const preco = (custo * (1 - desconto) + embalagem + frete) / divisor;
+
+  return Number.isFinite(preco) ? Number(preco.toFixed(2)) : 0;
+}
+
+function marcarTabelaShopeeParaRecarregar() {
+  if (typeof window === "undefined") return;
+
+  try {
+    sessionStorage.setItem(
+      "shopee-pricing-precisa-recarregar",
+      String(Date.now()),
+    );
+  } catch {}
+}
+
+function getReferenciaItem(item: any) {
+  return String(
+    item?.referencia ??
+      item?.Referencia ??
+      item?.["Referência"] ??
+      item?.sku ??
+      item?.dados?.referencia ??
+      item?.dados?.Referencia ??
+      item?.dados?.["Referência"] ??
+      item?.dados?.sku ??
+      "",
+  ).trim();
+}
+
+function getIdMarketplaceItem(item: any) {
+  return String(
+    item?.marketplace_id ??
+      item?.id_marketplace ??
+      item?.id ??
+      item?.dados?.marketplace_id ??
+      item?.dados?.id_marketplace ??
+      item?.dados?.id ??
+      "",
+  ).trim();
+}
+
+function getIdLogicoItem(item: any) {
+  return String(
+    item?.ID ??
+      item?.id_logico ??
+      item?.anuncio_id ??
+      item?.id_anuncio ??
+      item?.dados?.ID ??
+      item?.dados?.id_logico ??
+      item?.dados?.anuncio_id ??
+      item?.dados?.id_anuncio ??
+      "",
+  ).trim();
+}
+
+function getCustoItem(item: any) {
+  return (
+    item?.custoTotal ??
+    item?.custo_total ??
+    item?.custo ??
+    item?.Custo ??
+    item?.dados?.custoTotal ??
+    item?.dados?.custo_total ??
+    item?.dados?.custo ??
+    item?.dados?.Custo ??
+    0
+  );
+}
+
+function getCalculoItem(item: any): CalculoLoja {
+  return sanitizeCalculoLoja({
+    desconto:
+      item?.calculoLoja?.desconto ??
+      item?.desconto ??
+      item?.Desconto ??
+      item?.dados?.calculoLoja?.desconto ??
+      item?.dados?.desconto ??
+      item?.dados?.Desconto ??
+      "",
+
+    embalagem:
+      item?.calculoLoja?.embalagem ??
+      item?.embalagem ??
+      item?.Embalagem ??
+      item?.dados?.calculoLoja?.embalagem ??
+      item?.dados?.embalagem ??
+      item?.dados?.Embalagem ??
+      "",
+
+    frete:
+      item?.calculoLoja?.frete ??
+      item?.frete ??
+      item?.Frete ??
+      item?.dados?.calculoLoja?.frete ??
+      item?.dados?.frete ??
+      item?.dados?.Frete ??
+      "",
+
+    imposto:
+      item?.calculoLoja?.imposto ??
+      item?.imposto ??
+      item?.Imposto ??
+      item?.dados?.calculoLoja?.imposto ??
+      item?.dados?.imposto ??
+      item?.dados?.Imposto ??
+      "",
+
+    margem:
+      item?.calculoLoja?.margem ??
+      item?.margem ??
+      item?.margem_lucro ??
+      item?.["Margem de Lucro"] ??
+      item?.dados?.calculoLoja?.margem ??
+      item?.dados?.margem ??
+      item?.dados?.margem_lucro ??
+      item?.dados?.["Margem de Lucro"] ??
+      "",
+
+    comissao:
+      item?.calculoLoja?.comissao ??
+      item?.comissao ??
+      item?.Comissao ??
+      item?.Comissão ??
+      item?.dados?.calculoLoja?.comissao ??
+      item?.dados?.comissao ??
+      item?.dados?.Comissao ??
+      item?.dados?.Comissão ??
+      "",
+
+    marketing:
+      item?.calculoLoja?.marketing ??
+      item?.marketing ??
+      item?.Marketing ??
+      item?.dados?.calculoLoja?.marketing ??
+      item?.dados?.marketing ??
+      item?.dados?.Marketing ??
+      "",
+  });
+}
+
+function montarCamposPercentuaisSupabase(calculo: CalculoLoja) {
+  return {
+    Desconto: toNumericOrNull(calculo.desconto),
+    Imposto: toNumericOrNull(calculo.imposto),
+    "Margem de Lucro": toNumericOrNull(calculo.margem),
+    Frete: toNumericOrNull(calculo.frete),
+    Comissão: toNumericOrNull(calculo.comissao),
+    Marketing: toNumericOrNull(calculo.marketing),
+    Embalagem: toNumericOrNull(calculo.embalagem),
+  };
+}
+
+function montarCamposPercentuaisSistema(calculo: CalculoLoja) {
+  const calculoSeguro = sanitizeCalculoLoja(calculo);
+
+  return {
+    calculoLoja: calculoSeguro,
+
+    desconto: calculoSeguro.desconto,
+    Desconto: calculoSeguro.desconto,
+
+    embalagem: calculoSeguro.embalagem,
+    Embalagem: calculoSeguro.embalagem,
+
+    frete: calculoSeguro.frete,
+    Frete: calculoSeguro.frete,
+
+    imposto: calculoSeguro.imposto,
+    Imposto: calculoSeguro.imposto,
+
+    margem: calculoSeguro.margem,
+    margem_lucro: calculoSeguro.margem,
+    "Margem de Lucro": calculoSeguro.margem,
+
+    comissao: calculoSeguro.comissao,
+    Comissao: calculoSeguro.comissao,
+    Comissão: calculoSeguro.comissao,
+
+    marketing: calculoSeguro.marketing,
+    Marketing: calculoSeguro.marketing,
+  };
+}
+
+function normalizarCalculoItem(calculo: CalculoLoja): CalculoLoja {
+  return sanitizeCalculoLoja({
+    desconto: calculo.desconto,
+    embalagem: calculo.embalagem,
+    frete: calculo.frete,
+    imposto: calculo.imposto,
+    margem: calculo.margem,
+    comissao: calculo.comissao,
+    marketing: calculo.marketing,
+  });
+}
+
+function normalizarQuantidade(value: any) {
+  if (value === null || value === undefined || value === "") return 1;
+
+  const numero = parseNumero(value);
+
+  return numero > 0 ? numero : 1;
+}
+
+function normalizarComposicao(composicao: any[]) {
+  return (Array.isArray(composicao) ? composicao : []).map((item: any) => ({
+    ...item,
+    codigo: item?.codigo ?? item?.Codigo ?? item?.Código ?? "",
+    produto: item?.produto ?? item?.Produto ?? item?.descricao ?? "",
+    descricao: item?.descricao ?? item?.produto ?? item?.Produto ?? "",
+    quantidade: normalizarQuantidade(item?.quantidade ?? item?.Quantidade),
+    custo: parseNumero(item?.custo ?? item?.Custo),
+  }));
+}
+
+function calcCustoTotal(composicao: any[]) {
+  return normalizarComposicao(composicao).reduce((total, item) => {
+    const quantidade = normalizarQuantidade(item?.quantidade);
+    const custo = parseNumero(item?.custo);
+
+    return total + quantidade * custo;
+  }, 0);
 }
 
 export function useMarketplaceDetails(
   idParam: string | null,
-  lojaParam: string | null
+  lojaParam: string | null,
 ) {
+  const lojaCode = normalizeLojaCode(lojaParam);
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  /**
-   * produto.id = UUID (PK real do banco)
-   * produto.id_logico = campo "ID" de negócio
-   */
   const [produto, setProduto] = useState<any>({
-    id: "", // 🔥 UUID
+    marketplace_id: "",
+    anuncio_id: "",
     id_logico: "",
+
     loja: "",
     id_bling: "",
     id_tray: "",
     id_var: "",
     referencia: "",
-    tipo_anuncio: "",
+    tipo_anuncio: "Simples",
     od: "",
     nome: "",
     marca: "",
@@ -41,10 +414,12 @@ export function useMarketplaceDetails(
     largura: "",
     comprimento: "",
     embalagem: "",
+    variacoes: [],
   });
 
-  const [calculoLoja, setCalculoLoja] = useState({
+  const [calculoLoja, setCalculoLoja] = useState<CalculoLoja>({
     desconto: "",
+    embalagem: "",
     imposto: "",
     margem: "",
     frete: "",
@@ -95,20 +470,18 @@ export function useMarketplaceDetails(
         data?.map((d) => ({
           codigo: d["Código"],
           custo: Number(d["Custo Atual"]) || 0,
-        })) || []
+        })) || [],
       );
       setIndiceSelecionado(0);
     }, 10);
   };
 
-  const selecionarSugestao = (
-    codigo: string,
-    custo: number,
-    idx: number
-  ) => {
+  const selecionarSugestao = (codigo: string, custo: number, idx: number) => {
     const novo = [...composicao];
+
     novo[idx].codigo = codigo;
     novo[idx].custo = custo.toFixed(2);
+
     setComposicao(novo);
     setSugestoes([]);
     setCampoAtivo(null);
@@ -123,22 +496,22 @@ export function useMarketplaceDetails(
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setIndiceSelecionado((p) =>
-        p < sugestoes.length - 1 ? p + 1 : 0
-      );
+      setIndiceSelecionado((p) => (p < sugestoes.length - 1 ? p + 1 : 0));
     }
 
     if (e.key === "ArrowUp") {
       e.preventDefault();
-      setIndiceSelecionado((p) =>
-        p > 0 ? p - 1 : sugestoes.length - 1
-      );
+      setIndiceSelecionado((p) => (p > 0 ? p - 1 : sugestoes.length - 1));
     }
 
     if (e.key === "Enter") {
       e.preventDefault();
+
       const s = sugestoes[indiceSelecionado];
-      selecionarSugestao(s.codigo, s.custo, idx);
+
+      if (s) {
+        selecionarSugestao(s.codigo, s.custo, idx);
+      }
     }
 
     if (e.key === "Escape") {
@@ -148,94 +521,107 @@ export function useMarketplaceDetails(
     }
   };
 
-  const buscarCustoPorCodigo = useCallback(async (codigo: string): Promise<number> => {
-    if (!codigo) return 0;
+  const buscarCustoPorCodigo = useCallback(
+    async (codigo: string): Promise<number> => {
+      if (!codigo) return 0;
 
-    const { data, error } = await supabase
-      .from("custos")
-      .select('"Custo Atual"')
-      .eq('"Código"', codigo)
-      .maybeSingle();
+      const { data, error } = await supabase
+        .from("custos")
+        .select('"Custo Atual"')
+        .eq('"Código"', codigo)
+        .maybeSingle();
 
-    if (error) {
-      console.error("Erro ao buscar custo por código:", codigo, error);
-      return 0;
-    }
+      if (error) {
+        console.error("Erro ao buscar custo por código:", codigo, error);
+        return 0;
+      }
 
-    return data ? Number(data["Custo Atual"]) || 0 : 0;
-  }, []);
+      return data ? Number(data["Custo Atual"]) || 0 : 0;
+    },
+    [],
+  );
 
-  /**
-   * 🔎 BUSCA DO ANÚNCIO (LEITURA)
-   */
-  const buscarAnuncio = async (valor: string, loja: string) => {
-    const lojaNome = loja === "SB" ? "SB" : "PK";
+  const buscarMarketplacePorIdInterno = async (
+    marketplaceId: string,
+    loja: string,
+  ) => {
+    const tabela =
+      loja === "SB" ? "marketplace_shopee_sb" : "marketplace_shopee_pk";
 
-    if (!isNaN(Number(valor))) {
-      const { data } = await supabase
-        .from("anuncios_all")
+    const idBusca = String(marketplaceId || "").trim();
+
+    if (!idBusca) return null;
+
+    const campos = isUuid(idBusca)
+      ? ["id", "ID", "ID Tray"]
+      : ["ID", "ID Tray"];
+
+    for (const campo of campos) {
+      const { data, error } = await supabase
+        .from(tabela)
         .select("*")
-        .eq("ID", Number(valor))
-        .eq("Loja", lojaNome)
-        .order("id", { ascending: false })
-        .limit(1)
-        .single();
+        .eq(campo, idBusca)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Erro ao buscar marketplace Shopee:", {
+          tabela,
+          campo,
+          idBusca,
+          error,
+        });
+
+        continue;
+      }
 
       if (data) return data;
     }
 
-    {
-      const { data } = await supabase
-        .from("anuncios_all")
-        .select("*")
-        .eq("ID Tray", valor)
-        .eq("Loja", lojaNome)
-        .order("id", { ascending: false })
-        .limit(1)
-        .single();
-
-      if (data) return data;
-    }
-
-    {
-      const { data } = await supabase
-        .from("anuncios_all")
-        .select("*")
-        .eq("ID Bling", valor)
-        .eq("Loja", lojaNome)
-        .order("id", { ascending: false })
-        .limit(1)
-        .single();
-
-      if (data) return data;
-    }
+    console.warn("Marketplace Shopee não encontrado:", {
+      tabela,
+      idBusca,
+      campos,
+    });
 
     return null;
   };
 
-  /**
-   * 🔎 BUSCA DE PERCENTUAIS (VIEW)
-   */
-  const buscarPercentuais = async (anuncio: any, loja: string) => {
+  const buscarAnuncioPorIdInterno = async (idInterno: string, loja: string) => {
     const lojaNome = loja === "SB" ? "SB" : "PK";
+    const idBusca = String(idInterno || "").trim();
+
+    if (!idBusca) return null;
 
     const { data, error } = await supabase
-      .from("marketplace_shopee_all")
-      .select(
-        'Desconto, Embalagem, Frete, Imposto, "Margem de Lucro", Comissão, Marketing'
-      )
-      .eq("ID", anuncio["ID"])
+      .from("anuncios_all")
+      .select("*")
+      .eq("ID", idBusca)
       .eq("Loja", lojaNome)
-      .order("id", { ascending: false })
-      .limit(1)
-      .single();
+      .maybeSingle();
 
     if (error) {
-      console.error("Erro ao buscar percentuais:", error);
+      console.error("Erro ao buscar anúncio por ID interno:", {
+        idBusca,
+        lojaNome,
+        error,
+      });
+
       return null;
     }
 
     return data;
+  };
+
+  const mapPercentuaisDoMarketplace = (mp: any): CalculoLoja => {
+    return sanitizeCalculoLoja({
+      desconto: mp?.Desconto ?? "",
+      imposto: mp?.Imposto ?? "",
+      margem: mp?.["Margem de Lucro"] ?? "",
+      frete: mp?.Frete ?? "",
+      comissao: mp?.["Comissão"] ?? mp?.Comissão ?? "",
+      marketing: mp?.Marketing ?? "",
+      embalagem: mp?.Embalagem ?? "",
+    });
   };
 
   const montarComposicao = useCallback(
@@ -259,7 +645,7 @@ export function useMarketplaceDetails(
       }
 
       const custos = await Promise.all(
-        itens.map((item) => buscarCustoPorCodigo(item.codigo))
+        itens.map((item) => buscarCustoPorCodigo(item.codigo)),
       );
 
       return itens.map((item, idx) => ({
@@ -268,65 +654,210 @@ export function useMarketplaceDetails(
         custo: (custos[idx] || 0).toFixed(2),
       }));
     },
-    [buscarCustoPorCodigo]
+    [buscarCustoPorCodigo],
   );
 
+  const buscarVariacoesDoPai = async (referenciaPai: string, loja: string) => {
+    const refPai = String(referenciaPai || "").trim();
+
+    if (!refPai.toUpperCase().startsWith("PAI-")) return [];
+
+    const chaveVariacao = refPai.replace(/^PAI-/i, "VAR-");
+
+    const tabela =
+      loja === "SB" ? "marketplace_shopee_sb" : "marketplace_shopee_pk";
+
+    const { data, error } = await supabase
+      .from(tabela)
+      .select("*")
+      .eq("Referência", chaveVariacao);
+
+    if (error) {
+      console.error("Erro ao buscar variações Shopee do pai:", {
+        tabela,
+        referenciaPai,
+        chaveVariacao,
+        error,
+      });
+
+      return [];
+    }
+
+    return Array.isArray(data)
+      ? data.map((item) => {
+          const calc = normalizarCalculoItem(mapPercentuaisDoMarketplace(item));
+          const custo = getCustoItem(item);
+          const preco = calcularPrecoLoja({
+            custo,
+            calculoLoja: calc,
+          });
+
+          return {
+            ...item,
+
+            marketplace_id: item?.id || "",
+            anuncio_id: item?.anuncio_id || item?.ID || "",
+            id_logico: item?.ID || item?.anuncio_id || "",
+
+            tipo_anuncio: "variacoes",
+
+            referencia: item?.["Referência"] ?? "",
+            Referencia: item?.["Referência"] ?? "",
+            "Referência": item?.["Referência"] ?? "",
+            sku: item?.["Referência"] ?? "",
+
+            nome: item?.Nome ?? "",
+            Nome: item?.Nome ?? "",
+
+            marca: item?.Marca ?? "",
+            Marca: item?.Marca ?? "",
+
+            categoria: item?.Categoria ?? "",
+            Categoria: item?.Categoria ?? "",
+
+            preco,
+            precoLoja: preco,
+            preco_loja: preco,
+            "Preço de Venda": preco,
+
+            ...montarCamposPercentuaisSistema(calc),
+
+            dados: {
+              ...(item?.dados || {}),
+              ...item,
+              tipo_anuncio: "variacoes",
+              referencia: item?.["Referência"] ?? "",
+              Referencia: item?.["Referência"] ?? "",
+              "Referência": item?.["Referência"] ?? "",
+              sku: item?.["Referência"] ?? "",
+              preco,
+              precoLoja: preco,
+              preco_loja: preco,
+              "Preço de Venda": preco,
+              ...montarCamposPercentuaisSistema(calc),
+            },
+          };
+        })
+      : [];
+  };
+
   const carregar = useCallback(async () => {
-    if (!idParam || !lojaParam) return;
+    if (!idParam || !lojaCode) return;
 
     setLoading(true);
 
     try {
-      const anuncio = await buscarAnuncio(idParam, lojaParam);
-      if (!anuncio) return;
+      const mp = await buscarMarketplacePorIdInterno(idParam, lojaCode);
 
-      const [percentuais, compArr] = await Promise.all([
-        buscarPercentuais(anuncio, lojaParam),
-        montarComposicao(anuncio),
-      ]);
+      if (!mp) {
+        console.warn("Marketplace Shopee não encontrado:", {
+          idParam,
+          lojaParam,
+          lojaCode,
+        });
+
+        return;
+      }
+
+      const idInternoAnuncio = String(
+        mp.anuncio_id || mp.ID || idParam || "",
+      ).trim();
+
+      if (!idInternoAnuncio) {
+        console.warn("Marketplace Shopee sem ID interno do anúncio:", {
+          idParam,
+          lojaParam,
+          lojaCode,
+          mp,
+        });
+
+        return;
+      }
+
+      const anuncio = await buscarAnuncioPorIdInterno(
+        idInternoAnuncio,
+        lojaCode,
+      );
+
+      if (!anuncio) {
+        console.warn("Anúncio não encontrado para ID interno:", {
+          idInternoAnuncio,
+          lojaCode,
+        });
+
+        return;
+      }
+
+      const compArr = await montarComposicao(anuncio);
+      const pct = normalizarCalculoItem(mapPercentuaisDoMarketplace(mp));
 
       let odFinal = anuncio["OD"] ?? "";
 
       if (!odFinal) {
         for (let i = 1; i <= 10; i++) {
           const cod = anuncio[`Código ${i}`];
-          if (cod && cod.toUpperCase().includes("OD")) {
+
+          if (cod && String(cod).toUpperCase().includes("OD")) {
             odFinal = cod;
             break;
           }
         }
       }
 
+      const referenciaFinal = anuncio["Referência"] || mp["Referência"] || "";
+      const tipoAnuncioFinal = detectarTipoAnuncio(referenciaFinal);
+      const variacoes = await buscarVariacoesDoPai(referenciaFinal, lojaCode);
+
+      const precoPai = calcularPrecoLoja({
+        custo: calcCustoTotal(compArr),
+        calculoLoja: pct,
+      });
+
       setProduto({
-        id: anuncio.id, // 🔥 UUID
-        id_logico: anuncio["ID"],
-        loja: lojaParam === "SB" ? "Sóbaquetas" : "Pikot Shop",
-        id_bling: anuncio["ID Bling"] || "",
-        id_tray: anuncio["ID Tray"] || "",
-        id_var: anuncio["ID Var"] || "",
-        referencia: anuncio["Referência"] || "",
-        tipo_anuncio: detectarTipoAnuncio(anuncio["Referência"]),
+        marketplace_id: mp.id || "",
+        anuncio_id: String(anuncio["ID"] || idInternoAnuncio),
+        id_logico: anuncio["ID"] || idInternoAnuncio,
+
+        loja: getLojaLabel(lojaCode),
+        id_bling: anuncio["ID Bling"] || mp["ID Bling"] || "",
+        id_tray: anuncio["ID Tray"] || mp["ID Tray"] || "",
+        id_var: anuncio["ID Var"] || mp["ID Var"] || "",
+        referencia: referenciaFinal,
+        Referencia: referenciaFinal,
+        "Referência": referenciaFinal,
+        sku: referenciaFinal,
+
+        tipo_anuncio: tipoAnuncioFinal,
         od: odFinal,
-        nome: anuncio["Nome"] ?? "",
-        marca: anuncio["Marca"] ?? "",
-        categoria: anuncio["Categoria"] ?? "",
+
+        nome: anuncio["Nome"] ?? mp["Nome"] ?? "",
+        marca: anuncio["Marca"] ?? mp["Marca"] ?? "",
+        categoria: anuncio["Categoria"] ?? mp["Categoria"] ?? "",
         peso: anuncio["Peso"] ?? "",
         altura: anuncio["Altura"] ?? "",
         largura: anuncio["Largura"] ?? "",
         comprimento: anuncio["Comprimento"] ?? "",
-        embalagem:
-          percentuais?.Embalagem ??
-          anuncio["Embalagem"] ??
-          "",
+
+        embalagem: pct.embalagem,
+
+        preco: precoPai,
+        precoLoja: precoPai,
+        preco_loja: precoPai,
+        "Preço de Venda": precoPai,
+
+        ...montarCamposPercentuaisSistema(pct),
+
+        variacoes,
       });
 
       setCalculoLoja({
-        desconto: percentuais?.Desconto ?? "",
-        imposto: percentuais?.Imposto ?? "",
-        margem: percentuais?.["Margem de Lucro"] ?? "",
-        frete: percentuais?.Frete ?? "",
-        comissao: percentuais?.Comissão ?? "",
-        marketing: percentuais?.Marketing ?? "",
+        desconto: pct.desconto,
+        embalagem: pct.embalagem,
+        imposto: pct.imposto,
+        margem: pct.margem,
+        frete: pct.frete,
+        comissao: pct.comissao,
+        marketing: pct.marketing,
       });
 
       setComposicao(compArr);
@@ -335,64 +866,293 @@ export function useMarketplaceDetails(
     } finally {
       setLoading(false);
     }
-  }, [idParam, lojaParam, montarComposicao]);
+  }, [
+    idParam,
+    lojaParam,
+    lojaCode,
+    montarComposicao,
+    setAcrescimos,
+    setCalculo,
+    setComposicao,
+  ]);
 
   useEffect(() => {
     carregar();
   }, [carregar]);
 
-  /**
-   * 💾 SAVE — UPDATE DETERMINÍSTICO (UUID)
-   */
+  const atualizarMarketplacePorIdentificador = async (params: {
+    tabela: string;
+    item: any;
+    campos: any;
+  }) => {
+    const idMarketplace = getIdMarketplaceItem(params.item);
+    const idLogico = getIdLogicoItem(params.item);
+    const referencia = getReferenciaItem(params.item);
+
+    if (idMarketplace && isUuid(idMarketplace)) {
+      const { error } = await supabase
+        .from(params.tabela)
+        .update(params.campos)
+        .eq("id", idMarketplace);
+
+      if (error) throw error;
+
+      return;
+    }
+
+    if (idLogico) {
+      const { error } = await supabase
+        .from(params.tabela)
+        .update(params.campos)
+        .eq("ID", idLogico);
+
+      if (error) throw error;
+
+      return;
+    }
+
+    if (referencia) {
+      const { error } = await supabase
+        .from(params.tabela)
+        .update(params.campos)
+        .eq("Referência", referencia);
+
+      if (error) throw error;
+
+      return;
+    }
+
+    console.warn(
+      "Variação Shopee sem identificador para atualizar marketplace:",
+      params.item,
+    );
+  };
+
+  const atualizarAnuncioPorIdentificador = async (params: {
+    item: any;
+    campos: any;
+  }) => {
+    const idLogico = getIdLogicoItem(params.item);
+    const referencia = getReferenciaItem(params.item);
+    const tabelaAnuncios = lojaCode === "SB" ? "anuncios_sb" : "anuncios_pk";
+
+    if (idLogico) {
+      const { error } = await supabase
+        .from(tabelaAnuncios)
+        .update(params.campos)
+        .eq("ID", idLogico)
+        .eq("Loja", lojaCode);
+
+      if (error) throw error;
+
+      return;
+    }
+
+    if (referencia) {
+      const { error } = await supabase
+        .from(tabelaAnuncios)
+        .update(params.campos)
+        .eq("Referência", referencia)
+        .eq("Loja", lojaCode);
+
+      if (error) throw error;
+
+      return;
+    }
+
+    console.warn("Variação Shopee sem identificador para atualizar anúncio:", {
+      item: params.item,
+    });
+  };
+
   const save = useCallback(async () => {
-    if (!produto.id || !lojaParam) return { error: null };
+    if (!produto.marketplace_id || !produto.anuncio_id || !lojaCode) {
+      return { error: null };
+    }
 
     const tabela =
-      lojaParam === "SB"
-        ? "marketplace_tray_sb"
-        : "marketplace_tray_pk";
+      lojaCode === "SB" ? "marketplace_shopee_sb" : "marketplace_shopee_pk";
+
+    const tabelaAnuncios = lojaCode === "SB" ? "anuncios_sb" : "anuncios_pk";
+
+    const tipoAnuncioFinal = detectarTipoAnuncio(produto.referencia);
+
+    const calculoPai = normalizarCalculoItem(calculoLoja);
+    const precoPai = calcularPrecoLoja({
+      custo: custoTotal || calcCustoTotal(composicao),
+      calculoLoja: calculoPai,
+    });
+
+    const camposPercentuaisPai = {
+      ...montarCamposPercentuaisSupabase(calculoPai),
+      "Preço de Venda": precoPai,
+    };
 
     setSaving(true);
 
     try {
-      await supabase
+      const { error: errMp } = await supabase
         .from(tabela)
-        .update({
-          Desconto: calculoLoja.desconto,
-          Imposto: calculoLoja.imposto,
-          "Margem de Lucro": calculoLoja.margem,
-          Frete: calculoLoja.frete,
-          Comissão: calculoLoja.comissao,
-          Marketing: calculoLoja.marketing,
-          Embalagem: produto.embalagem,
-        })
-        .eq("id", produto.id); // ✅ UUID
+        .update(camposPercentuaisPai)
+        .eq("id", produto.marketplace_id);
 
-      await supabase
-        .from("anuncios_all")
-        .update({
-          OD: produto.od,
-          Peso: produto.peso,
-          Altura: produto.altura,
-          Largura: produto.largura,
-          Comprimento: produto.comprimento,
-          Embalagem: produto.embalagem,
-          Referência: produto.referencia,
-          Tipo: produto.tipo_anuncio,
-        })
-        .eq("id", produto.id); // ✅ UUID
+      if (errMp) throw errMp;
 
-      return {};
+      const { error: errAn } = await supabase
+        .from(tabelaAnuncios)
+        .update({
+          OD: toTextOrNull(produto.od),
+          Peso: toNumericOrNull(produto.peso),
+          Altura: toNumericOrNull(produto.altura),
+          Largura: toNumericOrNull(produto.largura),
+          Comprimento: toNumericOrNull(produto.comprimento),
+          Referência: toTextOrNull(produto.referencia),
+        })
+        .eq("ID", produto.anuncio_id)
+        .eq("Loja", lojaCode);
+
+      if (errAn) throw errAn;
+
+      const variacoes = Array.isArray(produto?.variacoes)
+        ? produto.variacoes
+        : [];
+
+      const variacoesAtualizadas = [];
+
+      for (const variacao of variacoes) {
+        const referenciaVariacao = getReferenciaItem(variacao);
+        const calculoVariacao = normalizarCalculoItem(getCalculoItem(variacao));
+
+        const custoVariacao = getCustoItem(variacao);
+        const precoVariacao = calcularPrecoLoja({
+          custo: custoVariacao,
+          calculoLoja: calculoVariacao,
+        });
+
+        const camposPercentuaisVariacao = {
+          ...montarCamposPercentuaisSupabase(calculoVariacao),
+          "Preço de Venda": precoVariacao,
+        };
+
+        if (
+          !referenciaVariacao &&
+          !getIdMarketplaceItem(variacao) &&
+          !getIdLogicoItem(variacao)
+        ) {
+          console.warn("Variação Shopee sem identificador para salvar:", {
+            variacao,
+          });
+
+          variacoesAtualizadas.push(variacao);
+          continue;
+        }
+
+        await atualizarMarketplacePorIdentificador({
+          tabela,
+          item: variacao,
+          campos: camposPercentuaisVariacao,
+        });
+
+        await atualizarAnuncioPorIdentificador({
+          item: variacao,
+          campos: {
+            Referência: toTextOrNull(referenciaVariacao),
+          },
+        });
+
+        const variacaoAtualizada = {
+          ...variacao,
+
+          ...montarCamposPercentuaisSistema(calculoVariacao),
+
+          preco: precoVariacao,
+          precoLoja: precoVariacao,
+          preco_loja: precoVariacao,
+          "Preço de Venda": precoVariacao,
+
+          dados: {
+            ...(variacao?.dados || {}),
+
+            ...montarCamposPercentuaisSistema(calculoVariacao),
+
+            preco: precoVariacao,
+            precoLoja: precoVariacao,
+            preco_loja: precoVariacao,
+            "Preço de Venda": precoVariacao,
+          },
+        };
+
+        variacoesAtualizadas.push(variacaoAtualizada);
+      }
+
+      setProduto((prev: any) => ({
+        ...prev,
+
+        tipo_anuncio: tipoAnuncioFinal,
+        embalagem: calculoPai.embalagem,
+
+        ...montarCamposPercentuaisSistema(calculoPai),
+
+        preco: precoPai,
+        precoLoja: precoPai,
+        preco_loja: precoPai,
+        "Preço de Venda": precoPai,
+
+        variacoes: variacoesAtualizadas,
+      }));
+
+      setCalculoLoja(calculoPai);
+
+      await createNotification({
+        title: "Precificação Shopee atualizada",
+        message: `A precificação Shopee do anúncio "${getProdutoLabel(
+          produto,
+        )}" foi atualizada.`,
+        action: "update",
+        entityType: "marketplace_shopee_pricing",
+        entityId: String(produto.id_logico || produto.anuncio_id),
+        link: getShopeeNotificationLink({
+          marketplaceId: String(produto.id_logico || produto.anuncio_id),
+          loja: getLojaLabel(lojaCode),
+        }),
+      });
+
+      marcarTabelaShopeeParaRecarregar();
+      await carregar();
+
+      return { error: null };
+    } catch (error) {
+      console.error("Erro ao salvar precificação Shopee:", error);
+
+      return { error };
     } finally {
       setSaving(false);
     }
-  }, [produto, calculoLoja, lojaParam]);
+  }, [produto, calculoLoja, lojaCode, custoTotal, composicao, carregar]);
+
+  const setProdutoComTipo = useCallback((value: any) => {
+    setProduto((prev: any) => {
+      const next =
+        typeof value === "function" ? value(prev) : { ...prev, ...value };
+
+      const referenciaMudou =
+        Object.prototype.hasOwnProperty.call(next, "referencia") &&
+        String(next.referencia ?? "") !== String(prev?.referencia ?? "");
+
+      if (!referenciaMudou) return next;
+
+      return {
+        ...next,
+        tipo_anuncio: detectarTipoAnuncio(next.referencia),
+      };
+    });
+  }, []);
 
   return {
     loading,
     saving,
     produto,
-    setProduto,
+    setProduto: setProdutoComTipo,
     calculoLoja,
     setCalculoLoja,
     composicao,

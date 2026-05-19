@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   Table as ShadTable,
   TableBody,
@@ -10,8 +9,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
 import { Row } from "@/components/marketplaces/shopee/hooks/types";
 import { toBR } from "@/components/marketplaces/shopee/hooks/helpers";
+
 import {
   Edit as EditIcon,
   Copy as CopyIcon,
@@ -290,8 +291,6 @@ function RowsBody({
   openEditor,
   handleEditFull,
 }: TableRowsProps) {
-  const router = useRouter();
-
   const lojaLabel = (loja: string) =>
     loja === "PK" ? "Pikot" : loja === "SB" ? "Sóbaq." : loja;
 
@@ -450,9 +449,6 @@ function RowsBody({
                 type="button"
                 onClick={() => {
                   handleEditFull(row);
-                  router.push(
-                    `/dashboard/marketplaces/shopee/details?id=${row.ID}&loja=${row.Loja}`
-                  );
                 }}
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-neutral-700 text-white active:scale-[0.98]"
               >
@@ -691,7 +687,9 @@ function RowsBody({
             <CellEditable row={row} field="Marketing" suffix="%" />
 
             <TableCell className={`${BODY_CELL} text-white`}>
-              <span className="block min-w-0 truncate">R$ {toBR(row.Custo)}</span>
+              <span className="block min-w-0 truncate">
+                R$ {toBR(row.Custo)}
+              </span>
             </TableCell>
 
             <TableCell className={`${BODY_CELL} font-semibold text-green-400`}>
@@ -726,9 +724,6 @@ function RowsBody({
                 type="button"
                 onClick={() => {
                   handleEditFull(row);
-                  router.push(
-                    `/dashboard/marketplaces/shopee/details?id=${row.ID}&loja=${row.Loja}`
-                  );
                 }}
                 className="inline-flex cursor-pointer items-center justify-end text-white transition hover:text-[#1A8CEB]"
               >

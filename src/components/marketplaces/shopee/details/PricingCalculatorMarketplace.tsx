@@ -4,20 +4,22 @@ import React, { useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 
-import AnimatedNumber from "@/components/marketplaces/tray/details/AnimatedNumber";
-import CalculoPrecoBox from "@/components/marketplaces/tray/details/CalculoPrecoBox";
-import MarketplaceSection from "@/components/marketplaces/tray/details/MarketplaceSection";
-import { VariationMarketplaceSection } from "@/components/marketplaces/tray/details/VariationMarketplaceSection";
+import AnimatedNumber from "@/components/marketplaces/shopee/details/AnimatedNumber";
+import CalculoPrecoBox from "@/components/marketplaces/shopee/details/CalculoPrecoBox";
+import InfoGeraisBox from "@/components/marketplaces/shopee/details/InfoGeraisBox";
+import MarketplaceSection from "@/components/marketplaces/shopee/details/ShopeeMarketplaceSection";
+import { VariationShopeeSection } from "@/components/marketplaces/shopee/details/VariationShopeeSection";
 
 import { CompositionSection } from "@/components/announce/ProductDetails/CompositionSection";
 import ConfirmExitModal from "@/components/announce/ProductDetails/ConfirmExitModal";
 import { LoadingBar } from "@/components/ui/loading-bar";
 
-import { useMarketplaceDetails } from "@/components/marketplaces/tray/hooks/useMarketplaceDetails";
+import { useMarketplaceDetails } from "@/components/marketplaces/shopee/hooks/useMarketplaceDetails";
 import { useKeyboardShortcuts } from "@/components/announce/hooks/useKeyboardShortcuts";
+import { toastCustom } from "@/utils/toastCustom";
 
 /* ============================================================
-   HELPERS
+   Helper para normalizar o parâmetro "loja" da URL
 ============================================================ */
 function normalizeLojaParam(lojaParam: string | null) {
   const lojaNormalizada = lojaParam
@@ -37,17 +39,43 @@ function normalizeLojaParam(lojaParam: string | null) {
 }
 
 /* ============================================================
+   Helper para identificar produto pai com variações
+============================================================ */
+function isProdutoPaiComVariacoes(produto: any) {
+  const referencia = String(
+    produto?.referencia ??
+      produto?.Referencia ??
+      produto?.["Referência"] ??
+      produto?.sku ??
+      ""
+  )
+    .trim()
+    .toUpperCase();
+
+  const tipoAnuncio = String(produto?.tipo_anuncio ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (referencia.startsWith("PAI-")) return true;
+  if (tipoAnuncio === "variacoes") return true;
+  if (tipoAnuncio === "com variações") return true;
+  if (tipoAnuncio === "com variacoes") return true;
+
+  return false;
+}
+
+/* ============================================================
    COMPONENTE WRAPPER
    Força remount quando mudar ID ou loja
 ============================================================ */
-export default function PricingCalculatorMarketplace() {
+export default function PricingCalculatorShopee() {
   const searchParams = useSearchParams();
 
   const id = searchParams.get("id");
   const loja = normalizeLojaParam(searchParams.get("loja"));
 
   return (
-    <PricingCalculatorMarketplaceInternal
+    <PricingCalculatorShopeeInternal
       key={`${id}-${loja}`}
       id={id}
       loja={loja}
@@ -58,7 +86,7 @@ export default function PricingCalculatorMarketplace() {
 /* ============================================================
    COMPONENTE INTERNO
 ============================================================ */
-function PricingCalculatorMarketplaceInternal({
+function PricingCalculatorShopeeInternal({
   id,
   loja,
 }: {
@@ -68,7 +96,11 @@ function PricingCalculatorMarketplaceInternal({
   const router = useRouter();
   const loadingBarRef = useRef<any>(null);
 
+  const [variationModalOpen, setVariationModalOpen] = React.useState(false);
+
   const {
+    loading: loadingHook,
+    saving,
     produto,
     setProduto,
     composicao,
@@ -76,6 +108,7 @@ function PricingCalculatorMarketplaceInternal({
     custoTotal,
     calculoLoja,
     setCalculoLoja,
+    save,
 
     campoAtivo,
     sugestoes,
@@ -89,12 +122,15 @@ function PricingCalculatorMarketplaceInternal({
   const produtoTela = produto ?? {};
   const composicaoTela = Array.isArray(composicao) ? composicao : [];
 
-  const tituloPagina = useMemo(() => {
-    return produtoTela?.nome?.trim() || "Marketplace";
-  }, [produtoTela?.nome]);
+  const loading = Boolean(loadingHook || !produto);
 
-  const loading = !produto;
-  const saving = false;
+  const bloquearTelaPai = Boolean(
+    !loading && isProdutoPaiComVariacoes(produtoTela)
+  );
+
+  const tituloPagina = useMemo(() => {
+    return produtoTela?.nome?.trim() || "Shopee";
+  }, [produtoTela?.nome]);
 
   React.useEffect(() => {
     if (loading) loadingBarRef.current?.start?.();
@@ -109,14 +145,19 @@ function PricingCalculatorMarketplaceInternal({
     const parse = (v: any) => parseFloat(String(v).replace(",", ".")) || 0;
 
     const d = parse(calculoLoja?.desconto) / 100;
-    const i = parse(calculoLoja?.imposto) / 100;
-    const m = parse(calculoLoja?.margem) / 100;
-    const c = parse(calculoLoja?.comissao) / 100;
-    const mk = parse(calculoLoja?.marketing) / 100;
-    const f = parse(calculoLoja?.frete);
+    const embalagem = parse(calculoLoja?.embalagem);
+    const frete = parse(calculoLoja?.frete);
+    const imposto = parse(calculoLoja?.imposto) / 100;
+    const margem = parse(calculoLoja?.margem) / 100;
+    const comissao = parse(calculoLoja?.comissao) / 100;
+    const marketing = parse(calculoLoja?.marketing) / 100;
 
-    const divisor = 1 - (i + m + c + mk);
-    const preco = divisor > 0 ? (custo * (1 - d) + f + 2.5) / divisor : 0;
+    const divisor = 1 - (imposto + margem + comissao + marketing);
+
+    const preco =
+      divisor > 0
+        ? (custo * (1 - d) + embalagem + frete) / divisor
+        : 0;
 
     return isFinite(preco) ? preco : 0;
   };
@@ -124,6 +165,20 @@ function PricingCalculatorMarketplaceInternal({
   const precoLoja = calcularPreco();
 
   const handleClearLocal = () => {
+    if (bloquearTelaPai) {
+      setCalculoLoja({
+        desconto: "",
+        embalagem: "",
+        frete: "",
+        imposto: "",
+        margem: "",
+        comissao: "",
+        marketing: "",
+      });
+
+      return;
+    }
+
     if (window.confirm("Tem certeza?")) {
       setProduto((p: any) => ({
         ...p,
@@ -141,13 +196,35 @@ function PricingCalculatorMarketplaceInternal({
     }
   };
 
-  const handleSave = () => {
-    console.log("Salvar marketplace", {
-      produto: produtoTela,
-      composicao: composicaoTela,
-      calculoLoja,
-    });
-  };
+  const handleSave = React.useCallback(async () => {
+    if (saving || loading) return;
+
+    const { error } = await save();
+
+    if (error) {
+      console.error("Erro ao salvar Shopee:", error);
+
+      toastCustom.error(
+        "Erro ao salvar precificação Shopee",
+        "Não foi possível salvar os percentuais."
+      );
+
+      return;
+    }
+
+    try {
+      sessionStorage.setItem("shopee-pricing-precisa-recarregar", "1");
+    } catch {}
+
+    toastCustom.success(
+      "Precificação Shopee salva com sucesso",
+      "As alterações foram gravadas no sistema."
+    );
+
+    setTimeout(() => {
+      router.push("/dashboard/marketplaces/shopee");
+    }, 700);
+  }, [saving, loading, save, router]);
 
   const { showExitModal, confirmExit, setShowExitModal } = useKeyboardShortcuts({
     saving,
@@ -156,7 +233,40 @@ function PricingCalculatorMarketplaceInternal({
     sugestoesLength: sugestoes?.length || 0,
   });
 
+  React.useEffect(() => {
+    if (!variationModalOpen) return;
+
+    if (showExitModal) {
+      setShowExitModal(false);
+    }
+  }, [variationModalOpen, showExitModal, setShowExitModal]);
+
+  const handleVariationModalOpenChange = React.useCallback(
+    (open: boolean) => {
+      setVariationModalOpen(open);
+
+      if (open) {
+        setShowExitModal(false);
+      }
+    },
+    [setShowExitModal]
+  );
+
+  const handleConfirmExitOpenChange = React.useCallback(
+    (open: boolean) => {
+      if (variationModalOpen) {
+        setShowExitModal(false);
+        return;
+      }
+
+      setShowExitModal(open);
+    },
+    [variationModalOpen, setShowExitModal]
+  );
+
   const setMarketplaces = (value: any) => {
+    if (bloquearTelaPai) return;
+
     if (typeof value === "function") {
       setProduto((p: any) => ({
         ...p,
@@ -178,10 +288,11 @@ function PricingCalculatorMarketplaceInternal({
 
       <div className="min-h-screen overflow-x-clip bg-gradient-to-br from-[#070707] via-[#0b0b0b] to-[#070707] px-4 pb-24 pt-4 text-white sm:px-6 lg:px-8">
         <div className="mx-auto max-w-[1880px]">
+          {/* TOPO */}
           <header className="mb-4">
             <button
               type="button"
-              onClick={() => router.push("/dashboard/marketplaces/tray")}
+              onClick={() => router.push("/dashboard/marketplaces/shopee")}
               className="mb-3 inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-white/55 transition-colors hover:text-white"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -195,19 +306,21 @@ function PricingCalculatorMarketplaceInternal({
                 </h1>
 
                 <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-white/55">
-                  <span>ID Tray: {produtoTela?.id_tray || id || "Novo"}</span>
+                  <span>ID interno: {produtoTela?.id || id || "Novo"}</span>
 
                   <span>Loja: {produtoTela?.loja || loja || "PK"}</span>
 
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 font-semibold text-emerald-400">
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                    Marketplace ativo
+                    Shopee ativo
                   </span>
 
                   <span>
                     {loading
                       ? "Carregando dados..."
-                      : "Última alteração: agora há pouco"}
+                      : saving
+                        ? "Salvando alterações..."
+                        : "Última alteração: agora há pouco"}
                   </span>
                 </div>
               </div>
@@ -215,7 +328,7 @@ function PricingCalculatorMarketplaceInternal({
               <div className="flex shrink-0 flex-wrap items-center justify-start gap-2 xl:justify-end">
                 <button
                   type="button"
-                  onClick={() => router.push("/dashboard/marketplaces/tray")}
+                  onClick={() => router.push("/dashboard/marketplaces/shopee")}
                   className="
                     inline-flex h-9 cursor-pointer items-center justify-center rounded-lg
                     border border-white/10 bg-white/[0.04] px-6
@@ -248,6 +361,7 @@ function PricingCalculatorMarketplaceInternal({
             </div>
           </header>
 
+          {/* LAYOUT PRINCIPAL */}
           <div
             className={`
               grid grid-cols-1 items-start gap-5
@@ -255,7 +369,18 @@ function PricingCalculatorMarketplaceInternal({
               ${campoAtivo !== null ? "relative z-[120]" : ""}
             `}
           >
-            <aside className="min-w-0">
+            {/* COLUNA ESQUERDA - COMPOSIÇÃO DO PAI */}
+            <aside
+              className={`
+                min-w-0
+                ${
+                  bloquearTelaPai
+                    ? "pointer-events-none select-none opacity-45"
+                    : ""
+                }
+              `}
+              aria-disabled={bloquearTelaPai}
+            >
               <CompositionSection
                 composicao={composicaoTela}
                 setComposicao={setComposicao}
@@ -271,14 +396,34 @@ function PricingCalculatorMarketplaceInternal({
               />
             </aside>
 
-            <main className="min-w-0 space-y-4">
+            {/* COLUNA CENTRAL - DADOS DO PAI */}
+            <main
+              className={`
+                min-w-0 space-y-4
+                ${
+                  bloquearTelaPai
+                    ? "pointer-events-none select-none opacity-45"
+                    : ""
+                }
+              `}
+              aria-disabled={bloquearTelaPai}
+            >
+              <InfoGeraisBox
+                produto={produtoTela}
+                setProduto={setProduto}
+                loading={loading}
+                bloquearEdicao={bloquearTelaPai}
+              />
+
               <MarketplaceSection
                 marketplaces={produtoTela?.marketplaces || []}
                 setMarketplaces={setMarketplaces}
                 loading={loading}
+                bloquearEdicao={bloquearTelaPai}
               />
             </main>
 
+            {/* COLUNA DIREITA - CÁLCULO E VARIAÇÕES */}
             <aside className="min-w-0 space-y-4">
               <CalculoPrecoBox
                 calculoLoja={calculoLoja}
@@ -286,24 +431,28 @@ function PricingCalculatorMarketplaceInternal({
                 precoLoja={precoLoja}
                 produto={produtoTela}
                 saving={saving}
+                loading={saving}
                 handleClearLocal={handleClearLocal}
               />
 
-              <VariationMarketplaceSection
+              <VariationShopeeSection
                 produto={produtoTela}
                 setProduto={setProduto}
                 AnimatedNumber={AnimatedNumber}
+                onModalOpenChange={handleVariationModalOpenChange}
               />
             </aside>
           </div>
         </div>
       </div>
 
-      <ConfirmExitModal
-        open={showExitModal}
-        onOpenChange={setShowExitModal}
-        onConfirm={confirmExit}
-      />
+      {!variationModalOpen && (
+        <ConfirmExitModal
+          open={showExitModal}
+          onOpenChange={handleConfirmExitOpenChange}
+          onConfirm={confirmExit}
+        />
+      )}
     </>
   );
 }

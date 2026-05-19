@@ -1331,4 +1331,4 @@ export default function PricingTable() {
       )}
     </div>
   );
-}
+} 
