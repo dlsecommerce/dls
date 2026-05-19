@@ -890,41 +890,40 @@ export function useMarketplaceDetails(
     const referencia = getReferenciaItem(params.item);
 
     if (idMarketplace && isUuid(idMarketplace)) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from(params.tabela)
         .update(params.campos)
-        .eq("id", idMarketplace);
+        .eq("id", idMarketplace)
+        .select("id");
 
       if (error) throw error;
-
-      return;
+      if (data?.length) return data[0];
     }
 
     if (idLogico) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from(params.tabela)
         .update(params.campos)
-        .eq("ID", idLogico);
+        .eq("ID", idLogico)
+        .select("id");
 
       if (error) throw error;
-
-      return;
+      if (data?.length) return data[0];
     }
 
     if (referencia) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from(params.tabela)
         .update(params.campos)
-        .eq("Referência", referencia);
+        .eq("Referência", referencia)
+        .select("id");
 
       if (error) throw error;
-
-      return;
+      if (data?.length) return data[0];
     }
 
-    console.warn(
-      "Variação Shopee sem identificador para atualizar marketplace:",
-      params.item,
+    throw new Error(
+      `Nenhuma linha atualizada em ${params.tabela}. Identificadores usados: id=${idMarketplace}, ID=${idLogico}, Referência=${referencia}`,
     );
   };
 
@@ -937,32 +936,32 @@ export function useMarketplaceDetails(
     const tabelaAnuncios = lojaCode === "SB" ? "anuncios_sb" : "anuncios_pk";
 
     if (idLogico) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from(tabelaAnuncios)
         .update(params.campos)
         .eq("ID", idLogico)
-        .eq("Loja", lojaCode);
+        .eq("Loja", lojaCode)
+        .select('"ID"');
 
       if (error) throw error;
-
-      return;
+      if (data?.length) return data[0];
     }
 
     if (referencia) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from(tabelaAnuncios)
         .update(params.campos)
         .eq("Referência", referencia)
-        .eq("Loja", lojaCode);
+        .eq("Loja", lojaCode)
+        .select('"ID"');
 
       if (error) throw error;
-
-      return;
+      if (data?.length) return data[0];
     }
 
-    console.warn("Variação Shopee sem identificador para atualizar anúncio:", {
-      item: params.item,
-    });
+    throw new Error(
+      `Nenhuma linha atualizada em ${tabelaAnuncios}. Identificadores usados: ID=${idLogico}, Referência=${referencia}, Loja=${lojaCode}`,
+    );
   };
 
   const save = useCallback(async () => {
@@ -972,8 +971,6 @@ export function useMarketplaceDetails(
 
     const tabela =
       lojaCode === "SB" ? "marketplace_shopee_sb" : "marketplace_shopee_pk";
-
-    const tabelaAnuncios = lojaCode === "SB" ? "anuncios_sb" : "anuncios_pk";
 
     const tipoAnuncioFinal = detectarTipoAnuncio(produto.referencia);
 
@@ -991,27 +988,41 @@ export function useMarketplaceDetails(
     setSaving(true);
 
     try {
-      const { error: errMp } = await supabase
-        .from(tabela)
-        .update(camposPercentuaisPai)
-        .eq("id", produto.marketplace_id);
+      const itemPaiParaAtualizar = {
+        ...produto,
 
-      if (errMp) throw errMp;
+        marketplace_id: produto.marketplace_id,
+        id_marketplace: produto.marketplace_id,
 
-      const { error: errAn } = await supabase
-        .from(tabelaAnuncios)
-        .update({
+        anuncio_id: produto.anuncio_id,
+        id_anuncio: produto.anuncio_id,
+
+        id_logico: produto.id_logico || produto.anuncio_id,
+        ID: produto.id_logico || produto.anuncio_id,
+
+        referencia: produto.referencia,
+        Referencia: produto.referencia,
+        "Referência": produto.referencia,
+        sku: produto.referencia,
+      };
+
+      await atualizarMarketplacePorIdentificador({
+        tabela,
+        item: itemPaiParaAtualizar,
+        campos: camposPercentuaisPai,
+      });
+
+      await atualizarAnuncioPorIdentificador({
+        item: itemPaiParaAtualizar,
+        campos: {
           OD: toTextOrNull(produto.od),
           Peso: toNumericOrNull(produto.peso),
           Altura: toNumericOrNull(produto.altura),
           Largura: toNumericOrNull(produto.largura),
           Comprimento: toNumericOrNull(produto.comprimento),
           Referência: toTextOrNull(produto.referencia),
-        })
-        .eq("ID", produto.anuncio_id)
-        .eq("Loja", lojaCode);
-
-      if (errAn) throw errAn;
+        },
+      });
 
       const variacoes = Array.isArray(produto?.variacoes)
         ? produto.variacoes
