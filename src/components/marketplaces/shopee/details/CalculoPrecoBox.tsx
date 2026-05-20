@@ -67,10 +67,10 @@ const CalculoPrecoBox = ({
   const updateCampo = (key: string, value: string) => {
     const internalValue = value.replace(",", ".");
 
-    setCalculoLoja({
-      ...calculoLoja,
+    setCalculoLoja((prev: any) => ({
+      ...prev,
       [key]: internalValue,
-    });
+    }));
   };
 
   return (

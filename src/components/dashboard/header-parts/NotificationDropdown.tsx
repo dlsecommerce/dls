@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Bell, X } from "lucide-react";
+import { Bell, X, CheckCheck, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +43,7 @@ export function NotificationDropdown() {
   const [closingIds, setClosingIds] = useState<number[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [isHidingAll, setIsHidingAll] = useState(false);
 
   const visibleNotifications = useMemo(() => {
     return notifications.filter((n) => !hiddenIds.includes(n.id));
@@ -50,6 +51,7 @@ export function NotificationDropdown() {
 
   const unreadCount = useMemo(() => {
     if (isInitializing) return 0;
+
     return visibleNotifications.filter((n) => !readIds.includes(n.id)).length;
   }, [visibleNotifications, readIds, isInitializing]);
 
@@ -94,7 +96,7 @@ export function NotificationDropdown() {
         if (notificationsResponse.error) {
           console.error(
             "Erro ao carregar notificações:",
-            notificationsResponse.error
+            notificationsResponse.error,
           );
         } else {
           setNotifications(notificationsResponse.data ?? []);
@@ -105,21 +107,21 @@ export function NotificationDropdown() {
         } else {
           setReadIds(
             (readsResponse.data ?? []).map(
-              (r: NotificationRead) => r.notification_id
-            )
+              (r: NotificationRead) => r.notification_id,
+            ),
           );
         }
 
         if (hiddenResponse.error) {
           console.error(
             "Erro ao carregar notificações ocultas:",
-            hiddenResponse.error
+            hiddenResponse.error,
           );
         } else {
           setHiddenIds(
             (hiddenResponse.data ?? []).map(
-              (h: NotificationHidden) => h.notification_id
-            )
+              (h: NotificationHidden) => h.notification_id,
+            ),
           );
         }
 
@@ -134,7 +136,7 @@ export function NotificationDropdown() {
             },
             (payload) => {
               setNotifications((prev) => [payload.new as Notification, ...prev]);
-            }
+            },
           )
           .on(
             "postgres_changes",
@@ -145,12 +147,15 @@ export function NotificationDropdown() {
             },
             (payload) => {
               setNotifications((prev) =>
-                prev.filter((n) => n.id !== payload.old.id)
+                prev.filter((n) => n.id !== payload.old.id),
               );
+
               setReadIds((prev) => prev.filter((id) => id !== payload.old.id));
               setHiddenIds((prev) => prev.filter((id) => id !== payload.old.id));
-              setClosingIds((prev) => prev.filter((id) => id !== payload.old.id));
-            }
+              setClosingIds((prev) =>
+                prev.filter((id) => id !== payload.old.id),
+              );
+            },
           )
           .subscribe();
 
@@ -166,12 +171,13 @@ export function NotificationDropdown() {
             },
             (payload) => {
               const newRead = payload.new as NotificationRead;
+
               setReadIds((prev) =>
                 prev.includes(newRead.notification_id)
                   ? prev
-                  : [...prev, newRead.notification_id]
+                  : [...prev, newRead.notification_id],
               );
-            }
+            },
           )
           .subscribe();
 
@@ -187,15 +193,17 @@ export function NotificationDropdown() {
             },
             (payload) => {
               const newHidden = payload.new as NotificationHidden;
+
               setHiddenIds((prev) =>
                 prev.includes(newHidden.notification_id)
                   ? prev
-                  : [...prev, newHidden.notification_id]
+                  : [...prev, newHidden.notification_id],
               );
+
               setClosingIds((prev) =>
-                prev.filter((id) => id !== newHidden.notification_id)
+                prev.filter((id) => id !== newHidden.notification_id),
               );
-            }
+            },
           )
           .subscribe();
       } finally {
@@ -226,7 +234,7 @@ export function NotificationDropdown() {
     }
 
     setReadIds((prev) =>
-      prev.includes(notificationId) ? prev : [...prev, notificationId]
+      prev.includes(notificationId) ? prev : [...prev, notificationId],
     );
   };
 
@@ -234,7 +242,7 @@ export function NotificationDropdown() {
     if (!userId) return;
 
     const unreadNotifications = visibleNotifications.filter(
-      (n) => !readIds.includes(n.id)
+      (n) => !readIds.includes(n.id),
     );
 
     if (unreadNotifications.length === 0) return;
@@ -253,12 +261,14 @@ export function NotificationDropdown() {
       return;
     }
 
-    setReadIds((prev) => [...prev, ...unreadNotifications.map((n) => n.id)]);
+    setReadIds((prev) =>
+      Array.from(new Set([...prev, ...unreadNotifications.map((n) => n.id)])),
+    );
   };
 
   const hideNotification = async (
     e: React.MouseEvent<HTMLButtonElement>,
-    notificationId: number
+    notificationId: number,
   ) => {
     e.preventDefault();
     e.stopPropagation();
@@ -272,7 +282,7 @@ export function NotificationDropdown() {
     const previousHiddenIds = hiddenIds;
 
     setHiddenIds((prev) =>
-      prev.includes(notificationId) ? prev : [...prev, notificationId]
+      prev.includes(notificationId) ? prev : [...prev, notificationId],
     );
 
     const { error } = await supabase.from("notification_hidden").insert({
@@ -286,6 +296,40 @@ export function NotificationDropdown() {
     }
 
     setClosingIds((prev) => prev.filter((id) => id !== notificationId));
+  };
+
+  const hideAllNotifications = async () => {
+    if (!userId) return;
+    if (isHidingAll) return;
+
+    const idsToHide = visibleNotifications
+      .map((n) => n.id)
+      .filter((id) => !hiddenIds.includes(id));
+
+    if (idsToHide.length === 0) return;
+
+    const previousHiddenIds = hiddenIds;
+
+    setIsHidingAll(true);
+
+    setClosingIds((prev) => Array.from(new Set([...prev, ...idsToHide])));
+
+    setHiddenIds((prev) => Array.from(new Set([...prev, ...idsToHide])));
+
+    const payload = idsToHide.map((id) => ({
+      notification_id: id,
+      user_id: userId,
+    }));
+
+    const { error } = await supabase.from("notification_hidden").insert(payload);
+
+    if (error) {
+      console.error("Erro ao apagar todas as notificações:", error);
+      setHiddenIds(previousHiddenIds);
+    }
+
+    setClosingIds((prev) => prev.filter((id) => !idsToHide.includes(id)));
+    setIsHidingAll(false);
   };
 
   const formatDate = (date: string) => {
@@ -311,10 +355,10 @@ export function NotificationDropdown() {
           size="icon"
           className="relative cursor-pointer rounded-md p-2 transition-all text-dashboard-text-muted hover:text-dashboard-text-primary hover:bg-white/5"
         >
-          <Bell className="w-5 h-5" />
+          <Bell className="h-5 w-5" />
 
           {!isInitializing && unreadCount > 0 && (
-            <Badge className="absolute -top-1 -right-1 z-50 flex h-5 w-5 items-center justify-center bg-red-500 p-0 text-xs text-white">
+            <Badge className="absolute -right-1 -top-1 z-50 flex h-5 w-5 items-center justify-center bg-red-500 p-0 text-xs text-white">
               {unreadCount}
             </Badge>
           )}
@@ -328,21 +372,53 @@ export function NotificationDropdown() {
         collisionPadding={12}
         className="z-50 w-[min(340px,calc(100vw-24px))] border-0 bg-transparent p-0 shadow-none sm:w-80"
       >
-        <GlassmorphicCard className="max-h-96 overflow-hidden rounded-lg border border-white/10 bg-[#111111]/80 backdrop-blur-xl shadow-lg">
+        <GlassmorphicCard className="max-h-96 overflow-hidden rounded-lg border border-white/10 bg-[#111111]/80 shadow-lg backdrop-blur-xl">
           <div className="flex items-center justify-between gap-3 border-b border-white/10 p-3 sm:p-4">
             <h3 className="text-sm font-semibold text-white sm:text-base">
               Notificações
             </h3>
 
-            {!isInitializing && unreadCount > 0 && (
-              <button
-                type="button"
-                onClick={markAllAsRead}
-                className="cursor-pointer text-right text-[11px] font-medium text-[#2799fe] hover:underline sm:text-sm"
-              >
-                Marcar todas como lidas
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {!isInitializing && unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={markAllAsRead}
+                  className="
+                    group inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg
+                    border border-sky-400/10 bg-sky-400/[0.06] text-sky-400
+                    transition-all duration-200 ease-out
+                    hover:border-sky-400/25 hover:bg-sky-400/15 hover:text-sky-300
+                    active:scale-95
+                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/30
+                  "
+                  title="Marcar todas como lidas"
+                  aria-label="Marcar todas como lidas"
+                >
+                  <CheckCheck className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
+                </button>
+              )}
+
+              {!isInitializing && visibleNotifications.length > 0 && (
+                <button
+                  type="button"
+                  onClick={hideAllNotifications}
+                  disabled={isHidingAll}
+                  className="
+                    group inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg
+                    border border-red-400/10 bg-red-400/[0.06] text-red-400
+                    transition-all duration-200 ease-out
+                    hover:border-red-400/25 hover:bg-red-400/15 hover:text-red-300
+                    active:scale-95
+                    disabled:cursor-wait disabled:opacity-50
+                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/30
+                  "
+                  title="Apagar todas"
+                  aria-label="Apagar todas as notificações"
+                >
+                  <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="max-h-64 overflow-y-auto">
@@ -361,15 +437,15 @@ export function NotificationDropdown() {
 
                 const content = (
                   <>
-                    <h4 className="text-sm font-medium text-white break-words">
+                    <h4 className="break-words text-sm font-medium text-white">
                       {n.title}
                     </h4>
 
-                    <p className="mt-1 text-[11px] font-medium text-[#2799fe] break-words">
+                    <p className="mt-1 break-words text-[11px] font-medium text-[#2799fe]">
                       {actorDisplayName}
                     </p>
 
-                    <p className="mt-1 text-xs leading-5 text-neutral-400 break-words">
+                    <p className="mt-1 break-words text-xs leading-5 text-neutral-400">
                       {n.message}
                     </p>
 
@@ -415,10 +491,19 @@ export function NotificationDropdown() {
                       type="button"
                       onClick={(e) => hideNotification(e, n.id)}
                       disabled={closingIds.includes(n.id)}
-                      className="mt-0.5 flex-shrink-0 cursor-pointer rounded p-1.5 text-neutral-400 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      className="
+                        group mt-0.5 inline-flex h-8 w-8 flex-shrink-0 cursor-pointer items-center justify-center rounded-lg
+                        border border-white/5 bg-white/[0.03] text-neutral-500
+                        transition-all duration-200 ease-out
+                        hover:border-red-400/20 hover:bg-red-400/10 hover:text-red-300
+                        active:scale-95
+                        disabled:cursor-not-allowed disabled:opacity-50
+                        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/25
+                      "
                       title="Ocultar notificação"
+                      aria-label="Ocultar notificação"
                     >
-                      <X className="h-4 w-4" />
+                      <X className="h-4 w-4 transition-transform duration-200 group-hover:rotate-90 group-hover:scale-110" />
                     </button>
                   </div>
                 );

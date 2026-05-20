@@ -166,13 +166,21 @@ function calcularPrecoLoja(params: {
   return Number.isFinite(preco) ? Number(preco.toFixed(2)) : 0;
 }
 
-function marcarTabelaShopeeParaRecarregar() {
+function marcarTabelaShopeeParaRecarregar(detail?: any) {
   if (typeof window === "undefined") return;
 
   try {
-    sessionStorage.setItem(
-      "shopee-pricing-precisa-recarregar",
-      String(Date.now()),
+    const value = String(Date.now());
+
+    sessionStorage.setItem("shopee-pricing-precisa-recarregar", value);
+
+    window.dispatchEvent(
+      new CustomEvent("shopee-pricing-atualizado", {
+        detail: {
+          value,
+          ...(detail || {}),
+        },
+      }),
     );
   } catch {}
 }
@@ -894,7 +902,7 @@ export function useMarketplaceDetails(
         .from(params.tabela)
         .update(params.campos)
         .eq("id", idMarketplace)
-        .select("id");
+        .select("id, ID, anuncio_id, Loja, Referência");
 
       if (error) throw error;
       if (data?.length) return data[0];
@@ -905,7 +913,7 @@ export function useMarketplaceDetails(
         .from(params.tabela)
         .update(params.campos)
         .eq("ID", idLogico)
-        .select("id");
+        .select("id, ID, anuncio_id, Loja, Referência");
 
       if (error) throw error;
       if (data?.length) return data[0];
@@ -916,7 +924,7 @@ export function useMarketplaceDetails(
         .from(params.tabela)
         .update(params.campos)
         .eq("Referência", referencia)
-        .select("id");
+        .select("id, ID, anuncio_id, Loja, Referência");
 
       if (error) throw error;
       if (data?.length) return data[0];
@@ -959,9 +967,11 @@ export function useMarketplaceDetails(
       if (data?.length) return data[0];
     }
 
-    throw new Error(
+    console.warn(
       `Nenhuma linha atualizada em ${tabelaAnuncios}. Identificadores usados: ID=${idLogico}, Referência=${referencia}, Loja=${lojaCode}`,
     );
+
+    return null;
   };
 
   const save = useCallback(async () => {
@@ -973,16 +983,19 @@ export function useMarketplaceDetails(
       lojaCode === "SB" ? "marketplace_shopee_sb" : "marketplace_shopee_pk";
 
     const tipoAnuncioFinal = detectarTipoAnuncio(produto.referencia);
-
     const calculoPai = normalizarCalculoItem(calculoLoja);
+
     const precoPai = calcularPrecoLoja({
       custo: custoTotal || calcCustoTotal(composicao),
       calculoLoja: calculoPai,
     });
 
+    const atualizadoEm = new Date().toISOString();
+
     const camposPercentuaisPai = {
       ...montarCamposPercentuaisSupabase(calculoPai),
       "Preço de Venda": precoPai,
+      "Atualizado em": atualizadoEm,
     };
 
     setSaving(true);
@@ -1006,7 +1019,7 @@ export function useMarketplaceDetails(
         sku: produto.referencia,
       };
 
-      await atualizarMarketplacePorIdentificador({
+      const linhaPaiSalva = await atualizarMarketplacePorIdentificador({
         tabela,
         item: itemPaiParaAtualizar,
         campos: camposPercentuaisPai,
@@ -1029,6 +1042,20 @@ export function useMarketplaceDetails(
         : [];
 
       const variacoesAtualizadas = [];
+      const rowsParaPricingTable: any[] = [
+        {
+          id: linhaPaiSalva?.id || produto.marketplace_id,
+          ID: linhaPaiSalva?.ID || produto.id_logico || produto.anuncio_id,
+          anuncio_id: linhaPaiSalva?.anuncio_id || produto.anuncio_id,
+          Loja: linhaPaiSalva?.Loja || lojaCode,
+          Referência:
+            linhaPaiSalva?.Referência ||
+            produto.referencia ||
+            produto["Referência"],
+
+          ...camposPercentuaisPai,
+        },
+      ];
 
       for (const variacao of variacoes) {
         const referenciaVariacao = getReferenciaItem(variacao);
@@ -1043,6 +1070,7 @@ export function useMarketplaceDetails(
         const camposPercentuaisVariacao = {
           ...montarCamposPercentuaisSupabase(calculoVariacao),
           "Preço de Venda": precoVariacao,
+          "Atualizado em": atualizadoEm,
         };
 
         if (
@@ -1058,7 +1086,7 @@ export function useMarketplaceDetails(
           continue;
         }
 
-        await atualizarMarketplacePorIdentificador({
+        const linhaVariacaoSalva = await atualizarMarketplacePorIdentificador({
           tabela,
           item: variacao,
           campos: camposPercentuaisVariacao,
@@ -1074,15 +1102,66 @@ export function useMarketplaceDetails(
         const variacaoAtualizada = {
           ...variacao,
 
+          id:
+            linhaVariacaoSalva?.id ||
+            variacao?.id ||
+            variacao?.marketplace_id,
+          marketplace_id:
+            linhaVariacaoSalva?.id ||
+            variacao?.marketplace_id ||
+            variacao?.id,
+
+          ID:
+            linhaVariacaoSalva?.ID ||
+            variacao?.ID ||
+            variacao?.id_logico ||
+            variacao?.anuncio_id,
+
+          anuncio_id:
+            linhaVariacaoSalva?.anuncio_id ||
+            variacao?.anuncio_id ||
+            variacao?.ID,
+
+          Loja: linhaVariacaoSalva?.Loja || lojaCode,
+
+          Referência:
+            linhaVariacaoSalva?.Referência ||
+            referenciaVariacao ||
+            variacao?.["Referência"],
+
           ...montarCamposPercentuaisSistema(calculoVariacao),
 
           preco: precoVariacao,
           precoLoja: precoVariacao,
           preco_loja: precoVariacao,
           "Preço de Venda": precoVariacao,
+          "Atualizado em": atualizadoEm,
 
           dados: {
             ...(variacao?.dados || {}),
+
+            id:
+              linhaVariacaoSalva?.id ||
+              variacao?.id ||
+              variacao?.marketplace_id,
+
+            ID:
+              linhaVariacaoSalva?.ID ||
+              variacao?.ID ||
+              variacao?.id_logico ||
+              variacao?.anuncio_id,
+
+            anuncio_id:
+              linhaVariacaoSalva?.anuncio_id ||
+              variacao?.anuncio_id ||
+              variacao?.ID,
+
+            Loja: linhaVariacaoSalva?.Loja || lojaCode,
+
+            Referência:
+              linhaVariacaoSalva?.Referência ||
+              referenciaVariacao ||
+              variacao?.["Referência"],
 
             ...montarCamposPercentuaisSistema(calculoVariacao),
 
@@ -1090,8 +1169,36 @@ export function useMarketplaceDetails(
             precoLoja: precoVariacao,
             preco_loja: precoVariacao,
             "Preço de Venda": precoVariacao,
+            "Atualizado em": atualizadoEm,
           },
         };
+
+        rowsParaPricingTable.push({
+          id:
+            linhaVariacaoSalva?.id ||
+            variacao?.id ||
+            variacao?.marketplace_id,
+
+          ID:
+            linhaVariacaoSalva?.ID ||
+            variacao?.ID ||
+            variacao?.id_logico ||
+            variacao?.anuncio_id,
+
+          anuncio_id:
+            linhaVariacaoSalva?.anuncio_id ||
+            variacao?.anuncio_id ||
+            variacao?.ID,
+
+          Loja: linhaVariacaoSalva?.Loja || lojaCode,
+
+          Referência:
+            linhaVariacaoSalva?.Referência ||
+            referenciaVariacao ||
+            variacao?.["Referência"],
+
+          ...camposPercentuaisVariacao,
+        });
 
         variacoesAtualizadas.push(variacaoAtualizada);
       }
@@ -1108,6 +1215,7 @@ export function useMarketplaceDetails(
         precoLoja: precoPai,
         preco_loja: precoPai,
         "Preço de Venda": precoPai,
+        "Atualizado em": atualizadoEm,
 
         variacoes: variacoesAtualizadas,
       }));
@@ -1128,7 +1236,10 @@ export function useMarketplaceDetails(
         }),
       });
 
-      marcarTabelaShopeeParaRecarregar();
+      marcarTabelaShopeeParaRecarregar({
+        rows: rowsParaPricingTable,
+      });
+
       await carregar();
 
       return { error: null };

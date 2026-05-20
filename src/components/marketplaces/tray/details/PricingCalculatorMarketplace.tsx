@@ -152,7 +152,7 @@ function PricingCalculatorMarketplaceInternal({
     const f = parse(calculoLoja?.frete);
 
     const divisor = 1 - (i + m + c + mk);
-    const preco = divisor > 0 ? (custo * (1 - d) + f + 2.5) / divisor : 0;
+    const preco = divisor > 0 ? (custo * (1 - d) + f) / divisor : 0;
 
     return isFinite(preco) ? preco : 0;
   };

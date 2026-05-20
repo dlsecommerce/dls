@@ -110,6 +110,23 @@ function clearShopeeCache() {
   SHOPEE_CACHE.clear();
 }
 
+function notifyShopeePricingAtualizado(detail?: any) {
+  if (typeof window === "undefined") return;
+
+  try {
+    const value = String(Date.now());
+
+    window.dispatchEvent(
+      new CustomEvent("shopee-pricing-atualizado", {
+        detail: {
+          value,
+          ...(detail || {}),
+        },
+      }),
+    );
+  } catch {}
+}
+
 function sanitizeTerm(input: string) {
   return input.replace(/[%_]/g, "").replace(/"/g, "").trim();
 }
@@ -185,6 +202,12 @@ function tableByLojaCode(code: "PK" | "SB") {
   return code === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
 }
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value || ""),
+  );
+}
+
 function isValidRow(r: any) {
   const pick = (v: any) =>
     v === null || v === undefined ? "" : String(v).trim();
@@ -241,6 +264,19 @@ function lojaFilterValueToCodes(value: string) {
 function getShopeePricingLabel(row: any, fallbackId: string) {
   return row?.Nome || row?.Referência || row?.ID || fallbackId || "anúncio";
 }
+
+const CAMPOS_PRECIFICACAO_VISIVEIS = [
+  "Custo",
+  "Desconto",
+  "Embalagem",
+  "Frete",
+  "Comissão",
+  "Imposto",
+  "Marketing",
+  "Margem de Lucro",
+  "Preço de Venda",
+  "Atualizado em",
+] as const;
 
 export default function PricingTable() {
   const router = useRouter();
@@ -465,6 +501,185 @@ export default function PricingTable() {
     ],
   );
 
+  const atualizarCamposPrecificacaoNaLinha = useCallback(
+    (params: {
+      rowAtualizada: any;
+      dbId?: string;
+      lojaFallback?: "PK" | "SB";
+    }) => {
+      const { rowAtualizada, dbId, lojaFallback } = params;
+
+      const patch: any = {
+        ...rowAtualizada,
+        Loja: rowAtualizada?.Loja ?? lojaFallback,
+      };
+
+      const patchId = String(patch?.id ?? dbId ?? "").trim();
+      const patchID = String(patch?.ID ?? "").trim();
+      const patchReferencia = String(patch?.Referência ?? "").trim();
+      const patchLojaRaw = String(patch?.Loja ?? lojaFallback ?? "").trim();
+      const patchLojaCode = normalizeLojaCode(patchLojaRaw);
+
+      if (!patchId && !patchID && !patchReferencia) return;
+
+      const mesmaLinha = (row: any) => {
+        const rowId = String(row?.id ?? "").trim();
+        const rowID = String(row?.ID ?? "").trim();
+        const rowReferencia = String(row?.Referência ?? "").trim();
+        const rowLojaRaw = String(row?.Loja ?? "").trim();
+        const rowLojaCode = normalizeLojaCode(rowLojaRaw);
+
+        const mesmoId = Boolean(patchId && rowId === patchId);
+        const mesmoID = Boolean(patchID && rowID === patchID);
+        const mesmaReferencia = Boolean(
+          patchReferencia && rowReferencia === patchReferencia,
+        );
+        const mesmaLoja =
+          !patchLojaCode || !rowLojaCode || patchLojaCode === rowLojaCode;
+
+        return mesmaLoja && (mesmoId || mesmoID || mesmaReferencia);
+      };
+
+      const aplicar = (lista: Row[]) =>
+        lista.map((row: any) => {
+          if (!mesmaLinha(row)) return row;
+
+          const next: any = { ...row };
+
+          for (const campo of CAMPOS_PRECIFICACAO_VISIVEIS) {
+            if (Object.prototype.hasOwnProperty.call(patch, campo)) {
+              next[campo] = patch[campo];
+            }
+          }
+
+          if (patch?.id !== undefined && patch?.id !== null) {
+            next.id = String(patch.id);
+          }
+
+          if (patch?.ID !== undefined && patch?.ID !== null) {
+            next.ID = patch.ID;
+          }
+
+          if (patch?.Loja !== undefined && patch?.Loja !== null) {
+            next.Loja = patch.Loja;
+          }
+
+          if (patch?.Referência !== undefined && patch?.Referência !== null) {
+            next.Referência = patch.Referência;
+          }
+
+          return next as Row;
+        });
+
+      setRows((prev) => aplicar(prev));
+      setFilteredRows((prev) => aplicar(prev));
+
+      const cached = getCache(cacheKey);
+
+      if (cached) {
+        setCache(cacheKey, {
+          ...cached,
+          rows: aplicar(cached.rows),
+          savedAt: Date.now(),
+        });
+      }
+    },
+    [cacheKey],
+  );
+
+  const salvarPayloadMarketplace = useCallback(
+    async (params: {
+      table: string;
+      dbIdStr: string;
+      currentRow: any;
+      payload: any;
+    }) => {
+      const { table, dbIdStr, currentRow, payload } = params;
+
+      const tentativas: Array<{
+        label: string;
+        run: () => Promise<{ data: any[] | null; error: any }>;
+      }> = [];
+
+      const idAtual = String(currentRow?.id ?? dbIdStr ?? "").trim();
+      const idLogico = String(currentRow?.ID ?? "").trim();
+      const referencia = String(currentRow?.Referência ?? "").trim();
+
+      const selectFields = `
+        id,
+        anuncio_id,
+        ID,
+        "ID Tray",
+        "ID Var",
+        "ID Bling",
+        Nome,
+        Marca,
+        Referência,
+        Categoria,
+        Desconto,
+        Embalagem,
+        Frete,
+        Comissão,
+        Imposto,
+        Marketing,
+        "Margem de Lucro",
+        Custo,
+        "Preço de Venda",
+        "Atualizado em"
+      `;
+
+      if (idAtual && isUuid(idAtual)) {
+        tentativas.push({
+          label: `id=${idAtual}`,
+          run: () =>
+            supabase
+              .from(table)
+              .update(payload)
+              .eq("id", idAtual)
+              .select(selectFields),
+        });
+      }
+
+      if (idLogico) {
+        tentativas.push({
+          label: `ID=${idLogico}`,
+          run: () =>
+            supabase
+              .from(table)
+              .update(payload)
+              .eq("ID", idLogico as any)
+              .select(selectFields),
+        });
+      }
+
+      if (referencia) {
+        tentativas.push({
+          label: `Referência=${referencia}`,
+          run: () =>
+            supabase
+              .from(table)
+              .update(payload)
+              .eq("Referência", referencia)
+              .select(selectFields),
+        });
+      }
+
+      for (const tentativa of tentativas) {
+        const { data, error } = await tentativa.run();
+
+        if (error) throw error;
+        if (Array.isArray(data) && data.length > 0) return data[0];
+      }
+
+      throw new Error(
+        `Nenhuma linha atualizada em ${table}. Tentativas: ${tentativas
+          .map((t) => t.label)
+          .join(", ")}`,
+      );
+    },
+    [],
+  );
+
   const loadData = useCallback(
     async (options?: { force?: boolean }) => {
       const myReqId = ++reqIdRef.current;
@@ -641,6 +856,15 @@ export default function PricingTable() {
     ],
   );
 
+  const forceReloadShopeeTable = useCallback(async () => {
+    try {
+      sessionStorage.removeItem("shopee-pricing-precisa-recarregar");
+    } catch {}
+
+    clearShopeeCache();
+    await loadData({ force: true });
+  }, [loadData]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -669,17 +893,132 @@ export default function PricingTable() {
       precisaRecarregar = Boolean(
         sessionStorage.getItem("shopee-pricing-precisa-recarregar"),
       );
-
-      if (precisaRecarregar) {
-        sessionStorage.removeItem("shopee-pricing-precisa-recarregar");
-      }
     } catch {}
 
     if (!precisaRecarregar) return;
 
-    clearShopeeCache();
-    void loadData({ force: true });
-  }, [loadData]);
+    void forceReloadShopeeTable();
+  }, [forceReloadShopeeTable]);
+
+  useEffect(() => {
+    const handleFocusOrVisible = () => {
+      let precisaRecarregar = false;
+
+      try {
+        precisaRecarregar = Boolean(
+          sessionStorage.getItem("shopee-pricing-precisa-recarregar"),
+        );
+      } catch {}
+
+      if (precisaRecarregar) {
+        void forceReloadShopeeTable();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        handleFocusOrVisible();
+      }
+    };
+
+    window.addEventListener("focus", handleFocusOrVisible);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", handleFocusOrVisible);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [forceReloadShopeeTable]);
+
+  useEffect(() => {
+    const handleShopeePricingAtualizado = (event: Event) => {
+      const customEvent = event as CustomEvent<any>;
+      const detail = customEvent?.detail || {};
+
+      const rowsAtualizadas = Array.isArray(detail?.rows)
+        ? detail.rows
+        : detail?.row
+          ? [detail.row]
+          : [];
+
+      if (!rowsAtualizadas.length) {
+        void forceReloadShopeeTable();
+        return;
+      }
+
+      for (const rowAtualizada of rowsAtualizadas) {
+        atualizarCamposPrecificacaoNaLinha({
+          rowAtualizada,
+        });
+      }
+
+      clearShopeeCache();
+    };
+
+    window.addEventListener(
+      "shopee-pricing-atualizado",
+      handleShopeePricingAtualizado,
+    );
+
+    return () => {
+      window.removeEventListener(
+        "shopee-pricing-atualizado",
+        handleShopeePricingAtualizado,
+      );
+    };
+  }, [atualizarCamposPrecificacaoNaLinha, forceReloadShopeeTable]);
+
+  useEffect(() => {
+    const aplicarPayloadRealtime = (payload: any, lojaFallback: "PK" | "SB") => {
+      const rowNova = payload?.new;
+
+      if (!rowNova) return;
+
+      atualizarCamposPrecificacaoNaLinha({
+        rowAtualizada: {
+          ...rowNova,
+          Loja: rowNova?.Loja ?? lojaFallback,
+        },
+        lojaFallback,
+      });
+
+      clearShopeeCache();
+    };
+
+    const channel = supabase
+      .channel("shopee-pricing-table-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "marketplace_shopee_pk",
+        },
+        (payload) => {
+          if (payload.eventType === "DELETE") return;
+          aplicarPayloadRealtime(payload, "PK");
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "marketplace_shopee_sb",
+        },
+        (payload) => {
+          if (payload.eventType === "DELETE") return;
+          aplicarPayloadRealtime(payload, "SB");
+        },
+      )
+      .subscribe((status) => {
+        console.log("📡 Shopee pricing realtime:", status);
+      });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [atualizarCamposPrecificacaoNaLinha]);
 
   const handleSort = (col: string) => {
     if (sortColumn === col) {
@@ -793,6 +1132,8 @@ export default function PricingTable() {
       return;
     }
 
+    const editTimestamp = new Date().toISOString();
+
     const prevRows = rows;
     let newRowUpdated: Row | undefined;
 
@@ -805,6 +1146,7 @@ export default function PricingTable() {
       const updated: any = {
         ...(r as any),
         [field]: newValNullable,
+        "Atualizado em": editTimestamp,
       };
 
       if (shouldRecalcPV) {
@@ -858,6 +1200,7 @@ export default function PricingTable() {
 
     const payload: any = {
       [String(field)]: newValNullable,
+      "Atualizado em": editTimestamp,
     };
 
     if (shouldRecalcPV && newRowUpdated) {
@@ -871,36 +1214,20 @@ export default function PricingTable() {
     }
 
     try {
-      const { data: upd1, error: err1 } = await supabase
-        .from(table)
-        .update(payload)
-        .eq("id", dbIdStr)
-        .select("id");
+      const rowSalva = await salvarPayloadMarketplace({
+        table,
+        dbIdStr,
+        currentRow,
+        payload,
+      });
 
-      if (err1) throw err1;
-
-      if (!upd1?.length) {
-        const fallbackID =
-          (currentRow as any)?.ID ?? (newRowUpdated as any)?.ID;
-
-        if (!fallbackID) {
-          throw new Error("Sem ID para fallback.");
-        }
-
-        const lojaOriginal = String(loja ?? "").trim();
-
-        const { data: upd2, error: err2 } = await supabase
-          .from(table)
-          .update(payload)
-          .eq("ID", fallbackID as any)
-          .or(`Loja.eq.${lojaOriginal},Loja.eq.${lojaCode}`)
-          .select("id");
-
-        if (err2) throw err2;
-
-        if (!upd2?.length) {
-          throw new Error("Nenhuma linha atualizada no fallback.");
-        }
+      if (newRowUpdated) {
+        newRowUpdated = {
+          ...(newRowUpdated as any),
+          ...rowSalva,
+          id: String(rowSalva?.id ?? (newRowUpdated as any).id ?? dbIdStr),
+          Loja: rowSalva?.Loja ?? lojaCode,
+        } as Row;
       }
 
       await createNotification({
@@ -914,6 +1241,20 @@ export default function PricingTable() {
         entityId: String((currentRow as any)?.ID || dbIdStr),
         link: "/dashboard/marketplaces/shopee",
       });
+
+      if (newRowUpdated) {
+        atualizarCamposPrecificacaoNaLinha({
+          dbId: dbIdStr,
+          rowAtualizada: newRowUpdated,
+          lojaFallback: lojaCode,
+        });
+      }
+
+      clearShopeeCache();
+
+      notifyShopeePricingAtualizado(
+        newRowUpdated ? { row: newRowUpdated } : undefined,
+      );
     } catch (e: any) {
       console.error("❌ Falha ao salvar. Revertendo UI.", e);
       alert("Erro ao salvar. Veja o console.");
@@ -931,7 +1272,14 @@ export default function PricingTable() {
         });
       }
     }
-  }, [editing, rows, cacheKey, PREC_FIELDS]);
+  }, [
+    editing,
+    rows,
+    cacheKey,
+    PREC_FIELDS,
+    salvarPayloadMarketplace,
+    atualizarCamposPrecificacaoNaLinha,
+  ]);
 
   const cancelEdit = () => setEditing(null);
 
@@ -1267,6 +1615,7 @@ export default function PricingTable() {
 
             <div className="absolute right-1 flex items-center gap-1">
               <button
+                type="button"
                 title="Cancelar"
                 onClick={cancelEdit}
                 className="text-red-400 hover:text-red-300"
@@ -1275,6 +1624,7 @@ export default function PricingTable() {
               </button>
 
               <button
+                type="button"
                 title="Confirmar"
                 onClick={confirmEdit}
                 className="text-green-400 hover:text-green-300"
