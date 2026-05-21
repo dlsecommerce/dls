@@ -142,6 +142,10 @@ const navigationItems = [
         title: "Shopee",
         href: "/dashboard/marketplaces/shopee",
       },
+      {
+        title: "Magalu",
+        href: "/dashboard/marketplaces/magalu",
+      },
     ],
   },
 ];
