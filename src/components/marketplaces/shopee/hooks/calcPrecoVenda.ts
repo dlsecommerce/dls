@@ -69,7 +69,7 @@ const RULES: Array<{
     min: 0,
     max: 79.99,
     values: {
-      Embalagem: 2.5,
+      Embalagem: 3,
       Frete: 4.0,
       Imposto: 12.0,
       "Comissão": 20.0,
@@ -82,7 +82,7 @@ const RULES: Array<{
     min: 80.0,
     max: 99.99,
     values: {
-      Embalagem: 2.5,
+      Embalagem: 3,
       Frete: 16.0,
       Imposto: 12.0,
       "Comissão": 14.0,
@@ -95,7 +95,7 @@ const RULES: Array<{
     min: 100.0,
     max: 199.99,
     values: {
-      Embalagem: 2.5,
+      Embalagem: 3,
       Frete: 20.0,
       Imposto: 12.0,
       "Comissão": 14.0,
@@ -108,7 +108,7 @@ const RULES: Array<{
     min: 200.0,
     max: null,
     values: {
-      Embalagem: 2.5,
+      Embalagem: 3,
       Frete: 26.0,
       Imposto: 12.0,
       "Comissão": 14.0,

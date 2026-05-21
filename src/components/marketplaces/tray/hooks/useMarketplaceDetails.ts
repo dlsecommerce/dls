@@ -876,6 +876,29 @@ export function useMarketplaceDetails(
     carregar();
   }, [carregar]);
 
+  useEffect(() => {
+    const calculoAtual = normalizarCalculoItem(calculoLoja);
+    const custoAtual = custoTotal || calcCustoTotal(composicao);
+
+    const precoAtual = calcularPrecoLoja({
+      custo: custoAtual,
+      calculoLoja: calculoAtual,
+    });
+
+    setProduto((prev: any) => ({
+      ...prev,
+
+      embalagem: calculoAtual.embalagem,
+
+      ...montarCamposPercentuaisSistema(calculoAtual),
+
+      preco: precoAtual,
+      precoLoja: precoAtual,
+      preco_loja: precoAtual,
+      "Preço de Venda": precoAtual,
+    }));
+  }, [calculoLoja, custoTotal, composicao]);
+
   const atualizarMarketplacePorIdentificador = async (params: {
     tabela: string;
     item: any;
@@ -885,43 +908,60 @@ export function useMarketplaceDetails(
     const idLogico = getIdLogicoItem(params.item);
     const referencia = getReferenciaItem(params.item);
 
+    const tentativas: Array<{ campo: string; valor: string }> = [];
+
     if (idMarketplace && isUuid(idMarketplace)) {
-      const { error } = await supabase
-        .from(params.tabela)
-        .update(params.campos)
-        .eq("id", idMarketplace);
-
-      if (error) throw error;
-
-      return;
+      tentativas.push({ campo: "id", valor: idMarketplace });
     }
 
     if (idLogico) {
-      const { error } = await supabase
-        .from(params.tabela)
-        .update(params.campos)
-        .eq("ID", idLogico);
-
-      if (error) throw error;
-
-      return;
+      tentativas.push({ campo: "ID", valor: idLogico });
     }
 
     if (referencia) {
-      const { error } = await supabase
-        .from(params.tabela)
-        .update(params.campos)
-        .eq("Referência", referencia);
-
-      if (error) throw error;
-
-      return;
+      tentativas.push({ campo: "Referência", valor: referencia });
     }
 
-    console.warn(
-      "Item sem identificador para atualizar marketplace:",
-      params.item,
-    );
+    if (!tentativas.length) {
+      console.warn(
+        "Item sem identificador para atualizar marketplace:",
+        params.item,
+      );
+
+      return false;
+    }
+
+    for (const tentativa of tentativas) {
+      const { data, error } = await supabase
+        .from(params.tabela)
+        .update(params.campos)
+        .eq(tentativa.campo, tentativa.valor)
+        .select("id");
+
+      if (error) {
+        console.error("Erro ao tentar atualizar marketplace:", {
+          tabela: params.tabela,
+          campo: tentativa.campo,
+          valor: tentativa.valor,
+          error,
+        });
+
+        continue;
+      }
+
+      if (Array.isArray(data) && data.length > 0) {
+        return true;
+      }
+    }
+
+    console.warn("Nenhuma linha de marketplace foi atualizada:", {
+      tabela: params.tabela,
+      identificadores: tentativas,
+      campos: params.campos,
+      item: params.item,
+    });
+
+    return false;
   };
 
   const atualizarAnuncioPorIdentificador = async (params: {
@@ -932,35 +972,61 @@ export function useMarketplaceDetails(
     const referencia = getReferenciaItem(params.item);
     const tabelaAnuncios = lojaCode === "SB" ? "anuncios_sb" : "anuncios_pk";
 
+    const tentativas: Array<{ campo: string; valor: string }> = [];
+
     if (idLogico) {
-      const { error } = await supabase
-        .from(tabelaAnuncios)
-        .update(params.campos)
-        .eq("ID", idLogico)
-        .eq("Loja", lojaCode);
-
-      if (error) throw error;
-
-      return;
+      tentativas.push({ campo: "ID", valor: idLogico });
     }
 
     if (referencia) {
-      const { error } = await supabase
-        .from(tabelaAnuncios)
-        .update(params.campos)
-        .eq("Referência", referencia)
-        .eq("Loja", lojaCode);
-
-      if (error) throw error;
-
-      return;
+      tentativas.push({ campo: "Referência", valor: referencia });
     }
 
-    console.warn("Item sem identificador para atualizar anúncio:", params.item);
+    if (!tentativas.length) {
+      console.warn("Item sem identificador para atualizar anúncio:", params.item);
+      return false;
+    }
+
+    for (const tentativa of tentativas) {
+      const { data, error } = await supabase
+        .from(tabelaAnuncios)
+        .update(params.campos)
+        .eq(tentativa.campo, tentativa.valor)
+        .eq("Loja", lojaCode)
+        .select("ID");
+
+      if (error) {
+        console.error("Erro ao tentar atualizar anúncio:", {
+          tabela: tabelaAnuncios,
+          campo: tentativa.campo,
+          valor: tentativa.valor,
+          lojaCode,
+          error,
+        });
+
+        continue;
+      }
+
+      if (Array.isArray(data) && data.length > 0) {
+        return true;
+      }
+    }
+
+    console.warn("Nenhuma linha de anúncio foi atualizada:", {
+      tabela: tabelaAnuncios,
+      lojaCode,
+      identificadores: tentativas,
+      campos: params.campos,
+      item: params.item,
+    });
+
+    return false;
   };
 
-  const save = useCallback(async () => {
-    if (!produto.marketplace_id || !produto.anuncio_id || !lojaCode) {
+  const save = useCallback(async (produtoOverride?: any) => {
+    const produtoSalvar = produtoOverride ?? produto;
+
+    if (!produtoSalvar.marketplace_id || !produtoSalvar.anuncio_id || !lojaCode) {
       return { error: null };
     }
 
@@ -968,7 +1034,7 @@ export function useMarketplaceDetails(
       lojaCode === "SB" ? "marketplace_tray_sb" : "marketplace_tray_pk";
     const tabelaAnuncios = lojaCode === "SB" ? "anuncios_sb" : "anuncios_pk";
 
-    const tipoAnuncioFinal = detectarTipoAnuncio(produto.referencia);
+    const tipoAnuncioFinal = detectarTipoAnuncio(produtoSalvar.referencia);
 
     const calculoPai = normalizarCalculoItem(calculoLoja);
     const precoPai = calcularPrecoLoja({
@@ -987,27 +1053,27 @@ export function useMarketplaceDetails(
       const { error: errMp } = await supabase
         .from(tabela)
         .update(camposPercentuaisPai)
-        .eq("id", produto.marketplace_id);
+        .eq("id", produtoSalvar.marketplace_id);
 
       if (errMp) throw errMp;
 
       const { error: errAn } = await supabase
         .from(tabelaAnuncios)
         .update({
-          OD: toTextOrNull(produto.od),
-          Peso: toNumericOrNull(produto.peso),
-          Altura: toNumericOrNull(produto.altura),
-          Largura: toNumericOrNull(produto.largura),
-          Comprimento: toNumericOrNull(produto.comprimento),
-          Referência: toTextOrNull(produto.referencia),
+          OD: toTextOrNull(produtoSalvar.od),
+          Peso: toNumericOrNull(produtoSalvar.peso),
+          Altura: toNumericOrNull(produtoSalvar.altura),
+          Largura: toNumericOrNull(produtoSalvar.largura),
+          Comprimento: toNumericOrNull(produtoSalvar.comprimento),
+          Referência: toTextOrNull(produtoSalvar.referencia),
         })
-        .eq("ID", produto.anuncio_id)
+        .eq("ID", produtoSalvar.anuncio_id)
         .eq("Loja", lojaCode);
 
       if (errAn) throw errAn;
 
-      const variacoes = Array.isArray(produto?.variacoes)
-        ? produto.variacoes
+      const variacoes = Array.isArray(produtoSalvar?.variacoes)
+        ? produtoSalvar.variacoes
         : [];
 
       const variacoesAtualizadas = [];
@@ -1038,18 +1104,27 @@ export function useMarketplaceDetails(
           continue;
         }
 
-        await atualizarMarketplacePorIdentificador({
+        const salvouMarketplace = await atualizarMarketplacePorIdentificador({
           tabela,
           item: variacao,
           campos: camposPercentuaisVariacao,
         });
 
-        await atualizarAnuncioPorIdentificador({
+        const salvouAnuncio = await atualizarAnuncioPorIdentificador({
           item: variacao,
           campos: {
             Referência: toTextOrNull(referenciaVariacao),
+            ...camposPercentuaisVariacao,
           },
         });
+
+        if (!salvouMarketplace && !salvouAnuncio) {
+          throw new Error(
+            `Nenhuma linha foi atualizada para a variação ${
+              referenciaVariacao || "(sem referência)"
+            }.`,
+          );
+        }
 
         const variacaoAtualizada = {
           ...variacao,
@@ -1097,13 +1172,15 @@ export function useMarketplaceDetails(
       await createNotification({
         title: "Precificação Tray atualizada",
         message: `A precificação Tray do anúncio "${getProdutoLabel(
-          produto,
+          produtoSalvar,
         )}" foi atualizada.`,
         action: "update",
         entityType: "marketplace_tray_pricing",
-        entityId: String(produto.id_logico || produto.anuncio_id),
+        entityId: String(produtoSalvar.id_logico || produtoSalvar.anuncio_id),
         link: getTrayNotificationLink({
-          marketplaceId: String(produto.id_logico || produto.anuncio_id),
+          marketplaceId: String(
+            produtoSalvar.id_logico || produtoSalvar.anuncio_id,
+          ),
           loja: getLojaLabel(lojaCode),
         }),
       });

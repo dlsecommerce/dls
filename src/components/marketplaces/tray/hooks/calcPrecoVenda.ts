@@ -41,7 +41,7 @@ export function calcPrecoVenda(row: Row, overrides?: Partial<Row>) {
   const frete = get("Frete");
 
   // ✅ AJUSTE: embalagem vem da linha (fallback 2.5 se vier vazio)
-  const embalagem = get("Embalagem", 2.5);
+  const embalagem = get("Embalagem", 3);
 
   // ----------- percentuais -----------
   const desconto = get("Desconto") / 100;

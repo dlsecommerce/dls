@@ -47,7 +47,7 @@ function isProdutoPaiComVariacoes(produto: any) {
       produto?.Referencia ??
       produto?.["Referência"] ??
       produto?.sku ??
-      ""
+      "",
   )
     .trim()
     .toUpperCase();
@@ -62,6 +62,40 @@ function isProdutoPaiComVariacoes(produto: any) {
   if (tipoAnuncio === "com variacoes") return true;
 
   return false;
+}
+
+/* ============================================================
+   Helper para parsear número BR/US
+============================================================ */
+function parseNumero(value: any) {
+  if (value === null || value === undefined || value === "") return 0;
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  let str = String(value).trim();
+
+  str = str.replace(/[^\d.,-]/g, "");
+
+  const temVirgula = str.includes(",");
+  const temPonto = str.includes(".");
+
+  if (temVirgula && temPonto) {
+    if (str.lastIndexOf(",") > str.lastIndexOf(".")) {
+      str = str.replace(/\./g, "");
+      str = str.replace(",", ".");
+    } else {
+      str = str.replace(/,/g, "");
+    }
+  } else if (temVirgula) {
+    str = str.replace(/\./g, "");
+    str = str.replace(",", ".");
+  }
+
+  const n = Number(str);
+
+  return Number.isFinite(n) ? n : 0;
 }
 
 /* ============================================================
@@ -125,7 +159,7 @@ function PricingCalculatorMarketplaceInternal({
   const loading = Boolean(loadingHook || !produto);
 
   const bloquearTelaPai = Boolean(
-    !loading && isProdutoPaiComVariacoes(produtoTela)
+    !loading && isProdutoPaiComVariacoes(produtoTela),
   );
 
   const tituloPagina = useMemo(() => {
@@ -137,27 +171,30 @@ function PricingCalculatorMarketplaceInternal({
     else loadingBarRef.current?.finish?.();
   }, [loading]);
 
-  const calcularPreco = () => {
-    if (!custoTotal) return 0;
+  const calcularPreco = React.useCallback(() => {
+    const custo = parseNumero(custoTotal);
 
-    const custo = Number(custoTotal || 0);
+    if (custo <= 0) return 0;
 
-    const parse = (v: any) => parseFloat(String(v).replace(",", ".")) || 0;
+    const desconto = parseNumero(calculoLoja?.desconto) / 100;
+    const embalagem = parseNumero(calculoLoja?.embalagem);
+    const frete = parseNumero(calculoLoja?.frete);
 
-    const d = parse(calculoLoja?.desconto) / 100;
-    const i = parse(calculoLoja?.imposto) / 100;
-    const m = parse(calculoLoja?.margem) / 100;
-    const c = parse(calculoLoja?.comissao) / 100;
-    const mk = parse(calculoLoja?.marketing) / 100;
-    const f = parse(calculoLoja?.frete);
+    const imposto = parseNumero(calculoLoja?.imposto) / 100;
+    const margem = parseNumero(calculoLoja?.margem) / 100;
+    const comissao = parseNumero(calculoLoja?.comissao) / 100;
+    const marketing = parseNumero(calculoLoja?.marketing) / 100;
 
-    const divisor = 1 - (i + m + c + mk);
-    const preco = divisor > 0 ? (custo * (1 - d) + f) / divisor : 0;
+    const divisor = 1 - (imposto + margem + comissao + marketing);
 
-    return isFinite(preco) ? preco : 0;
-  };
+    if (divisor <= 0) return 0;
 
-  const precoLoja = calcularPreco();
+    const preco = (custo * (1 - desconto) + embalagem + frete) / divisor;
+
+    return Number.isFinite(preco) ? Number(preco.toFixed(2)) : 0;
+  }, [custoTotal, calculoLoja]);
+
+  const precoLoja = useMemo(() => calcularPreco(), [calcularPreco]);
 
   const handleClearLocal = () => {
     if (bloquearTelaPai) {
@@ -201,7 +238,7 @@ function PricingCalculatorMarketplaceInternal({
 
       toastCustom.error(
         "Erro ao salvar precificação",
-        "Não foi possível salvar os percentuais."
+        "Não foi possível salvar os percentuais.",
       );
 
       return;
@@ -209,7 +246,7 @@ function PricingCalculatorMarketplaceInternal({
 
     toastCustom.success(
       "Precificação salva com sucesso",
-      "As alterações foram gravadas no sistema."
+      "As alterações foram gravadas no sistema.",
     );
 
     setTimeout(() => {
@@ -240,7 +277,7 @@ function PricingCalculatorMarketplaceInternal({
         setShowExitModal(false);
       }
     },
-    [setShowExitModal]
+    [setShowExitModal],
   );
 
   const handleConfirmExitOpenChange = React.useCallback(
@@ -252,7 +289,7 @@ function PricingCalculatorMarketplaceInternal({
 
       setShowExitModal(open);
     },
-    [variationModalOpen, setShowExitModal]
+    [variationModalOpen, setShowExitModal],
   );
 
   const setMarketplaces = (value: any) => {
@@ -346,7 +383,11 @@ function PricingCalculatorMarketplaceInternal({
                     disabled:cursor-wait disabled:opacity-70
                   "
                 >
-                  {saving ? "Salvando..." : loading ? "Carregando..." : "Salvar"}
+                  {saving
+                    ? "Salvando..."
+                    : loading
+                      ? "Carregando..."
+                      : "Salvar"}
                 </button>
               </div>
             </div>
@@ -419,8 +460,17 @@ function PricingCalculatorMarketplaceInternal({
               <CalculoPrecoBox
                 calculoLoja={calculoLoja}
                 setCalculoLoja={setCalculoLoja}
-                precoLoja={precoLoja}
+                precoLoja={
+                  precoLoja ||
+                  produtoTela?.precoLoja ||
+                  produtoTela?.preco_loja ||
+                  produtoTela?.["Preço de Venda"] ||
+                  produtoTela?.preco ||
+                  0
+                }
+                custoTotal={custoTotal}
                 produto={produtoTela}
+                loading={loading}
                 saving={saving}
                 handleClearLocal={handleClearLocal}
               />

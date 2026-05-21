@@ -7,7 +7,6 @@ import { X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import InfoGeraisBox from "./InfoGeraisBox";
-import ShopeeMarketplaceSection from "./ShopeeMarketplaceSection";
 import CalculoPrecoBox from "./CalculoPrecoBox";
 import { CompositionSection } from "@/components/announce/ProductDetails/CompositionSection";
 
@@ -355,24 +354,6 @@ export const VariationShopeeModal = ({
     variation?.dados?.Custo,
   ]);
 
-  const setMarketplaces = (value: any) => {
-    if (isEditing) return;
-
-    if (typeof value === "function") {
-      setVariation((p: any) => ({
-        ...p,
-        marketplaces: value(p?.marketplaces || []),
-      }));
-
-      return;
-    }
-
-    setVariation((p: any) => ({
-      ...p,
-      marketplaces: value,
-    }));
-  };
-
   const precoLoja = useMemo(() => {
     const custo = parseNumero(
       custoTotalCalculado ||
@@ -470,14 +451,7 @@ export const VariationShopeeModal = ({
       preco_loja: "",
       "Preço de Venda": "",
 
-      marketplaces: [
-        {
-          marketplace: "Shopee",
-          id_anuncio: "",
-          sku: "",
-          link: "",
-        },
-      ],
+      marketplaces: [],
 
       dados: {
         ...(p?.dados || {}),
@@ -518,14 +492,7 @@ export const VariationShopeeModal = ({
         preco_loja: "",
         "Preço de Venda": "",
 
-        marketplaces: [
-          {
-            marketplace: "Shopee",
-            id_anuncio: "",
-            sku: "",
-            link: "",
-          },
-        ],
+        marketplaces: [],
       },
     }));
 
@@ -582,17 +549,6 @@ export const VariationShopeeModal = ({
 
       const precoFinal = precoLoja;
 
-      const marketplacesFinal = Array.isArray(variation?.marketplaces)
-        ? variation.marketplaces
-        : [
-            {
-              marketplace: "Shopee",
-              id_anuncio: "",
-              sku: referenciaFinal,
-              link: "",
-            },
-          ];
-
       const variationAtualizada = {
         ...variation,
 
@@ -642,7 +598,7 @@ export const VariationShopeeModal = ({
         preco_loja: precoFinal,
         "Preço de Venda": precoFinal,
 
-        marketplaces: marketplacesFinal,
+        marketplaces: [],
 
         dados: {
           ...(variation?.dados || {}),
@@ -693,7 +649,7 @@ export const VariationShopeeModal = ({
           preco_loja: precoFinal,
           "Preço de Venda": precoFinal,
 
-          marketplaces: marketplacesFinal,
+          marketplaces: [],
         },
       };
 
@@ -877,24 +833,6 @@ export const VariationShopeeModal = ({
                       "Preço de Venda": precoLoja,
                     }}
                     setProduto={setVariation}
-                    loading={false}
-                    bloquearEdicao={isEditing}
-                  />
-
-                  <ShopeeMarketplaceSection
-                    marketplaces={
-                      Array.isArray(variation?.marketplaces)
-                        ? variation.marketplaces
-                        : [
-                            {
-                              marketplace: "Shopee",
-                              id_anuncio: "",
-                              sku: "",
-                              link: "",
-                            },
-                          ]
-                    }
-                    setMarketplaces={setMarketplaces}
                     loading={false}
                     bloquearEdicao={isEditing}
                   />

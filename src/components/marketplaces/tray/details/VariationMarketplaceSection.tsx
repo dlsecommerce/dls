@@ -86,7 +86,6 @@ type Variation = {
 
   marketplace?: string;
   marketplaces?: any[];
-
   link?: string;
 
   preco?: string | number;
@@ -384,69 +383,69 @@ const getCustoFromVariation = (variation: Variation, composicao: any[]) => {
   return calcCustoTotal(composicao);
 };
 
-const getCalculoLojaFromVariation = (variation: Variation): CalculoLoja => {
+const getCalculoLojaFromVariation = (variation: any): CalculoLoja => {
   const dados = variation?.dados || {};
 
   return {
     desconto:
-      variation.calculoLoja?.desconto ??
-      variation.desconto ??
-      variation.Desconto ??
-      dados.calculoLoja?.desconto ??
-      dados.desconto ??
-      dados.Desconto ??
+      variation?.calculoLoja?.desconto ??
+      variation?.desconto ??
+      variation?.Desconto ??
+      dados?.calculoLoja?.desconto ??
+      dados?.desconto ??
+      dados?.Desconto ??
       "",
     embalagem:
-      variation.calculoLoja?.embalagem ??
-      variation.embalagem ??
-      variation.Embalagem ??
-      dados.calculoLoja?.embalagem ??
-      dados.embalagem ??
-      dados.Embalagem ??
+      variation?.calculoLoja?.embalagem ??
+      variation?.embalagem ??
+      variation?.Embalagem ??
+      dados?.calculoLoja?.embalagem ??
+      dados?.embalagem ??
+      dados?.Embalagem ??
       "",
     frete:
-      variation.calculoLoja?.frete ??
-      variation.frete ??
-      variation.Frete ??
-      dados.calculoLoja?.frete ??
-      dados.frete ??
-      dados.Frete ??
+      variation?.calculoLoja?.frete ??
+      variation?.frete ??
+      variation?.Frete ??
+      dados?.calculoLoja?.frete ??
+      dados?.frete ??
+      dados?.Frete ??
       "",
     imposto:
-      variation.calculoLoja?.imposto ??
-      variation.imposto ??
-      variation.Imposto ??
-      dados.calculoLoja?.imposto ??
-      dados.imposto ??
-      dados.Imposto ??
+      variation?.calculoLoja?.imposto ??
+      variation?.imposto ??
+      variation?.Imposto ??
+      dados?.calculoLoja?.imposto ??
+      dados?.imposto ??
+      dados?.Imposto ??
       "",
     margem:
-      variation.calculoLoja?.margem ??
-      variation.margem ??
-      variation.margem_lucro ??
-      variation["Margem de Lucro"] ??
-      dados.calculoLoja?.margem ??
-      dados.margem ??
-      dados.margem_lucro ??
-      dados["Margem de Lucro"] ??
+      variation?.calculoLoja?.margem ??
+      variation?.margem ??
+      variation?.margem_lucro ??
+      variation?.["Margem de Lucro"] ??
+      dados?.calculoLoja?.margem ??
+      dados?.margem ??
+      dados?.margem_lucro ??
+      dados?.["Margem de Lucro"] ??
       "",
     comissao:
-      variation.calculoLoja?.comissao ??
-      variation.comissao ??
-      variation.Comissao ??
-      variation.Comissão ??
-      dados.calculoLoja?.comissao ??
-      dados.comissao ??
-      dados.Comissao ??
-      dados.Comissão ??
+      variation?.calculoLoja?.comissao ??
+      variation?.comissao ??
+      variation?.Comissao ??
+      variation?.Comissão ??
+      dados?.calculoLoja?.comissao ??
+      dados?.comissao ??
+      dados?.Comissao ??
+      dados?.Comissão ??
       "",
     marketing:
-      variation.calculoLoja?.marketing ??
-      variation.marketing ??
-      variation.Marketing ??
-      dados.calculoLoja?.marketing ??
-      dados.marketing ??
-      dados.Marketing ??
+      variation?.calculoLoja?.marketing ??
+      variation?.marketing ??
+      variation?.Marketing ??
+      dados?.calculoLoja?.marketing ??
+      dados?.marketing ??
+      dados?.Marketing ??
       "",
   };
 };
@@ -478,6 +477,57 @@ const montarCamposPercentuaisSistema = (calculoLoja: CalculoLoja) => {
     marketing: calculoLoja.marketing,
     Marketing: calculoLoja.marketing,
   };
+};
+
+const valorPreenchido = (value: any) => {
+  return value !== null && value !== undefined && String(value).trim() !== "";
+};
+
+const preferirValorPreenchido = (local: any, banco: any) => {
+  return valorPreenchido(local) ? local : banco;
+};
+
+const mesclarCalculoLoja = (
+  calculoBanco: CalculoLoja,
+  calculoLocal: CalculoLoja
+): CalculoLoja => {
+  return {
+    desconto: preferirValorPreenchido(
+      calculoLocal.desconto,
+      calculoBanco.desconto
+    ),
+    embalagem: preferirValorPreenchido(
+      calculoLocal.embalagem,
+      calculoBanco.embalagem
+    ),
+    frete: preferirValorPreenchido(calculoLocal.frete, calculoBanco.frete),
+    imposto: preferirValorPreenchido(
+      calculoLocal.imposto,
+      calculoBanco.imposto
+    ),
+    margem: preferirValorPreenchido(
+      calculoLocal.margem,
+      calculoBanco.margem
+    ),
+    comissao: preferirValorPreenchido(
+      calculoLocal.comissao,
+      calculoBanco.comissao
+    ),
+    marketing: preferirValorPreenchido(
+      calculoLocal.marketing,
+      calculoBanco.marketing
+    ),
+  };
+};
+
+const getCalculoLojaComFallbackDoPai = (
+  variation: any,
+  produtoPai: any
+): CalculoLoja => {
+  return mesclarCalculoLoja(
+    getCalculoLojaFromVariation(produtoPai),
+    getCalculoLojaFromVariation(variation)
+  );
 };
 
 const getIdentificadorVariation = (variation: Variation) => {
@@ -528,7 +578,9 @@ const normalizarVariationParaSalvar = (
     composicaoNormalizada
   );
 
-  const calculoLoja = getCalculoLojaFromVariation(variation);
+  const calculoLoja = produtoPai
+    ? getCalculoLojaComFallbackDoPai(variation, produtoPai)
+    : getCalculoLojaFromVariation(variation);
 
   const preco =
     variation.preco ??
@@ -646,6 +698,7 @@ const normalizarVariationParaSalvar = (
     status: variation.status || variation.dados?.status || "ativo",
 
     ...camposPercentuais,
+    calculoLoja,
 
     preco,
     precoLoja: preco,
@@ -705,6 +758,7 @@ const normalizarVariationParaSalvar = (
       "ID Var": idVar,
 
       ...camposPercentuais,
+      calculoLoja,
 
       preco,
       precoLoja: preco,
@@ -740,7 +794,15 @@ const manterSomentePercentuaisEditaveis = (
 
   const custoOriginal = getCustoFromVariation(original, composicaoOriginal);
 
-  const precoOriginal =
+  const precoAtualizado =
+    atualizado.preco ??
+    atualizado.precoLoja ??
+    atualizado.preco_loja ??
+    atualizado["Preço de Venda"] ??
+    atualizado.dados?.preco ??
+    atualizado.dados?.precoLoja ??
+    atualizado.dados?.preco_loja ??
+    atualizado.dados?.["Preço de Venda"] ??
     original.preco ??
     original.precoLoja ??
     original.preco_loja ??
@@ -879,10 +941,10 @@ const manterSomentePercentuaisEditaveis = (
 
     link: original.link ?? atualizado.link,
 
-    preco: precoOriginal,
-    precoLoja: precoOriginal,
-    preco_loja: precoOriginal,
-    "Preço de Venda": precoOriginal,
+    preco: precoAtualizado,
+    precoLoja: precoAtualizado,
+    preco_loja: precoAtualizado,
+    "Preço de Venda": precoAtualizado,
 
     status: original.status ?? atualizado.status,
     descricao: original.descricao ?? atualizado.descricao,
@@ -941,15 +1003,8 @@ const createEmptyVariation = (produto: any): Variation => {
       ? calcCustoTotal(composicaoBase)
       : parseNumero(custoBase);
 
-  const calculoLoja = {
-    desconto: "",
-    embalagem: "",
-    frete: "",
-    imposto: "",
-    margem: "",
-    comissao: "",
-    marketing: "",
-  };
+  const calculoLoja = getCalculoLojaFromVariation(produto);
+  const camposPercentuais = montarCamposPercentuaisSistema(calculoLoja);
 
   const variation: Variation = {
     loja,
@@ -1027,13 +1082,16 @@ const createEmptyVariation = (produto: any): Variation => {
     Custo: custoTotalBase,
     "Custo Total": custoTotalBase,
 
-    ...montarCamposPercentuaisSistema(calculoLoja),
+    ...camposPercentuais,
+    calculoLoja,
   };
 
   return {
     ...variation,
     dados: {
       ...variation,
+      ...camposPercentuais,
+      calculoLoja,
     },
   };
 };
@@ -1079,7 +1137,8 @@ const mapBancoParaVariation = (v: any): Variation => {
     "";
 
   const calculoLoja: CalculoLoja = {
-    desconto: v?.desconto ?? v?.Desconto ?? dados.desconto ?? dados.Desconto ?? "",
+    desconto:
+      v?.desconto ?? v?.Desconto ?? dados.desconto ?? dados.Desconto ?? "",
     embalagem:
       v?.embalagem ??
       v?.Embalagem ??
@@ -1177,14 +1236,20 @@ const mapBancoParaVariation = (v: any): Variation => {
     id_var: idVar,
     "ID Var": idVar,
 
-    categoria: v?.categoria ?? v?.Categoria ?? dados.Categoria ?? dados.categoria ?? "",
-    Categoria: v?.Categoria ?? v?.categoria ?? dados.Categoria ?? dados.categoria ?? "",
+    categoria:
+      v?.categoria ?? v?.Categoria ?? dados.Categoria ?? dados.categoria ?? "",
+    Categoria:
+      v?.Categoria ?? v?.categoria ?? dados.Categoria ?? dados.categoria ?? "",
 
-    id_bling: v?.id_bling ?? v?.["ID Bling"] ?? dados["ID Bling"] ?? dados.id_bling,
-    "ID Bling": v?.["ID Bling"] ?? v?.id_bling ?? dados["ID Bling"] ?? dados.id_bling,
+    id_bling:
+      v?.id_bling ?? v?.["ID Bling"] ?? dados["ID Bling"] ?? dados.id_bling,
+    "ID Bling":
+      v?.["ID Bling"] ?? v?.id_bling ?? dados["ID Bling"] ?? dados.id_bling,
 
-    id_tray: v?.id_tray ?? v?.["ID Tray"] ?? dados["ID Tray"] ?? dados.id_tray,
-    "ID Tray": v?.["ID Tray"] ?? v?.id_tray ?? dados["ID Tray"] ?? dados.id_tray,
+    id_tray:
+      v?.id_tray ?? v?.["ID Tray"] ?? dados["ID Tray"] ?? dados.id_tray,
+    "ID Tray":
+      v?.["ID Tray"] ?? v?.id_tray ?? dados["ID Tray"] ?? dados.id_tray,
 
     od: v?.od ?? v?.OD ?? dados.OD ?? dados.od,
     OD: v?.OD ?? v?.od ?? dados.OD ?? dados.od,
@@ -1220,6 +1285,7 @@ const mapBancoParaVariation = (v: any): Variation => {
     "Preço de Venda": preco,
 
     ...montarCamposPercentuaisSistema(calculoLoja),
+    calculoLoja,
 
     status: v?.status ?? dados.status ?? "ativo",
 
@@ -1246,6 +1312,7 @@ const mapBancoParaVariation = (v: any): Variation => {
       ...dados,
       ...base,
       ...montarCamposPercentuaisSistema(calculoLoja),
+      calculoLoja,
     },
   };
 };
@@ -1351,10 +1418,10 @@ export const VariationMarketplaceSection = ({
                 existente.custo ??
                 existente.Custo ??
                 item.custo_total,
-              calculoLoja: {
-                ...getCalculoLojaFromVariation(item),
-                ...getCalculoLojaFromVariation(existente),
-              },
+              calculoLoja: mesclarCalculoLoja(
+                getCalculoLojaFromVariation(item),
+                getCalculoLojaFromVariation(existente)
+              ),
               marketplaces:
                 Array.isArray(existente.marketplaces) &&
                 existente.marketplaces.length > 0
@@ -1377,12 +1444,6 @@ export const VariationMarketplaceSection = ({
         return {
           ...p,
           tipo_anuncio: "variacoes",
-
-          referencia: referenciaPaiNormalizada,
-          Referencia: referenciaPaiNormalizada,
-          "Referência": referenciaPaiNormalizada,
-          sku: referenciaPaiNormalizada,
-
           variacoes: [
             ...mescladas,
             ...locaisNaoCarregados.map((item: Variation) =>
@@ -1415,22 +1476,35 @@ export const VariationMarketplaceSection = ({
     return calcCustoTotal(variationComposicao);
   }, [variationComposicao]);
 
-  const updateVariations = (next: Variation[]) => {
-    const referenciaPaiNormalizada = criarReferenciaPaiNovoPadrao(
-      getReferenciaProduto(produto)
-    );
+  const aplicarPercentuaisDaVariation = (
+    base: Variation,
+    fonte: Variation
+  ): Variation => {
+    const calculoLoja = getCalculoLojaComFallbackDoPai(fonte, produto);
+    const camposPercentuais = montarCamposPercentuaisSistema(calculoLoja);
 
+    return {
+      ...base,
+      ...camposPercentuais,
+      calculoLoja,
+
+      dados: {
+        ...(base.dados || {}),
+        ...(fonte.dados || {}),
+        ...camposPercentuais,
+        calculoLoja,
+      },
+    };
+  };
+
+  const updateVariations = (next: Variation[]) => {
     setProduto((p: any) => ({
       ...p,
-
       tipo_anuncio: "variacoes",
-
-      referencia: referenciaPaiNormalizada,
-      Referencia: referenciaPaiNormalizada,
-      "Referência": referenciaPaiNormalizada,
-      sku: referenciaPaiNormalizada,
-
-      variacoes: next.map((item) => normalizarVariationParaSalvar(item, p)),
+      variacoes: next.map((item) => {
+        const normalizada = normalizarVariationParaSalvar(item, p);
+        return aplicarPercentuaisDaVariation(normalizada, item);
+      }),
     }));
   };
 
@@ -1458,9 +1532,24 @@ export const VariationMarketplaceSection = ({
       composicaoNormalizada
     );
 
+    const calculoLojaComFallback = getCalculoLojaComFallbackDoPai(
+      variation,
+      produto
+    );
+
+    const camposPercentuaisComFallback =
+      montarCamposPercentuaisSistema(calculoLojaComFallback);
+
     const normalizedVariation = normalizarVariationParaSalvar(
       {
         ...variation,
+        ...camposPercentuaisComFallback,
+        calculoLoja: calculoLojaComFallback,
+        dados: {
+          ...(variation.dados || {}),
+          ...camposPercentuaisComFallback,
+          calculoLoja: calculoLojaComFallback,
+        },
         sku:
           variation.sku ??
           variation.referencia ??
@@ -1527,20 +1616,22 @@ export const VariationMarketplaceSection = ({
       composicaoNormalizada
     );
 
-    const variationToSave: Variation = normalizarVariationParaSalvar(
+    const draftComPercentuais = aplicarPercentuaisDaVariation(draft, draft);
+
+    const variationToSaveNormalizada: Variation = normalizarVariationParaSalvar(
       {
-        ...draft,
+        ...draftComPercentuais,
         sku:
-          draft.sku ||
-          draft.referencia ||
-          draft.Referencia ||
-          draft["Referência"] ||
+          draftComPercentuais.sku ||
+          draftComPercentuais.referencia ||
+          draftComPercentuais.Referencia ||
+          draftComPercentuais["Referência"] ||
           "",
         referencia:
-          draft.referencia ||
-          draft.sku ||
-          draft.Referencia ||
-          draft["Referência"] ||
+          draftComPercentuais.referencia ||
+          draftComPercentuais.sku ||
+          draftComPercentuais.Referencia ||
+          draftComPercentuais["Referência"] ||
           "",
         composicao: composicaoNormalizada,
         custoTotal: custoTotalNormalizado,
@@ -1549,15 +1640,23 @@ export const VariationMarketplaceSection = ({
       produto
     );
 
+    const variationToSave = aplicarPercentuaisDaVariation(
+      variationToSaveNormalizada,
+      draftComPercentuais
+    );
+
     const variationFinal: Variation =
       selectedVariationIndex === null
         ? variationToSave
-        : manterSomentePercentuaisEditaveis(
-            normalizarVariationParaSalvar(
-              variacoes[selectedVariationIndex],
-              produto
+        : aplicarPercentuaisDaVariation(
+            manterSomentePercentuaisEditaveis(
+              normalizarVariationParaSalvar(
+                variacoes[selectedVariationIndex],
+                produto
+              ),
+              variationToSave
             ),
-            variationToSave
+            draftComPercentuais
           );
 
     const next =
@@ -1596,7 +1695,10 @@ export const VariationMarketplaceSection = ({
             index === selectedVariationIndex ? variationFinal : item
           );
 
-    updateVariations(next);
+    updateVariations(
+      next.map((item) => aplicarPercentuaisDaVariation(item, item))
+    );
+
     closeModal();
   };
 

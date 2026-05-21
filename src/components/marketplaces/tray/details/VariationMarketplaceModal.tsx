@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
 
@@ -31,6 +31,16 @@ type VariationMarketplaceModalProps = {
   isEditing: boolean;
   onClose: () => void;
   onSave: (variationAtualizada?: any) => void | Promise<void>;
+};
+
+const EMPTY_CALCULO_LOJA: CalculoLoja = {
+  desconto: "",
+  embalagem: "",
+  frete: "",
+  imposto: "",
+  margem: "",
+  comissao: "",
+  marketing: "",
 };
 
 const removerAcentos = (value: string) => {
@@ -100,7 +110,7 @@ const calcCustoTotal = (composicao: any[]) => {
 
 const normalizarReferenciaMarketplace = (
   referencia: string | null | undefined,
-  tipo: "PAI" | "VAR"
+  tipo: "PAI" | "VAR",
 ) => {
   let ref = removerAcentos(String(referencia || ""))
     .trim()
@@ -167,7 +177,7 @@ const getInitialCalculoLoja = (variation: any): CalculoLoja => {
         variation?.dados?.calculoLoja?.desconto ??
         variation?.dados?.desconto ??
         variation?.dados?.Desconto ??
-        ""
+        "",
     ),
     embalagem: String(
       variation?.calculoLoja?.embalagem ??
@@ -176,7 +186,7 @@ const getInitialCalculoLoja = (variation: any): CalculoLoja => {
         variation?.dados?.calculoLoja?.embalagem ??
         variation?.dados?.embalagem ??
         variation?.dados?.Embalagem ??
-        ""
+        "",
     ),
     frete: String(
       variation?.calculoLoja?.frete ??
@@ -185,7 +195,7 @@ const getInitialCalculoLoja = (variation: any): CalculoLoja => {
         variation?.dados?.calculoLoja?.frete ??
         variation?.dados?.frete ??
         variation?.dados?.Frete ??
-        ""
+        "",
     ),
     imposto: String(
       variation?.calculoLoja?.imposto ??
@@ -194,7 +204,7 @@ const getInitialCalculoLoja = (variation: any): CalculoLoja => {
         variation?.dados?.calculoLoja?.imposto ??
         variation?.dados?.imposto ??
         variation?.dados?.Imposto ??
-        ""
+        "",
     ),
     margem: String(
       variation?.calculoLoja?.margem ??
@@ -205,7 +215,7 @@ const getInitialCalculoLoja = (variation: any): CalculoLoja => {
         variation?.dados?.margem ??
         variation?.dados?.margem_lucro ??
         variation?.dados?.["Margem de Lucro"] ??
-        ""
+        "",
     ),
     comissao: String(
       variation?.calculoLoja?.comissao ??
@@ -216,7 +226,7 @@ const getInitialCalculoLoja = (variation: any): CalculoLoja => {
         variation?.dados?.comissao ??
         variation?.dados?.Comissão ??
         variation?.dados?.Comissao ??
-        ""
+        "",
     ),
     marketing: String(
       variation?.calculoLoja?.marketing ??
@@ -225,12 +235,12 @@ const getInitialCalculoLoja = (variation: any): CalculoLoja => {
         variation?.dados?.calculoLoja?.marketing ??
         variation?.dados?.marketing ??
         variation?.dados?.Marketing ??
-        ""
+        "",
     ),
   };
 };
 
-const sanitizeCalculoLoja = (calculoLoja: CalculoLoja): CalculoLoja => {
+const sanitizeCalculoLoja = (calculoLoja: Partial<CalculoLoja>): CalculoLoja => {
   return {
     desconto: String(calculoLoja.desconto ?? "").replace(/[^\d.,-]/g, ""),
     embalagem: String(calculoLoja.embalagem ?? "").replace(/[^\d.,-]/g, ""),
@@ -283,15 +293,10 @@ export const VariationMarketplaceModal = ({
   onClose,
   onSave,
 }: VariationMarketplaceModalProps) => {
-  const [calculoLoja, setCalculoLoja] = useState<CalculoLoja>({
-    desconto: "",
-    embalagem: "",
-    frete: "",
-    imposto: "",
-    margem: "",
-    comissao: "",
-    marketing: "",
-  });
+  const [calculoLoja, setCalculoLoja] =
+    useState<CalculoLoja>(EMPTY_CALCULO_LOJA);
+
+  const calculoLojaRef = useRef<CalculoLoja>(EMPTY_CALCULO_LOJA);
 
   const [savingLocal, setSavingLocal] = useState(false);
 
@@ -315,11 +320,42 @@ export const VariationMarketplaceModal = ({
     };
   }, [open, onClose]);
 
+  const variationKey = useMemo(() => {
+    if (!variation) return "";
+
+    return String(
+      variation?.id ??
+        variation?.ID ??
+        variation?.id_logico ??
+        variation?.anuncio_id ??
+        variation?.id_anuncio ??
+        variation?.marketplace_id ??
+        variation?.id_marketplace ??
+        getReferenciaVariation(variation) ??
+        "",
+    );
+  }, [
+    variation?.id,
+    variation?.ID,
+    variation?.id_logico,
+    variation?.anuncio_id,
+    variation?.id_anuncio,
+    variation?.marketplace_id,
+    variation?.id_marketplace,
+    variation?.referencia,
+    variation?.Referencia,
+    variation?.["Referência"],
+    variation?.sku,
+  ]);
+
   useEffect(() => {
     if (!variation || !open) return;
 
-    setCalculoLoja(getInitialCalculoLoja(variation));
-  }, [variation, open]);
+    const inicial = sanitizeCalculoLoja(getInitialCalculoLoja(variation));
+
+    calculoLojaRef.current = inicial;
+    setCalculoLoja(inicial);
+  }, [open, variationKey]);
 
   const composicaoTela = useMemo(() => {
     return normalizarComposicao(Array.isArray(composicao) ? composicao : []);
@@ -374,6 +410,33 @@ export const VariationMarketplaceModal = ({
     }));
   };
 
+  const handleSetCalculoLoja = (value: any) => {
+    setCalculoLoja((prev) => {
+      const next = typeof value === "function" ? value(prev) : value;
+
+      const calculoSeguro = sanitizeCalculoLoja({
+        ...prev,
+        ...next,
+      });
+
+      calculoLojaRef.current = calculoSeguro;
+
+      const camposPercentuais =
+        montarCamposPercentuaisParaSalvar(calculoSeguro);
+
+      setVariation((p: any) => ({
+        ...p,
+        ...camposPercentuais,
+        dados: {
+          ...(p?.dados || {}),
+          ...camposPercentuais,
+        },
+      }));
+
+      return calculoSeguro;
+    });
+  };
+
   const precoLoja = useMemo(() => {
     const custo = parseNumero(
       custoTotalCalculado ||
@@ -385,7 +448,7 @@ export const VariationMarketplaceModal = ({
         variation?.dados?.custo_total ||
         variation?.dados?.custo ||
         variation?.dados?.Custo ||
-        0
+        0,
     );
 
     if (!custo) return 0;
@@ -397,11 +460,17 @@ export const VariationMarketplaceModal = ({
     const m = parseNumero(calculoSeguro.margem) / 100;
     const c = parseNumero(calculoSeguro.comissao) / 100;
     const mk = parseNumero(calculoSeguro.marketing) / 100;
+
+    /*
+      CORREÇÃO:
+      Antes a variação só somava frete no preço.
+      Agora soma embalagem + frete, igual ao cálculo do produto pai.
+    */
+    const e = parseNumero(calculoSeguro.embalagem);
     const f = parseNumero(calculoSeguro.frete);
 
     const divisor = 1 - (i + m + c + mk);
-
-    const preco = divisor > 0 ? (custo * (1 - d) + f + 2.5) / divisor : 0;
+    const preco = divisor > 0 ? (custo * (1 - d) + e + f) / divisor : 0;
 
     return Number.isFinite(preco) ? preco : 0;
   }, [
@@ -417,104 +486,6 @@ export const VariationMarketplaceModal = ({
     calculoLoja,
   ]);
 
-  const handleClearLocal = () => {
-    setCalculoLoja({
-      desconto: "",
-      embalagem: "",
-      frete: "",
-      imposto: "",
-      margem: "",
-      comissao: "",
-      marketing: "",
-    });
-
-    if (isEditing) {
-      return;
-    }
-
-    setVariation((p: any) => ({
-      ...p,
-      referencia: "",
-      Referencia: "",
-      "Referência": "",
-      sku: "",
-
-      nome: "",
-      Nome: "",
-      titulo: "",
-
-      marca: "",
-      Marca: "",
-
-      categoria: "",
-      Categoria: "",
-
-      peso: "",
-      Peso: "",
-
-      altura: "",
-      Altura: "",
-
-      largura: "",
-      Largura: "",
-
-      comprimento: "",
-      Comprimento: "",
-
-      custoTotal: 0,
-      custo_total: 0,
-      custo: 0,
-      Custo: 0,
-
-      preco: "",
-      precoLoja: "",
-      preco_loja: "",
-      "Preço de Venda": "",
-
-      dados: {
-        ...(p?.dados || {}),
-        referencia: "",
-        Referencia: "",
-        "Referência": "",
-        sku: "",
-
-        nome: "",
-        Nome: "",
-        titulo: "",
-
-        marca: "",
-        Marca: "",
-
-        categoria: "",
-        Categoria: "",
-
-        peso: "",
-        Peso: "",
-
-        altura: "",
-        Altura: "",
-
-        largura: "",
-        Largura: "",
-
-        comprimento: "",
-        Comprimento: "",
-
-        custoTotal: 0,
-        custo_total: 0,
-        custo: 0,
-        Custo: 0,
-
-        preco: "",
-        precoLoja: "",
-        preco_loja: "",
-        "Preço de Venda": "",
-      },
-    }));
-
-    setComposicao([{ codigo: "", quantidade: "", custo: "" }]);
-  };
-
   const handleSaveVariation = async () => {
     if (!variation || savingLocal) return;
 
@@ -523,7 +494,7 @@ export const VariationMarketplaceModal = ({
     try {
       const referenciaNormalizada = normalizarReferenciaMarketplace(
         getReferenciaVariation(variation),
-        "VAR"
+        "VAR",
       );
 
       const composicaoNormalizada = normalizarComposicao(composicaoTela);
@@ -531,7 +502,7 @@ export const VariationMarketplaceModal = ({
       const custoFinal =
         custoDaComposicao > 0 ? custoDaComposicao : custoTotalCalculado;
 
-      const calculoSeguro = sanitizeCalculoLoja(calculoLoja);
+      const calculoSeguro = sanitizeCalculoLoja(calculoLojaRef.current);
       const camposPercentuais =
         montarCamposPercentuaisParaSalvar(calculoSeguro);
 
@@ -545,7 +516,7 @@ export const VariationMarketplaceModal = ({
               ? variation.composicao
               : Array.isArray(variation?.dados?.composicao)
                 ? variation.dados.composicao
-                : []
+                : [],
           )
         : composicaoNormalizada;
 
@@ -559,14 +530,19 @@ export const VariationMarketplaceModal = ({
               variation?.dados?.custo_total ??
               variation?.dados?.custo ??
               variation?.dados?.Custo ??
-              custoFinal
+              custoFinal,
           )
         : custoFinal;
 
+      /*
+        CORREÇÃO:
+        precoFinal agora vem do precoLoja já calculado com embalagem + frete.
+      */
       const precoFinal = precoLoja;
 
       const variationAtualizada = {
         ...variation,
+        ...camposPercentuais,
 
         marketplace_id:
           variation?.marketplace_id ??
@@ -605,8 +581,6 @@ export const VariationMarketplaceModal = ({
         custo: custoFinalSeguro,
         Custo: custoFinalSeguro,
 
-        ...camposPercentuais,
-
         preco: precoFinal,
         precoLoja: precoFinal,
         preco_loja: precoFinal,
@@ -618,6 +592,7 @@ export const VariationMarketplaceModal = ({
 
         dados: {
           ...(variation?.dados || {}),
+          ...camposPercentuais,
 
           marketplace_id:
             variation?.marketplace_id ??
@@ -655,8 +630,6 @@ export const VariationMarketplaceModal = ({
           custo_total: custoFinalSeguro,
           custo: custoFinalSeguro,
           Custo: custoFinalSeguro,
-
-          ...camposPercentuais,
 
           preco: precoFinal,
           precoLoja: precoFinal,
@@ -737,7 +710,7 @@ export const VariationMarketplaceModal = ({
                   <p className="mt-2 truncate text-xs text-white/45">
                     {normalizarReferenciaMarketplace(
                       getReferenciaVariation(variation),
-                      "VAR"
+                      "VAR",
                     ) || "Nova variação"}
                   </p>
                 </div>
@@ -856,7 +829,7 @@ export const VariationMarketplaceModal = ({
                 <aside className="min-w-0 space-y-4">
                   <CalculoPrecoBox
                     calculoLoja={calculoLoja}
-                    setCalculoLoja={setCalculoLoja}
+                    setCalculoLoja={handleSetCalculoLoja}
                     precoLoja={precoLoja}
                     produto={{
                       ...variation,
@@ -870,7 +843,6 @@ export const VariationMarketplaceModal = ({
                       "Preço de Venda": precoLoja,
                     }}
                     saving={savingLocal}
-                    handleClearLocal={handleClearLocal}
                   />
                 </aside>
               </div>

@@ -385,69 +385,69 @@ const getCustoFromVariation = (variation: Variation, composicao: any[]) => {
   return calcCustoTotal(composicao);
 };
 
-const getCalculoLojaFromVariation = (variation: Variation): CalculoLoja => {
+const getCalculoLojaFromVariation = (variation: any): CalculoLoja => {
   const dados = variation?.dados || {};
 
   return {
     desconto:
-      variation.calculoLoja?.desconto ??
-      variation.desconto ??
-      variation.Desconto ??
-      dados.calculoLoja?.desconto ??
-      dados.desconto ??
-      dados.Desconto ??
+      variation?.calculoLoja?.desconto ??
+      variation?.desconto ??
+      variation?.Desconto ??
+      dados?.calculoLoja?.desconto ??
+      dados?.desconto ??
+      dados?.Desconto ??
       "",
     embalagem:
-      variation.calculoLoja?.embalagem ??
-      variation.embalagem ??
-      variation.Embalagem ??
-      dados.calculoLoja?.embalagem ??
-      dados.embalagem ??
-      dados.Embalagem ??
+      variation?.calculoLoja?.embalagem ??
+      variation?.embalagem ??
+      variation?.Embalagem ??
+      dados?.calculoLoja?.embalagem ??
+      dados?.embalagem ??
+      dados?.Embalagem ??
       "",
     frete:
-      variation.calculoLoja?.frete ??
-      variation.frete ??
-      variation.Frete ??
-      dados.calculoLoja?.frete ??
-      dados.frete ??
-      dados.Frete ??
+      variation?.calculoLoja?.frete ??
+      variation?.frete ??
+      variation?.Frete ??
+      dados?.calculoLoja?.frete ??
+      dados?.frete ??
+      dados?.Frete ??
       "",
     imposto:
-      variation.calculoLoja?.imposto ??
-      variation.imposto ??
-      variation.Imposto ??
-      dados.calculoLoja?.imposto ??
-      dados.imposto ??
-      dados.Imposto ??
+      variation?.calculoLoja?.imposto ??
+      variation?.imposto ??
+      variation?.Imposto ??
+      dados?.calculoLoja?.imposto ??
+      dados?.imposto ??
+      dados?.Imposto ??
       "",
     margem:
-      variation.calculoLoja?.margem ??
-      variation.margem ??
-      variation.margem_lucro ??
-      variation["Margem de Lucro"] ??
-      dados.calculoLoja?.margem ??
-      dados.margem ??
-      dados.margem_lucro ??
-      dados["Margem de Lucro"] ??
+      variation?.calculoLoja?.margem ??
+      variation?.margem ??
+      variation?.margem_lucro ??
+      variation?.["Margem de Lucro"] ??
+      dados?.calculoLoja?.margem ??
+      dados?.margem ??
+      dados?.margem_lucro ??
+      dados?.["Margem de Lucro"] ??
       "",
     comissao:
-      variation.calculoLoja?.comissao ??
-      variation.comissao ??
-      variation.Comissao ??
-      variation.Comissão ??
-      dados.calculoLoja?.comissao ??
-      dados.comissao ??
-      dados.Comissao ??
-      dados.Comissão ??
+      variation?.calculoLoja?.comissao ??
+      variation?.comissao ??
+      variation?.Comissao ??
+      variation?.Comissão ??
+      dados?.calculoLoja?.comissao ??
+      dados?.comissao ??
+      dados?.Comissao ??
+      dados?.Comissão ??
       "",
     marketing:
-      variation.calculoLoja?.marketing ??
-      variation.marketing ??
-      variation.Marketing ??
-      dados.calculoLoja?.marketing ??
-      dados.marketing ??
-      dados.Marketing ??
+      variation?.calculoLoja?.marketing ??
+      variation?.marketing ??
+      variation?.Marketing ??
+      dados?.calculoLoja?.marketing ??
+      dados?.marketing ??
+      dados?.Marketing ??
       "",
   };
 };
@@ -479,6 +479,57 @@ const montarCamposPercentuaisSistema = (calculoLoja: CalculoLoja) => {
     marketing: calculoLoja.marketing,
     Marketing: calculoLoja.marketing,
   };
+};
+
+const valorPreenchido = (value: any) => {
+  return value !== null && value !== undefined && String(value).trim() !== "";
+};
+
+const preferirValorPreenchido = (local: any, banco: any) => {
+  return valorPreenchido(local) ? local : banco;
+};
+
+const mesclarCalculoLoja = (
+  calculoBanco: CalculoLoja,
+  calculoLocal: CalculoLoja,
+): CalculoLoja => {
+  return {
+    desconto: preferirValorPreenchido(
+      calculoLocal.desconto,
+      calculoBanco.desconto,
+    ),
+    embalagem: preferirValorPreenchido(
+      calculoLocal.embalagem,
+      calculoBanco.embalagem,
+    ),
+    frete: preferirValorPreenchido(calculoLocal.frete, calculoBanco.frete),
+    imposto: preferirValorPreenchido(
+      calculoLocal.imposto,
+      calculoBanco.imposto,
+    ),
+    margem: preferirValorPreenchido(
+      calculoLocal.margem,
+      calculoBanco.margem,
+    ),
+    comissao: preferirValorPreenchido(
+      calculoLocal.comissao,
+      calculoBanco.comissao,
+    ),
+    marketing: preferirValorPreenchido(
+      calculoLocal.marketing,
+      calculoBanco.marketing,
+    ),
+  };
+};
+
+const getCalculoLojaComFallbackDoPai = (
+  variation: any,
+  produtoPai: any,
+): CalculoLoja => {
+  return mesclarCalculoLoja(
+    getCalculoLojaFromVariation(produtoPai),
+    getCalculoLojaFromVariation(variation),
+  );
 };
 
 const getIdentificadorVariation = (variation: Variation) => {
@@ -562,7 +613,9 @@ const normalizarVariationParaSalvar = (
     composicaoNormalizada,
   );
 
-  const calculoLoja = getCalculoLojaFromVariation(variation);
+  const calculoLoja = produtoPai
+    ? getCalculoLojaComFallbackDoPai(variation, produtoPai)
+    : getCalculoLojaFromVariation(variation);
 
   const preco =
     variation.preco ??
@@ -687,6 +740,7 @@ const normalizarVariationParaSalvar = (
     status: variation.status || variation.dados?.status || "ativo",
 
     ...camposPercentuais,
+    calculoLoja,
 
     preco,
     precoLoja: preco,
@@ -745,6 +799,7 @@ const normalizarVariationParaSalvar = (
       "ID Var": idVar,
 
       ...camposPercentuais,
+      calculoLoja,
 
       preco,
       precoLoja: preco,
@@ -984,15 +1039,8 @@ const createEmptyVariation = (produto: any): Variation => {
       ? calcCustoTotal(composicaoBase)
       : parseNumero(custoBase);
 
-  const calculoLoja = {
-    desconto: "",
-    embalagem: "",
-    frete: "",
-    imposto: "",
-    margem: "",
-    comissao: "",
-    marketing: "",
-  };
+  const calculoLoja = getCalculoLojaFromVariation(produto);
+  const camposPercentuais = montarCamposPercentuaisSistema(calculoLoja);
 
   const variation: Variation = {
     loja,
@@ -1077,13 +1125,16 @@ const createEmptyVariation = (produto: any): Variation => {
     Custo: custoTotalBase,
     "Custo Total": custoTotalBase,
 
-    ...montarCamposPercentuaisSistema(calculoLoja),
+    ...camposPercentuais,
+    calculoLoja,
   };
 
   return {
     ...variation,
     dados: {
       ...variation,
+      ...camposPercentuais,
+      calculoLoja,
     },
   };
 };
@@ -1279,6 +1330,7 @@ const mapBancoParaVariation = (v: any): Variation => {
     "Preço de Venda": preco,
 
     ...montarCamposPercentuaisSistema(calculoLoja),
+    calculoLoja,
 
     status: v?.status ?? dados.status ?? "ativo",
 
@@ -1307,6 +1359,7 @@ const mapBancoParaVariation = (v: any): Variation => {
       ...dados,
       ...base,
       ...montarCamposPercentuaisSistema(calculoLoja),
+      calculoLoja,
     },
   };
 };
@@ -1410,10 +1463,10 @@ export const VariationShopeeSection = ({
                 existente.custo ??
                 existente.Custo ??
                 item.custo_total,
-              calculoLoja: {
-                ...getCalculoLojaFromVariation(item),
-                ...getCalculoLojaFromVariation(existente),
-              },
+              calculoLoja: mesclarCalculoLoja(
+                getCalculoLojaFromVariation(item),
+                getCalculoLojaFromVariation(existente),
+              ),
               marketplaces:
                 Array.isArray(existente.marketplaces) &&
                 existente.marketplaces.length > 0
@@ -1478,6 +1531,27 @@ export const VariationShopeeSection = ({
     return calcCustoTotal(variationComposicao);
   }, [variationComposicao]);
 
+  const aplicarPercentuaisDaVariation = (
+    base: Variation,
+    fonte: Variation,
+  ): Variation => {
+    const calculoLoja = getCalculoLojaComFallbackDoPai(fonte, produto);
+    const camposPercentuais = montarCamposPercentuaisSistema(calculoLoja);
+
+    return {
+      ...base,
+      ...camposPercentuais,
+      calculoLoja,
+
+      dados: {
+        ...(base.dados || {}),
+        ...(fonte.dados || {}),
+        ...camposPercentuais,
+        calculoLoja,
+      },
+    };
+  };
+
   const updateVariations = (next: Variation[]) => {
     const referenciaPaiNormalizada = criarReferenciaPaiNovoPadrao(
       getReferenciaProduto(produto),
@@ -1495,7 +1569,10 @@ export const VariationShopeeSection = ({
       "Referência": referenciaPaiNormalizada,
       sku: referenciaPaiNormalizada,
 
-      variacoes: next.map((item) => normalizarVariationParaSalvar(item, p)),
+      variacoes: next.map((item) => {
+        const normalizada = normalizarVariationParaSalvar(item, p);
+        return aplicarPercentuaisDaVariation(normalizada, item);
+      }),
     }));
   };
 
@@ -1523,9 +1600,24 @@ export const VariationShopeeSection = ({
       composicaoNormalizada,
     );
 
+    const calculoLojaComFallback = getCalculoLojaComFallbackDoPai(
+      variation,
+      produto,
+    );
+
+    const camposPercentuaisComFallback =
+      montarCamposPercentuaisSistema(calculoLojaComFallback);
+
     const normalizedVariation = normalizarVariationParaSalvar(
       {
         ...variation,
+        ...camposPercentuaisComFallback,
+        calculoLoja: calculoLojaComFallback,
+        dados: {
+          ...(variation.dados || {}),
+          ...camposPercentuaisComFallback,
+          calculoLoja: calculoLojaComFallback,
+        },
         sku:
           variation.sku ??
           variation.referencia ??
@@ -1592,22 +1684,24 @@ export const VariationShopeeSection = ({
       composicaoNormalizada,
     );
 
-    const variationToSave: Variation = normalizarVariationParaSalvar(
+    const draftComPercentuais = aplicarPercentuaisDaVariation(draft, draft);
+
+    const variationToSaveNormalizada: Variation = normalizarVariationParaSalvar(
       {
-        ...draft,
+        ...draftComPercentuais,
         marketplace: "Shopee",
         canal: "Shopee",
         sku:
-          draft.sku ||
-          draft.referencia ||
-          draft.Referencia ||
-          draft["Referência"] ||
+          draftComPercentuais.sku ||
+          draftComPercentuais.referencia ||
+          draftComPercentuais.Referencia ||
+          draftComPercentuais["Referência"] ||
           "",
         referencia:
-          draft.referencia ||
-          draft.sku ||
-          draft.Referencia ||
-          draft["Referência"] ||
+          draftComPercentuais.referencia ||
+          draftComPercentuais.sku ||
+          draftComPercentuais.Referencia ||
+          draftComPercentuais["Referência"] ||
           "",
         composicao: composicaoNormalizada,
         custoTotal: custoTotalNormalizado,
@@ -1616,15 +1710,23 @@ export const VariationShopeeSection = ({
       produto,
     );
 
+    const variationToSave = aplicarPercentuaisDaVariation(
+      variationToSaveNormalizada,
+      draftComPercentuais,
+    );
+
     const variationFinal: Variation =
       selectedVariationIndex === null
         ? variationToSave
-        : manterSomentePercentuaisEditaveis(
-            normalizarVariationParaSalvar(
-              variacoes[selectedVariationIndex],
-              produto,
+        : aplicarPercentuaisDaVariation(
+            manterSomentePercentuaisEditaveis(
+              normalizarVariationParaSalvar(
+                variacoes[selectedVariationIndex],
+                produto,
+              ),
+              variationToSave,
             ),
-            variationToSave,
+            draftComPercentuais,
           );
 
     const next =
@@ -1663,7 +1765,10 @@ export const VariationShopeeSection = ({
             index === selectedVariationIndex ? variationFinal : item,
           );
 
-    updateVariations(next);
+    updateVariations(
+      next.map((item) => aplicarPercentuaisDaVariation(item, item)),
+    );
+
     closeModal();
   };
 
@@ -1686,7 +1791,7 @@ export const VariationShopeeSection = ({
               </span>
 
               <h2 className="text-base font-semibold text-white">
-                Variações Shopee
+                Variações
               </h2>
 
               {variacoes.length > 0 && (
@@ -1697,7 +1802,7 @@ export const VariationShopeeSection = ({
             </div>
 
             <p className="mt-2 text-xs leading-relaxed text-white/45">
-              Gerencie as variações do anúncio Shopee.
+              Gerencie as variações do produto.
             </p>
           </div>
 
@@ -1819,11 +1924,6 @@ export const VariationShopeeSection = ({
                                         Estoque: {variation.estoque}
                                       </span>
                                     )}
-
-                                  <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-white/45">
-                                    <Layers className="h-3 w-3 text-[#1a8ceb]/70" />
-                                    Shopee
-                                  </span>
                                 </div>
                               </div>
                             </button>
@@ -1872,12 +1972,11 @@ export const VariationShopeeSection = ({
                 ) : (
                   <div className="rounded-xl border border-dashed border-white/10 bg-[#181818] px-4 py-5 text-center">
                     <p className="text-sm font-medium text-white/75">
-                      Nenhuma variação Shopee adicionada
+                      Nenhuma variação adicionada
                     </p>
 
                     <p className="mt-1 text-xs text-white/40">
-                      Adicione variações como tamanho, cor, modelo ou kit para o
-                      anúncio da Shopee.
+                      Adicione variações como voltagem, tamanho, cor ou modelo.
                     </p>
                   </div>
                 )}
@@ -1898,7 +1997,7 @@ export const VariationShopeeSection = ({
                   "
                 >
                   <Plus className="mr-2 h-3.5 w-3.5 text-white/70" />
-                  Adicionar variação Shopee
+                  Adicionar variação
                 </Button>
               </div>
             </motion.div>
