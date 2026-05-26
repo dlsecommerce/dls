@@ -300,6 +300,8 @@ export default function AnnounceTable() {
         return;
       }
 
+      console.time("TEMPO DELETE SUPABASE");
+
       await Promise.all(
         entries.map(async ([key, ids]) => {
           const [tabela, lojaCodigo] = key.split("|");
@@ -314,7 +316,19 @@ export default function AnnounceTable() {
         })
       );
 
-      await createNotification({
+      console.timeEnd("TEMPO DELETE SUPABASE");
+
+      /**
+       * A exclusão real terminou aqui.
+       * Agora já pode fechar o modal e limpar seleção.
+       */
+      data.setOpenDelete(false);
+      data.setSelectedRows([]);
+
+      /**
+       * Não trava mais a exclusão esperando criar notificação.
+       */
+      createNotification({
         title:
           selectedRowsSnapshot.length === 1
             ? "Anúncio excluído"
@@ -332,11 +346,16 @@ export default function AnnounceTable() {
               )
             : undefined,
         link: "/dashboard/anuncios",
+      }).catch((err) => {
+        console.warn("Erro ao criar notificação:", err);
       });
 
-      data.setOpenDelete(false);
-      data.setSelectedRows([]);
-      await data.loadAnuncios(data.currentPage);
+      /**
+       * Não trava mais o modal esperando recarregar a tabela.
+       */
+      data.loadAnuncios(data.currentPage).catch((err: any) => {
+        console.warn("Erro ao recarregar anúncios:", err);
+      });
     } catch (err: any) {
       console.error("Erro ao excluir:", err);
       alert("Erro ao excluir anúncios: " + (err?.message || err));
@@ -435,8 +454,8 @@ export default function AnnounceTable() {
                       loja === "PK"
                         ? "Pikot Shop"
                         : loja === "SB"
-                        ? "Sóbaquetas"
-                        : loja
+                          ? "Sóbaquetas"
+                          : loja
                     )}`
                   )
                 }
