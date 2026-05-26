@@ -12,7 +12,7 @@ const AcoesCalculo = ({ saving, handleClearLocal, handleSave }: any) => {
       {/* Voltar */}
       <motion.button
         whileTap={{ scale: 0.9 }}
-        onClick={() => router.push("/dashboard/marketplaces/shopee")}
+        onClick={() => router.push("/dashboard/marketplaces/magalu")}
         title="Voltar"
         className="p-2 hover:bg-white/10 rounded-full transition-all"
       >

@@ -5,7 +5,6 @@ import type { ComponentType } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronUp,
-  Layers,
   Plus,
   Trash2,
   Pencil,
@@ -1401,12 +1400,19 @@ export const VariationShopeeSection = ({
       }
 
       const { data, error } = await supabase.rpc("buscar_variacoes_do_pai", {
-        p_loja: lojaCode,
         p_referencia_pai: referenciaPaiNormalizada,
+        p_loja: lojaCode,
+        p_marketplace: "shopee",
       });
 
       if (error) {
-        console.error("Erro ao carregar variações Shopee do pai:", error);
+        console.error("Erro ao carregar variações Shopee do pai via RPC:", {
+          p_referencia_pai: referenciaPaiNormalizada,
+          p_loja: lojaCode,
+          p_marketplace: "shopee",
+          error,
+        });
+
         return;
       }
 
@@ -1519,6 +1525,10 @@ export const VariationShopeeSection = ({
     produto?.sku,
     produto?.loja,
     produto?.Loja,
+    produto?.marketplace,
+    produto?.Marketplace,
+    produto?.canal,
+    produto?.Canal,
     setProduto,
   ]);
 
@@ -1790,9 +1800,7 @@ export const VariationShopeeSection = ({
                 6.
               </span>
 
-              <h2 className="text-base font-semibold text-white">
-                Variações
-              </h2>
+              <h2 className="text-base font-semibold text-white">Variações</h2>
 
               {variacoes.length > 0 && (
                 <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] font-semibold text-white/50">

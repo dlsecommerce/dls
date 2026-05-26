@@ -53,6 +53,12 @@ function getLojaLabel(lojaCode: string) {
   return lojaCode;
 }
 
+function getLojaVariants(lojaCode: string) {
+  if (lojaCode === "SB") return ["SB", "Sóbaquetas", "Sobaquetas"];
+  if (lojaCode === "PK") return ["PK", "Pikot Shop", "Pikot"];
+  return lojaCode ? [lojaCode] : [];
+}
+
 function getMagaluNotificationLink(params: {
   marketplaceId: string;
   loja: string;
@@ -408,7 +414,7 @@ export function useMarketplaceDetails(
     id_logico: "",
 
     loja: "",
-    id_bing: "",
+    id_bling: "",
     id_tray: "",
     id_var: "",
     referencia: "",
@@ -561,14 +567,15 @@ export function useMarketplaceDetails(
     if (!idBusca) return null;
 
     const campos = isUuid(idBusca)
-      ? ["id", "ID", "ID Tray"]
-      : ["ID", "ID Tray"];
+      ? ["id", "ID", "ID Tray", "ID Bling", "anuncio_id"]
+      : ["ID", "ID Tray", "ID Bling", "anuncio_id"];
 
     for (const campo of campos) {
       const { data, error } = await supabase
         .from(tabela)
         .select("*")
         .eq(campo, idBusca)
+        .limit(1)
         .maybeSingle();
 
       if (error) {
@@ -595,29 +602,55 @@ export function useMarketplaceDetails(
   };
 
   const buscarAnuncioPorIdInterno = async (idInterno: string, loja: string) => {
-    const lojaNome = loja === "SB" ? "SB" : "PK";
     const idBusca = String(idInterno || "").trim();
 
     if (!idBusca) return null;
 
-    const { data, error } = await supabase
-      .from("anuncios_all")
-      .select("*")
-      .eq("ID", idBusca)
-      .eq("Loja", lojaNome)
-      .maybeSingle();
+    const lojasPossiveis = getLojaVariants(loja);
 
-    if (error) {
-      console.error("Erro ao buscar anúncio por ID interno:", {
-        idBusca,
-        lojaNome,
-        error,
-      });
+    const buscarPorCampo = async (campo: string, filtrarLoja: boolean) => {
+      let query = supabase.from("anuncios_all").select("*").eq(campo, idBusca);
 
-      return null;
+      if (filtrarLoja && lojasPossiveis.length) {
+        query = query.in("Loja", lojasPossiveis);
+      }
+
+      const { data, error } = await query.limit(1).maybeSingle();
+
+      if (error) {
+        console.error("Erro ao buscar anúncio por ID interno:", {
+          idBusca,
+          campo,
+          lojasPossiveis,
+          filtrarLoja,
+          error,
+        });
+
+        return null;
+      }
+
+      return data || null;
+    };
+
+    const campos = ["ID", "ID Tray", "ID Bling", "Referência"];
+
+    for (const campo of campos) {
+      const comLoja = await buscarPorCampo(campo, true);
+      if (comLoja) return comLoja;
     }
 
-    return data;
+    for (const campo of campos) {
+      const semLoja = await buscarPorCampo(campo, false);
+      if (semLoja) return semLoja;
+    }
+
+    console.warn("Anúncio não encontrado em anuncios_all:", {
+      idBusca,
+      lojasPossiveis,
+      campos,
+    });
+
+    return null;
   };
 
   const mapPercentuaisDoMarketplace = (mp: any): CalculoLoja => {
@@ -670,21 +703,17 @@ export function useMarketplaceDetails(
 
     if (!refPai.toUpperCase().startsWith("PAI-")) return [];
 
-    const chaveVariacao = refPai.replace(/^PAI-/i, "VAR-");
-
-    const tabela =
-      loja === "SB" ? "marketplace_magalu_sb" : "marketplace_magalu_pk";
-
-    const { data, error } = await supabase
-      .from(tabela)
-      .select("*")
-      .eq("Referência", chaveVariacao);
+    const { data, error } = await supabase.rpc("buscar_variacoes_do_pai", {
+      p_referencia_pai: refPai,
+      p_loja: loja,
+      p_marketplace: "magalu",
+    });
 
     if (error) {
-      console.error("Erro ao buscar variações Magalu do pai:", {
-        tabela,
-        referenciaPai,
-        chaveVariacao,
+      console.error("Erro ao buscar variações Magalu do pai via RPC:", {
+        referenciaPai: refPai,
+        loja,
+        p_marketplace: "magalu",
         error,
       });
 
@@ -693,7 +722,7 @@ export function useMarketplaceDetails(
 
     return Array.isArray(data)
       ? data.map((item) => {
-          const calc = normalizarCalculoItem(mapPercentuaisDoMarketplace(item));
+          const calc = normalizarCalculoItem(getCalculoItem(item));
           const custo = getCustoItem(item);
           const preco = calcularPrecoLoja({
             custo,
@@ -703,25 +732,66 @@ export function useMarketplaceDetails(
           return {
             ...item,
 
-            marketplace_id: item?.id || "",
-            anuncio_id: item?.anuncio_id || item?.ID || "",
-            id_logico: item?.ID || item?.anuncio_id || "",
+            marketplace_id:
+              item?.marketplace_id ?? item?.id_marketplace ?? item?.id ?? "",
+
+            id_marketplace:
+              item?.id_marketplace ?? item?.marketplace_id ?? item?.id ?? "",
+
+            anuncio_id:
+              item?.anuncio_id ?? item?.id_anuncio ?? item?.ID ?? "",
+
+            id_anuncio:
+              item?.id_anuncio ?? item?.anuncio_id ?? item?.ID ?? "",
+
+            id_logico:
+              item?.id_logico ??
+              item?.ID ??
+              item?.anuncio_id ??
+              item?.id_anuncio ??
+              "",
 
             tipo_anuncio: "variacoes",
 
-            referencia: item?.["Referência"] ?? "",
-            Referencia: item?.["Referência"] ?? "",
-            "Referência": item?.["Referência"] ?? "",
-            sku: item?.["Referência"] ?? "",
+            marketplace: "Magalu",
+            canal: "Magalu",
 
-            nome: item?.Nome ?? "",
-            Nome: item?.Nome ?? "",
+            referencia:
+              item?.referencia ??
+              item?.Referencia ??
+              item?.["Referência"] ??
+              item?.sku ??
+              "",
 
-            marca: item?.Marca ?? "",
-            Marca: item?.Marca ?? "",
+            Referencia:
+              item?.Referencia ??
+              item?.referencia ??
+              item?.["Referência"] ??
+              item?.sku ??
+              "",
 
-            categoria: item?.Categoria ?? "",
-            Categoria: item?.Categoria ?? "",
+            "Referência":
+              item?.["Referência"] ??
+              item?.referencia ??
+              item?.Referencia ??
+              item?.sku ??
+              "",
+
+            sku:
+              item?.sku ??
+              item?.referencia ??
+              item?.Referencia ??
+              item?.["Referência"] ??
+              "",
+
+            nome: item?.nome ?? item?.Nome ?? "",
+            Nome: item?.Nome ?? item?.nome ?? "",
+
+            marca: item?.marca ?? item?.Marca ?? "",
+            Marca: item?.Marca ?? item?.marca ?? "",
+
+            categoria: item?.categoria ?? item?.Categoria ?? "",
+            Categoria: item?.Categoria ?? item?.categoria ?? "",
 
             preco,
             precoLoja: preco,
@@ -733,15 +803,64 @@ export function useMarketplaceDetails(
             dados: {
               ...(item?.dados || {}),
               ...item,
+
+              marketplace_id:
+                item?.marketplace_id ?? item?.id_marketplace ?? item?.id ?? "",
+
+              id_marketplace:
+                item?.id_marketplace ?? item?.marketplace_id ?? item?.id ?? "",
+
+              anuncio_id:
+                item?.anuncio_id ?? item?.id_anuncio ?? item?.ID ?? "",
+
+              id_anuncio:
+                item?.id_anuncio ?? item?.anuncio_id ?? item?.ID ?? "",
+
+              id_logico:
+                item?.id_logico ??
+                item?.ID ??
+                item?.anuncio_id ??
+                item?.id_anuncio ??
+                "",
+
               tipo_anuncio: "variacoes",
-              referencia: item?.["Referência"] ?? "",
-              Referencia: item?.["Referência"] ?? "",
-              "Referência": item?.["Referência"] ?? "",
-              sku: item?.["Referência"] ?? "",
+
+              marketplace: "Magalu",
+              canal: "Magalu",
+
+              referencia:
+                item?.referencia ??
+                item?.Referencia ??
+                item?.["Referência"] ??
+                item?.sku ??
+                "",
+
+              Referencia:
+                item?.Referencia ??
+                item?.referencia ??
+                item?.["Referência"] ??
+                item?.sku ??
+                "",
+
+              "Referência":
+                item?.["Referência"] ??
+                item?.referencia ??
+                item?.Referencia ??
+                item?.sku ??
+                "",
+
+              sku:
+                item?.sku ??
+                item?.referencia ??
+                item?.Referencia ??
+                item?.["Referência"] ??
+                "",
+
               preco,
               precoLoja: preco,
               preco_loja: preco,
               "Preço de Venda": preco,
+
               ...montarCamposPercentuaisSistema(calc),
             },
           };
@@ -768,7 +887,12 @@ export function useMarketplaceDetails(
       }
 
       const idInternoAnuncio = String(
-        mp.anuncio_id || mp.ID || idParam || "",
+        mp.anuncio_id ||
+          mp.ID ||
+          mp["ID Bling"] ||
+          mp["ID Tray"] ||
+          idParam ||
+          "",
       ).trim();
 
       if (!idInternoAnuncio) {
@@ -788,20 +912,26 @@ export function useMarketplaceDetails(
       );
 
       if (!anuncio) {
-        console.warn("Anúncio não encontrado para ID interno:", {
-          idInternoAnuncio,
-          lojaCode,
-        });
-
-        return;
+        console.warn(
+          "Anúncio não encontrado em anuncios_all. Usando dados da própria tabela Magalu como fallback:",
+          {
+            idInternoAnuncio,
+            lojaCode,
+            mp,
+          },
+        );
       }
 
-      const compArr = await montarComposicao(anuncio);
+      const base = anuncio || mp;
+      const compArr = anuncio
+        ? await montarComposicao(anuncio)
+        : [{ codigo: "", quantidade: "", custo: "" }];
+
       const pct = normalizarCalculoItem(mapPercentuaisDoMarketplace(mp));
 
-      let odFinal = anuncio["OD"] ?? mp["OD"] ?? "";
+      let odFinal = base["OD"] ?? mp["OD"] ?? "";
 
-      if (!odFinal) {
+      if (!odFinal && anuncio) {
         for (let i = 1; i <= 10; i++) {
           const cod = anuncio[`Código ${i}`];
 
@@ -812,24 +942,30 @@ export function useMarketplaceDetails(
         }
       }
 
-      const referenciaFinal = anuncio["Referência"] || mp["Referência"] || "";
+      const referenciaFinal =
+        base["Referência"] || mp["Referência"] || base.referencia || "";
+
       const tipoAnuncioFinal = detectarTipoAnuncio(referenciaFinal);
       const variacoes = await buscarVariacoesDoPai(referenciaFinal, lojaCode);
 
+      const custoParaPreco = anuncio
+        ? calcCustoTotal(compArr)
+        : getCustoItem(mp) || parseNumero(mp?.Custo);
+
       const precoPai = calcularPrecoLoja({
-        custo: calcCustoTotal(compArr),
+        custo: custoParaPreco,
         calculoLoja: pct,
       });
 
       setProduto({
         marketplace_id: mp.id || "",
-        anuncio_id: String(anuncio["ID"] || idInternoAnuncio),
-        id_logico: anuncio["ID"] || idInternoAnuncio,
+        anuncio_id: String(base["ID"] || mp.anuncio_id || idInternoAnuncio),
+        id_logico: base["ID"] || mp.anuncio_id || idInternoAnuncio,
 
         loja: getLojaLabel(lojaCode),
-        id_bing: anuncio["ID Bing"] || mp["ID Bing"] || "",
-        id_tray: anuncio["ID Tray"] || mp["ID Tray"] || "",
-        id_var: anuncio["ID Var"] || mp["ID Var"] || "",
+        id_bling: base["ID Bling"] || mp["ID Bling"] || "",
+        id_tray: base["ID Tray"] || mp["ID Tray"] || "",
+        id_var: base["ID Var"] || mp["ID Var"] || "",
         referencia: referenciaFinal,
         Referencia: referenciaFinal,
         "Referência": referenciaFinal,
@@ -838,20 +974,20 @@ export function useMarketplaceDetails(
         tipo_anuncio: tipoAnuncioFinal,
         od: odFinal,
 
-        nome: anuncio["Nome"] ?? mp["Nome"] ?? "",
-        marca: anuncio["Marca"] ?? mp["Marca"] ?? "",
-        categoria: anuncio["Categoria"] ?? mp["Categoria"] ?? "",
-        peso: anuncio["Peso"] ?? "",
-        altura: anuncio["Altura"] ?? "",
-        largura: anuncio["Largura"] ?? "",
-        comprimento: anuncio["Comprimento"] ?? "",
+        nome: base["Nome"] ?? mp["Nome"] ?? "",
+        marca: base["Marca"] ?? mp["Marca"] ?? "",
+        categoria: base["Categoria"] ?? mp["Categoria"] ?? "",
+        peso: base["Peso"] ?? "",
+        altura: base["Altura"] ?? "",
+        largura: base["Largura"] ?? "",
+        comprimento: base["Comprimento"] ?? "",
 
         embalagem: pct.embalagem,
 
         preco: precoPai,
         precoLoja: precoPai,
         preco_loja: precoPai,
-        "Preço de Venda": precoPai,
+        "Preço de Venda": precoPai || mp["Preço de Venda"] || 0,
 
         ...montarCamposPercentuaisSistema(pct),
 
@@ -896,13 +1032,18 @@ export function useMarketplaceDetails(
     const idMarketplace = getIdMarketplaceItem(params.item);
     const idLogico = getIdLogicoItem(params.item);
     const referencia = getReferenciaItem(params.item);
+    const idBling = String(
+      params.item?.id_bling ?? params.item?.["ID Bling"] ?? "",
+    ).trim();
+
+    const selectFields = 'id, ID, anuncio_id, Loja, Referência, "ID Bling"';
 
     if (idMarketplace && isUuid(idMarketplace)) {
       const { data, error } = await supabase
         .from(params.tabela)
         .update(params.campos)
         .eq("id", idMarketplace)
-        .select("id, ID, anuncio_id, Loja, Referência");
+        .select(selectFields);
 
       if (error) throw error;
       if (data?.length) return data[0];
@@ -913,7 +1054,18 @@ export function useMarketplaceDetails(
         .from(params.tabela)
         .update(params.campos)
         .eq("ID", idLogico)
-        .select("id, ID, anuncio_id, Loja, Referência");
+        .select(selectFields);
+
+      if (error) throw error;
+      if (data?.length) return data[0];
+    }
+
+    if (idBling) {
+      const { data, error } = await supabase
+        .from(params.tabela)
+        .update(params.campos)
+        .eq("ID Bling", idBling)
+        .select(selectFields);
 
       if (error) throw error;
       if (data?.length) return data[0];
@@ -924,14 +1076,14 @@ export function useMarketplaceDetails(
         .from(params.tabela)
         .update(params.campos)
         .eq("Referência", referencia)
-        .select("id, ID, anuncio_id, Loja, Referência");
+        .select(selectFields);
 
       if (error) throw error;
       if (data?.length) return data[0];
     }
 
     throw new Error(
-      `Nenhuma linha atualizada em ${params.tabela}. Identificadores usados: id=${idMarketplace}, ID=${idLogico}, Referência=${referencia}`,
+      `Nenhuma linha atualizada em ${params.tabela}. Identificadores usados: id=${idMarketplace}, ID=${idLogico}, ID Bling=${idBling}, Referência=${referencia}`,
     );
   };
 
@@ -942,13 +1094,14 @@ export function useMarketplaceDetails(
     const idLogico = getIdLogicoItem(params.item);
     const referencia = getReferenciaItem(params.item);
     const tabelaAnuncios = lojaCode === "SB" ? "anuncios_sb" : "anuncios_pk";
+    const lojasPossiveis = getLojaVariants(lojaCode);
 
     if (idLogico) {
       const { data, error } = await supabase
         .from(tabelaAnuncios)
         .update(params.campos)
         .eq("ID", idLogico)
-        .eq("Loja", lojaCode)
+        .in("Loja", lojasPossiveis)
         .select('"ID"');
 
       if (error) throw error;
@@ -960,7 +1113,7 @@ export function useMarketplaceDetails(
         .from(tabelaAnuncios)
         .update(params.campos)
         .eq("Referência", referencia)
-        .eq("Loja", lojaCode)
+        .in("Loja", lojasPossiveis)
         .select('"ID"');
 
       if (error) throw error;
@@ -1012,6 +1165,9 @@ export function useMarketplaceDetails(
 
         id_logico: produto.id_logico || produto.anuncio_id,
         ID: produto.id_logico || produto.anuncio_id,
+
+        id_bling: produto.id_bling,
+        "ID Bling": produto.id_bling,
 
         referencia: produto.referencia,
         Referencia: produto.referencia,

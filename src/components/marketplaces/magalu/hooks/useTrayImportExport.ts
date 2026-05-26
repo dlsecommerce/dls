@@ -108,7 +108,7 @@ export function useTrayImportExport(
         const headers = [
           "ID",
           "Loja",
-          "ID Bing",
+          "ID Bling",
           "Referência",
           "ID Tray",
           "ID Var",
@@ -230,7 +230,7 @@ export function useTrayImportExport(
           const line = [
             row.ID || "",
             row.Loja || "",
-            row["ID Bing"] || "",
+            row["ID Bling"] || "",
             row.Referência || "",
             row["ID Tray"] || "",
             row["ID Var"] || "",

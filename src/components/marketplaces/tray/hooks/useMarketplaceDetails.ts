@@ -659,21 +659,17 @@ export function useMarketplaceDetails(
 
     if (!refPai.toUpperCase().startsWith("PAI-")) return [];
 
-    const chaveVariacao = refPai.replace(/^PAI-/i, "VAR-");
-
-    const tabela =
-      loja === "SB" ? "marketplace_tray_sb" : "marketplace_tray_pk";
-
-    const { data, error } = await supabase
-      .from(tabela)
-      .select("*")
-      .eq("Referência", chaveVariacao);
+    const { data, error } = await supabase.rpc("buscar_variacoes_do_pai", {
+      p_referencia_pai: refPai,
+      p_loja: loja,
+      p_marketplace: "tray",
+    });
 
     if (error) {
-      console.error("Erro ao buscar variações do pai:", {
-        tabela,
-        referenciaPai,
-        chaveVariacao,
+      console.error("Erro ao buscar variações Tray do pai via RPC:", {
+        referenciaPai: refPai,
+        loja,
+        p_marketplace: "tray",
         error,
       });
 
@@ -682,7 +678,7 @@ export function useMarketplaceDetails(
 
     return Array.isArray(data)
       ? data.map((item) => {
-          const calc = normalizarCalculoItem(mapPercentuaisDoMarketplace(item));
+          const calc = normalizarCalculoItem(getCalculoItem(item));
           const custo = getCustoItem(item);
           const preco = calcularPrecoLoja({
             custo,
@@ -692,25 +688,66 @@ export function useMarketplaceDetails(
           return {
             ...item,
 
-            marketplace_id: item?.id || "",
-            anuncio_id: item?.anuncio_id || item?.ID || "",
-            id_logico: item?.ID || item?.anuncio_id || "",
+            marketplace_id:
+              item?.marketplace_id ?? item?.id_marketplace ?? item?.id ?? "",
+
+            id_marketplace:
+              item?.id_marketplace ?? item?.marketplace_id ?? item?.id ?? "",
+
+            anuncio_id:
+              item?.anuncio_id ?? item?.id_anuncio ?? item?.ID ?? "",
+
+            id_anuncio:
+              item?.id_anuncio ?? item?.anuncio_id ?? item?.ID ?? "",
+
+            id_logico:
+              item?.id_logico ??
+              item?.ID ??
+              item?.anuncio_id ??
+              item?.id_anuncio ??
+              "",
 
             tipo_anuncio: "variacoes",
 
-            referencia: item?.["Referência"] ?? "",
-            Referencia: item?.["Referência"] ?? "",
-            "Referência": item?.["Referência"] ?? "",
-            sku: item?.["Referência"] ?? "",
+            marketplace: "Tray",
+            canal: "Tray",
 
-            nome: item?.Nome ?? "",
-            Nome: item?.Nome ?? "",
+            referencia:
+              item?.referencia ??
+              item?.Referencia ??
+              item?.["Referência"] ??
+              item?.sku ??
+              "",
 
-            marca: item?.Marca ?? "",
-            Marca: item?.Marca ?? "",
+            Referencia:
+              item?.Referencia ??
+              item?.referencia ??
+              item?.["Referência"] ??
+              item?.sku ??
+              "",
 
-            categoria: item?.Categoria ?? "",
-            Categoria: item?.Categoria ?? "",
+            "Referência":
+              item?.["Referência"] ??
+              item?.referencia ??
+              item?.Referencia ??
+              item?.sku ??
+              "",
+
+            sku:
+              item?.sku ??
+              item?.referencia ??
+              item?.Referencia ??
+              item?.["Referência"] ??
+              "",
+
+            nome: item?.nome ?? item?.Nome ?? "",
+            Nome: item?.Nome ?? item?.nome ?? "",
+
+            marca: item?.marca ?? item?.Marca ?? "",
+            Marca: item?.Marca ?? item?.marca ?? "",
+
+            categoria: item?.categoria ?? item?.Categoria ?? "",
+            Categoria: item?.Categoria ?? item?.categoria ?? "",
 
             preco,
             precoLoja: preco,
@@ -722,15 +759,64 @@ export function useMarketplaceDetails(
             dados: {
               ...(item?.dados || {}),
               ...item,
+
+              marketplace_id:
+                item?.marketplace_id ?? item?.id_marketplace ?? item?.id ?? "",
+
+              id_marketplace:
+                item?.id_marketplace ?? item?.marketplace_id ?? item?.id ?? "",
+
+              anuncio_id:
+                item?.anuncio_id ?? item?.id_anuncio ?? item?.ID ?? "",
+
+              id_anuncio:
+                item?.id_anuncio ?? item?.anuncio_id ?? item?.ID ?? "",
+
+              id_logico:
+                item?.id_logico ??
+                item?.ID ??
+                item?.anuncio_id ??
+                item?.id_anuncio ??
+                "",
+
               tipo_anuncio: "variacoes",
-              referencia: item?.["Referência"] ?? "",
-              Referencia: item?.["Referência"] ?? "",
-              "Referência": item?.["Referência"] ?? "",
-              sku: item?.["Referência"] ?? "",
+
+              marketplace: "Tray",
+              canal: "Tray",
+
+              referencia:
+                item?.referencia ??
+                item?.Referencia ??
+                item?.["Referência"] ??
+                item?.sku ??
+                "",
+
+              Referencia:
+                item?.Referencia ??
+                item?.referencia ??
+                item?.["Referência"] ??
+                item?.sku ??
+                "",
+
+              "Referência":
+                item?.["Referência"] ??
+                item?.referencia ??
+                item?.Referencia ??
+                item?.sku ??
+                "",
+
+              sku:
+                item?.sku ??
+                item?.referencia ??
+                item?.Referencia ??
+                item?.["Referência"] ??
+                "",
+
               preco,
               precoLoja: preco,
               preco_loja: preco,
               "Preço de Venda": preco,
+
               ...montarCamposPercentuaisSistema(calc),
             },
           };
@@ -1186,7 +1272,10 @@ export function useMarketplaceDetails(
       });
 
       marcarTabelaTrayParaRecarregar();
-      await carregar();
+
+      carregar().catch((reloadError) => {
+        console.error("Erro ao recarregar dados Tray após salvar:", reloadError);
+      });
 
       return { error: null };
     } catch (error) {

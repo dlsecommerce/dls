@@ -8,7 +8,7 @@ import React, {
   useMemo,
   useRef,
 } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
 import { createNotification } from "@/lib/createNotification";
 import { useTrayImportExport } from "@/components/marketplaces/magalu/hooks/useTrayImportExport";
@@ -168,14 +168,14 @@ function buildOrSearchParts(tokens: string[]) {
       orParts.push(`"Marca".ilike.${pattern}`);
       orParts.push(`"Referência".ilike.${pattern}`);
       orParts.push(`"ID Var".ilike.${pattern}`);
-      orParts.push(`"ID Bing".ilike.${pattern}`);
+      orParts.push(`"ID Bling".ilike.${pattern}`);
       orParts.push(`"ID Tray".ilike.${pattern}`);
     }
 
     if (isOnlyDigits(t)) {
       orParts.push(`"ID".eq.${t}`);
       orParts.push(`"ID Tray".eq.${t}`);
-      orParts.push(`"ID Bing".eq.${t}`);
+      orParts.push(`"ID Bling".eq.${t}`);
     }
   }
 
@@ -214,41 +214,23 @@ function isValidRow(r: any) {
 
   const sID = pick(r?.ID);
   const sid = pick(r?.id);
+  const anuncioId = pick(r?.anuncio_id);
+  const idBling = pick(r?.["ID Bling"]);
+  const referencia = pick(r?.Referência);
 
   const hasSomeId =
-    (sID && sID !== "0" && sID !== "-") || (sid && sid !== "0" && sid !== "-");
+    (sID && sID !== "0" && sID !== "-") ||
+    (sid && sid !== "0" && sid !== "-") ||
+    (anuncioId && anuncioId !== "0" && anuncioId !== "-") ||
+    (idBling && idBling !== "0" && idBling !== "-") ||
+    (referencia && referencia !== "0" && referencia !== "-");
 
   return Boolean(hasSomeId);
-}
-
-function parsePositiveInt(value: string | null, fallback: number) {
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
-
-function parseArrayParam(value: string | null) {
-  if (!value) return [];
-
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
 }
 
 function arraysEqual(a: string[], b: string[]) {
   if (a.length !== b.length) return false;
   return a.every((item, idx) => item === b[idx]);
-}
-
-function lojaCodesToFilterValue(lojas: string[]) {
-  if (!lojas.length) return DEFAULT_MARKETPLACE_FILTERS.lojasVirtuais;
-
-  const first = lojas[0];
-
-  if (first === "PK") return "Pikot Shop";
-  if (first === "SB") return "Sóbaquetas";
-
-  return first;
 }
 
 function lojaFilterValueToCodes(value: string) {
@@ -259,6 +241,28 @@ function lojaFilterValueToCodes(value: string) {
   if (v === "Sóbaquetas" || v === "SB") return ["SB"];
 
   return [v];
+}
+
+function getLojaFilterVariants(lojas: string[]) {
+  const variants = new Set<string>();
+
+  for (const loja of lojas) {
+    const code = normalizeLojaCode(loja);
+
+    if (code === "PK") {
+      variants.add("PK");
+      variants.add("Pikot Shop");
+      variants.add("Pikot");
+    } else if (code === "SB") {
+      variants.add("SB");
+      variants.add("Sóbaquetas");
+      variants.add("Sobaquetas");
+    } else if (loja) {
+      variants.add(loja);
+    }
+  }
+
+  return Array.from(variants);
 }
 
 function getMagaluPricingLabel(row: any, fallbackId: string) {
@@ -280,25 +284,21 @@ const CAMPOS_PRECIFICACAO_VISIVEIS = [
 
 export default function PricingTable() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
-  const initialSearch = searchParams.get("search") ?? "";
-  const initialPage = parsePositiveInt(searchParams.get("page"), 1);
-  const initialPerPage = parsePositiveInt(searchParams.get("perPage"), 50);
-  const initialLojas = parseArrayParam(searchParams.get("lojas"));
-  const initialBrands = parseArrayParam(searchParams.get("brands"));
-  const initialSortColumn = searchParams.get("sortColumn") || null;
-  const initialSortDirection =
-    searchParams.get("sortDirection") === "desc" ? "desc" : "asc";
+  const initialSearch = "";
+  const initialPage = 1;
+  const initialPerPage = 50;
+  const initialLojas: string[] = [];
+  const initialBrands: string[] = [];
+  const initialSortColumn = null;
+  const initialSortDirection: "asc" | "desc" = "asc";
 
   const initialFilters: MarketplaceFilters = {
     ...DEFAULT_MARKETPLACE_FILTERS,
-    situacao:
-      searchParams.get("situacao") ?? DEFAULT_MARKETPLACE_FILTERS.situacao,
-    tipo: searchParams.get("tipo") ?? DEFAULT_MARKETPLACE_FILTERS.tipo,
-    lojasVirtuais:
-      searchParams.get("loja") ?? lojaCodesToFilterValue(initialLojas),
-    marca: searchParams.get("marca") ?? initialBrands.join(", "),
+    situacao: DEFAULT_MARKETPLACE_FILTERS.situacao,
+    tipo: "Todos",
+    lojasVirtuais: "Todos",
+    marca: "",
   };
 
   const [rows, setRows] = useState<Row[]>([]);
@@ -333,7 +333,6 @@ export default function PricingTable() {
   const [openFiltersMobile, setOpenFiltersMobile] = useState(false);
   const [openActionsMobile, setOpenActionsMobile] = useState(false);
 
-  const didHydrateFromUrlRef = useRef(false);
   const lastUrlRef = useRef("");
   const reqIdRef = useRef(0);
 
@@ -359,7 +358,12 @@ export default function PricingTable() {
 
   useEffect(() => {
     const nextLojas = lojaFilterValueToCodes(filters.lojasVirtuais);
-    const nextBrands = filters.marca.trim() ? [filters.marca.trim()] : [];
+
+    const marcaNormalizada = String(filters.marca || "").trim();
+    const nextBrands =
+      marcaNormalizada && marcaNormalizada !== "Todos"
+        ? [marcaNormalizada]
+        : [];
 
     setSelectedLoja((prev) =>
       arraysEqual(prev, nextLojas) ? prev : nextLojas,
@@ -369,45 +373,6 @@ export default function PricingTable() {
       arraysEqual(prev, nextBrands) ? prev : nextBrands,
     );
   }, [filters.lojasVirtuais, filters.marca]);
-
-  useEffect(() => {
-    const urlSearch = searchParams.get("search") ?? "";
-    const urlPage = parsePositiveInt(searchParams.get("page"), 1);
-    const urlPerPage = parsePositiveInt(searchParams.get("perPage"), 50);
-    const urlLojas = parseArrayParam(searchParams.get("lojas"));
-    const urlBrands = parseArrayParam(searchParams.get("brands"));
-    const urlSortColumn = searchParams.get("sortColumn") || null;
-    const urlSortDirection =
-      searchParams.get("sortDirection") === "desc" ? "desc" : "asc";
-
-    const urlFilters: MarketplaceFilters = {
-      ...DEFAULT_MARKETPLACE_FILTERS,
-      situacao:
-        searchParams.get("situacao") ?? DEFAULT_MARKETPLACE_FILTERS.situacao,
-      tipo: searchParams.get("tipo") ?? DEFAULT_MARKETPLACE_FILTERS.tipo,
-      lojasVirtuais:
-        searchParams.get("loja") ?? lojaCodesToFilterValue(urlLojas),
-      marca: searchParams.get("marca") ?? urlBrands.join(", "),
-    };
-
-    setSearch((prev) => (prev !== urlSearch ? urlSearch : prev));
-    setDebouncedSearch((prev) => (prev !== urlSearch ? urlSearch : prev));
-    setCurrentPage((prev) => (prev !== urlPage ? urlPage : prev));
-    setItemsPerPage((prev) => (prev !== urlPerPage ? urlPerPage : prev));
-    setSelectedLoja((prev) => (arraysEqual(prev, urlLojas) ? prev : urlLojas));
-    setSelectedBrands((prev) =>
-      arraysEqual(prev, urlBrands) ? prev : urlBrands,
-    );
-    setSortColumn((prev) => (prev !== urlSortColumn ? urlSortColumn : prev));
-    setSortDirection((prev) =>
-      prev !== urlSortDirection ? urlSortDirection : prev,
-    );
-    setFilters((prev) =>
-      JSON.stringify(prev) === JSON.stringify(urlFilters) ? prev : urlFilters,
-    );
-
-    didHydrateFromUrlRef.current = true;
-  }, [searchParams]);
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearch(search.trim()), 300);
@@ -425,12 +390,12 @@ export default function PricingTable() {
   ]);
 
   useEffect(() => {
-    if (!didHydrateFromUrlRef.current) return;
-
     const params = new URLSearchParams();
 
     if (search.trim()) params.set("search", search.trim());
-    if (filters.marca.trim()) params.set("marca", filters.marca.trim());
+    if (filters.marca.trim() && filters.marca.trim() !== "Todos") {
+      params.set("marca", filters.marca.trim());
+    }
 
     if (
       filters.situacao &&
@@ -439,12 +404,13 @@ export default function PricingTable() {
       params.set("situacao", filters.situacao);
     }
 
-    if (filters.tipo && filters.tipo !== DEFAULT_MARKETPLACE_FILTERS.tipo) {
+    if (filters.tipo && filters.tipo !== "Todos") {
       params.set("tipo", filters.tipo);
     }
 
     if (
       filters.lojasVirtuais &&
+      filters.lojasVirtuais !== "Todos" &&
       filters.lojasVirtuais !== DEFAULT_MARKETPLACE_FILTERS.lojasVirtuais
     ) {
       params.set("loja", filters.lojasVirtuais);
@@ -457,7 +423,9 @@ export default function PricingTable() {
     if (sortColumn) params.set("sortColumn", sortColumn);
     if (sortDirection !== "asc") params.set("sortDirection", sortDirection);
 
-    const nextUrl = params.toString() ? `?${params.toString()}` : "?";
+    const nextUrl = params.toString()
+      ? `/dashboard/marketplaces/magalu?${params.toString()}`
+      : "/dashboard/marketplaces/magalu";
 
     if (lastUrlRef.current === nextUrl) return;
 
@@ -603,6 +571,7 @@ export default function PricingTable() {
 
       const idAtual = String(currentRow?.id ?? dbIdStr ?? "").trim();
       const idLogico = String(currentRow?.ID ?? "").trim();
+      const idBling = String(currentRow?.["ID Bling"] ?? "").trim();
       const referencia = String(currentRow?.Referência ?? "").trim();
 
       const selectFields = `
@@ -611,7 +580,7 @@ export default function PricingTable() {
         ID,
         "ID Tray",
         "ID Var",
-        "ID Bing",
+        "ID Bling",
         Nome,
         Marca,
         Referência,
@@ -648,6 +617,18 @@ export default function PricingTable() {
               .from(table)
               .update(payload)
               .eq("ID", idLogico as any)
+              .select(selectFields),
+        });
+      }
+
+      if (idBling) {
+        tentativas.push({
+          label: `ID Bling=${idBling}`,
+          run: () =>
+            supabase
+              .from(table)
+              .update(payload)
+              .eq("ID Bling", idBling)
               .select(selectFields),
         });
       }
@@ -722,7 +703,7 @@ export default function PricingTable() {
         Loja,
         "ID Tray",
         "ID Var",
-        "ID Bing",
+        "ID Bling",
         Nome,
         Marca,
         Referência,
@@ -741,8 +722,15 @@ export default function PricingTable() {
         { count: "exact" },
       );
 
-      if (selectedLoja.length) query = query.in("Loja", selectedLoja);
-      if (selectedBrands.length) query = query.in("Marca", selectedBrands);
+      const lojasFiltro = getLojaFilterVariants(selectedLoja);
+
+      if (lojasFiltro.length) {
+        query = query.in("Loja", lojasFiltro);
+      }
+
+      if (selectedBrands.length) {
+        query = query.in("Marca", selectedBrands);
+      }
 
       if (filters.tipo && filters.tipo !== "Todos") {
         if (filters.tipo === "Produtos") {
@@ -762,7 +750,9 @@ export default function PricingTable() {
         const tokens = parseSearchTokens(debouncedSearch);
         const orParts = buildOrSearchParts(tokens);
 
-        if (orParts.length) query = query.or(orParts.join(","));
+        if (orParts.length) {
+          query = query.or(orParts.join(","));
+        }
       }
 
       if (filters.situacao === "Últimos Incluídos") {
@@ -789,11 +779,10 @@ export default function PricingTable() {
       if (myReqId !== reqIdRef.current) return;
 
       if (error) {
-        console.error(
-          "❌ Supabase error:",
-          error.message,
-          error.details,
-          error.hint,
+        console.error("❌ ERRO COMPLETO MAGALU:", error);
+
+        alert(
+          `Erro ao carregar Magalu:\n\n${error.message || ""}\n${error.details || ""}\n${error.hint || ""}`,
         );
 
         setRows([]);
@@ -804,6 +793,17 @@ export default function PricingTable() {
       }
 
       const safeData = (data || []).filter(isValidRow);
+
+      console.log("✅ MAGALU DATA BRUTA:", data);
+      console.log("✅ MAGALU COUNT:", count);
+      console.log("✅ MAGALU SAFE DATA:", safeData);
+      console.log("✅ MAGALU FILTROS:", {
+        selectedLoja,
+        lojasFiltro,
+        selectedBrands,
+        filters,
+        debouncedSearch,
+      });
 
       const normalized = safeData.map((r: any) => {
         let OD = 3;
@@ -1039,7 +1039,14 @@ export default function PricingTable() {
 
   const handleEditFull = useCallback(
     (row: Row) => {
-      const idParam = String((row as any).ID || "").trim();
+      const idParam = String(
+        (row as any).ID ||
+          (row as any).anuncio_id ||
+          (row as any)["ID Bling"] ||
+          (row as any)["ID Tray"] ||
+          (row as any).id ||
+          "",
+      ).trim();
 
       const lojaCode = normalizeLojaCode((row as any).Loja);
 
@@ -1320,7 +1327,7 @@ export default function PricingTable() {
             Loja,
             "ID Tray",
             "ID Var",
-            "ID Bing",
+            "ID Bling",
             Nome,
             Marca,
             Referência,
@@ -1341,8 +1348,10 @@ export default function PricingTable() {
           .order("id", { ascending: false })
           .range(page * pageSize, (page + 1) * pageSize - 1);
 
-        if (selectedLoja.length) {
-          exportQuery = exportQuery.in("Loja", selectedLoja);
+        const lojasFiltro = getLojaFilterVariants(selectedLoja);
+
+        if (lojasFiltro.length) {
+          exportQuery = exportQuery.in("Loja", lojasFiltro);
         }
 
         if (selectedBrands.length) {

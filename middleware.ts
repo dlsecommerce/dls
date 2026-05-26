@@ -6,7 +6,6 @@ import type { Database } from "@/integrations/supabase/types";
 export async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
 
-  // Libera arquivos internos, assets, API e páginas de debug
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
@@ -22,9 +21,17 @@ export async function middleware(req: NextRequest) {
     },
   });
 
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error("Variáveis do Supabase ausentes no middleware");
+    return res;
+  }
+
   const supabase = createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {
@@ -41,15 +48,10 @@ export async function middleware(req: NextRequest) {
   );
 
   const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
 
-  console.log("MIDDLEWARE:", {
-    pathname,
-    hasUser: !!user,
-    error: error?.message,
-  });
+  const hasUser = !!session?.user;
 
   const redirectWithCookies = (path: string) => {
     const url = req.nextUrl.clone();
@@ -64,11 +66,11 @@ export async function middleware(req: NextRequest) {
     return redirectRes;
   };
 
-  if (user && (pathname === "/" || pathname === "/login")) {
+  if (hasUser && (pathname === "/" || pathname === "/login")) {
     return redirectWithCookies("/dashboard");
   }
 
-  if (!user && pathname.startsWith("/dashboard")) {
+  if (!hasUser && pathname.startsWith("/dashboard")) {
     return redirectWithCookies("/login");
   }
 
@@ -76,9 +78,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/",
-    "/login",
-    "/dashboard/:path*",
-  ],
+  matcher: ["/", "/login", "/dashboard/:path*"],
 };

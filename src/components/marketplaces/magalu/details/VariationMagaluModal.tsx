@@ -20,7 +20,7 @@ type CalculoLoja = {
   marketing: string;
 };
 
-type VariationShopeeModalProps = {
+type VariationMagaluModalProps = {
   open: boolean;
   variation: any;
   setVariation: any;
@@ -269,7 +269,7 @@ const montarCamposPercentuaisParaSalvar = (calculoLoja: CalculoLoja) => {
   };
 };
 
-export const VariationShopeeModal = ({
+export const VariationMagaluModal = ({
   open,
   variation,
   setVariation,
@@ -280,7 +280,7 @@ export const VariationShopeeModal = ({
   isEditing,
   onClose,
   onSave,
-}: VariationShopeeModalProps) => {
+}: VariationMagaluModalProps) => {
   const [calculoLoja, setCalculoLoja] = useState<CalculoLoja>({
     desconto: "",
     embalagem: "",
@@ -575,8 +575,8 @@ export const VariationShopeeModal = ({
           variation?.dados?.ID ??
           "",
 
-        marketplace: "Shopee",
-        canal: "Shopee",
+        marketplace: "Magalu",
+        canal: "Magalu",
         tipo_anuncio: "variacoes",
 
         referencia: referenciaFinal,
@@ -626,8 +626,8 @@ export const VariationShopeeModal = ({
             variation?.dados?.ID ??
             "",
 
-          marketplace: "Shopee",
-          canal: "Shopee",
+          marketplace: "Magalu",
+          canal: "Magalu",
           tipo_anuncio: "variacoes",
 
           referencia: referenciaFinal,
@@ -664,7 +664,7 @@ export const VariationShopeeModal = ({
     <AnimatePresence>
       {open && variation && (
         <motion.div
-          key="variation-shopee-modal"
+          key="variation-magalu-modal"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -719,8 +719,8 @@ export const VariationShopeeModal = ({
 
                     <h3 className="truncate text-base font-semibold text-white">
                       {isEditing
-                        ? "Editar variação Shopee"
-                        : "Adicionar variação Shopee"}
+                        ? "Editar variação Magalu"
+                        : "Adicionar variação Magalu"}
                     </h3>
                   </div>
 
@@ -728,7 +728,7 @@ export const VariationShopeeModal = ({
                     {normalizarReferenciaMarketplace(
                       getReferenciaVariation(variation),
                       "VAR",
-                    ) || "Nova variação Shopee"}
+                    ) || "Nova variação Magalu"}
                   </p>
                 </div>
 
@@ -821,8 +821,8 @@ export const VariationShopeeModal = ({
                   <InfoGeraisBox
                     produto={{
                       ...variation,
-                      marketplace: "Shopee",
-                      canal: "Shopee",
+                      marketplace: "Magalu",
+                      canal: "Magalu",
                       custoTotal: custoTotalCalculado,
                       custo_total: custoTotalCalculado,
                       custo: custoTotalCalculado,
@@ -846,8 +846,8 @@ export const VariationShopeeModal = ({
                     loading={savingLocal}
                     produto={{
                       ...variation,
-                      marketplace: "Shopee",
-                      canal: "Shopee",
+                      marketplace: "Magalu",
+                      canal: "Magalu",
                       custoTotal: custoTotalCalculado,
                       custo_total: custoTotalCalculado,
                       custo: custoTotalCalculado,
@@ -869,5 +869,5 @@ export const VariationShopeeModal = ({
     </AnimatePresence>
   );
 };
-  
-export default VariationShopeeModal;
+
+export default VariationMagaluModal;

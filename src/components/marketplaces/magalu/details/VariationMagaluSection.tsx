@@ -1,19 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { ComponentType } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronUp,
-  Layers,
   Plus,
   Trash2,
   Pencil,
   Hash,
   Package,
+  ShoppingBag,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { VariationMarketplaceModal } from "./VariationMarketplaceModal";
+import { VariationMagaluModal } from "./VariationMagaluModal";
 import { supabase } from "@/integrations/supabase/client";
 
 type CalculoLoja = {
@@ -85,7 +86,9 @@ type Variation = {
   Comprimento?: string | number;
 
   marketplace?: string;
+  canal?: string;
   marketplaces?: any[];
+
   link?: string;
 
   preco?: string | number;
@@ -136,10 +139,10 @@ type Variation = {
   [key: string]: any;
 };
 
-type VariationMarketplaceSectionProps = {
+type VariationMagaluSectionProps = {
   produto: any;
   setProduto: any;
-  AnimatedNumber: React.ComponentType<{ value: number }>;
+  AnimatedNumber: ComponentType<{ value: number }>;
   onModalOpenChange?: (open: boolean) => void;
 };
 
@@ -205,9 +208,7 @@ const normalizeLojaCode = (lojaRaw: any): "PK" | "SB" | "" => {
 const normalizarCodigoBaseNovoPadrao = (
   referencia?: string | null,
 ): string => {
-  let ref = removerAcentos(String(referencia || ""))
-    .trim()
-    .toUpperCase();
+  let ref = removerAcentos(String(referencia || "")).trim().toUpperCase();
 
   if (!ref) return "";
 
@@ -553,6 +554,39 @@ const getIdentificadorVariation = (variation: Variation) => {
   ).trim();
 };
 
+const normalizarMarketplacesMagalu = (variation: Variation, referencia = "") => {
+  const marketplaces = Array.isArray(variation.marketplaces)
+    ? variation.marketplaces
+    : Array.isArray(variation.dados?.marketplaces)
+      ? variation.dados.marketplaces
+      : [];
+
+  if (marketplaces.length > 0) {
+    return marketplaces.map((item: any) => ({
+      marketplace: item?.marketplace || "Magalu",
+      id_anuncio: item?.id_anuncio ?? item?.id ?? "",
+      sku: item?.sku ?? referencia,
+      link: item?.link ?? "",
+    }));
+  }
+
+  return [
+    {
+      marketplace: "Magalu",
+      id_anuncio:
+        variation.id_anuncio ??
+        variation.anuncio_id ??
+        variation.ID ??
+        variation.dados?.id_anuncio ??
+        variation.dados?.anuncio_id ??
+        variation.dados?.ID ??
+        "",
+      sku: variation.sku ?? referencia,
+      link: variation.link ?? variation.dados?.link ?? "",
+    },
+  ];
+};
+
 const normalizarVariationParaSalvar = (
   variation: Variation,
   produtoPai?: any,
@@ -629,7 +663,18 @@ const normalizarVariationParaSalvar = (
     variation.dados?.["ID Var"] ??
     "";
 
+  const idBling =
+    variation.id_bling ??
+    variation["ID Bling"] ??
+    variation.dados?.id_bling ??
+    variation.dados?.["ID Bling"] ??
+    "";
+
   const camposPercentuais = montarCamposPercentuaisSistema(calculoLoja);
+  const marketplacesMagalu = normalizarMarketplacesMagalu(
+    variation,
+    referenciaNormalizada,
+  );
 
   return {
     ...variation,
@@ -646,6 +691,9 @@ const normalizarVariationParaSalvar = (
 
     loja: lojaPai,
     Loja: lojaPaiDisplay,
+
+    marketplace: "Magalu",
+    canal: "Magalu",
 
     tipo_anuncio: "variacoes",
 
@@ -666,18 +714,8 @@ const normalizarVariationParaSalvar = (
     id_var: idVar,
     "ID Var": idVar,
 
-    id_bling:
-      variation.id_bling ??
-      variation["ID Bling"] ??
-      variation.dados?.id_bling ??
-      variation.dados?.["ID Bling"] ??
-      "",
-    "ID Bling":
-      variation["ID Bling"] ??
-      variation.id_bling ??
-      variation.dados?.["ID Bling"] ??
-      variation.dados?.id_bling ??
-      "",
+    id_bling: idBling,
+    "ID Bling": idBling,
 
     id_tray:
       variation.id_tray ??
@@ -705,11 +743,7 @@ const normalizarVariationParaSalvar = (
     preco_loja: preco,
     "Preço de Venda": preco,
 
-    marketplaces: Array.isArray(variation.marketplaces)
-      ? variation.marketplaces
-      : Array.isArray(variation.dados?.marketplaces)
-        ? variation.dados.marketplaces
-        : [],
+    marketplaces: marketplacesMagalu,
 
     composicao: composicaoNormalizada,
     Composicao: composicaoNormalizada,
@@ -738,6 +772,9 @@ const normalizarVariationParaSalvar = (
       loja: lojaPai,
       Loja: lojaPaiDisplay,
 
+      marketplace: "Magalu",
+      canal: "Magalu",
+
       tipo_anuncio: "variacoes",
 
       referencia: referenciaNormalizada,
@@ -757,6 +794,27 @@ const normalizarVariationParaSalvar = (
       id_var: idVar,
       "ID Var": idVar,
 
+      id_bling: idBling,
+      "ID Bling": idBling,
+
+      id_tray:
+        variation.id_tray ??
+        variation["ID Tray"] ??
+        variation.dados?.id_tray ??
+        variation.dados?.["ID Tray"] ??
+        "",
+      "ID Tray":
+        variation["ID Tray"] ??
+        variation.id_tray ??
+        variation.dados?.["ID Tray"] ??
+        variation.dados?.id_tray ??
+        "",
+
+      od: variation.od ?? variation.OD ?? variation.dados?.od ?? "",
+      OD: variation.OD ?? variation.od ?? variation.dados?.OD ?? "",
+
+      status: variation.status || variation.dados?.status || "ativo",
+
       ...camposPercentuais,
       calculoLoja,
 
@@ -764,6 +822,8 @@ const normalizarVariationParaSalvar = (
       precoLoja: preco,
       preco_loja: preco,
       "Preço de Venda": preco,
+
+      marketplaces: marketplacesMagalu,
 
       composicao: composicaoNormalizada,
       Composicao: composicaoNormalizada,
@@ -794,15 +854,7 @@ const manterSomentePercentuaisEditaveis = (
 
   const custoOriginal = getCustoFromVariation(original, composicaoOriginal);
 
-  const precoAtualizado =
-    atualizado.preco ??
-    atualizado.precoLoja ??
-    atualizado.preco_loja ??
-    atualizado["Preço de Venda"] ??
-    atualizado.dados?.preco ??
-    atualizado.dados?.precoLoja ??
-    atualizado.dados?.preco_loja ??
-    atualizado.dados?.["Preço de Venda"] ??
+  const precoOriginal =
     original.preco ??
     original.precoLoja ??
     original.preco_loja ??
@@ -864,6 +916,9 @@ const manterSomentePercentuaisEditaveis = (
     loja: original.loja ?? original.Loja ?? atualizado.loja,
     Loja: original.Loja ?? original.loja ?? atualizado.Loja,
 
+    marketplace: "Magalu",
+    canal: "Magalu",
+
     tipo_anuncio: original.tipo_anuncio ?? atualizado.tipo_anuncio,
 
     referencia:
@@ -899,7 +954,8 @@ const manterSomentePercentuaisEditaveis = (
     id_var: original.id_var ?? original["ID Var"] ?? atualizado.id_var,
     "ID Var": original["ID Var"] ?? original.id_var ?? atualizado["ID Var"],
 
-    id_bling: original.id_bling ?? original["ID Bling"] ?? atualizado.id_bling,
+    id_bling:
+      original.id_bling ?? original["ID Bling"] ?? atualizado.id_bling,
     "ID Bling":
       original["ID Bling"] ?? original.id_bling ?? atualizado["ID Bling"],
 
@@ -932,19 +988,17 @@ const manterSomentePercentuaisEditaveis = (
     estoque: original.estoque ?? original.Estoque ?? atualizado.estoque,
     Estoque: original.Estoque ?? original.estoque ?? atualizado.Estoque,
 
-    marketplace: original.marketplace ?? atualizado.marketplace,
-    marketplaces: Array.isArray(original.marketplaces)
-      ? original.marketplaces
-      : Array.isArray(atualizado.marketplaces)
-        ? atualizado.marketplaces
-        : [],
+    marketplaces: normalizarMarketplacesMagalu(
+      original,
+      getReferenciaVariation(original),
+    ),
 
     link: original.link ?? atualizado.link,
 
-    preco: precoAtualizado,
-    precoLoja: precoAtualizado,
-    preco_loja: precoAtualizado,
-    "Preço de Venda": precoAtualizado,
+    preco: precoOriginal,
+    precoLoja: precoOriginal,
+    preco_loja: precoOriginal,
+    "Preço de Venda": precoOriginal,
 
     status: original.status ?? atualizado.status,
     descricao: original.descricao ?? atualizado.descricao,
@@ -1010,6 +1064,9 @@ const createEmptyVariation = (produto: any): Variation => {
     loja,
     Loja: loja,
 
+    marketplace: "Magalu",
+    canal: "Magalu",
+
     tipo_anuncio: "variacoes",
 
     nome,
@@ -1039,10 +1096,14 @@ const createEmptyVariation = (produto: any): Variation => {
     od: "",
     OD: "",
 
-    marketplace: produto?.marketplace ?? "",
-    marketplaces: Array.isArray(produto?.marketplaces)
-      ? produto.marketplaces
-      : [],
+    marketplaces: [
+      {
+        marketplace: "Magalu",
+        id_anuncio: "",
+        sku: referenciaVariacao,
+        link: "",
+      },
+    ],
 
     link: "",
 
@@ -1175,6 +1236,13 @@ const mapBancoParaVariation = (v: any): Variation => {
     dados?.ID_VAR ??
     "";
 
+  const idBling =
+    v?.id_bling ??
+    v?.["ID Bling"] ??
+    dados?.["ID Bling"] ??
+    dados?.id_bling ??
+    "";
+
   const marketplaceId =
     v?.marketplace_id ??
     v?.id_marketplace ??
@@ -1219,6 +1287,9 @@ const mapBancoParaVariation = (v: any): Variation => {
     loja: v?.loja ?? v?.Loja ?? dados.Loja ?? dados.loja,
     Loja: v?.Loja ?? v?.loja ?? dados.Loja ?? dados.loja,
 
+    marketplace: "Magalu",
+    canal: "Magalu",
+
     tipo_anuncio: "variacoes",
 
     referencia,
@@ -1241,13 +1312,10 @@ const mapBancoParaVariation = (v: any): Variation => {
     Categoria:
       v?.Categoria ?? v?.categoria ?? dados.Categoria ?? dados.categoria ?? "",
 
-    id_bling:
-      v?.id_bling ?? v?.["ID Bling"] ?? dados["ID Bling"] ?? dados.id_bling,
-    "ID Bling":
-      v?.["ID Bling"] ?? v?.id_bling ?? dados["ID Bling"] ?? dados.id_bling,
+    id_bling: idBling,
+    "ID Bling": idBling,
 
-    id_tray:
-      v?.id_tray ?? v?.["ID Tray"] ?? dados["ID Tray"] ?? dados.id_tray,
+    id_tray: v?.id_tray ?? v?.["ID Tray"] ?? dados["ID Tray"] ?? dados.id_tray,
     "ID Tray":
       v?.["ID Tray"] ?? v?.id_tray ?? dados["ID Tray"] ?? dados.id_tray,
 
@@ -1299,11 +1367,13 @@ const mapBancoParaVariation = (v: any): Variation => {
     Custo: custoTotal,
     "Custo Total": custoTotal,
 
-    marketplaces: Array.isArray(v?.marketplaces)
-      ? v.marketplaces
-      : Array.isArray(dados.marketplaces)
-        ? dados.marketplaces
-        : [],
+    marketplaces: normalizarMarketplacesMagalu(
+      {
+        ...dados,
+        ...v,
+      },
+      referencia,
+    ),
   };
 
   return {
@@ -1317,12 +1387,12 @@ const mapBancoParaVariation = (v: any): Variation => {
   };
 };
 
-export const VariationMarketplaceSection = ({
+export const VariationMagaluSection = ({
   produto,
   setProduto,
   AnimatedNumber,
   onModalOpenChange,
-}: VariationMarketplaceSectionProps) => {
+}: VariationMagaluSectionProps) => {
   const [open, setOpen] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -1354,19 +1424,12 @@ export const VariationMarketplaceSection = ({
       }
 
       const { data, error } = await supabase.rpc("buscar_variacoes_do_pai", {
-        p_referencia_pai: referenciaPaiNormalizada,
         p_loja: lojaCode,
-        p_marketplace: "tray",
+        p_referencia_pai: referenciaPaiNormalizada,
       });
 
       if (error) {
-        console.error("Erro ao carregar variações Tray do pai via RPC:", {
-          p_referencia_pai: referenciaPaiNormalizada,
-          p_loja: lojaCode,
-          p_marketplace: "tray",
-          error,
-        });
-
+        console.error("Erro ao carregar variações Magalu do pai:", error);
         return;
       }
 
@@ -1375,9 +1438,7 @@ export const VariationMarketplaceSection = ({
       );
 
       setProduto((p: any) => {
-        const variacoesAtuais = Array.isArray(p?.variacoes)
-          ? p.variacoes
-          : [];
+        const variacoesAtuais = Array.isArray(p?.variacoes) ? p.variacoes : [];
 
         const mapaAtuais = new Map<string, Variation>();
 
@@ -1443,14 +1504,24 @@ export const VariationMarketplaceSection = ({
           mescladas.map((item) => String(getReferenciaVariation(item))),
         );
 
-        const locaisNaoCarregados = variacoesAtuais.filter((item: Variation) => {
-          const ref = String(getReferenciaVariation(item));
-          return ref && !referenciasCarregadas.has(ref);
-        });
+        const locaisNaoCarregados = variacoesAtuais.filter(
+          (item: Variation) => {
+            const ref = String(getReferenciaVariation(item));
+            return ref && !referenciasCarregadas.has(ref);
+          },
+        );
 
         return {
           ...p,
+          marketplace: "Magalu",
+          canal: "Magalu",
           tipo_anuncio: "variacoes",
+
+          referencia: referenciaPaiNormalizada,
+          Referencia: referenciaPaiNormalizada,
+          "Referência": referenciaPaiNormalizada,
+          sku: referenciaPaiNormalizada,
+
           variacoes: [
             ...mescladas,
             ...locaisNaoCarregados.map((item: Variation) =>
@@ -1471,10 +1542,6 @@ export const VariationMarketplaceSection = ({
     produto?.sku,
     produto?.loja,
     produto?.Loja,
-    produto?.marketplace,
-    produto?.Marketplace,
-    produto?.canal,
-    produto?.Canal,
     setProduto,
   ]);
 
@@ -1509,9 +1576,22 @@ export const VariationMarketplaceSection = ({
   };
 
   const updateVariations = (next: Variation[]) => {
+    const referenciaPaiNormalizada = criarReferenciaPaiNovoPadrao(
+      getReferenciaProduto(produto),
+    );
+
     setProduto((p: any) => ({
       ...p,
+
+      marketplace: "Magalu",
+      canal: "Magalu",
       tipo_anuncio: "variacoes",
+
+      referencia: referenciaPaiNormalizada,
+      Referencia: referenciaPaiNormalizada,
+      "Referência": referenciaPaiNormalizada,
+      sku: referenciaPaiNormalizada,
+
       variacoes: next.map((item) => {
         const normalizada = normalizarVariationParaSalvar(item, p);
         return aplicarPercentuaisDaVariation(normalizada, item);
@@ -1632,6 +1712,8 @@ export const VariationMarketplaceSection = ({
     const variationToSaveNormalizada: Variation = normalizarVariationParaSalvar(
       {
         ...draftComPercentuais,
+        marketplace: "Magalu",
+        canal: "Magalu",
         sku:
           draftComPercentuais.sku ||
           draftComPercentuais.referencia ||
@@ -1760,7 +1842,7 @@ export const VariationMarketplaceSection = ({
         <AnimatePresence initial={false}>
           {open && (
             <motion.div
-              key="variations-content"
+              key="magalu-variations-content"
               initial={{
                 height: 0,
                 opacity: 0,
@@ -1833,7 +1915,7 @@ export const VariationMarketplaceSection = ({
                               className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
                             >
                               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#1a8ceb]/20 bg-[#1a8ceb]/10">
-                                <Layers className="h-4 w-4 text-[#1a8ceb]" />
+                                <ShoppingBag className="h-4 w-4 text-[#1a8ceb]" />
                               </div>
 
                               <div className="min-w-0 flex-1">
@@ -1880,7 +1962,7 @@ export const VariationMarketplaceSection = ({
                                   bg-white/[0.03] p-0 text-white/50
                                   hover:bg-white/[0.06] hover:text-white
                                 "
-                                title="Editar variação"
+                                title="Editar variação Magalu"
                               >
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
@@ -1898,7 +1980,7 @@ export const VariationMarketplaceSection = ({
                                   bg-red-500/10 p-0 text-red-400
                                   hover:bg-red-500/20 hover:text-red-300
                                 "
-                                title="Remover variação"
+                                title="Remover variação Magalu"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
@@ -1944,7 +2026,7 @@ export const VariationMarketplaceSection = ({
         </AnimatePresence>
       </section>
 
-      <VariationMarketplaceModal
+      <VariationMagaluModal
         open={modalOpen}
         variation={variationDraft}
         setVariation={setVariationDraft}
@@ -1960,4 +2042,4 @@ export const VariationMarketplaceSection = ({
   );
 };
 
-export default VariationMarketplaceSection;
+export default VariationMagaluSection;

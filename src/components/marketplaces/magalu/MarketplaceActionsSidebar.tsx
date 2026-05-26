@@ -129,7 +129,7 @@ export default function MarketplaceActionsSidebar({
 
               <ActionTextButton
                 icon={<Upload className="h-4 w-4" />}
-                label="Importar preços Magalu"
+                label="Importar preços"
                 onClick={onImportOpen}
               />
             </div>
