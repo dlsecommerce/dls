@@ -267,13 +267,10 @@ export default function AnnounceTable() {
       return;
     }
 
-    const selectedRowsSnapshot = [...data.selectedRows];
-
-    // Fecha o modal imediatamente para não parecer travado.
-    data.setOpenDelete(false);
     setLoadingDelete(true);
 
     try {
+      const selectedRowsSnapshot = [...data.selectedRows];
       const deleteMessage = buildDeleteMessage(selectedRowsSnapshot);
 
       const grouped = selectedRowsSnapshot.reduce<Record<string, string[]>>(
@@ -317,10 +314,7 @@ export default function AnnounceTable() {
         })
       );
 
-      data.setSelectedRows([]);
-
-      // Não bloqueia a interface esperando criar notificação.
-      createNotification({
+      await createNotification({
         title:
           selectedRowsSnapshot.length === 1
             ? "Anúncio excluído"
@@ -338,14 +332,11 @@ export default function AnnounceTable() {
               )
             : undefined,
         link: "/dashboard/anuncios",
-      }).catch((err) => {
-        console.warn("Erro ao criar notificação:", err);
       });
 
-      // Recarrega a tabela sem travar a exclusão visualmente.
-      data.loadAnuncios(data.currentPage).catch((err: any) => {
-        console.warn("Erro ao recarregar anúncios:", err);
-      });
+      data.setOpenDelete(false);
+      data.setSelectedRows([]);
+      await data.loadAnuncios(data.currentPage);
     } catch (err: any) {
       console.error("Erro ao excluir:", err);
       alert("Erro ao excluir anúncios: " + (err?.message || err));
