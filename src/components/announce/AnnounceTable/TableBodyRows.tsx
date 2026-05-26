@@ -25,6 +25,23 @@ type Props = {
   onDelete: (row: Anuncio) => void;
 };
 
+const getRowKey = (row: any) => {
+  const loja = String(row?.loja ?? row?.Loja ?? "").trim();
+
+  const id = String(
+    row?.idReal ??
+      row?.id ??
+      row?.ID ??
+      row?.id_tray ??
+      row?.["ID Tray"] ??
+      row?.referencia ??
+      row?.["Referência"] ??
+      ""
+  ).trim();
+
+  return `${loja}-${id}`;
+};
+
 export default function TableBodyRows({
   rows,
   loading,
@@ -66,7 +83,7 @@ export default function TableBodyRows({
         ) : (
           rows.map((a, i) => {
             const isSelected = selectedRows.some(
-              (r) => `${r.loja}-${r.id}` === `${a.loja}-${a.id}`
+              (r) => getRowKey(r) === getRowKey(a)
             );
 
             const variationCount = Number((a as any).total_variacoes || 0);
@@ -150,7 +167,9 @@ export default function TableBodyRows({
                   <div className="min-w-0 rounded-lg border border-neutral-800 bg-[#0f0f0f] p-2">
                     <div className="text-neutral-500">Marca</div>
                     <div className="mt-1 flex min-w-0 items-center gap-1">
-                      <span className="truncate text-white">{a.marca || "-"}</span>
+                      <span className="truncate text-white">
+                        {a.marca || "-"}
+                      </span>
                       {a.marca && (
                         <button
                           onClick={() =>
@@ -174,7 +193,9 @@ export default function TableBodyRows({
                   <div className="min-w-0 rounded-lg border border-neutral-800 bg-[#0f0f0f] p-2">
                     <div className="text-neutral-500">ID Bling</div>
                     <div className="mt-1 flex min-w-0 items-center gap-1">
-                      <span className="truncate text-white">{a.id_bling || "-"}</span>
+                      <span className="truncate text-white">
+                        {a.id_bling || "-"}
+                      </span>
                       {a.id_bling && (
                         <button
                           onClick={() =>
@@ -224,7 +245,9 @@ export default function TableBodyRows({
                   <div className="min-w-0 rounded-lg border border-neutral-800 bg-[#0f0f0f] p-2">
                     <div className="text-neutral-500">ID Tray</div>
                     <div className="mt-1 flex min-w-0 items-center gap-1">
-                      <span className="truncate text-white">{a.id_tray || "-"}</span>
+                      <span className="truncate text-white">
+                        {a.id_tray || "-"}
+                      </span>
                       {a.id_tray && (
                         <button
                           onClick={() =>
@@ -247,7 +270,9 @@ export default function TableBodyRows({
 
                   <div className="min-w-0 rounded-lg border border-neutral-800 bg-[#0f0f0f] p-2">
                     <div className="text-neutral-500">Loja</div>
-                    <div className="mt-1 truncate text-white">{a.loja || "-"}</div>
+                    <div className="mt-1 truncate text-white">
+                      {a.loja || "-"}
+                    </div>
                   </div>
                 </div>
 
@@ -301,7 +326,7 @@ export default function TableBodyRows({
             ) : (
               rows.map((a, i) => {
                 const isSelected = selectedRows.some(
-                  (r) => `${r.loja}-${r.id}` === `${a.loja}-${a.id}`
+                  (r) => getRowKey(r) === getRowKey(a)
                 );
 
                 const variationCount = Number((a as any).total_variacoes || 0);

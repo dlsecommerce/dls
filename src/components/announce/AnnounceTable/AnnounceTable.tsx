@@ -31,6 +31,23 @@ const parsePositiveInt = (value: string | null, fallback: number) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+const getRowKey = (row: any) => {
+  const loja = String(row?.loja ?? row?.Loja ?? "").trim();
+
+  const id = String(
+    row?.idReal ??
+      row?.id ??
+      row?.ID ??
+      row?.id_tray ??
+      row?.["ID Tray"] ??
+      row?.referencia ??
+      row?.["Referência"] ??
+      ""
+  ).trim();
+
+  return `${loja}-${id}`;
+};
+
 export default function AnnounceTable() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -194,6 +211,56 @@ export default function AnnounceTable() {
     } foram excluídos do sistema.`;
   };
 
+  const selectedKeys = React.useMemo(() => {
+    return new Set(data.selectedRows.map((row: any) => getRowKey(row)));
+  }, [data.selectedRows]);
+
+  const currentPageKeys = React.useMemo(() => {
+    return data.rows.map((row: any) => getRowKey(row));
+  }, [data.rows]);
+
+  const allSelected =
+    data.rows.length > 0 &&
+    currentPageKeys.every((key) => selectedKeys.has(key));
+
+  const handleToggleRow = (row: any) => {
+    data.setSelectedRows((prev: any[]) => {
+      const rowKey = getRowKey(row);
+      const alreadySelected = prev.some((item) => getRowKey(item) === rowKey);
+
+      if (alreadySelected) {
+        return prev.filter((item) => getRowKey(item) !== rowKey);
+      }
+
+      return [...prev, row];
+    });
+  };
+
+  const handleToggleSelectAll = (checked: boolean) => {
+    if (checked) {
+      data.setSelectedRows((prev: any[]) => {
+        const map = new Map<string, any>();
+
+        prev.forEach((row) => {
+          map.set(getRowKey(row), row);
+        });
+
+        data.rows.forEach((row: any) => {
+          map.set(getRowKey(row), row);
+        });
+
+        return Array.from(map.values());
+      });
+
+      return;
+    }
+
+    data.setSelectedRows((prev: any[]) => {
+      const pageKeys = new Set(currentPageKeys);
+      return prev.filter((row) => !pageKeys.has(getRowKey(row)));
+    });
+  };
+
   const handleDeleteSelected = async () => {
     if (!data.selectedRows?.length) {
       alert("Nenhum item selecionado para exclusão.");
@@ -216,9 +283,7 @@ export default function AnnounceTable() {
             return acc;
           }
 
-          const id = String(
-            row.idReal ?? row.id ?? row.ID ?? ""
-          ).trim();
+          const id = String(row.idReal ?? row.id ?? row.ID ?? "").trim();
           if (!id) return acc;
 
           const key = `${tabela}|${lojaCodigo}`;
@@ -277,17 +342,6 @@ export default function AnnounceTable() {
       alert("Erro ao excluir anúncios: " + (err?.message || err));
     } finally {
       setLoadingDelete(false);
-    }
-  };
-
-  const allSelected =
-    data.rows.length > 0 && data.selectedRows.length === data.rows.length;
-
-  const handleToggleSelectAll = (checked: boolean) => {
-    if (checked) {
-      data.setSelectedRows(data.rows as any);
-    } else {
-      data.setSelectedRows([]);
     }
   };
 
@@ -374,7 +428,7 @@ export default function AnnounceTable() {
                 rows={data.rows}
                 loading={data.loading}
                 selectedRows={data.selectedRows}
-                toggleRow={data.toggleRow}
+                toggleRow={handleToggleRow}
                 onEdit={(id, loja) =>
                   router.push(
                     `/dashboard/anuncios/edit?id=${id}&loja=${encodeURIComponent(

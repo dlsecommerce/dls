@@ -41,6 +41,10 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 
+const getCostKey = (row: any) => {
+  return String(row?.["Código"] ?? row?.codigo ?? row?.id ?? "").trim();
+};
+
 export default function CostTable() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -108,6 +112,71 @@ export default function CostTable() {
 
   const [openFiltersMobile, setOpenFiltersMobile] = useState(false);
   const [openActionsMobile, setOpenActionsMobile] = useState(false);
+
+  const setSelectedRowsUnique = React.useCallback(
+    (updater: React.SetStateAction<Custo[]>) => {
+      setSelectedRows((prev) => {
+        const next =
+          typeof updater === "function"
+            ? (updater as (prevState: Custo[]) => Custo[])(prev)
+            : updater;
+
+        const map = new Map<string, Custo>();
+
+        next.forEach((row) => {
+          const key = getCostKey(row);
+          if (key) {
+            map.set(key, row);
+          }
+        });
+
+        return Array.from(map.values());
+      });
+    },
+    []
+  );
+
+  const selectedKeys = React.useMemo(() => {
+    return new Set(selectedRows.map((row) => getCostKey(row)).filter(Boolean));
+  }, [selectedRows]);
+
+  const currentPageKeys = React.useMemo(() => {
+    return rows.map((row) => getCostKey(row)).filter(Boolean);
+  }, [rows]);
+
+  const allSelected =
+    rows.length > 0 && currentPageKeys.every((key) => selectedKeys.has(key));
+
+  const handleToggleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedRows((prev) => {
+        const map = new Map<string, Custo>();
+
+        prev.forEach((row) => {
+          const key = getCostKey(row);
+          if (key) {
+            map.set(key, row);
+          }
+        });
+
+        rows.forEach((row) => {
+          const key = getCostKey(row);
+          if (key) {
+            map.set(key, row);
+          }
+        });
+
+        return Array.from(map.values());
+      });
+
+      return;
+    }
+
+    setSelectedRows((prev) => {
+      const pageKeys = new Set(currentPageKeys);
+      return prev.filter((row) => !pageKeys.has(getCostKey(row)));
+    });
+  };
 
   const handleCopy = (text: string, key: string) => {
     if (!text) return;
@@ -247,7 +316,9 @@ export default function CostTable() {
     setSearch((prev) => (prev !== urlSearch ? urlSearch : prev));
     setCurrentPage((prev) => (prev !== urlPage ? urlPage : prev));
     setItemsPerPage((prev) => (prev !== urlPerPage ? urlPerPage : prev));
-    setSelectedBrands((prev) => (arraysEqual(prev, urlBrands) ? prev : urlBrands));
+    setSelectedBrands((prev) =>
+      arraysEqual(prev, urlBrands) ? prev : urlBrands
+    );
     setSortColumn((prev) => (prev !== urlSortColumn ? urlSortColumn : prev));
     setSortDirection((prev) =>
       prev !== urlSortDirection ? urlSortDirection : prev
@@ -387,7 +458,16 @@ export default function CostTable() {
 
     XLSX.utils.sheet_add_aoa(
       ws,
-      [["12345", "Liverpool", "Baqueta 7A Liverpool", "250.00", "240.00", "851821"]],
+      [
+        [
+          "12345",
+          "Liverpool",
+          "Baqueta 7A Liverpool",
+          "250.00",
+          "240.00",
+          "851821",
+        ],
+      ],
       { origin: -1 }
     );
 
@@ -515,7 +595,10 @@ export default function CostTable() {
 
       setSelectedRows([]);
       setOpenDelete(false);
-      toastCustom.success("Exclusão concluída!", "Registros removidos com sucesso.");
+      toastCustom.success(
+        "Exclusão concluída!",
+        "Registros removidos com sucesso."
+      );
       loadData();
     } catch (err: any) {
       toastCustom.error(
@@ -604,8 +687,6 @@ export default function CostTable() {
     }
   };
 
-  const allSelected = rows.length > 0 && selectedRows.length === rows.length;
-
   return (
     <div className="min-h-screen bg-[#0b0b0c] p-0">
       <div className="flex min-h-screen flex-col lg:grid lg:grid-cols-[220px_minmax(0,1fr)_300px]">
@@ -652,10 +733,7 @@ export default function CostTable() {
               onSituacaoChange={(value) =>
                 setFilters((prev) => ({ ...prev, situacao: value }))
               }
-              onToggleSelectAll={(checked) => {
-                if (checked) setSelectedRows(rows);
-                else setSelectedRows([]);
-              }}
+              onToggleSelectAll={handleToggleSelectAll}
               onRefresh={() => loadData(currentPage, itemsPerPage)}
               onSort={handleSort}
               onDeleteSelected={() => setOpenDelete(true)}
@@ -666,7 +744,7 @@ export default function CostTable() {
                 rows={rows}
                 loading={loading}
                 selectedRows={selectedRows}
-                setSelectedRows={setSelectedRows}
+                setSelectedRows={setSelectedRowsUnique}
                 copiedId={copiedId}
                 handleCopy={handleCopy}
                 openEdit={openEdit}

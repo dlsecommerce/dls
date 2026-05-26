@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -28,6 +29,10 @@ type Props = {
   openCostEditor: (row: Custo, e: React.MouseEvent) => void;
 };
 
+const getCostKey = (row: any) => {
+  return String(row?.["Código"] ?? row?.codigo ?? row?.id ?? "").trim();
+};
+
 export default function CostDataTable({
   rows,
   loading,
@@ -39,6 +44,33 @@ export default function CostDataTable({
   openDeleteOne,
   openCostEditor,
 }: Props) {
+  const isRowSelected = (row: Custo) => {
+    const rowKey = getCostKey(row);
+    return selectedRows.some((selected) => getCostKey(selected) === rowKey);
+  };
+
+  const toggleSelectedRow = (row: Custo, checked: boolean) => {
+    const rowKey = getCostKey(row);
+
+    if (!rowKey) return;
+
+    setSelectedRows((prev) => {
+      if (checked) {
+        const alreadySelected = prev.some(
+          (selected) => getCostKey(selected) === rowKey
+        );
+
+        if (alreadySelected) {
+          return prev;
+        }
+
+        return [...prev, row];
+      }
+
+      return prev.filter((selected) => getCostKey(selected) !== rowKey);
+    });
+  };
+
   return (
     <>
       <div className="md:hidden space-y-3 px-2 pb-4">
@@ -52,9 +84,7 @@ export default function CostDataTable({
           </div>
         ) : (
           rows.map((c, i) => {
-            const isSelected = selectedRows.some(
-              (r) => r["Código"] === c["Código"]
-            );
+            const isSelected = isRowSelected(c);
 
             return (
               <div
@@ -77,7 +107,10 @@ export default function CostDataTable({
                       {c["Produto"] && (
                         <button
                           onClick={() =>
-                            handleCopy(c["Produto"] || "", `produto-mobile-${i}`)
+                            handleCopy(
+                              c["Produto"] || "",
+                              `produto-mobile-${i}`
+                            )
                           }
                           className="shrink-0 cursor-pointer"
                           type="button"
@@ -97,17 +130,7 @@ export default function CostDataTable({
                   <input
                     type="checkbox"
                     checked={isSelected}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedRows([...selectedRows, c]);
-                      } else {
-                        setSelectedRows(
-                          selectedRows.filter(
-                            (r) => r["Código"] !== c["Código"]
-                          )
-                        );
-                      }
-                    }}
+                    onChange={(e) => toggleSelectedRow(c, e.target.checked)}
                     className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-green-500"
                   />
                 </div>
@@ -220,7 +243,10 @@ export default function CostDataTable({
                       {c["Produto"] && (
                         <button
                           onClick={() =>
-                            handleCopy(c["Produto"] || "", `produto-grid-mobile-${i}`)
+                            handleCopy(
+                              c["Produto"] || "",
+                              `produto-grid-mobile-${i}`
+                            )
                           }
                           className="shrink-0 cursor-pointer"
                           type="button"
@@ -288,9 +314,7 @@ export default function CostDataTable({
                 </TableRow>
               ) : (
                 rows.map((c, i) => {
-                  const isSelected = selectedRows.some(
-                    (r) => r["Código"] === c["Código"]
-                  );
+                  const isSelected = isRowSelected(c);
 
                   return (
                     <TableRow
@@ -301,27 +325,17 @@ export default function CostDataTable({
                           : "hover:bg-white/5"
                       }`}
                     >
-                      {/* CHECKBOX */}
                       <TableCell className="w-[48px] text-center">
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedRows([...selectedRows, c]);
-                            } else {
-                              setSelectedRows(
-                                selectedRows.filter(
-                                  (r) => r["Código"] !== c["Código"]
-                                )
-                              );
-                            }
-                          }}
+                          onChange={(e) =>
+                            toggleSelectedRow(c, e.target.checked)
+                          }
                           className="h-4 w-4 cursor-pointer accent-green-500"
                         />
                       </TableCell>
 
-                      {/* CÓDIGO */}
                       <TableCell className="w-[140px] text-center text-white">
                         <div className="group inline-flex items-center gap-1">
                           <span className="truncate">{c["Código"]}</span>
@@ -343,12 +357,10 @@ export default function CostDataTable({
                         </div>
                       </TableCell>
 
-                      {/* MARCA */}
                       <TableCell className="w-[160px] text-left text-neutral-300">
                         <span className="truncate">{c["Marca"]}</span>
                       </TableCell>
 
-                      {/* PRODUTO */}
                       <TableCell className="min-w-[280px] text-left text-neutral-300">
                         <div className="group inline-flex max-w-full items-center gap-1">
                           <span className="truncate">{c["Produto"]}</span>
@@ -370,7 +382,6 @@ export default function CostDataTable({
                         </div>
                       </TableCell>
 
-                      {/* CUSTO ATUAL */}
                       <TableCell className="w-[150px] text-center text-neutral-300">
                         <div className="group inline-flex items-center gap-1">
                           <button
@@ -402,17 +413,17 @@ export default function CostDataTable({
                         </div>
                       </TableCell>
 
-                      {/* CUSTO ANTIGO */}
                       <TableCell className="w-[150px] text-center text-neutral-300">
                         <span>R$ {formatBR(c["Custo Antigo"])}</span>
                       </TableCell>
 
-                      {/* NCM */}
                       <TableCell className="w-[140px] text-center text-neutral-300">
                         <div className="group inline-flex items-center gap-1">
                           <span className="truncate">{c["NCM"]}</span>
                           <button
-                            onClick={() => handleCopy(c["NCM"] || "", `ncm-${i}`)}
+                            onClick={() =>
+                              handleCopy(c["NCM"] || "", `ncm-${i}`)
+                            }
                             className="cursor-pointer opacity-0 transition-opacity group-hover:opacity-100"
                             type="button"
                           >
@@ -427,7 +438,6 @@ export default function CostDataTable({
                         </div>
                       </TableCell>
 
-                      {/* AÇÕES */}
                       <TableCell className="w-[120px] text-center">
                         <div className="flex justify-center gap-2">
                           <Button
