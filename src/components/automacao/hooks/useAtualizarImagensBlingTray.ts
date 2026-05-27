@@ -15,7 +15,7 @@ const getApiBaseUrl = () => {
     return envUrl.replace(/\/$/, "");
   }
 
-  return "https://dlsecommerce-api.onrender.com";
+  return "https://sua-api-do-render.onrender.com";
 };
 
 const getFilenameFromDisposition = (contentDisposition: string | null) => {
@@ -60,6 +60,7 @@ const getErrorMessageFromResponse = async (response: Response) => {
 
     try {
       const json = JSON.parse(text);
+
       return json?.error || json?.message || text || fallback;
     } catch {
       return text || fallback;
@@ -100,7 +101,12 @@ export function useAtualizarImagensBlingTray() {
 
   const iniciarAutomacao = async () => {
     if (!planilhas.bling || !planilhas.tray) {
-      throw new Error("Selecione as planilhas Bling e Tray.");
+      const message = "Selecione as planilhas Bling e Tray.";
+
+      setErro(message);
+      setStatus("error");
+
+      throw new Error(message);
     }
 
     const formData = new FormData();
@@ -111,19 +117,31 @@ export function useAtualizarImagensBlingTray() {
     setStatus("processing");
     setErro("");
 
+    const controller = new AbortController();
+
+    const timeout = window.setTimeout(() => {
+      controller.abort();
+    }, 180000);
+
     try {
       const apiBaseUrl = getApiBaseUrl();
 
-      const response = await fetch(
-        `${apiBaseUrl}/atualizar-imagens-bling-tray`,
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
+      const endpoint = `${apiBaseUrl}/atualizar-imagens-bling-tray`;
+
+      console.log("API usada na automação de imagens:", apiBaseUrl);
+      console.log("Endpoint usado na automação de imagens:", endpoint);
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        body: formData,
+        signal: controller.signal,
+      });
+
+      window.clearTimeout(timeout);
 
       if (!response.ok) {
         const message = await getErrorMessageFromResponse(response);
+
         throw new Error(message);
       }
 
@@ -138,13 +156,17 @@ export function useAtualizarImagensBlingTray() {
 
       setStatus("success");
     } catch (err: any) {
+      window.clearTimeout(timeout);
+
       const message =
-        err?.message || "Erro inesperado ao processar planilhas.";
+        err?.name === "AbortError"
+          ? "Tempo limite excedido. O Render demorou demais para responder."
+          : err?.message || "Erro inesperado ao processar planilhas.";
 
       setErro(message);
       setStatus("error");
 
-      throw err;
+      throw new Error(message);
     }
   };
 
