@@ -15,13 +15,14 @@ const getApiBaseUrl = () => {
     return envUrl.replace(/\/$/, "");
   }
 
-  return "https://sua-api-do-render.onrender.com";
+  return "https://dlsecommerce-api.onrender.com";
 };
 
 const getFilenameFromDisposition = (contentDisposition: string | null) => {
   if (!contentDisposition) return "";
 
   const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+
   if (utf8Match?.[1]) {
     try {
       return decodeURIComponent(utf8Match[1]);
@@ -31,6 +32,7 @@ const getFilenameFromDisposition = (contentDisposition: string | null) => {
   }
 
   const normalMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
+
   return normalMatch?.[1] || "";
 };
 
@@ -40,11 +42,31 @@ const baixarBlob = (blob: Blob, filename: string) => {
 
   a.href = url;
   a.download = filename || "BLING - IMAGENS ATUALIZADAS.xlsx";
+
   document.body.appendChild(a);
   a.click();
 
   a.remove();
   window.URL.revokeObjectURL(url);
+};
+
+const getErrorMessageFromResponse = async (response: Response) => {
+  const fallback = "Erro ao atualizar imagens.";
+
+  try {
+    const text = await response.text();
+
+    if (!text) return fallback;
+
+    try {
+      const json = JSON.parse(text);
+      return json?.error || json?.message || text || fallback;
+    } catch {
+      return text || fallback;
+    }
+  } catch {
+    return fallback;
+  }
 };
 
 export function useAtualizarImagensBlingTray() {
@@ -76,18 +98,15 @@ export function useAtualizarImagensBlingTray() {
     setStatus("idle");
   };
 
-  const iniciarAutomacao = async (loja?: string) => {
+  const iniciarAutomacao = async () => {
     if (!planilhas.bling || !planilhas.tray) {
       throw new Error("Selecione as planilhas Bling e Tray.");
     }
 
     const formData = new FormData();
+
     formData.append("bling", planilhas.bling);
     formData.append("tray", planilhas.tray);
-
-    if (loja) {
-      formData.append("loja", loja);
-    }
 
     setStatus("processing");
     setErro("");
@@ -95,38 +114,36 @@ export function useAtualizarImagensBlingTray() {
     try {
       const apiBaseUrl = getApiBaseUrl();
 
-      const response = await fetch(`${apiBaseUrl}/atualizar-imagens-bling-tray`, {
-        method: "POST",
-        body: formData,
-      });
+      const response = await fetch(
+        `${apiBaseUrl}/atualizar-imagens-bling-tray`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
 
       if (!response.ok) {
-        let message = "Erro ao atualizar imagens.";
-
-        try {
-          const json = await response.json();
-          message = json?.error || message;
-        } catch {
-          const text = await response.text();
-          message = text || message;
-        }
-
+        const message = await getErrorMessageFromResponse(response);
         throw new Error(message);
       }
 
       const blob = await response.blob();
 
       const filename =
-        getFilenameFromDisposition(response.headers.get("Content-Disposition")) ||
-        "BLING - IMAGENS ATUALIZADAS.xlsx";
+        getFilenameFromDisposition(
+          response.headers.get("Content-Disposition")
+        ) || "BLING - IMAGENS ATUALIZADAS.xlsx";
 
       baixarBlob(blob, filename);
 
       setStatus("success");
     } catch (err: any) {
-      const message = err?.message || "Erro inesperado ao processar planilhas.";
+      const message =
+        err?.message || "Erro inesperado ao processar planilhas.";
+
       setErro(message);
       setStatus("error");
+
       throw err;
     }
   };
