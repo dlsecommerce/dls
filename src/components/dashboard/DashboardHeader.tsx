@@ -101,6 +101,10 @@ const navigationItems = [
         title: "Automação de Planilhas",
         href: "/dashboard/automacoes/automacao-planilhas",
       },
+      {
+        title: "Automação de Imagens",
+        href: "/dashboard/automacoes/automacao-imagens",
+      },
     ],
   },
   {
