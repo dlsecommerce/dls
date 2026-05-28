@@ -91,10 +91,6 @@ export default function AtualizarImagensBlingTray() {
       .join(", ");
   }, [steps, planilhas]);
 
-  const progressPercent = useMemo(() => {
-    return Math.round((selectedCount / steps.length) * 100);
-  }, [selectedCount, steps.length]);
-
   const handleClear = () => {
     limparArquivos();
     setButtonStatus("idle");
@@ -257,17 +253,6 @@ export default function AtualizarImagensBlingTray() {
                     <p className="text-xs font-bold uppercase tracking-wide text-white/35">
                       Progresso
                     </p>
-
-                    <span
-                      className={cn(
-                        "rounded-full px-3 py-1 text-xs font-bold",
-                        allFilesSelected
-                          ? "bg-green-500/10 text-green-400"
-                          : "bg-white/[0.05] text-white/45"
-                      )}
-                    >
-                      {progressPercent}%
-                    </span>
                   </div>
 
                   <p className="mb-4 text-4xl font-black text-white">
