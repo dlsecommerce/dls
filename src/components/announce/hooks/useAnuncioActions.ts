@@ -81,12 +81,40 @@ function getField(obj: any, ...keys: string[]) {
   return "";
 }
 
+function getCleanField(obj: any, ...keys: string[]) {
+  for (const key of keys) {
+    const value = obj?.[key];
+
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return String(value).trim();
+    }
+  }
+
+  return "";
+}
+
 function removerAcentos(value: string) {
   return String(value || "")
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "");
 }
 
+/**
+ * ✅ PADRÃO NOVO OFICIAL:
+ *
+ * PAI-MARCA-CODIGO
+ * VAR-MARCA-CODIGO
+ *
+ * Exemplos:
+ * PAI-J-1294323-J_1294333-J
+ * VAR-J-1294323-J
+ * VAR-J-1294333-J
+ *
+ * Esta função preserva:
+ * - marca com 1 letra: J
+ * - hífen interno no código: 1294323-J
+ * - underline entre códigos do pai: 1294323-J_1294333-J
+ */
 function normalizarReferenciaBaseUniversal(raw: any): string {
   let ref = removerAcentos(String(raw ?? ""))
     .trim()
@@ -95,64 +123,29 @@ function normalizarReferenciaBaseUniversal(raw: any): string {
   if (!ref) return "";
 
   ref = ref
+    .replace(/\u00a0/g, " ")
     .replace(/[–—−]/g, "-")
-    .replace(/\s+/g, " ")
+    .replace(/\s+/g, "")
     .trim();
 
-  while (/^\s*(PAI|VAR)\s*[-_\s]*/i.test(ref)) {
-    ref = ref.replace(/^\s*(PAI|VAR)\s*[-_\s]*/i, "").trim();
+  if (ref.startsWith("PAI-")) {
+    ref = ref.slice(4);
+  } else if (ref.startsWith("VAR-")) {
+    ref = ref.slice(4);
   }
 
-  ref = ref
-    .replace(/\s*-\s*/g, "-")
-    .replace(/\s*_\s*/g, "_")
-    .trim();
+  ref = ref.replace(/_+/g, "_").replace(/-+/g, "-").trim();
 
-  /**
-   * Se já está sem espaço e com separadores válidos, mantém.
-   * Exemplos:
-   * VDR-6001800020_6001800010
-   * FIS-45634-INOX
-   * LIV-TN_5AM
-   */
-  if (/^[A-Z0-9]{2,5}-[A-Z0-9]+([-_][A-Z0-9]+)*$/.test(ref)) {
-    return ref;
-  }
+  const partes = ref.split("-").filter(Boolean);
 
-  const partes = ref
-    .replace(/_/g, " ")
-    .replace(/-/g, " ")
-    .split(/\s+/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  if (partes.length === 0) return "";
+  if (partes.length < 2) return ref;
 
   const marca = partes[0];
+  const codigo = partes.slice(1).join("-");
 
-  if (partes.length === 1) {
-    return marca;
-  }
+  if (!marca || !codigo) return ref;
 
-  if (partes.length === 2) {
-    return `${marca}-${partes[1]}`;
-  }
-
-  const codigoPrincipal = partes[1];
-  const extras = partes.slice(2);
-
-  /**
-   * Heurística:
-   * - Se os extras forem códigos numéricos, usa underline:
-   *   VDR 6001800020 6001800010 -> VDR-6001800020_6001800010
-   *
-   * - Se tiver texto/material, usa hífen:
-   *   FIS 45634 INOX -> FIS-45634-INOX
-   */
-  const extrasSaoNumericos = extras.every((p) => /^[0-9]+$/.test(p));
-  const separador = extrasSaoNumericos ? "_" : "-";
-
-  return `${marca}-${codigoPrincipal}${separador}${extras.join(separador)}`;
+  return `${marca}-${codigo}`;
 }
 
 function criarReferenciaUniversal(
@@ -170,25 +163,12 @@ function normalizarQuantidadeComposicao(value: any, temCodigo: boolean) {
 
   if (!isNaN(qtdNum) && qtdNum > 0) return qtdNum;
 
-  /**
-   * IMPORTANTE:
-   * Se existe código, mas quantidade veio vazia, salva 1.
-   * Isso evita a variação calcular custo como 0 ao carregar novamente.
-   */
   return temCodigo ? 1 : null;
 }
 
 function montarCamposComposicao(composicao: any[], isInsert: boolean) {
   const camposComposicao: Record<string, any> = {};
 
-  /**
-   * IMPORTANTE:
-   * O banco tem somente Código 1 / Quantidade 1 ... Código 10 / Quantidade 10.
-   * Não adiciona Custo 1, porque essa coluna não existe.
-   *
-   * Também limpamos os 10 pares sempre, inclusive em update.
-   * Assim, se remover um item da composição da variação, o item antigo não fica preso no banco.
-   */
   for (let i = 1; i <= 10; i++) {
     camposComposicao[`Código ${i}`] = null;
     camposComposicao[`Quantidade ${i}`] = null;
@@ -200,18 +180,11 @@ function montarCamposComposicao(composicao: any[], isInsert: boolean) {
     const idx = i + 1;
 
     const codigo = normalizeStr(
-      c?.codigo ??
-        c?.["Código"] ??
-        c?.Codigo ??
-        c?.cod ??
-        ""
+      c?.codigo ?? c?.["Código"] ?? c?.Codigo ?? c?.cod ?? ""
     );
 
     const quantidade = normalizarQuantidadeComposicao(
-      c?.quantidade ??
-        c?.Quantidade ??
-        c?.qtd ??
-        "",
+      c?.quantidade ?? c?.Quantidade ?? c?.qtd ?? "",
       Boolean(codigo)
     );
 
@@ -233,16 +206,24 @@ function montarPayloadAnuncio(params: {
 
   const referencia =
     referenciaForcada ??
-    normalizeStr(getField(item, "referencia", "Referência", "sku"));
+    normalizeStr(getField(item, "referencia", "Referência", "Referencia", "sku"));
 
   const od = inferirOD(referencia);
 
   return {
     Loja: lojaCodigo,
 
-    "ID Bling": normalizeIdBling(getField(item, "id_bling", "ID Bling")),
-    "ID Tray": normalizeStr(getField(item, "id_tray", "ID Tray")),
-    "ID Var": normalizeStr(getField(item, "id_var", "ID Var", "valor")),
+    "ID Bling": normalizeIdBling(
+      getField(item, "id_bling", "ID Bling", "idBling", "ID_Bling")
+    ),
+
+    "ID Tray": normalizeStr(
+      getField(item, "id_tray", "ID Tray", "idTray", "ID_Tray")
+    ),
+
+    "ID Var": normalizeStr(
+      getField(item, "id_var", "ID Var", "idVar", "ID_Var", "valor")
+    ),
 
     Referência: referencia,
 
@@ -310,19 +291,87 @@ async function buscarAnuncioExistenteParaNovoCadastro(params: {
   return null;
 }
 
+async function buscarVariacaoExistente(params: {
+  tabela: AnunciosTabela;
+  lojaCodigo: LojaCodigo;
+  referencia: string;
+  idBling: string | null;
+  idVar: string | null;
+}) {
+  const { tabela, lojaCodigo, referencia, idBling, idVar } = params;
+
+  if (idBling) {
+    const { data, error } = await supabase
+      .from(tabela)
+      .select("ID")
+      .eq("Loja", lojaCodigo)
+      .eq("ID Bling", idBling)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data?.ID) return String(data.ID);
+  }
+
+  if (idVar) {
+    const { data, error } = await supabase
+      .from(tabela)
+      .select("ID")
+      .eq("Loja", lojaCodigo)
+      .eq("ID Var", idVar)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data?.ID) return String(data.ID);
+  }
+
+  if (referencia) {
+    const { data, error } = await supabase
+      .from(tabela)
+      .select("ID")
+      .eq("Loja", lojaCodigo)
+      .eq("Referência", referencia)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data?.ID) return String(data.ID);
+  }
+
+  return null;
+}
+
 function montarItemVariacao(params: {
   produto: any;
   variacao: any;
   lojaCodigo: LojaCodigo;
   referenciaVariacao: string;
-  isNovaVariacao: boolean;
 }) {
-  const { produto, variacao, lojaCodigo, referenciaVariacao, isNovaVariacao } =
-    params;
+  const { produto, variacao, lojaCodigo, referenciaVariacao } = params;
 
-  const idBlingVariacao = getField(variacao, "id_bling", "ID Bling");
-  const idTrayVariacao = getField(variacao, "id_tray", "ID Tray");
-  const idVarVariacao = getField(variacao, "id_var", "ID Var", "valor");
+  /**
+   * ✅ CORREÇÃO PRINCIPAL:
+   * Antes, variação nova salvava ID Bling vazio.
+   * Agora usa primeiro o ID Bling digitado na variação.
+   * Se não tiver, herda do produto somente como fallback.
+   */
+  const idBlingVariacao =
+    normalizeIdBling(
+      getCleanField(variacao, "id_bling", "ID Bling", "idBling", "ID_Bling")
+    ) ??
+    normalizeIdBling(
+      getCleanField(produto, "id_bling", "ID Bling", "idBling", "ID_Bling")
+    );
+
+  const idTrayVariacao =
+    normalizeStr(
+      getCleanField(variacao, "id_tray", "ID Tray", "idTray", "ID_Tray")
+    ) ??
+    normalizeStr(
+      getCleanField(produto, "id_tray", "ID Tray", "idTray", "ID_Tray")
+    );
+
+  const idVarVariacao = normalizeStr(
+    getCleanField(variacao, "id_var", "ID Var", "idVar", "ID_Var", "valor")
+  );
 
   return {
     ...produto,
@@ -331,18 +380,14 @@ function montarItemVariacao(params: {
     loja: lojaCodigo,
     Loja: lojaCodigo,
 
-    /**
-     * Nova variação não herda ID Bling do pai.
-     * Em edição, mantém o ID Bling próprio da variação se existir.
-     */
-    id_bling: isNovaVariacao ? "" : idBlingVariacao || "",
-    "ID Bling": isNovaVariacao ? "" : idBlingVariacao || "",
+    id_bling: idBlingVariacao,
+    "ID Bling": idBlingVariacao,
 
-    id_tray: idTrayVariacao || "",
-    "ID Tray": idTrayVariacao || "",
+    id_tray: idTrayVariacao,
+    "ID Tray": idTrayVariacao,
 
-    id_var: idVarVariacao || "",
-    "ID Var": idVarVariacao || "",
+    id_var: idVarVariacao,
+    "ID Var": idVarVariacao,
 
     referencia: referenciaVariacao,
     Referencia: referenciaVariacao,
@@ -362,11 +407,6 @@ export function useAnuncioActions() {
 
   const handleSave = useCallback(
     async (produto: any, composicao: any[], onAfterSave?: () => void) => {
-      /**
-       * Trava real contra duplo clique / duplo submit.
-       * O estado saving pode demorar 1 render para atualizar,
-       * então usamos ref síncrono.
-       */
       if (savingRef.current) return;
 
       const lojaCodigo = lojaAnyToCodigo(produto?.loja ?? produto?.Loja);
@@ -385,7 +425,8 @@ export function useAnuncioActions() {
         const idAtualStr = String(produto?.id ?? produto?.ID ?? "").trim();
 
         const referenciaOriginalPai =
-          getField(produto, "referencia", "Referência", "sku") || "";
+          getField(produto, "referencia", "Referência", "Referencia", "sku") ||
+          "";
 
         const referenciaPai = criarReferenciaUniversal(
           referenciaOriginalPai,
@@ -426,7 +467,7 @@ export function useAnuncioActions() {
           if (error) throw error;
         } else {
           const idBlingPai = normalizeIdBling(
-            getField(produto, "id_bling", "ID Bling")
+            getField(produto, "id_bling", "ID Bling", "idBling", "ID_Bling")
           );
 
           const idExistente = await buscarAnuncioExistenteParaNovoCadastro({
@@ -478,7 +519,13 @@ export function useAnuncioActions() {
           ).trim();
 
           const referenciaRawVariacao =
-            getField(variacao, "referencia", "Referência", "sku") || "";
+            getField(
+              variacao,
+              "referencia",
+              "Referência",
+              "Referencia",
+              "sku"
+            ) || "";
 
           const referenciaVariacao = criarReferenciaUniversal(
             referenciaRawVariacao || referenciaPai,
@@ -487,16 +534,6 @@ export function useAnuncioActions() {
 
           if (!referenciaVariacao) continue;
 
-          const isNovaVariacao = !idVariacaoStr;
-
-          /**
-           * IMPORTANTE:
-           * Para variação, salva a composição própria da variação.
-           * Se ela não tiver composição, cai para a composição do pai.
-           *
-           * O custo não é salvo aqui porque não existe coluna Custo 1.
-           * O custo deve ser recuperado depois pela tabela custos usando Código 1, Código 2...
-           */
           const composicaoVariacao = Array.isArray(variacao?.composicao)
             ? variacao.composicao
             : composicao;
@@ -506,29 +543,74 @@ export function useAnuncioActions() {
             variacao,
             lojaCodigo,
             referenciaVariacao,
-            isNovaVariacao,
           });
 
           const payloadVariacao = montarPayloadAnuncio({
             item: itemVariacao,
             lojaCodigo,
             composicao: composicaoVariacao,
-            isInsert: isNovaVariacao,
+            isInsert: !idVariacaoStr,
             referenciaForcada: referenciaVariacao,
           });
 
-          if (idVariacaoStr) {
+          const idBlingVariacao = normalizeIdBling(
+            getField(
+              itemVariacao,
+              "id_bling",
+              "ID Bling",
+              "idBling",
+              "ID_Bling"
+            )
+          );
+
+          const idVarVariacao = normalizeStr(
+            getField(
+              itemVariacao,
+              "id_var",
+              "ID Var",
+              "idVar",
+              "ID_Var",
+              "valor"
+            )
+          );
+
+          /**
+           * Se a variação não veio com ID interno, tenta achar pelo:
+           * 1. ID Bling
+           * 2. ID Var
+           * 3. Referência
+           *
+           * Isso evita duplicar linha quando você edita uma variação já criada.
+           */
+          const idExistenteVariacao = idVariacaoStr
+            ? idVariacaoStr
+            : await buscarVariacaoExistente({
+                tabela,
+                lojaCodigo,
+                referencia: referenciaVariacao,
+                idBling: idBlingVariacao,
+                idVar: idVarVariacao,
+              });
+
+          if (idExistenteVariacao) {
             const { error } = await supabase
               .from(tabela)
               .update(payloadVariacao)
-              .eq("ID", idVariacaoStr)
+              .eq("ID", idExistenteVariacao)
               .eq("Loja", lojaCodigo);
 
             if (error) throw error;
           } else {
+            /**
+             * ✅ CORREÇÃO PRINCIPAL:
+             * Antes tinha:
+             * "ID Bling": null
+             *
+             * Isso apagava o ID Bling da variação nova.
+             * Agora insere o payload normal, preservando "ID Bling".
+             */
             const payloadNovaVariacao = {
               ...payloadVariacao,
-              "ID Bling": null,
               ID: String(proximoId),
             };
 
@@ -541,11 +623,6 @@ export function useAnuncioActions() {
             if (error) throw error;
           }
         }
-
-        /**
-         * 3. Não chama refresh pelo front.
-         * A contagem do badge precisa ser feita pelos triggers/view do banco.
-         */
 
         await createNotification({
           title: idAtualStr ? "Anúncio atualizado" : "Anúncio criado",

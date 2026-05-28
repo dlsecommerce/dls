@@ -31,6 +31,18 @@ const getField = (obj: any, ...keys: string[]) => {
   return "";
 };
 
+const getCleanField = (obj: any, ...keys: string[]) => {
+  for (const key of keys) {
+    const value = obj?.[key];
+
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return String(value).trim();
+    }
+  }
+
+  return "";
+};
+
 const parseNumero = (value: any) => {
   if (value === null || value === undefined || value === "") return 0;
 
@@ -103,6 +115,126 @@ const normalizeLoja = (value: any) => {
   return "";
 };
 
+const normalizarReferenciaNova = (value: any) => {
+  return String(value ?? "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[–—−]/g, "-")
+    .trim()
+    .toUpperCase();
+};
+
+const getReferencia = (obj: any) => {
+  return getCleanField(obj, "referencia", "Referencia", "Referência", "sku");
+};
+
+const getIdBling = (obj: any, fallback?: any) => {
+  return getCleanField(
+    obj,
+    "id_bling",
+    "ID Bling",
+    "idBling",
+    "ID_Bling"
+  ) || getCleanField(
+    fallback,
+    "id_bling",
+    "ID Bling",
+    "idBling",
+    "ID_Bling"
+  );
+};
+
+const getIdTray = (obj: any, fallback?: any) => {
+  return getCleanField(
+    obj,
+    "id_tray",
+    "ID Tray",
+    "idTray",
+    "ID_Tray"
+  ) || getCleanField(
+    fallback,
+    "id_tray",
+    "ID Tray",
+    "idTray",
+    "ID_Tray"
+  );
+};
+
+const getIdVar = (obj: any) => {
+  return getCleanField(
+    obj,
+    "id_var",
+    "ID Var",
+    "idVar",
+    "ID_Var",
+    "valor",
+    "ID",
+    "id"
+  );
+};
+
+const parseReferenciaVariacao = (referenciaRaw: any) => {
+  const ref = normalizarReferenciaNova(referenciaRaw);
+
+  if (!ref.startsWith("PAI-") && !ref.startsWith("VAR-")) {
+    return null;
+  }
+
+  const tipo = ref.startsWith("PAI-") ? "PAI" : "VAR";
+  const semPrefixo = ref.slice(4);
+
+  const partes = semPrefixo.split("-").filter(Boolean);
+
+  if (partes.length < 2) return null;
+
+  const marca = partes[0];
+  const codigo = partes.slice(1).join("-");
+
+  if (!marca || !codigo) return null;
+
+  const codigoBase = codigo.split("-")[0] || codigo;
+
+  const tokensPai = codigo
+    .split(/[_/]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  return {
+    ref,
+    tipo,
+    marca,
+    codigo,
+    codigoBase,
+    tokensPai,
+  };
+};
+
+const referenciaVariacaoPertenceAoPai = (
+  referenciaPaiRaw: any,
+  referenciaVarRaw: any
+) => {
+  const pai = parseReferenciaVariacao(referenciaPaiRaw);
+  const variacao = parseReferenciaVariacao(referenciaVarRaw);
+
+  if (!pai || !variacao) return false;
+  if (pai.tipo !== "PAI") return false;
+  if (variacao.tipo !== "VAR") return false;
+  if (pai.marca !== variacao.marca) return false;
+
+  if (variacao.codigo === pai.codigo) return true;
+
+  if (pai.tokensPai.includes(variacao.codigo)) return true;
+
+  if (
+    pai.codigoBase &&
+    variacao.codigoBase &&
+    pai.codigoBase === variacao.codigoBase
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
 const buildComposicaoFromAnuncio = (anuncio: any) => {
   const itens: any[] = [];
 
@@ -115,12 +247,6 @@ const buildComposicaoFromAnuncio = (anuncio: any) => {
       `quantidade${i}`
     );
 
-    /**
-     * IMPORTANTE:
-     * Seu banco não tem Custo 1, Custo 2...
-     * Então o custo começa como 0 e será buscado na tabela custos
-     * usando o código.
-     */
     if (String(codigo || "").trim()) {
       itens.push({
         codigo,
@@ -185,7 +311,7 @@ const carregarCustosDaComposicao = async (composicao: any[]) => {
   });
 };
 
-const normalizeVariation = (variation: any) => {
+const normalizeVariation = (variation: any, produtoPai?: any) => {
   const composicaoExistente = Array.isArray(variation?.composicao)
     ? variation.composicao
     : null;
@@ -194,12 +320,20 @@ const normalizeVariation = (variation: any) => {
     composicaoExistente ?? buildComposicaoFromAnuncio(variation)
   ).map(normalizarItemComposicao);
 
-  /**
-   * Aqui ainda não calculamos o custo final, porque o banco só tem Código e Quantidade.
-   * O custo real será buscado depois na tabela custos.
-   */
   const custoSalvo = parseNumero(
     getField(variation, "custoTotal", "custo_total", "custo", "Custo")
+  );
+
+  const idBling = getIdBling(variation, produtoPai);
+  const idTray = getIdTray(variation, produtoPai);
+  const idVar = getIdVar(variation);
+
+  const referencia = getCleanField(
+    variation,
+    "referencia",
+    "Referência",
+    "Referencia",
+    "sku"
   );
 
   return {
@@ -208,47 +342,64 @@ const normalizeVariation = (variation: any) => {
     id: getField(variation, "id", "ID"),
     ID: getField(variation, "ID", "id"),
 
-    loja: getField(variation, "loja", "Loja"),
-    Loja: getField(variation, "Loja", "loja"),
+    loja: getField(variation, "loja", "Loja") || getField(produtoPai, "loja", "Loja"),
+    Loja: getField(variation, "Loja", "loja") || getField(produtoPai, "Loja", "loja"),
 
-    nome: getField(variation, "nome", "Nome"),
-    Nome: getField(variation, "Nome", "nome"),
+    nome: getField(variation, "nome", "Nome") || getField(produtoPai, "nome", "Nome"),
+    Nome: getField(variation, "Nome", "nome") || getField(produtoPai, "Nome", "nome"),
 
-    referencia: getField(variation, "referencia", "Referência"),
-    "Referência": getField(variation, "Referência", "referencia"),
+    referencia,
+    Referencia: referencia,
+    "Referência": referencia,
+    sku: referencia,
 
-    id_var: getField(variation, "id_var", "ID Var"),
-    "ID Var": getField(variation, "ID Var", "id_var"),
+    id_var: idVar,
+    "ID Var": idVar,
 
-    id_bling: getField(variation, "id_bling", "ID Bling"),
-    "ID Bling": getField(variation, "ID Bling", "id_bling"),
+    id_bling: idBling,
+    "ID Bling": idBling,
 
-    id_tray: getField(variation, "id_tray", "ID Tray"),
-    "ID Tray": getField(variation, "ID Tray", "id_tray"),
+    id_tray: idTray,
+    "ID Tray": idTray,
 
-    od: getField(variation, "od", "OD"),
-    OD: getField(variation, "OD", "od"),
+    od: getField(variation, "od", "OD") || "2",
+    OD: getField(variation, "OD", "od") || "2",
 
-    marca: getField(variation, "marca", "Marca"),
-    Marca: getField(variation, "Marca", "marca"),
+    marca: getField(variation, "marca", "Marca") || getField(produtoPai, "marca", "Marca"),
+    Marca: getField(variation, "Marca", "marca") || getField(produtoPai, "Marca", "marca"),
 
-    categoria: getField(variation, "categoria", "Categoria"),
-    Categoria: getField(variation, "Categoria", "categoria"),
+    categoria:
+      getField(variation, "categoria", "Categoria") ||
+      getField(produtoPai, "categoria", "Categoria"),
+    Categoria:
+      getField(variation, "Categoria", "categoria") ||
+      getField(produtoPai, "Categoria", "categoria"),
 
-    peso: getField(variation, "peso", "Peso"),
-    Peso: getField(variation, "Peso", "peso"),
+    peso: getField(variation, "peso", "Peso") || getField(produtoPai, "peso", "Peso"),
+    Peso: getField(variation, "Peso", "peso") || getField(produtoPai, "Peso", "peso"),
 
-    altura: getField(variation, "altura", "Altura"),
-    Altura: getField(variation, "Altura", "altura"),
+    altura:
+      getField(variation, "altura", "Altura") ||
+      getField(produtoPai, "altura", "Altura"),
+    Altura:
+      getField(variation, "Altura", "altura") ||
+      getField(produtoPai, "Altura", "altura"),
 
-    largura: getField(variation, "largura", "Largura"),
-    Largura: getField(variation, "Largura", "largura"),
+    largura:
+      getField(variation, "largura", "Largura") ||
+      getField(produtoPai, "largura", "Largura"),
+    Largura:
+      getField(variation, "Largura", "largura") ||
+      getField(produtoPai, "Largura", "largura"),
 
-    comprimento: getField(variation, "comprimento", "Comprimento"),
-    Comprimento: getField(variation, "Comprimento", "comprimento"),
+    comprimento:
+      getField(variation, "comprimento", "Comprimento") ||
+      getField(produtoPai, "comprimento", "Comprimento"),
+    Comprimento:
+      getField(variation, "Comprimento", "comprimento") ||
+      getField(produtoPai, "Comprimento", "comprimento"),
 
-    sku: getField(variation, "sku", "referencia", "Referência"),
-    valor: getField(variation, "valor", "id_var", "ID Var"),
+    valor: idVar,
 
     composicao: composicaoNormalizada,
 
@@ -256,6 +407,154 @@ const normalizeVariation = (variation: any) => {
     custo_total: custoSalvo,
     custo: custoSalvo,
     Custo: custoSalvo,
+  };
+};
+
+const mergeVariacoes = (listaA: any[], listaB: any[]) => {
+  const map = new Map<string, any>();
+
+  for (const item of [...listaA, ...listaB]) {
+    const key =
+      String(getField(item, "ID", "id") || "").trim() ||
+      String(getReferencia(item) || "").trim();
+
+    if (!key) continue;
+
+    const existente = map.get(key);
+
+    map.set(key, {
+      ...(existente || {}),
+      ...item,
+    });
+  }
+
+  return Array.from(map.values());
+};
+
+const buscarVariacoesDiretoPorReferencia = async ({
+  loja,
+  produtoPai,
+}: {
+  loja: string;
+  produtoPai: any;
+}) => {
+  const referenciaPai = getReferencia(produtoPai);
+  const paiParsed = parseReferenciaVariacao(referenciaPai);
+
+  if (!paiParsed || paiParsed.tipo !== "PAI") return [];
+
+  const tabela = loja === "SB" ? "anuncios_sb" : "anuncios_pk";
+
+  const { data, error } = await supabase
+    .from(tabela)
+    .select(
+      `
+      "ID",
+      "Loja",
+      "ID Bling",
+      "ID Tray",
+      "ID Var",
+      "Referência",
+      "Nome",
+      "Marca",
+      "Categoria",
+      "Peso",
+      "Altura",
+      "Largura",
+      "Comprimento",
+      "Código 1",
+      "Quantidade 1",
+      "Código 2",
+      "Quantidade 2",
+      "Código 3",
+      "Quantidade 3",
+      "Código 4",
+      "Quantidade 4",
+      "Código 5",
+      "Quantidade 5",
+      "Código 6",
+      "Quantidade 6",
+      "Código 7",
+      "Quantidade 7",
+      "Código 8",
+      "Quantidade 8",
+      "Código 9",
+      "Quantidade 9",
+      "Código 10",
+      "Quantidade 10"
+    `
+    )
+    .eq("Loja", loja)
+    .ilike("Referência", `VAR-${paiParsed.marca}-%`);
+
+  if (error) {
+    console.error("Erro ao buscar variações direto por referência:", error);
+    return [];
+  }
+
+  return (Array.isArray(data) ? data : [])
+    .filter((row: any) =>
+      referenciaVariacaoPertenceAoPai(referenciaPai, row?.["Referência"])
+    )
+    .map((row: any) => normalizeVariation(row, produtoPai));
+};
+
+const prepararProdutoParaSalvar = (produto: any, composicao: any[]) => {
+  const idBlingPai = getIdBling(produto);
+  const idTrayPai = getIdTray(produto);
+  const referenciaPai = getReferencia(produto);
+
+  const variacoesOriginais = Array.isArray(produto?.variacoes)
+    ? produto.variacoes
+    : [];
+
+  const variacoes = variacoesOriginais.map((variacao: any) => {
+    const normalizada = normalizeVariation(variacao, produto);
+
+    const idBlingVariacao = getIdBling(normalizada, produto);
+    const idTrayVariacao = getIdTray(normalizada, produto);
+    const idVarVariacao = getIdVar(normalizada);
+
+    return {
+      ...normalizada,
+
+      tipo_anuncio: "variacoes",
+
+      id_bling: idBlingVariacao,
+      "ID Bling": idBlingVariacao,
+
+      id_tray: idTrayVariacao,
+      "ID Tray": idTrayVariacao,
+
+      id_var: idVarVariacao,
+      "ID Var": idVarVariacao,
+
+      od: normalizada.od || normalizada.OD || "2",
+      OD: normalizada.OD || normalizada.od || "2",
+    };
+  });
+
+  return {
+    ...produto,
+
+    tipo_anuncio: variacoes.length > 0 ? "variacoes" : produto?.tipo_anuncio,
+
+    id_bling: idBlingPai,
+    "ID Bling": idBlingPai,
+
+    id_tray: idTrayPai,
+    "ID Tray": idTrayPai,
+
+    referencia: referenciaPai,
+    Referencia: referenciaPai,
+    "Referência": referenciaPai,
+    sku: referenciaPai,
+
+    composicao: Array.isArray(composicao)
+      ? composicao.map(normalizarItemComposicao)
+      : [],
+
+    variacoes,
   };
 };
 
@@ -291,11 +590,6 @@ export default function ProductDetails() {
 
   const produtoTela = produto ?? {};
 
-  /**
-   * IMPORTANTE:
-   * Valores estáveis para evitar que a busca das variações rode de novo
-   * a cada alteração em qualquer campo do produto.
-   */
   const produtoId = useMemo(() => {
     return getField(produtoTela, "ID", "id");
   }, [produtoTela?.ID, produtoTela?.id]);
@@ -316,12 +610,6 @@ export default function ProductDetails() {
   useEffect(() => {
     if (!produto) return;
 
-    /*
-      IMPORTANTE:
-      Em edição, NÃO sobrescreve a loja que veio do banco.
-      Se o anúncio for SB, mas a URL vier sem loja, antes ele podia virar PK.
-      Isso fazia a RPC procurar variações na tabela errada.
-    */
     if (isEditing) return;
 
     setProduto((p: any) => ({
@@ -338,7 +626,8 @@ export default function ProductDetails() {
     if (!produtoId) return;
     if (!lojaRealProduto) return;
 
-    const loadKey = `${lojaRealProduto}-${produtoId}`;
+    const referenciaPai = getReferencia(produtoTela);
+    const loadKey = `${lojaRealProduto}-${produtoId}-${referenciaPai}`;
 
     if (variacoesLoadedKeyRef.current === loadKey) return;
 
@@ -356,13 +645,21 @@ export default function ProductDetails() {
         if (cancelled) return;
 
         if (error) {
-          console.error("Erro ao buscar variações do anúncio:", error);
-          return;
+          console.error("Erro ao buscar variações pela RPC:", error);
         }
 
-        const variacoesBase = Array.isArray(data)
-          ? data.map(normalizeVariation)
+        const variacoesRpc = Array.isArray(data)
+          ? data.map((item: any) => normalizeVariation(item, produtoTela))
           : [];
+
+        const variacoesDiretas = await buscarVariacoesDiretoPorReferencia({
+          loja: lojaRealProduto,
+          produtoPai: produtoTela,
+        });
+
+        if (cancelled) return;
+
+        const variacoesBase = mergeVariacoes(variacoesRpc, variacoesDiretas);
 
         const variacoes = await Promise.all(
           variacoesBase.map(async (variacao: any) => {
@@ -373,29 +670,56 @@ export default function ProductDetails() {
             const custoTotalVariacao =
               calcCustoTotalComposicao(composicaoComCustos);
 
+            const normalizada = normalizeVariation(
+              {
+                ...variacao,
+                composicao: composicaoComCustos,
+                custoTotal: custoTotalVariacao,
+                custo_total: custoTotalVariacao,
+                custo: custoTotalVariacao,
+                Custo: custoTotalVariacao,
+              },
+              produtoTela
+            );
+
             return {
-              ...variacao,
-              composicao: composicaoComCustos,
-              custoTotal: custoTotalVariacao,
-              custo_total: custoTotalVariacao,
-              custo: custoTotalVariacao,
-              Custo: custoTotalVariacao,
+              ...normalizada,
+
+              id_bling: getIdBling(normalizada, produtoTela),
+              "ID Bling": getIdBling(normalizada, produtoTela),
+
+              id_tray: getIdTray(normalizada, produtoTela),
+              "ID Tray": getIdTray(normalizada, produtoTela),
+
+              id_var: getIdVar(normalizada),
+              "ID Var": getIdVar(normalizada),
             };
           })
         );
 
         if (cancelled) return;
 
-        setProduto((p: any) => ({
-          ...p,
+        setProduto((p: any) => {
+          const idBlingPai = getIdBling(p);
+          const idTrayPai = getIdTray(p);
 
-          // mantém a loja real do anúncio
-          loja: normalizeLoja(getField(p, "loja", "Loja")) || lojaRealProduto,
-          Loja: normalizeLoja(getField(p, "Loja", "loja")) || lojaRealProduto,
+          return {
+            ...p,
 
-          variacoes,
-          tipo_anuncio: variacoes.length > 0 ? "variacoes" : p?.tipo_anuncio,
-        }));
+            loja: normalizeLoja(getField(p, "loja", "Loja")) || lojaRealProduto,
+            Loja: normalizeLoja(getField(p, "Loja", "loja")) || lojaRealProduto,
+
+            id_bling: idBlingPai,
+            "ID Bling": idBlingPai,
+
+            id_tray: idTrayPai,
+            "ID Tray": idTrayPai,
+
+            variacoes,
+            total_variacoes: variacoes.length,
+            tipo_anuncio: variacoes.length > 0 ? "variacoes" : p?.tipo_anuncio,
+          };
+        });
       } catch (error) {
         if (!cancelled) {
           console.error("Erro inesperado ao carregar variações:", error);
@@ -408,27 +732,33 @@ export default function ProductDetails() {
     return () => {
       cancelled = true;
     };
-  }, [isEditing, loading, produtoId, lojaRealProduto, setProduto]);
+  }, [
+    isEditing,
+    loading,
+    produtoId,
+    lojaRealProduto,
+    produtoTela?.referencia,
+    produtoTela?.Referencia,
+    produtoTela?.["Referência"],
+    setProduto,
+  ]);
 
   const { handleSave, saving } = useAnuncioActions();
 
-  /*
-    Usa sempre o estado atual do produto.
-    Isso garante que produto.variacoes seja enviado para o useAnuncioActions,
-    onde pai e variações serão salvos como linhas reais no banco.
-  */
   const handleSaveAtual = () => {
-    handleSave(produto ?? {}, composicao);
+    const produtoPronto = prepararProdutoParaSalvar(produto ?? {}, composicao);
+
+    setProduto((p: any) => ({
+      ...p,
+      ...produtoPronto,
+    }));
+
+    handleSave(produtoPronto, composicao);
   };
 
   const { showExitModal, confirmExit, setShowExitModal } = useKeyboardShortcuts({
     saving,
     handleSave: handleSaveAtual,
-
-    /*
-      As sugestões agora devem ficar somente dentro do CompositionSection.
-      Isso evita que cada letra digitada no código renderize a tela inteira.
-    */
     campoAtivo: null,
     sugestoesLength: 0,
   });
@@ -463,6 +793,18 @@ export default function ProductDetails() {
                 <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-white/55">
                   <span>
                     ID interno: {getField(produtoTela, "ID", "id") || "Novo"}
+                  </span>
+
+                  <span>
+                    ID Bling:{" "}
+                    {getIdBling(produtoTela) || "Não informado"}
+                  </span>
+
+                  <span>
+                    Variações:{" "}
+                    {Array.isArray(produtoTela?.variacoes)
+                      ? produtoTela.variacoes.length
+                      : 0}
                   </span>
 
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 font-semibold text-emerald-400">

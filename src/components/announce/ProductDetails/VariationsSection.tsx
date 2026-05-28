@@ -44,8 +44,8 @@ type Variation = {
   id_tray?: string;
   "ID Tray"?: string;
 
-  od?: string;
-  OD?: string;
+  od?: string | number;
+  OD?: string | number;
 
   categoria?: string;
   Categoria?: string;
@@ -138,54 +138,6 @@ const normalizarQuantidade = (value: any) => {
   return numero > 0 ? numero : 1;
 };
 
-const normalizarCodigoBaseNovoPadrao = (
-  referencia?: string | null
-): string => {
-  let ref = removerAcentos(String(referencia || ""))
-    .trim()
-    .toUpperCase();
-
-  if (!ref) return "";
-
-  /**
-   * Novo padrão oficial:
-   * PAI-MARCA-CODIGO
-   * VAR-MARCA-CODIGO
-   *
-   * Aqui removemos apenas o prefixo lógico para montar o código-base interno.
-   * O padrão antigo com espaço não deve ser usado como referência final.
-   */
-  ref = ref.replace(/^(PAI|VAR)-/i, "").trim();
-
-  ref = ref
-    .replace(/[–—−]/g, "-")
-    .replace(/\s+/g, "")
-    .replace(/\s*-\s*/g, "-")
-    .replace(/\s*_\s*/g, "_")
-    .trim();
-
-  const partes = ref
-    .replace(/_/g, " ")
-    .replace(/-/g, " ")
-    .split(/\s+/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  if (partes.length === 0) return "";
-
-  const marca = partes[0];
-
-  if (partes.length === 2) {
-    return `${marca}-${partes[1]}`;
-  }
-
-  if (partes.length >= 3) {
-    return `${marca}-${partes.slice(1).join("_")}`;
-  }
-
-  return ref.replace(/\s+/g, "");
-};
-
 const getReferenciaPai = (produto: any) => {
   return (
     produto?.referencia ??
@@ -196,6 +148,50 @@ const getReferenciaPai = (produto: any) => {
   );
 };
 
+/**
+ * ✅ Novo padrão oficial:
+ *
+ * PAI-MARCA-CODIGO
+ * VAR-MARCA-CODIGO
+ *
+ * Exemplos válidos:
+ * PAI-J-1294323-J_1294333-J
+ * VAR-J-1294323-J
+ * VAR-J-1294333-J
+ *
+ * Esta função NÃO transforma hífens internos em underline.
+ * Ela preserva códigos como 1294323-J.
+ */
+const normalizarCodigoBaseNovoPadrao = (
+  referencia?: string | null
+): string => {
+  let ref = removerAcentos(String(referencia || ""))
+    .trim()
+    .toUpperCase();
+
+  if (!ref) return "";
+
+  ref = ref
+    .replace(/[–—−]/g, "-")
+    .replace(/\s+/g, "")
+    .trim();
+
+  if (ref.startsWith("PAI-")) {
+    ref = ref.slice(4);
+  } else if (ref.startsWith("VAR-")) {
+    ref = ref.slice(4);
+  }
+
+  const partes = ref.split("-").filter(Boolean);
+
+  if (partes.length < 2) return ref;
+
+  const marca = partes[0];
+  const codigo = partes.slice(1).join("-");
+
+  return `${marca}-${codigo}`;
+};
+
 const criarReferenciaPaiNovoPadrao = (referencia?: string | null) => {
   const codigoBase = normalizarCodigoBaseNovoPadrao(referencia);
   return codigoBase ? `PAI-${codigoBase}` : "PAI-";
@@ -204,6 +200,25 @@ const criarReferenciaPaiNovoPadrao = (referencia?: string | null) => {
 const criarReferenciaVariacaoNovoPadrao = (referencia?: string | null) => {
   const codigoBase = normalizarCodigoBaseNovoPadrao(referencia);
   return codigoBase ? `VAR-${codigoBase}` : "VAR-";
+};
+
+const extrairPrimeiroCodigoDaReferenciaPai = (referenciaPai?: string | null) => {
+  const codigoBasePai = normalizarCodigoBaseNovoPadrao(referenciaPai);
+
+  if (!codigoBasePai) return "";
+
+  const partes = codigoBasePai.split("-").filter(Boolean);
+
+  if (partes.length < 2) return "";
+
+  const marca = partes[0];
+  const codigoCompleto = partes.slice(1).join("-");
+
+  const primeiroCodigo = codigoCompleto.split("_").filter(Boolean)[0] || "";
+
+  if (!marca || !primeiroCodigo) return "";
+
+  return `${marca}-${primeiroCodigo}`;
 };
 
 const normalizarComposicao = (composicao: any[]) => {
@@ -328,19 +343,12 @@ const normalizarVariationParaSalvar = (
 
 const createEmptyVariation = (produto: any): Variation => {
   const referenciaPai = getReferenciaPai(produto);
-  const codigoBasePai = normalizarCodigoBaseNovoPadrao(referenciaPai);
+  const codigoBasePrimeiraVariacao =
+    extrairPrimeiroCodigoDaReferenciaPai(referenciaPai);
 
-  let referenciaVariacao = "VAR-";
-
-  if (codigoBasePai) {
-    const partes = codigoBasePai.split("-");
-    const marca = partes[0] || "";
-    const codigos = (partes[1] || "").split("_").filter(Boolean);
-    const primeiroCodigo = codigos[0] || "";
-
-    referenciaVariacao =
-      marca && primeiroCodigo ? `VAR-${marca}-${primeiroCodigo}` : "VAR-";
-  }
+  const referenciaVariacao = codigoBasePrimeiraVariacao
+    ? `VAR-${codigoBasePrimeiraVariacao}`
+    : "VAR-";
 
   const loja = produto?.loja ?? produto?.Loja ?? "";
   const nome = produto?.nome ?? produto?.Nome ?? "";
