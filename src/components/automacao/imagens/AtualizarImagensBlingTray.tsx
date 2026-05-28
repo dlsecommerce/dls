@@ -577,4 +577,4 @@ export default function AtualizarImagensBlingTray() {
       />
     </div>
   );
-}
+} 

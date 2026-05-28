@@ -84,6 +84,21 @@ const removerAcentos = (value: string) => {
     .replace(/\p{Diacritic}/gu, "");
 };
 
+const textoLimpo = (value: any) => {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+};
+
+const primeiroValor = (...values: any[]) => {
+  for (const value of values) {
+    const clean = textoLimpo(value);
+
+    if (clean) return clean;
+  }
+
+  return "";
+};
+
 const parseNumero = (value: any) => {
   if (value === null || value === undefined || value === "") return 0;
 
@@ -132,13 +147,19 @@ const normalizarCodigoBaseNovoPadrao = (
 
   if (!ref) return "";
 
-  while (/^\s*(PAI|VAR)\s*[-_\s]*/i.test(ref)) {
-    ref = ref.replace(/^\s*(PAI|VAR)\s*[-_\s]*/i, "").trim();
-  }
+  /**
+   * Novo padrão oficial:
+   * PAI-MARCA-CODIGO
+   * VAR-MARCA-CODIGO
+   *
+   * Aqui removemos apenas o prefixo lógico para montar o código-base interno.
+   * O padrão antigo com espaço não deve ser usado como referência final.
+   */
+  ref = ref.replace(/^(PAI|VAR)-/i, "").trim();
 
   ref = ref
     .replace(/[–—−]/g, "-")
-    .replace(/\s+/g, " ")
+    .replace(/\s+/g, "")
     .replace(/\s*-\s*/g, "-")
     .replace(/\s*_\s*/g, "_")
     .trim();
@@ -205,6 +226,44 @@ const calcCustoTotal = (composicao: any[]) => {
   }, 0);
 };
 
+const getIdBling = (variation?: any, produtoPai?: any) => {
+  return primeiroValor(
+    variation?.id_bling,
+    variation?.["ID Bling"],
+    variation?.idBling,
+    variation?.ID_Bling,
+    produtoPai?.id_bling,
+    produtoPai?.["ID Bling"],
+    produtoPai?.idBling,
+    produtoPai?.ID_Bling
+  );
+};
+
+const getIdTray = (variation?: any, produtoPai?: any) => {
+  return primeiroValor(
+    variation?.id_tray,
+    variation?.["ID Tray"],
+    variation?.idTray,
+    variation?.ID_Tray,
+    produtoPai?.id_tray,
+    produtoPai?.["ID Tray"],
+    produtoPai?.idTray,
+    produtoPai?.ID_Tray
+  );
+};
+
+const getIdVar = (variation?: any) => {
+  return primeiroValor(
+    variation?.id_var,
+    variation?.["ID Var"],
+    variation?.idVar,
+    variation?.ID_Var,
+    variation?.valor,
+    variation?.id,
+    variation?.ID
+  );
+};
+
 const normalizarVariationParaSalvar = (
   variation: Variation,
   produtoPai?: any
@@ -232,6 +291,10 @@ const normalizarVariationParaSalvar = (
       ? parseNumero(variation.custoTotal)
       : calcCustoTotal(composicaoNormalizada);
 
+  const idBling = getIdBling(variation, produtoPai);
+  const idTray = getIdTray(variation, produtoPai);
+  const idVar = getIdVar(variation);
+
   return {
     ...variation,
 
@@ -244,6 +307,18 @@ const normalizarVariationParaSalvar = (
     sku: referenciaNormalizada,
     Referencia: referenciaNormalizada,
     "Referência": referenciaNormalizada,
+
+    id_var: idVar,
+    "ID Var": idVar,
+
+    id_bling: idBling,
+    "ID Bling": idBling,
+
+    id_tray: idTray,
+    "ID Tray": idTray,
+
+    od: variation.od ?? variation.OD ?? "2",
+    OD: variation.OD ?? variation.od ?? "2",
 
     composicao: composicaoNormalizada,
     custoTotal: custoTotalNormalizado,
@@ -277,6 +352,9 @@ const createEmptyVariation = (produto: any): Variation => {
   const largura = produto?.largura ?? produto?.Largura ?? "";
   const comprimento = produto?.comprimento ?? produto?.Comprimento ?? "";
 
+  const idBling = getIdBling(undefined, produto);
+  const idTray = getIdTray(undefined, produto);
+
   return {
     loja,
     Loja: loja,
@@ -294,14 +372,14 @@ const createEmptyVariation = (produto: any): Variation => {
     id_var: "",
     "ID Var": "",
 
-    id_bling: "",
-    "ID Bling": "",
+    id_bling: idBling,
+    "ID Bling": idBling,
 
-    id_tray: "",
-    "ID Tray": "",
+    id_tray: idTray,
+    "ID Tray": idTray,
 
-    od: "",
-    OD: "",
+    od: "2",
+    OD: "2",
 
     categoria,
     Categoria: categoria,
@@ -357,6 +435,10 @@ export const VariationsSection = ({
       getReferenciaPai(produto)
     );
 
+    const nextNormalizadas = next.map((variation) =>
+      normalizarVariationParaSalvar(variation, produto)
+    );
+
     setProduto((p: any) => ({
       ...p,
       tipo_anuncio: "variacoes",
@@ -366,7 +448,7 @@ export const VariationsSection = ({
       "Referência": referenciaPaiNormalizada,
       sku: referenciaPaiNormalizada,
 
-      variacoes: next,
+      variacoes: nextNormalizadas,
     }));
   };
 
@@ -390,21 +472,35 @@ export const VariationsSection = ({
     const normalizedVariation = normalizarVariationParaSalvar(
       {
         ...variation,
+
         sku:
           variation.sku ??
           variation.referencia ??
           variation.Referencia ??
           variation["Referência"] ??
           "",
+
         referencia:
           variation.referencia ??
           variation.sku ??
           variation.Referencia ??
           variation["Referência"] ??
           "",
+
+        id_bling: getIdBling(variation, produto),
+        "ID Bling": getIdBling(variation, produto),
+
+        id_tray: getIdTray(variation, produto),
+        "ID Tray": getIdTray(variation, produto),
+
+        id_var: getIdVar(variation),
+        "ID Var": getIdVar(variation),
+
         composicao: composicaoNormalizada,
+
         custoTotal:
           variation.custoTotal ?? variation.custo_total ?? custoCalculado,
+
         custo_total:
           variation.custo_total ?? variation.custoTotal ?? custoCalculado,
       },
@@ -439,21 +535,40 @@ export const VariationsSection = ({
     const composicaoNormalizada = normalizarComposicao(variationComposicao);
     const custoTotalNormalizado = calcCustoTotal(composicaoNormalizada);
 
+    const idBling = getIdBling(draft, produto);
+    const idTray = getIdTray(draft, produto);
+    const idVar = getIdVar(draft);
+
     const variationToSave: Variation = normalizarVariationParaSalvar(
       {
         ...draft,
+
         sku:
           draft.sku ||
           draft.referencia ||
           draft.Referencia ||
           draft["Referência"] ||
           "",
+
         referencia:
           draft.referencia ||
           draft.sku ||
           draft.Referencia ||
           draft["Referência"] ||
           "",
+
+        id_bling: idBling,
+        "ID Bling": idBling,
+
+        id_tray: idTray,
+        "ID Tray": idTray,
+
+        id_var: idVar,
+        "ID Var": idVar,
+
+        od: draft.od ?? draft.OD ?? "2",
+        OD: draft.OD ?? draft.od ?? "2",
+
         composicao: composicaoNormalizada,
         custoTotal: custoTotalNormalizado,
         custo_total: custoTotalNormalizado,
@@ -568,6 +683,11 @@ export const VariationsSection = ({
                         variation.id ||
                         "Não informado";
 
+                      const idBling =
+                        variation.id_bling ||
+                        variation["ID Bling"] ||
+                        "Não informado";
+
                       return (
                         <div
                           key={
@@ -610,6 +730,11 @@ export const VariationsSection = ({
                                   <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-white/45">
                                     <Hash className="h-3 w-3 text-[#1a8ceb]/70" />
                                     ID variação: {idVar}
+                                  </span>
+
+                                  <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-white/45">
+                                    <Hash className="h-3 w-3 text-[#1a8ceb]/70" />
+                                    ID Bling: {idBling}
                                   </span>
 
                                   {variation.estoque !== undefined &&
