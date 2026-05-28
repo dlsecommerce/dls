@@ -48,6 +48,16 @@ const getRowKey = (row: any) => {
   return `${loja}-${id}`;
 };
 
+const chunkArray = <T,>(array: T[], size: number) => {
+  const chunks: T[][] = [];
+
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+
+  return chunks;
+};
+
 export default function AnnounceTable() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -155,8 +165,7 @@ export default function AnnounceTable() {
         filters.marca && filters.marca.trim() ? [filters.marca] : [],
       selectedCategorias:
         filters.categoria && filters.categoria !== "Todos"
-          ? [filters.categoria]
-          : [],
+          ? [filters.categoria] : [],
     },
     data.selectedRows as any
   );
@@ -288,6 +297,7 @@ export default function AnnounceTable() {
 
           const key = `${tabela}|${lojaCodigo}`;
           (acc[key] ||= []).push(id);
+
           return acc;
         },
         {}
@@ -302,32 +312,28 @@ export default function AnnounceTable() {
 
       console.time("TEMPO DELETE SUPABASE");
 
-      await Promise.all(
-        entries.map(async ([key, ids]) => {
-          const [tabela, lojaCodigo] = key.split("|");
+      for (const [key, ids] of entries) {
+        const [tabela, lojaCodigo] = key.split("|");
 
+        const uniqueIds = Array.from(new Set(ids));
+        const chunks = chunkArray(uniqueIds, 50);
+
+        for (const chunk of chunks) {
           const { error } = await supabase
             .from(tabela)
             .delete()
-            .in("ID", ids)
+            .in("ID", chunk)
             .eq("Loja", lojaCodigo);
 
           if (error) throw error;
-        })
-      );
+        }
+      }
 
       console.timeEnd("TEMPO DELETE SUPABASE");
 
-      /**
-       * A exclusão real terminou aqui.
-       * Agora já pode fechar o modal e limpar seleção.
-       */
       data.setOpenDelete(false);
       data.setSelectedRows([]);
 
-      /**
-       * Não trava mais a exclusão esperando criar notificação.
-       */
       createNotification({
         title:
           selectedRowsSnapshot.length === 1
@@ -350,9 +356,6 @@ export default function AnnounceTable() {
         console.warn("Erro ao criar notificação:", err);
       });
 
-      /**
-       * Não trava mais o modal esperando recarregar a tabela.
-       */
       data.loadAnuncios(data.currentPage).catch((err: any) => {
         console.warn("Erro ao recarregar anúncios:", err);
       });
