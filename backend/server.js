@@ -10,24 +10,12 @@ import { parse as parseCsv } from "csv-parse/sync";
 
 const app = express();
 
-/**
- * ✅ Render/Node backend
- * - Este arquivo é para rodar no Render, NÃO na Vercel.
- * - No Render usamos app.listen(PORT).
- * - A rota da automação é /atualizar-planilha.
- */
-
 const uploadDir = path.resolve("uploads");
 
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-/**
- * ✅ CORS
- * Em produção, coloque seu domínio em ALLOWED_ORIGINS no Render:
- * ALLOWED_ORIGINS=https://dlsecommerce.vercel.app
- */
 const ALLOWED_ORIGINS = (
   process.env.ALLOWED_ORIGINS || "https://dlsecommerce.vercel.app"
 )
@@ -51,19 +39,27 @@ app.use(
       return cb(new Error("CORS bloqueado para: " + origin));
     },
     credentials: true,
-    exposedHeaders: ["Content-Disposition"],
+    exposedHeaders: [
+      "Content-Disposition",
+      "X-Atualizados",
+      "X-Sem-Imagem",
+      "X-Sem-Id",
+    ],
   })
 );
 
-// ✅ mantém uploads em disco no Render
 const upload = multer({ dest: uploadDir });
 
-/** ✅ Rota teste para verificar se o Render subiu */
 app.get("/", (req, res) => {
   res.send("API da automação rodando ✅");
 });
 
-/** 🔤 Normalização */
+/**
+ * =========================================================
+ * HELPERS GERAIS
+ * =========================================================
+ */
+
 function normalize(s = "") {
   return String(s)
     .replace(/\u00a0/g, " ")
@@ -78,25 +74,21 @@ function normCode(s = "") {
   return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
-/**
- * ✅ SANITIZA TEXTO PARA EXCEL
- */
 function textoSeguroExcel(v) {
   if (v === null || v === undefined) return "";
+
   let s = String(v);
 
   s = s.replace(/\u00a0/g, " ");
   s = s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
 
   const low = s.trim().toLowerCase();
+
   if (low === "undefined" || low === "null") return "";
 
   return s.trim();
 }
 
-/**
- * ✅ CONVERSOR NUMÉRICO SEGURO
- */
 function numeroSeguro(v) {
   if (v === null || v === undefined || v === "") return null;
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
@@ -107,6 +99,7 @@ function numeroSeguro(v) {
   const s1 = s0.replace(/[^\d.,-]/g, "");
 
   let s;
+
   if (s1.includes(",") && s1.includes(".")) {
     s = s1.replace(/\./g, "").replace(",", ".");
   } else if (s1.includes(",")) {
@@ -116,13 +109,16 @@ function numeroSeguro(v) {
   }
 
   const n = Number(s);
+
   return Number.isFinite(n) ? n : null;
 }
 
-/** ✅ Valor final seguro pra célula */
 function valorSeguroExcel(v) {
   if (v === null || v === undefined) return "";
-  if (typeof v === "number") return Number.isFinite(v) ? v : "";
+
+  if (typeof v === "number") {
+    return Number.isFinite(v) ? v : "";
+  }
 
   if (typeof v === "object") {
     try {
@@ -135,7 +131,78 @@ function valorSeguroExcel(v) {
   return textoSeguroExcel(v);
 }
 
-/** 📄 Lê CSV e converte em array de objetos */
+function limparTexto(valor) {
+  const texto = he
+    .decode(textoSeguroExcel(valor))
+    .replace(/^&[a-z]+;$/i, "")
+    .trim();
+
+  const up = texto.toUpperCase();
+
+  if (up === "NÃO" || up === "NAO") return "";
+
+  if (
+    !texto ||
+    /^[^a-zA-Z0-9>À-ÿ]+$/.test(texto) ||
+    ["undefined", "null"].includes(texto.toLowerCase())
+  ) {
+    return "";
+  }
+
+  return textoSeguroExcel(texto);
+}
+
+function cellToText(value) {
+  if (value === null || value === undefined) return "";
+
+  if (typeof value === "object") {
+    if (value.text) return textoSeguroExcel(value.text);
+    if (value.hyperlink) return textoSeguroExcel(value.hyperlink);
+
+    if (value.richText) {
+      return textoSeguroExcel(value.richText.map((x) => x.text || "").join(""));
+    }
+
+    if (value.result !== undefined) {
+      return textoSeguroExcel(value.result);
+    }
+
+    try {
+      return textoSeguroExcel(JSON.stringify(value));
+    } catch {
+      return "";
+    }
+  }
+
+  return textoSeguroExcel(value);
+}
+
+function formatarDataHoraNomeArquivo() {
+  const agora = new Date();
+
+  const partes = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(agora);
+
+  const get = (type) => partes.find((p) => p.type === type)?.value || "";
+
+  const dia = get("day");
+  const mes = get("month");
+  const ano = get("year");
+  const hora = get("hour");
+  const minuto = get("minute");
+  const segundo = get("second");
+
+  return `${dia}-${mes}-${ano} ${hora}-${minuto}-${segundo}`;
+}
+
 function lerCSV(filePath) {
   const texto = fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
 
@@ -153,49 +220,238 @@ function lerCSV(filePath) {
 
   const data = rows.slice(1).map((colsRaw) => {
     const cols = Array.isArray(colsRaw) ? [...colsRaw] : [];
-    while (cols.length < headers.length) cols.push("");
+
+    while (cols.length < headers.length) {
+      cols.push("");
+    }
 
     const obj = {};
-    headers.forEach((h, i) => (obj[h] = cols[i] ?? ""));
+
+    headers.forEach((h, i) => {
+      obj[h] = cols[i] ?? "";
+    });
+
     obj.__cols = cols;
+
     return obj;
   });
 
   data.__headers = headers;
+
   return data;
 }
 
-/** 🔤 Decodifica HTML e remove sujeiras */
-function limparTexto(valor) {
-  const texto = he
-    .decode(textoSeguroExcel(valor))
-    .replace(/^&[a-z]+;$/i, "")
-    .trim();
+function lerCsvFlex(filePath) {
+  const texto = fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
 
-  const up = texto.toUpperCase();
-  if (up === "NÃO" || up === "NAO") return "";
+  const tentar = (delimiter) =>
+    parseCsv(texto, {
+      delimiter,
+      relax_quotes: true,
+      relax_column_count: true,
+      skip_empty_lines: true,
+      trim: true,
+    });
 
-  if (
-    !texto ||
-    /^[^a-zA-Z0-9>À-ÿ]+$/.test(texto) ||
-    ["undefined", "null"].includes(texto.toLowerCase())
-  ) {
-    return "";
+  let rows = tentar(";");
+
+  if (!rows || rows.length < 2 || (rows[0] || []).length <= 1) {
+    rows = tentar(",");
   }
 
-  return textoSeguroExcel(texto);
+  if (!rows || rows.length < 2) {
+    return {
+      headers: [],
+      data: [],
+    };
+  }
+
+  const headers = rows[0].map((h) => textoSeguroExcel(h));
+
+  const data = rows.slice(1).map((colsRaw) => {
+    const cols = Array.isArray(colsRaw) ? [...colsRaw] : [];
+
+    while (cols.length < headers.length) {
+      cols.push("");
+    }
+
+    const obj = {};
+
+    headers.forEach((header, index) => {
+      obj[header] = cols[index] ?? "";
+    });
+
+    obj.__cols = cols;
+
+    return obj;
+  });
+
+  return {
+    headers,
+    data,
+  };
 }
 
-/** 🧠 Define OD: 1 = PAI, 2 = VAR, 3 = SIMPLES */
+async function lerExcelComoObjetos(filePath) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+
+  const sheet = workbook.worksheets[0];
+
+  if (!sheet) {
+    return {
+      headers: [],
+      data: [],
+    };
+  }
+
+  const headerRow = sheet.getRow(1);
+  const headers = [];
+
+  for (let col = 1; col <= sheet.columnCount; col++) {
+    const header = textoSeguroExcel(cellToText(headerRow.getCell(col).value));
+    headers.push(header);
+  }
+
+  const data = [];
+
+  for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber++) {
+    const row = sheet.getRow(rowNumber);
+    const values = Array.isArray(row.values) ? row.values : [];
+
+    const isEmpty = values.every(
+      (v) => textoSeguroExcel(cellToText(v)) === ""
+    );
+
+    if (isEmpty) continue;
+
+    const obj = {};
+    const cols = [];
+
+    for (let col = 1; col <= headers.length; col++) {
+      const value = cellToText(row.getCell(col).value);
+
+      obj[headers[col - 1]] = value;
+      cols.push(value);
+    }
+
+    obj.__cols = cols;
+    data.push(obj);
+  }
+
+  return {
+    headers,
+    data,
+  };
+}
+
+async function lerPlanilhaComoObjetos(filePath, originalName = "") {
+  const name = String(originalName || filePath).toLowerCase();
+
+  if (name.endsWith(".csv")) {
+    return lerCsvFlex(filePath);
+  }
+
+  return lerExcelComoObjetos(filePath);
+}
+
+function pick(obj, keyCandidates = []) {
+  const map = new Map(Object.keys(obj || {}).map((k) => [normalize(k), obj[k]]));
+  const allKeys = Array.from(map.keys());
+
+  for (const cand of keyCandidates) {
+    const normCand = normalize(cand);
+    const v = map.get(normCand);
+
+    if (v !== undefined && v !== null && String(v).trim() !== "") {
+      return v;
+    }
+  }
+
+  for (const cand of keyCandidates) {
+    const normCand = normalize(cand);
+
+    const keyEncontrada = allKeys.find(
+      (k) => k.includes(normCand) || normCand.includes(k)
+    );
+
+    if (keyEncontrada) {
+      const v = map.get(keyEncontrada);
+
+      if (v !== undefined && v !== null && String(v).trim() !== "") {
+        return v;
+      }
+    }
+  }
+
+  if (keyCandidates.some((k) => normalize(k).includes("categoria"))) {
+    const chaveCat = allKeys.find((k) => k.includes("categoria"));
+
+    if (chaveCat) {
+      const v = map.get(chaveCat);
+
+      if (v !== undefined && v !== null && String(v).trim() !== "") {
+        return v;
+      }
+    }
+  }
+
+  return "";
+}
+
+function pickFlex(obj, candidates = []) {
+  if (!obj) return "";
+
+  const entries = Object.keys(obj)
+    .filter((k) => k !== "__cols")
+    .map((key) => ({
+      key,
+      norm: normalize(key),
+      value: obj[key],
+    }));
+
+  for (const candidate of candidates) {
+    const normCandidate = normalize(candidate);
+    const exact = entries.find((entry) => entry.norm === normCandidate);
+
+    if (exact && textoSeguroExcel(exact.value) !== "") {
+      return exact.value;
+    }
+  }
+
+  for (const candidate of candidates) {
+    const normCandidate = normalize(candidate);
+
+    const partial = entries.find(
+      (entry) =>
+        entry.norm.includes(normCandidate) || normCandidate.includes(entry.norm)
+    );
+
+    if (partial && textoSeguroExcel(partial.value) !== "") {
+      return partial.value;
+    }
+  }
+
+  return "";
+}
+
+/**
+ * =========================================================
+ * HELPERS DA AUTOMAÇÃO ANTIGA
+ * =========================================================
+ */
+
 function definirOD(ref) {
   if (!ref) return 3;
+
   const r = String(ref).toUpperCase();
+
   if (r.includes("PAI -")) return 1;
   if (r.includes("VAR -")) return 2;
+
   return 3;
 }
 
-/** ✅ headerMap robusto */
 function buildHeaderMap(sheet, headerRowNumber = 2) {
   const headerMap = [];
   const headerRow = sheet.getRow(headerRowNumber);
@@ -210,56 +466,19 @@ function buildHeaderMap(sheet, headerRowNumber = 2) {
     }
 
     const key = textoSeguroExcel(value);
-    if (key) headerMap.push({ col, key, norm: normalize(key) });
+
+    if (key) {
+      headerMap.push({
+        col,
+        key,
+        norm: normalize(key),
+      });
+    }
   }
 
   return headerMap;
 }
 
-/** 🔎 pick() com tolerância */
-function pick(obj, keyCandidates = []) {
-  const map = new Map(Object.keys(obj || {}).map((k) => [normalize(k), obj[k]]));
-  const allKeys = Array.from(map.keys());
-
-  for (const cand of keyCandidates) {
-    const normCand = normalize(cand);
-    const v = map.get(normCand);
-    if (v !== undefined && v !== null && String(v).trim() !== "") return v;
-  }
-
-  for (const cand of keyCandidates) {
-    const normCand = normalize(cand);
-    const keyEncontrada = allKeys.find(
-      (k) => k.includes(normCand) || normCand.includes(k)
-    );
-
-    if (keyEncontrada) {
-      const v = map.get(keyEncontrada);
-      if (v !== undefined && v !== null && String(v).trim() !== "") return v;
-    }
-  }
-
-  if (keyCandidates.some((k) => normalize(k).includes("categoria"))) {
-    const chaveCat = allKeys.find((k) => k.includes("categoria"));
-
-    if (chaveCat) {
-      const v = map.get(chaveCat);
-      if (v !== undefined && v !== null && String(v).trim() !== "") return v;
-    }
-  }
-
-  return "";
-}
-
-/** 🏷️ Remove prefixos PAI/VAR do nome */
-function baseNomeGrupo(nome = "") {
-  let s = String(nome || "");
-  s = s.replace(/^\s*PAI\s*-\s*/i, "");
-  s = s.replace(/^\s*VAR\s*-\s*/i, "");
-  return s.trim();
-}
-
-/** 🎨 Aplica estilos de cabeçalho e cores */
 function aplicarEstiloCabecalho(sheet) {
   const azulEscuro = "004A9F";
   const azulClaro = "2699FE";
@@ -279,6 +498,7 @@ function aplicarEstiloCabecalho(sheet) {
     sheet.mergeCells(range);
 
     const c = sheet.getCell(range.split(":")[0]);
+
     c.value = texto;
     c.alignment = { horizontal: "center", vertical: "middle" };
     c.font = { bold: true, color: { argb: branco }, size: 12 };
@@ -310,11 +530,6 @@ function aplicarEstiloCabecalho(sheet) {
   });
 }
 
-/**
- * ✅ OTIMIZAÇÃO FORTE:
- * Cria índices do Bling uma única vez.
- * Evita fazer bling.find() milhares de vezes.
- */
 function criarIndicesBling(bling) {
   const byId = new Map();
   const byCodigo = new Map();
@@ -336,7 +551,10 @@ function criarIndicesBling(bling) {
       byCodigo.set(codNorm, b);
 
       const semZero = codNorm.replace(/^0+/, "");
-      if (semZero) byCodigoSemZero.set(semZero, b);
+
+      if (semZero) {
+        byCodigoSemZero.set(semZero, b);
+      }
     }
 
     const nomeBling = textoSeguroExcel(
@@ -359,7 +577,6 @@ function criarIndicesBling(bling) {
   };
 }
 
-/** 🔎 Busca rápida no Bling usando os índices */
 function encontrarProdutoNoBlingRapido(
   indices,
   { idProduto, referencia, nomeVinculo }
@@ -378,6 +595,7 @@ function encontrarProdutoNoBlingRapido(
     }
 
     const semZero = refNorm.replace(/^0+/, "");
+
     if (semZero && indices.byCodigoSemZero.has(semZero)) {
       return indices.byCodigoSemZero.get(semZero);
     }
@@ -387,10 +605,6 @@ function encontrarProdutoNoBlingRapido(
     return indices.byNomeExato.get(nomeNormVinc);
   }
 
-  /**
-   * Fallback por nome aproximado.
-   * Para performance, só roda quando não encontrou por ID/código.
-   */
   if (nomeNormVinc) {
     const achado = indices.nomes.find(
       (x) =>
@@ -404,36 +618,35 @@ function encontrarProdutoNoBlingRapido(
   return null;
 }
 
-/** ✅ Descobre índice da coluna "Categoria do produto" */
 function getCategoriaIndex(blingHeaders = []) {
   if (!Array.isArray(blingHeaders) || blingHeaders.length === 0) return -1;
 
   const normHeaders = blingHeaders.map((h) => normalize(h));
 
-  let idx = normHeaders.findIndex((h) => h === normalize("Categoria do produto"));
+  let idx = normHeaders.findIndex(
+    (h) => h === normalize("Categoria do produto")
+  );
+
   if (idx >= 0) return idx;
 
   idx = normHeaders.findIndex(
     (h) => h.includes("categoria") && h.includes("produto")
   );
+
   if (idx >= 0) return idx;
 
-  idx = normHeaders.findIndex((h) => h === "categoria" || h.includes("categoria"));
+  idx = normHeaders.findIndex(
+    (h) => h === "categoria" || h.includes("categoria")
+  );
+
   if (idx >= 0) return idx;
 
   return -1;
 }
 
-/**
- * ✅ Categoria do produto do Bling
- * Agora pega apenas o FINAL da categoria.
- * Ex:
- * "Máquinas & Ferramentas » Ferrementas & Utensílios » Martelos & Marteletes"
- * retorna:
- * "Martelos & Marteletes"
- */
 function getCategoriaFinal(categoriaRaw) {
   const categoria = limparTexto(categoriaRaw);
+
   if (!categoria) return "";
 
   const normalizada = categoria.replace(/\s*>>\s*/g, " » ").trim();
@@ -454,22 +667,22 @@ function getCategoriaFromBling(blingProd, categoriaIdx) {
   }
 
   const raw = blingProd.__cols?.[categoriaIdx];
+
   return getCategoriaFinal(raw);
 }
 
-/**
- * ✅ Normaliza item da referência para código + quantidade
- *
- * Regras:
- * - DWT-6005150127      => código 6005150127, qtd 1
- * - FIS-3570-2345       => código 3570-2345, qtd 1
- * - 3-3570-2345         => código 3570-2345, qtd 3
- * - 36450-104456        => código 36450-104456, qtd 1
- * - PAI - DWT-600       => código 600, qtd 1
- * - VAR - FIS-3570-2345 => código 3570-2345, qtd 1
- */
+function baseNomeGrupo(nome = "") {
+  let s = String(nome || "");
+
+  s = s.replace(/^\s*PAI\s*-\s*/i, "");
+  s = s.replace(/^\s*VAR\s*-\s*/i, "");
+
+  return s.trim();
+}
+
 function parseItemReferencia(itemRaw) {
   const original = textoSeguroExcel(itemRaw);
+
   if (!original) return null;
 
   const parts = original
@@ -484,13 +697,6 @@ function parseItemReferencia(itemRaw) {
 
   const first = parts[0];
 
-  /**
-   * Quantidade:
-   * Só considera quantidade se o primeiro pedaço for número pequeno.
-   * Assim:
-   * 3-3570-2345 => qtd 3
-   * 36450-104456 => NÃO vira qtd 36450
-   */
   if (/^\d+$/.test(first)) {
     const n = parseInt(first, 10);
 
@@ -499,11 +705,6 @@ function parseItemReferencia(itemRaw) {
       codeParts = parts.slice(1);
     }
   } else if (/^[a-zA-Z]{2,10}$/.test(first) && parts.length >= 2) {
-    /**
-     * Prefixo de marca:
-     * DWT-6005150127 => remove DWT
-     * FIS-3570-2345 => remove FIS
-     */
     codeParts = parts.slice(1);
   }
 
@@ -517,9 +718,9 @@ function parseItemReferencia(itemRaw) {
   };
 }
 
-/** ✅ PARSE DA REFERÊNCIA PARA CÓDIGO/QUANTIDADE */
 function parseReferencia(refRaw) {
   const ref = textoSeguroExcel(refRaw);
+
   if (!ref) return [];
 
   const limpo = ref.replace(/^\s*(PAI|VAR)\s*-\s*/i, "").trim();
@@ -533,20 +734,22 @@ function parseReferencia(refRaw) {
 
   for (const item of items) {
     const parsed = parseItemReferencia(item);
-    if (parsed) out.push(parsed);
+
+    if (parsed) {
+      out.push(parsed);
+    }
   }
 
   return out;
 }
 
-/** acha coluna pelo nome no headerMap */
 function findCol(headerMap, name) {
   const n = normalize(name);
   const h = headerMap.find((x) => x.norm === n);
+
   return h?.col ?? null;
 }
 
-/** ✅ pega ID na loja do vínculo */
 function getIdNaLoja(v) {
   const val = pick(v, [
     "ID na Loja",
@@ -561,50 +764,24 @@ function getIdNaLoja(v) {
   return textoSeguroExcel(val);
 }
 
-/** ✅ pega Código do vínculo */
 function getCodigoVinculo(v) {
   const val = pick(v, ["Código", "Codigo", "SKU", "Referência", "Referencia"]);
+
   return textoSeguroExcel(val);
 }
 
-/** ✅ pega Nome do vínculo */
 function getNomeVinculo(v) {
   const val = pick(v, ["Nome", "Descrição", "Descricao", "Titulo", "Título"]);
+
   return limparTexto(val);
 }
 
 /**
- * ✅ Nome do arquivo baixado
- * Ex:
- * AUTOMAÇÃO - PLANILHA - 30-04-2026 14-13-36.xlsx
+ * =========================================================
+ * ROTA ANTIGA: MODELO + BLING + TRAY + VÍNCULO
+ * =========================================================
  */
-function formatarDataHoraNomeArquivo() {
-  const agora = new Date();
 
-  const partes = new Intl.DateTimeFormat("pt-BR", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(agora);
-
-  const get = (type) => partes.find((p) => p.type === type)?.value || "";
-
-  const dia = get("day");
-  const mes = get("month");
-  const ano = get("year");
-  const hora = get("hour");
-  const minuto = get("minute");
-  const segundo = get("second");
-
-  return `${dia}-${mes}-${ano} ${hora}-${minuto}-${segundo}`;
-}
-
-/** 🚀 Endpoint principal - Render */
 app.post(
   "/atualizar-planilha",
   upload.fields([
@@ -662,6 +839,10 @@ app.post(
       await workbook.xlsx.readFile(modeloPath);
 
       const sheet = workbook.worksheets[0];
+
+      if (!sheet) {
+        throw new Error("Nenhuma aba foi encontrada no MODELO.");
+      }
 
       aplicarEstiloCabecalho(sheet);
 
@@ -746,7 +927,10 @@ app.post(
 
         if (od === 1) {
           const group = normalize(baseNomeGrupo(nome));
-          if (group) parentTrayByGroup.set(group, idLoja);
+
+          if (group) {
+            parentTrayByGroup.set(group, idLoja);
+          }
         }
       }
 
@@ -776,10 +960,14 @@ app.post(
         if (!blProduto) semBling++;
 
         const categoria = getCategoriaFromBling(blProduto, categoriaIdx);
+
         if (!categoria) semCategoria++;
 
         let od = definirOD(nome);
-        if (od === 3) od = definirOD(referencia);
+
+        if (od === 3) {
+          od = definirOD(referencia);
+        }
 
         let idTrayCalc = idLojaOriginal;
         const group = normalize(baseNomeGrupo(nome));
@@ -790,9 +978,13 @@ app.post(
 
         let idVarCalc;
 
-        if (od === 1) idVarCalc = "PAI";
-        else if (od === 2) idVarCalc = idLojaOriginal;
-        else idVarCalc = "SIMPLES";
+        if (od === 1) {
+          idVarCalc = "PAI";
+        } else if (od === 2) {
+          idVarCalc = idLojaOriginal;
+        } else {
+          idVarCalc = "SIMPLES";
+        }
 
         const novaLinha = {
           ID: "",
@@ -851,7 +1043,9 @@ app.post(
               ? novaLinha[key]
               : undefined;
 
-          if (valor === undefined) valor = novaLinhaNormMap.get(norm);
+          if (valor === undefined) {
+            valor = novaLinhaNormMap.get(norm);
+          }
 
           row.getCell(col).value = valorSeguroExcel(valor);
         }
@@ -909,7 +1103,9 @@ app.post(
       );
 
       if (semBling > 0) {
-        console.log(chalk.yellow(`⚠️ Produtos não encontrados no Bling: ${semBling}`));
+        console.log(
+          chalk.yellow(`⚠️ Produtos não encontrados no Bling: ${semBling}`)
+        );
       }
 
       if (semCategoria > 0) {
@@ -938,12 +1134,432 @@ app.post(
     } finally {
       for (const p of filesToCleanup) {
         try {
-          fs.unlinkSync(p);
+          if (p && fs.existsSync(p)) {
+            fs.unlinkSync(p);
+          }
         } catch {}
       }
     }
   }
 );
+
+/**
+ * =========================================================
+ * ROTA NOVA: IMAGENS BLING + TRAY
+ * =========================================================
+ */
+
+function normalizarChaveAnuncio(value) {
+  return textoSeguroExcel(value)
+    .replace(/\u00a0/g, " ")
+    .trim()
+    .replace(/\.0$/, "");
+}
+
+const IDENTIFICADOR_CANDIDATES = [
+  "ID",
+  "Id",
+  "id",
+  "ID Produto",
+  "Id Produto",
+  "IdProduto",
+  "Código",
+  "Codigo",
+  "SKU",
+  "Referência",
+  "Referencia",
+  "ID Tray",
+  "Id Tray",
+  "ID na Loja",
+  "Id na Loja",
+  "ID Loja",
+  "Id Loja",
+  "Código do produto",
+  "Codigo do produto",
+];
+
+const TRAY_IMAGE_COLUMNS = [
+  ["Imagem principal", "Imagem Principal", "Imagem 1", "URL Imagem Principal"],
+  ["Imagem 2", "URL Imagem 2"],
+  ["Imagem 3", "URL Imagem 3"],
+  ["Imagem 4", "URL Imagem 4"],
+  [
+    "Imagens adicionais",
+    "Imagens Adicionais",
+    "Imagem adicional",
+    "URLs adicionais",
+    "URL Imagens Adicionais",
+  ],
+];
+
+function extrairUrlsDeCelula(value) {
+  const raw = textoSeguroExcel(value);
+
+  if (!raw) return [];
+
+  return raw
+    .split(/\s*\|\s*|\r?\n/g)
+    .map((item) => textoSeguroExcel(item))
+    .filter(Boolean)
+    .filter((item) => {
+      const low = item.toLowerCase();
+
+      return (
+        low !== "undefined" &&
+        low !== "null" &&
+        low !== "nao" &&
+        low !== "não"
+      );
+    });
+}
+
+function uniqueKeepOrder(items = []) {
+  const seen = new Set();
+  const out = [];
+
+  for (const item of items) {
+    const key = textoSeguroExcel(item);
+
+    if (!key || seen.has(key)) continue;
+
+    seen.add(key);
+    out.push(key);
+  }
+
+  return out;
+}
+
+function getPossiveisIds(row) {
+  const ids = [];
+
+  for (const candidate of IDENTIFICADOR_CANDIDATES) {
+    const value = pickFlex(row, [candidate]);
+    const clean = normalizarChaveAnuncio(value);
+
+    if (clean) {
+      ids.push(clean);
+    }
+  }
+
+  return uniqueKeepOrder(ids);
+}
+
+function montarMapaImagensTray(trayRows) {
+  const mapa = new Map();
+
+  for (const row of trayRows) {
+    const ids = getPossiveisIds(row);
+
+    if (!ids.length) continue;
+
+    const imagens = [];
+
+    for (const group of TRAY_IMAGE_COLUMNS) {
+      const value = pickFlex(row, group);
+      imagens.push(...extrairUrlsDeCelula(value));
+    }
+
+    const imagensFinal = uniqueKeepOrder(imagens).join("|");
+
+    if (!imagensFinal) continue;
+
+    for (const id of ids) {
+      mapa.set(id, imagensFinal);
+    }
+  }
+
+  return mapa;
+}
+
+function findUrlImagensExternasIndex(headers = []) {
+  const wanted = normalize("URL Imagens Externas");
+
+  let index = headers.findIndex((h) => normalize(h) === wanted);
+
+  if (index >= 0) return index;
+
+  index = headers.findIndex((h) => {
+    const n = normalize(h);
+
+    return n.includes("url") && n.includes("imagens") && n.includes("externas");
+  });
+
+  return index;
+}
+
+async function atualizarBlingExcel({ blingPath, mapaImagens }) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(blingPath);
+
+  const sheet = workbook.worksheets[0];
+
+  if (!sheet) {
+    throw new Error("Nenhuma aba foi encontrada na planilha Bling.");
+  }
+
+  const headerRow = sheet.getRow(1);
+  const headers = [];
+
+  for (
+    let col = 1;
+    col <= Math.max(sheet.columnCount, headerRow.cellCount);
+    col++
+  ) {
+    headers.push(textoSeguroExcel(cellToText(headerRow.getCell(col).value)));
+  }
+
+  let urlColIndex = findUrlImagensExternasIndex(headers);
+
+  if (urlColIndex < 0) {
+    urlColIndex = headers.length;
+    headers.push("URL Imagens Externas");
+
+    headerRow.getCell(urlColIndex + 1).value = "URL Imagens Externas";
+    headerRow.commit?.();
+  }
+
+  let atualizados = 0;
+  let semImagem = 0;
+  let semId = 0;
+
+  for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber++) {
+    const row = sheet.getRow(rowNumber);
+
+    const rowObj = {};
+
+    for (let col = 1; col <= headers.length; col++) {
+      rowObj[headers[col - 1]] = cellToText(row.getCell(col).value);
+    }
+
+    const ids = getPossiveisIds(rowObj);
+
+    if (!ids.length) {
+      semId++;
+      continue;
+    }
+
+    const imagens = ids.map((id) => mapaImagens.get(id)).find(Boolean);
+
+    if (!imagens) {
+      semImagem++;
+      continue;
+    }
+
+    row.getCell(urlColIndex + 1).value = imagens;
+    row.commit?.();
+
+    atualizados++;
+  }
+
+  const buffer = await workbook.xlsx.writeBuffer();
+
+  return {
+    buffer,
+    atualizados,
+    semImagem,
+    semId,
+  };
+}
+
+async function atualizarBlingCsvComoExcel({
+  blingHeaders,
+  blingRows,
+  mapaImagens,
+}) {
+  const headers = [...blingHeaders];
+
+  let urlIndex = findUrlImagensExternasIndex(headers);
+
+  if (urlIndex < 0) {
+    headers.push("URL Imagens Externas");
+    urlIndex = headers.length - 1;
+  }
+
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Bling Atualizado");
+
+  sheet.addRow(headers);
+
+  let atualizados = 0;
+  let semImagem = 0;
+  let semId = 0;
+
+  for (const rowObj of blingRows) {
+    const values = headers.map((h) => valorSeguroExcel(rowObj[h] || ""));
+    const ids = getPossiveisIds(rowObj);
+
+    if (!ids.length) {
+      semId++;
+    } else {
+      const imagens = ids.map((id) => mapaImagens.get(id)).find(Boolean);
+
+      if (imagens) {
+        values[urlIndex] = imagens;
+        atualizados++;
+      } else {
+        semImagem++;
+      }
+    }
+
+    sheet.addRow(values);
+  }
+
+  sheet.getRow(1).font = { bold: true };
+
+  sheet.columns.forEach((column) => {
+    let maxLength = 12;
+
+    column.eachCell({ includeEmpty: true }, (cell) => {
+      const value = cellToText(cell.value);
+
+      maxLength = Math.max(maxLength, Math.min(value.length + 2, 60));
+    });
+
+    column.width = maxLength;
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+
+  return {
+    buffer,
+    atualizados,
+    semImagem,
+    semId,
+  };
+}
+
+function nomeArquivoImagensBlingTray() {
+  return `BLING - IMAGENS ATUALIZADAS - ${formatarDataHoraNomeArquivo()}.xlsx`;
+}
+
+app.post(
+  "/atualizar-imagens-bling-tray",
+  upload.fields([
+    { name: "bling", maxCount: 1 },
+    { name: "tray", maxCount: 1 },
+  ]),
+  async (req, res) => {
+    const inicio = Date.now();
+    const filesToCleanup = [];
+
+    try {
+      const blingFile = req.files?.["bling"]?.[0];
+      const trayFile = req.files?.["tray"]?.[0];
+
+      const blingPath = blingFile?.path;
+      const trayPath = trayFile?.path;
+
+      if (blingPath) filesToCleanup.push(blingPath);
+      if (trayPath) filesToCleanup.push(trayPath);
+
+      if (!blingPath || !trayPath) {
+        throw new Error("Envie as planilhas Bling e Tray.");
+      }
+
+      console.log(
+        chalk.cyanBright(
+          "\n🖼️ Iniciando automação de imagens Bling x Tray...\n"
+        )
+      );
+
+      const trayLido = await lerPlanilhaComoObjetos(
+        trayPath,
+        trayFile.originalname
+      );
+
+      if (!trayLido.data.length) {
+        throw new Error(
+          "A planilha Tray está vazia ou não foi lida corretamente."
+        );
+      }
+
+      const mapaImagens = montarMapaImagensTray(trayLido.data);
+
+      if (!mapaImagens.size) {
+        throw new Error(
+          "Nenhuma imagem foi encontrada no Tray. Verifique as colunas: Imagem principal, Imagem 2, Imagem 3, Imagem 4 e Imagens adicionais."
+        );
+      }
+
+      console.log(
+        chalk.cyanBright(
+          `📄 Tray lido: ${trayLido.data.length} linhas | ${mapaImagens.size} chaves com imagens`
+        )
+      );
+
+      const blingName = String(blingFile.originalname || "").toLowerCase();
+
+      let resultado;
+
+      if (blingName.endsWith(".csv")) {
+        const blingLido = lerCsvFlex(blingPath);
+
+        if (!blingLido.data.length) {
+          throw new Error(
+            "A planilha Bling está vazia ou não foi lida corretamente."
+          );
+        }
+
+        resultado = await atualizarBlingCsvComoExcel({
+          blingHeaders: blingLido.headers,
+          blingRows: blingLido.data,
+          mapaImagens,
+        });
+      } else {
+        resultado = await atualizarBlingExcel({
+          blingPath,
+          mapaImagens,
+        });
+      }
+
+      const duracaoSeg = ((Date.now() - inicio) / 1000).toFixed(2);
+
+      console.log(
+        chalk.greenBright(
+          `✅ Imagens atualizadas: ${resultado.atualizados} | Sem imagem correspondente: ${resultado.semImagem} | Sem ID: ${resultado.semId} | ${duracaoSeg}s`
+        )
+      );
+
+      const nomeArquivo = nomeArquivoImagensBlingTray();
+
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${nomeArquivo}"`
+      );
+
+      res.setHeader("X-Atualizados", String(resultado.atualizados));
+      res.setHeader("X-Sem-Imagem", String(resultado.semImagem));
+      res.setHeader("X-Sem-Id", String(resultado.semId));
+
+      return res.status(200).send(Buffer.from(resultado.buffer));
+    } catch (err) {
+      console.error(chalk.redBright("🛑 Erro na automação de imagens:"), err);
+
+      return res.status(500).json({
+        error: err?.message || "Erro interno ao atualizar imagens.",
+      });
+    } finally {
+      for (const filePath of filesToCleanup) {
+        try {
+          if (filePath && fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+          }
+        } catch {}
+      }
+    }
+  }
+);
+
+/**
+ * =========================================================
+ * START SERVER
+ * =========================================================
+ */
 
 const PORT = process.env.PORT || 5000;
 
