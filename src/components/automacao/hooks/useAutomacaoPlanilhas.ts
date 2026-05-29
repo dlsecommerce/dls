@@ -21,31 +21,71 @@ const REQUIRED_BY_LOJA: Record<Loja, (keyof Planilhas)[]> = {
 };
 
 /**
+ * URL fixa de fallback do backend no Render.
+ * Mesmo se a variável do Vercel falhar, produção continua chamando o Render,
+ * não o próprio Vercel.
+ */
+const AUTOMACAO_API_FALLBACK = "https://dlsecommerce-api.onrender.com";
+
+/**
  * ✅ URL do backend:
- * - Dev (localhost): usa http://localhost:5000
- * - Produção: usa NEXT_PUBLIC_AUTOMACAO_API_URL (recomendado)
- *   Ex: NEXT_PUBLIC_AUTOMACAO_API_URL=https://api.seudominio.com
- * - Se não tiver env em produção, tenta usar URL relativa (mesmo domínio)
+ * - Dev localhost: usa http://localhost:5000
+ * - Produção: usa NEXT_PUBLIC_AUTOMACAO_API_URL
+ * - Fallback produção: usa Render fixo
  */
 function getApiBase() {
   const env = process.env.NEXT_PUBLIC_AUTOMACAO_API_URL;
-  if (env && env.trim()) return env.replace(/\/+$/, "");
+
+  if (env && env.trim()) {
+    return env.replace(/\/+$/, "");
+  }
 
   if (typeof window !== "undefined") {
     const isLocal =
       window.location.hostname === "localhost" ||
       window.location.hostname === "127.0.0.1";
 
-    if (isLocal) return "http://localhost:5000";
+    if (isLocal) {
+      return "http://localhost:5000";
+    }
 
-    return "";
+    return AUTOMACAO_API_FALLBACK;
   }
 
-  return "http://localhost:5000";
+  return AUTOMACAO_API_FALLBACK;
 }
 
 function buildAutomationMessage(loja: Loja, nomeArquivo: string) {
   return `A automação da loja ${loja} gerou o arquivo "${nomeArquivo}".`;
+}
+
+async function getErrorMessageFromResponse(response: Response) {
+  const contentType = response.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    try {
+      const json = await response.json();
+
+      if (json?.error) return String(json.error);
+      if (json?.message) return String(json.message);
+
+      return JSON.stringify(json);
+    } catch {
+      return "Erro ao processar as planilhas.";
+    }
+  }
+
+  const text = await response.text().catch(() => "");
+
+  if (text.includes("<!DOCTYPE html") || text.includes("<html")) {
+    return (
+      "A automação chamou uma página HTML/404 em vez da API. " +
+      "Confira se NEXT_PUBLIC_AUTOMACAO_API_URL está apontando para o Render: " +
+      AUTOMACAO_API_FALLBACK
+    );
+  }
+
+  return text || "Erro ao processar as planilhas.";
 }
 
 /** 🔹 Hook principal de automação de planilhas */
@@ -98,31 +138,33 @@ export function useAutomacaoPlanilhas() {
 
       const formData = new FormData();
 
-      // (Opcional) envia loja pro backend decidir o fluxo
+      // Envia loja para o backend decidir o fluxo
       formData.append("loja", loja);
 
       // Anexa só as chaves necessárias para a loja selecionada
       for (const key of requiredKeys) {
         const file = planilhas[key];
-        if (file) formData.append(key, file);
+
+        if (file) {
+          formData.append(key, file);
+        }
       }
 
       const apiBase = getApiBase();
+      const endpoint = `${apiBase}/atualizar-planilha`;
 
-      const response = await fetch(
-        apiBase
-          ? `${apiBase}/atualizar-planilha`
-          : "/atualizar-planilha",
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
+      console.log("API automação:", apiBase);
+      console.log("Endpoint automação:", endpoint);
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        body: formData,
+      });
 
       // ❌ Falha real no servidor
       if (!response.ok) {
-        const text = await response.text().catch(() => "");
-        throw new Error(text || "Erro ao processar as planilhas.");
+        const message = await getErrorMessageFromResponse(response);
+        throw new Error(message);
       }
 
       setStatus("processing");
@@ -138,6 +180,14 @@ export function useAutomacaoPlanilhas() {
 
       if (!isExcel) {
         const text = await response.text().catch(() => "");
+
+        if (text.includes("<!DOCTYPE html") || text.includes("<html")) {
+          throw new Error(
+            "Resposta inválida: o servidor retornou HTML/404 em vez de Excel. " +
+              `Endpoint usado: ${endpoint}`
+          );
+        }
+
         throw new Error("Resposta inválida do servidor: " + text);
       }
 
@@ -189,8 +239,6 @@ export function useAutomacaoPlanilhas() {
 
       alert(
         "A automação falhou.\n\n" +
-          "⚠️ Se você usa AdBlock, uBlock, Brave ou antivírus com proteção web,\n" +
-          "desative para localhost e tente novamente.\n\n" +
           "Detalhe: " +
           (error instanceof Error ? error.message : "erro desconhecido")
       );
