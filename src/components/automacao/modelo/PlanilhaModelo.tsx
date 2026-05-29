@@ -117,12 +117,6 @@ export default function PlanilhaModelo() {
     return missingSteps.map((step) => step.label).join(", ");
   }, [missingSteps]);
 
-  const progressPercent = useMemo(() => {
-    if (!steps.length) return 0;
-
-    return Math.round((selectedCount / steps.length) * 100);
-  }, [selectedCount, steps.length]);
-
   const handleClearActive = () => {
     activeKeys.forEach((k) => handleFileSelect(k, null));
     setButtonStatus("idle");
@@ -384,17 +378,6 @@ export default function PlanilhaModelo() {
                             /{steps.length}
                           </span>
                         </p>
-                      </div>
-
-                      <div
-                        className={cn(
-                          "rounded-full px-3 py-1 text-xs font-bold",
-                          allFilesSelected
-                            ? "bg-green-500/10 text-green-400"
-                            : "bg-white/[0.05] text-white/45"
-                        )}
-                      >
-                        {progressPercent}%
                       </div>
                     </div>
 
