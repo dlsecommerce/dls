@@ -691,11 +691,6 @@ export const VariationsSection = ({
                         variation.id ||
                         "Não informado";
 
-                      const idBling =
-                        variation.id_bling ||
-                        variation["ID Bling"] ||
-                        "Não informado";
-
                       return (
                         <div
                           key={
@@ -738,11 +733,6 @@ export const VariationsSection = ({
                                   <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-white/45">
                                     <Hash className="h-3 w-3 text-[#1a8ceb]/70" />
                                     ID variação: {idVar}
-                                  </span>
-
-                                  <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2 py-1 text-[11px] font-medium text-white/45">
-                                    <Hash className="h-3 w-3 text-[#1a8ceb]/70" />
-                                    ID Bling: {idBling}
                                   </span>
 
                                   {variation.estoque !== undefined &&

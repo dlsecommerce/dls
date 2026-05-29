@@ -27,6 +27,34 @@ const removerAcentos = (value: string) => {
     .replace(/\p{Diacritic}/gu, "");
 };
 
+const getCleanField = (obj: any, ...keys: string[]) => {
+  for (const key of keys) {
+    const value = obj?.[key];
+
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return String(value).trim();
+    }
+  }
+
+  return "";
+};
+
+/**
+ * ✅ PADRÃO NOVO OFICIAL:
+ *
+ * PAI-MARCA-CODIGO
+ * VAR-MARCA-CODIGO
+ *
+ * Exemplos corretos:
+ * PAI-J-1294323-J_1294333-J
+ * VAR-J-1294323-J
+ * VAR-J-1294333-J
+ *
+ * IMPORTANTE:
+ * - Não converte hífen "-" para underline "_".
+ * - Preserva códigos com hífen interno, como 1294323-J.
+ * - Preserva underline somente quando ele já existe separando códigos do PAI.
+ */
 const normalizarReferenciaAnuncio = (
   referencia: string | null | undefined,
   tipo: "PAI" | "VAR"
@@ -38,39 +66,45 @@ const normalizarReferenciaAnuncio = (
   if (!ref) return "";
 
   ref = ref
+    .replace(/\u00a0/g, " ")
     .replace(/[–—−]/g, "-")
-    .replace(/\s+/g, " ")
     .trim();
 
-  while (/^\s*(PAI|VAR)\s*[-_\s]*/i.test(ref)) {
-    ref = ref.replace(/^\s*(PAI|VAR)\s*[-_\s]*/i, "").trim();
-  }
+  /**
+   * Remove prefixo se já veio como PAI- ou VAR-.
+   * Ex:
+   * VAR-J-1294323-J -> J-1294323-J
+   */
+  ref = ref.replace(/^\s*(PAI|VAR)\s*-\s*/i, "").trim();
 
+  /**
+   * Normaliza espaços ao redor de separadores,
+   * mas NÃO troca "-" por "_".
+   */
   ref = ref
     .replace(/\s*-\s*/g, "-")
     .replace(/\s*_\s*/g, "_")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/_+/g, "_")
     .trim();
 
-  const partes = ref
-    .replace(/_/g, " ")
-    .replace(/-/g, " ")
-    .split(/\s+/)
-    .map((p) => p.trim())
-    .filter(Boolean);
+  if (!ref) return "";
 
-  if (partes.length === 0) return "";
+  const partes = ref.split("-").filter(Boolean);
+
+  if (partes.length < 2) {
+    return `${tipo}-${ref}`;
+  }
 
   const marca = partes[0];
+  const codigo = partes.slice(1).join("-");
 
-  if (partes.length === 2) {
-    return `${tipo}-${marca}-${partes[1]}`;
+  if (!marca || !codigo) {
+    return `${tipo}-${ref}`;
   }
 
-  if (partes.length >= 3) {
-    return `${tipo}-${marca}-${partes.slice(1).join("_")}`;
-  }
-
-  return `${tipo}-${ref.replace(/\s+/g, "")}`;
+  return `${tipo}-${marca}-${codigo}`;
 };
 
 const normalizarReferenciaVariacao = (
@@ -110,6 +144,31 @@ export const VariationModal = ({
       getReferenciaVariation(variation)
     );
 
+    const idBling = getCleanField(
+      variation,
+      "id_bling",
+      "ID Bling",
+      "idBling",
+      "ID_Bling"
+    );
+
+    const idTray = getCleanField(
+      variation,
+      "id_tray",
+      "ID Tray",
+      "idTray",
+      "ID_Tray"
+    );
+
+    const idVar = getCleanField(
+      variation,
+      "id_var",
+      "ID Var",
+      "idVar",
+      "ID_Var",
+      "valor"
+    );
+
     const variationAtualizada = {
       ...variation,
 
@@ -120,8 +179,15 @@ export const VariationModal = ({
       "Referência": referenciaNormalizada,
       sku: referenciaNormalizada,
 
-      // IMPORTANTE:
-      // Mantém a composição e o custo dentro desta variação.
+      id_bling: idBling,
+      "ID Bling": idBling,
+
+      id_tray: idTray,
+      "ID Tray": idTray,
+
+      id_var: idVar,
+      "ID Var": idVar,
+
       composicao: Array.isArray(composicao) ? composicao : [],
       custoTotal,
       custo_total: custoTotal,

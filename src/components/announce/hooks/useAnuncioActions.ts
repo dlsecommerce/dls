@@ -100,7 +100,7 @@ function removerAcentos(value: string) {
 }
 
 /**
- * ✅ PADRÃO NOVO OFICIAL:
+ * PADRÃO NOVO OFICIAL:
  *
  * PAI-MARCA-CODIGO
  * VAR-MARCA-CODIGO
@@ -110,7 +110,7 @@ function removerAcentos(value: string) {
  * VAR-J-1294323-J
  * VAR-J-1294333-J
  *
- * Esta função preserva:
+ * Preserva:
  * - marca com 1 letra: J
  * - hífen interno no código: 1294323-J
  * - underline entre códigos do pai: 1294323-J_1294333-J
@@ -169,6 +169,14 @@ function normalizarQuantidadeComposicao(value: any, temCodigo: boolean) {
 function montarCamposComposicao(composicao: any[], isInsert: boolean) {
   const camposComposicao: Record<string, any> = {};
 
+  /**
+   * IMPORTANTE:
+   * O banco tem somente Código 1 / Quantidade 1 ... Código 10 / Quantidade 10.
+   * Não adiciona Custo 1, porque essa coluna não existe.
+   *
+   * Também limpamos os 10 pares sempre, inclusive em update.
+   * Assim, se remover um item da composição da variação, o item antigo não fica preso no banco.
+   */
   for (let i = 1; i <= 10; i++) {
     camposComposicao[`Código ${i}`] = null;
     camposComposicao[`Quantidade ${i}`] = null;
@@ -206,7 +214,9 @@ function montarPayloadAnuncio(params: {
 
   const referencia =
     referenciaForcada ??
-    normalizeStr(getField(item, "referencia", "Referência", "Referencia", "sku"));
+    normalizeStr(
+      getField(item, "referencia", "Referência", "Referencia", "sku")
+    );
 
   const od = inferirOD(referencia);
 
@@ -295,22 +305,21 @@ async function buscarVariacaoExistente(params: {
   tabela: AnunciosTabela;
   lojaCodigo: LojaCodigo;
   referencia: string;
-  idBling: string | null;
   idVar: string | null;
 }) {
-  const { tabela, lojaCodigo, referencia, idBling, idVar } = params;
+  const { tabela, lojaCodigo, referencia, idVar } = params;
 
-  if (idBling) {
-    const { data, error } = await supabase
-      .from(tabela)
-      .select("ID")
-      .eq("Loja", lojaCodigo)
-      .eq("ID Bling", idBling)
-      .maybeSingle();
-
-    if (error) throw error;
-    if (data?.ID) return String(data.ID);
-  }
+  /**
+   * IMPORTANTE:
+   * Não busca variação existente por ID Bling.
+   *
+   * Motivo:
+   * se duas variações tiverem o mesmo ID Bling, uma sobrescreve a outra.
+   *
+   * Para variação, as chaves seguras são:
+   * 1. ID Var
+   * 2. Referência
+   */
 
   if (idVar) {
     const { data, error } = await supabase
@@ -348,19 +357,23 @@ function montarItemVariacao(params: {
   const { produto, variacao, lojaCodigo, referenciaVariacao } = params;
 
   /**
-   * ✅ CORREÇÃO PRINCIPAL:
-   * Antes, variação nova salvava ID Bling vazio.
-   * Agora usa primeiro o ID Bling digitado na variação.
-   * Se não tiver, herda do produto somente como fallback.
+   * IMPORTANTE:
+   * Variação NÃO herda ID Bling do pai automaticamente.
+   *
+   * Se herdar, duas variações podem ficar com o mesmo ID Bling
+   * e uma sobrescrever a outra.
+   *
+   * Se quiser ID Bling na variação, ele precisa estar no próprio objeto da variação.
    */
-  const idBlingVariacao =
-    normalizeIdBling(
-      getCleanField(variacao, "id_bling", "ID Bling", "idBling", "ID_Bling")
-    ) ??
-    normalizeIdBling(
-      getCleanField(produto, "id_bling", "ID Bling", "idBling", "ID_Bling")
-    );
+  const idBlingVariacao = normalizeIdBling(
+    getCleanField(variacao, "id_bling", "ID Bling", "idBling", "ID_Bling")
+  );
 
+  /**
+   * ID Tray pode herdar do pai, porque no seu sistema ele representa
+   * o anúncio/marketplace e não deve ser usado para decidir se duas variações
+   * são a mesma linha.
+   */
   const idTrayVariacao =
     normalizeStr(
       getCleanField(variacao, "id_tray", "ID Tray", "idTray", "ID_Tray")
@@ -407,6 +420,11 @@ export function useAnuncioActions() {
 
   const handleSave = useCallback(
     async (produto: any, composicao: any[], onAfterSave?: () => void) => {
+      /**
+       * Trava real contra duplo clique / duplo submit.
+       * O estado saving pode demorar 1 render para atualizar,
+       * então usamos ref síncrono.
+       */
       if (savingRef.current) return;
 
       const lojaCodigo = lojaAnyToCodigo(produto?.loja ?? produto?.Loja);
@@ -534,6 +552,13 @@ export function useAnuncioActions() {
 
           if (!referenciaVariacao) continue;
 
+          /**
+           * Para variação, salva a composição própria da variação.
+           * Se ela não tiver composição, cai para a composição do pai.
+           *
+           * O custo não é salvo aqui porque não existe coluna Custo 1.
+           * O custo deve ser recuperado depois pela tabela custos usando Código 1, Código 2...
+           */
           const composicaoVariacao = Array.isArray(variacao?.composicao)
             ? variacao.composicao
             : composicao;
@@ -553,16 +578,6 @@ export function useAnuncioActions() {
             referenciaForcada: referenciaVariacao,
           });
 
-          const idBlingVariacao = normalizeIdBling(
-            getField(
-              itemVariacao,
-              "id_bling",
-              "ID Bling",
-              "idBling",
-              "ID_Bling"
-            )
-          );
-
           const idVarVariacao = normalizeStr(
             getField(
               itemVariacao,
@@ -576,11 +591,10 @@ export function useAnuncioActions() {
 
           /**
            * Se a variação não veio com ID interno, tenta achar pelo:
-           * 1. ID Bling
-           * 2. ID Var
-           * 3. Referência
+           * 1. ID Var
+           * 2. Referência
            *
-           * Isso evita duplicar linha quando você edita uma variação já criada.
+           * NÃO usa ID Bling aqui para evitar que uma variação sobrescreva a outra.
            */
           const idExistenteVariacao = idVariacaoStr
             ? idVariacaoStr
@@ -588,7 +602,6 @@ export function useAnuncioActions() {
                 tabela,
                 lojaCodigo,
                 referencia: referenciaVariacao,
-                idBling: idBlingVariacao,
                 idVar: idVarVariacao,
               });
 
@@ -602,12 +615,9 @@ export function useAnuncioActions() {
             if (error) throw error;
           } else {
             /**
-             * ✅ CORREÇÃO PRINCIPAL:
-             * Antes tinha:
-             * "ID Bling": null
-             *
-             * Isso apagava o ID Bling da variação nova.
-             * Agora insere o payload normal, preservando "ID Bling".
+             * IMPORTANTE:
+             * Não colocar "ID Bling": null aqui.
+             * O payloadVariacao já contém o ID Bling correto da própria variação.
              */
             const payloadNovaVariacao = {
               ...payloadVariacao,
@@ -623,6 +633,11 @@ export function useAnuncioActions() {
             if (error) throw error;
           }
         }
+
+        /**
+         * 3. Não chama refresh pelo front.
+         * A contagem do badge precisa ser feita pela view do banco.
+         */
 
         await createNotification({
           title: idAtualStr ? "Anúncio atualizado" : "Anúncio criado",

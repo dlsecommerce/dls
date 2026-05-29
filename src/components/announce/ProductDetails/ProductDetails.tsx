@@ -796,15 +796,7 @@ export default function ProductDetails() {
                   </span>
 
                   <span>
-                    ID Bling:{" "}
-                    {getIdBling(produtoTela) || "Não informado"}
-                  </span>
-
-                  <span>
-                    Variações:{" "}
-                    {Array.isArray(produtoTela?.variacoes)
-                      ? produtoTela.variacoes.length
-                      : 0}
+                    Loja: {lojaRealProduto || "Não informada"}
                   </span>
 
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 font-semibold text-emerald-400">
