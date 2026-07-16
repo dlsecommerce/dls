@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import {
   Dialog,
   DialogContent,
@@ -33,7 +39,9 @@ type Props = {
   onSave: () => void;
 };
 
-type SugestaoMarca = { marca: string };
+type SugestaoMarca = {
+  marca: string;
+};
 
 function normalize(s: string) {
   return (s || "")
@@ -64,15 +72,17 @@ const BrandDropdown: React.FC<BrandDropdownProps> = ({
   return (
     <div
       ref={listaRef}
-      className="absolute z-50 mt-1 bg-[#0f0f0f] border border-white/10 rounded-md shadow-lg w-full max-h-40 overflow-y-auto"
+      className="absolute z-50 mt-1 max-h-40 w-full overflow-y-auto rounded-md border border-white/10 bg-[#0f0f0f] shadow-lg"
     >
       {!sugestoes.length ? (
-        <div className="px-2 py-2 text-xs text-neutral-300">{emptyText}</div>
+        <div className="px-2 py-2 text-xs text-neutral-300">
+          {emptyText}
+        </div>
       ) : (
         sugestoes.map((s, i) => (
           <div
             key={`${s.marca}-${i}`}
-            className={`px-2 py-2 text-xs text-white cursor-pointer flex justify-between items-center ${
+            className={`flex cursor-pointer items-center justify-between px-2 py-2 text-xs text-white ${
               i === indiceSelecionado
                 ? "bg-[#22c55e]/30"
                 : "hover:bg-[#22c55e]/20"
@@ -83,8 +93,11 @@ const BrandDropdown: React.FC<BrandDropdownProps> = ({
             }}
           >
             <span className="truncate">{s.marca}</span>
+
             {i < 9 && (
-              <span className="text-[#22c55e] ml-3 shrink-0">{i + 1}</span>
+              <span className="ml-3 shrink-0 text-[#22c55e]">
+                {i + 1}
+              </span>
             )}
           </div>
         ))
@@ -102,7 +115,12 @@ export default function ModalNewCost({
   onSave,
 }: Props) {
   const [saving, setSaving] = useState(false);
-  const [oldCodigo, setOldCodigo] = useState<string | null>(null);
+
+  const [oldCodigo, setOldCodigo] = useState<string | null>(
+    null
+  );
+
+  const [novoCodigo, setNovoCodigo] = useState("");
 
   const [toast, setToast] = useState<{
     message: string;
@@ -113,10 +131,15 @@ export default function ModalNewCost({
   });
 
   const toNumber = (value: any): string => {
-    if (value === null || value === undefined) return "0,00";
+    if (value === null || value === undefined) {
+      return "0,00";
+    }
 
     let raw = String(value).trim();
-    if (!raw) return "0,00";
+
+    if (!raw) {
+      return "0,00";
+    }
 
     raw = raw.replace(/[^\d.,-]/g, "");
 
@@ -125,65 +148,119 @@ export default function ModalNewCost({
       const last = parts[parts.length - 1];
 
       if (/^\d{3}$/.test(last)) {
-        const n = parseFloat(raw.replace(/\./g, ""));
-        return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
+        const numberValue = parseFloat(
+          raw.replace(/\./g, "")
+        );
+
+        return isNaN(numberValue)
+          ? "0,00"
+          : numberValue.toFixed(2).replace(".", ",");
       }
 
-      const n = parseFloat(raw);
-      return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
+      const numberValue = parseFloat(raw);
+
+      return isNaN(numberValue)
+        ? "0,00"
+        : numberValue.toFixed(2).replace(".", ",");
     }
 
     if (raw.includes(",") && !raw.includes(".")) {
-      const n = parseFloat(raw.replace(",", "."));
-      return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
+      const numberValue = parseFloat(
+        raw.replace(",", ".")
+      );
+
+      return isNaN(numberValue)
+        ? "0,00"
+        : numberValue.toFixed(2).replace(".", ",");
     }
 
     if (raw.includes(".") && raw.includes(",")) {
-      const n = parseFloat(raw.replace(/\./g, "").replace(",", "."));
-      return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
+      const numberValue = parseFloat(
+        raw.replace(/\./g, "").replace(",", ".")
+      );
+
+      return isNaN(numberValue)
+        ? "0,00"
+        : numberValue.toFixed(2).replace(".", ",");
     }
 
-    const n = parseFloat(raw);
-    return isNaN(n) ? "0,00" : n.toFixed(2).replace(".", ",");
+    const numberValue = parseFloat(raw);
+
+    return isNaN(numberValue)
+      ? "0,00"
+      : numberValue.toFixed(2).replace(".", ",");
   };
 
+  /*
+   * Guarda o Código Atual original.
+   *
+   * Ele será usado para encontrar o registro no banco,
+   * mesmo que o usuário informe um Código Novo.
+   */
   useEffect(() => {
-    if (open && mode === "edit") {
+    if (!open) return;
+
+    if (mode === "edit") {
       setOldCodigo(form["Código"]);
+    } else {
+      setOldCodigo(null);
     }
-  }, [open, mode, form]);
+
+    setNovoCodigo("");
+  }, [open, mode, form["Código"]]);
 
   const marcaWrapRef = useRef<HTMLDivElement>(null);
   const listaRef = useRef<HTMLDivElement>(null);
 
   const [marcas, setMarcas] = useState<string[]>([]);
   const [marcaFocus, setMarcaFocus] = useState(false);
-  const [indiceSelecionado, setIndiceSelecionado] = useState(0);
+
+  const [indiceSelecionado, setIndiceSelecionado] =
+    useState(0);
 
   useEffect(() => {
     if (!open) return;
 
     let cancelled = false;
 
-    (async () => {
+    const carregarMarcas = async () => {
       try {
-        const { data, error } = await supabase.from("custos").select("Marca");
-        if (error) throw error;
+        const { data, error } = await supabase
+          .from("custos")
+          .select("Marca");
 
-        const uniq = Array.from(
+        if (error) {
+          throw error;
+        }
+
+        const marcasUnicas = Array.from(
           new Set(
             (data ?? [])
-              .map((r: any) => String(r?.Marca ?? "").trim())
+              .map((registro: any) =>
+                String(registro?.Marca ?? "").trim()
+              )
               .filter(Boolean)
           )
-        ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+        ).sort((a, b) =>
+          a.localeCompare(b, "pt-BR")
+        );
 
-        if (!cancelled) setMarcas(uniq);
-      } catch (e) {
-        console.error("Erro ao carregar marcas:", e);
-        if (!cancelled) setMarcas([]);
+        if (!cancelled) {
+          setMarcas(marcasUnicas);
+        }
+      } catch (error) {
+        console.error(
+          "Erro ao carregar marcas:",
+          error
+        );
+
+        if (!cancelled) {
+          setMarcas([]);
+        }
       }
-    })();
+    };
+
+    void carregarMarcas();
 
     return () => {
       cancelled = true;
@@ -191,14 +268,24 @@ export default function ModalNewCost({
   }, [open]);
 
   const sugestoesMarca: SugestaoMarca[] = useMemo(() => {
-    const q = normalize(form["Marca"]);
+    const busca = normalize(form["Marca"]);
 
-    if (!q) return marcas.slice(0, 9).map((m) => ({ marca: m }));
+    if (!busca) {
+      return marcas
+        .slice(0, 9)
+        .map((marca) => ({
+          marca,
+        }));
+    }
 
     return marcas
-      .filter((m) => normalize(m).includes(q))
+      .filter((marca) =>
+        normalize(marca).includes(busca)
+      )
       .slice(0, 9)
-      .map((m) => ({ marca: m }));
+      .map((marca) => ({
+        marca,
+      }));
   }, [form, marcas]);
 
   const isDropdownActive = marcaFocus;
@@ -208,14 +295,25 @@ export default function ModalNewCost({
 
     setIndiceSelecionado((prev) => {
       if (prev < 0) return 0;
-      if (prev > sugestoesMarca.length - 1) return 0;
+
+      if (prev > sugestoesMarca.length - 1) {
+        return 0;
+      }
+
       return prev;
     });
-  }, [isDropdownActive, sugestoesMarca.length]);
+  }, [
+    isDropdownActive,
+    sugestoesMarca.length,
+  ]);
 
   const selectMarca = useCallback(
     (marca: string) => {
-      setForm({ ...form, ["Marca"]: marca });
+      setForm({
+        ...form,
+        ["Marca"]: marca,
+      });
+
       setMarcaFocus(false);
       setIndiceSelecionado(0);
     },
@@ -225,16 +323,28 @@ export default function ModalNewCost({
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (!marcaWrapRef.current) return;
-      if (!marcaWrapRef.current.contains(e.target as Node)) {
+
+      if (
+        !marcaWrapRef.current.contains(
+          e.target as Node
+        )
+      ) {
         setMarcaFocus(false);
       }
     };
 
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+
+    return () =>
+      document.removeEventListener(
+        "mousedown",
+        onDown
+      );
   }, []);
 
-  const onMarcaKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const onMarcaKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>
+  ) => {
     if (e.key === "Escape") {
       e.preventDefault();
       setMarcaFocus(false);
@@ -245,33 +355,55 @@ export default function ModalNewCost({
       if (e.key === "Enter") {
         e.preventDefault();
         setMarcaFocus(false);
-        return;
       }
+
       return;
     }
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setIndiceSelecionado((i) => Math.min(i + 1, sugestoesMarca.length - 1));
+
+      setIndiceSelecionado((indice) =>
+        Math.min(
+          indice + 1,
+          sugestoesMarca.length - 1
+        )
+      );
+
       return;
     }
 
     if (e.key === "ArrowUp") {
       e.preventDefault();
-      setIndiceSelecionado((i) => Math.max(i - 1, 0));
+
+      setIndiceSelecionado((indice) =>
+        Math.max(indice - 1, 0)
+      );
+
       return;
     }
 
     if (e.key === "Enter") {
       e.preventDefault();
-      const item = sugestoesMarca[indiceSelecionado] || sugestoesMarca[0];
-      if (item) selectMarca(item.marca);
+
+      const item =
+        sugestoesMarca[indiceSelecionado] ||
+        sugestoesMarca[0];
+
+      if (item) {
+        selectMarca(item.marca);
+      }
+
       return;
     }
 
     if (e.key === "Tab") {
       const item = sugestoesMarca[0];
-      if (item) selectMarca(item.marca);
+
+      if (item) {
+        selectMarca(item.marca);
+      }
+
       return;
     }
 
@@ -282,8 +414,8 @@ export default function ModalNewCost({
       !e.altKey &&
       !e.metaKey
     ) {
-      const idx = Number(e.key) - 1;
-      const item = sugestoesMarca[idx];
+      const index = Number(e.key) - 1;
+      const item = sugestoesMarca[index];
 
       if (item) {
         e.preventDefault();
@@ -293,96 +425,213 @@ export default function ModalNewCost({
   };
 
   const handleSave = async () => {
-    const codigoLimpo = String(form["Código"] || "")
+    const codigoAtualLimpo = String(
+      form["Código"] || ""
+    )
       .trim()
       .replace(/\s+/g, " ");
 
-    const marcaLimpa = String(form["Marca"] || "").trim();
-    const produtoLimpo = String(form["Produto"] || "").trim();
-    const ncmLimpo = String(form["NCM"] || "").trim();
+    const codigoNovoLimpo = String(
+      novoCodigo || ""
+    )
+      .trim()
+      .replace(/\s+/g, " ");
 
-    if (!codigoLimpo) {
+    /*
+     * No modo de edição:
+     * - se Código Novo estiver preenchido, ele será o código final;
+     * - se estiver vazio, o Código Atual será mantido.
+     *
+     * No modo de criação, o fluxo atual permanece igual.
+     */
+    const codigoFinal =
+      mode === "edit" && codigoNovoLimpo
+        ? codigoNovoLimpo
+        : codigoAtualLimpo;
+
+    const marcaLimpa = String(
+      form["Marca"] || ""
+    ).trim();
+
+    const produtoLimpo = String(
+      form["Produto"] || ""
+    ).trim();
+
+    const ncmLimpo = String(
+      form["NCM"] || ""
+    ).trim();
+
+    if (!codigoFinal) {
       setToast({
-        message: "Preencha um Código válido antes de salvar.",
+        message:
+          "Preencha um Código válido antes de salvar.",
         type: "error",
       });
+
       return;
     }
 
-    if (codigoLimpo.length < 2) {
+    if (codigoFinal.length < 2) {
       setToast({
         message: "Código muito curto.",
         type: "error",
       });
+
       return;
     }
 
-    if (!/^[a-zA-Z0-9\-_. ]+$/.test(codigoLimpo)) {
+    if (
+      !/^[a-zA-Z0-9\-_. ]+$/.test(codigoFinal)
+    ) {
       setToast({
-        message: "Código contém caracteres inválidos.",
+        message:
+          "Código contém caracteres inválidos.",
         type: "error",
       });
+
       return;
     }
 
     if (!marcaLimpa) {
       setToast({
-        message: "Preencha uma Marca válida antes de salvar.",
+        message:
+          "Preencha uma Marca válida antes de salvar.",
         type: "error",
       });
+
       return;
     }
 
     try {
       setSaving(true);
 
+      const codigoParaBuscar = String(
+        oldCodigo || codigoAtualLimpo || ""
+      )
+        .trim()
+        .replace(/\s+/g, " ");
+
+      const houveRenomeacao =
+        mode === "edit" &&
+        Boolean(codigoNovoLimpo) &&
+        codigoFinal !== codigoParaBuscar;
+
+      if (mode === "edit" && !codigoParaBuscar) {
+        throw new Error(
+          "Código original inválido para atualização."
+        );
+      }
+
+      /*
+       * Antes de renomear, verifica se o Código Novo
+       * já existe na tabela custos.
+       */
+      if (houveRenomeacao) {
+        const {
+          data: codigoExistente,
+          error: duplicateError,
+        } = await supabase
+          .from("custos")
+          .select("Código")
+          .eq("Código", codigoFinal)
+          .limit(1);
+
+        if (duplicateError) {
+          throw duplicateError;
+        }
+
+        if (
+          codigoExistente &&
+          codigoExistente.length > 0
+        ) {
+          throw new Error(
+            `O Código Novo "${codigoFinal}" já existe. Informe outro código.`
+          );
+        }
+      }
+
       const payload = {
-        ["Código"]: codigoLimpo,
+        ["Código"]: codigoFinal,
         ["Marca"]: marcaLimpa,
         ["Produto"]: produtoLimpo || null,
-        ["Custo Atual"]: Number(toNumber(form["Custo Atual"]).replace(",", ".")),
-        ["Custo Antigo"]: Number(
-          toNumber(form["Custo Antigo"]).replace(",", ".")
+
+        ["Custo Atual"]: Number(
+          toNumber(
+            form["Custo Atual"]
+          ).replace(",", ".")
         ),
+
+        ["Custo Antigo"]: Number(
+          toNumber(
+            form["Custo Antigo"]
+          ).replace(",", ".")
+        ),
+
         ["NCM"]: ncmLimpo || null,
       };
 
       let error = null;
 
       if (mode === "create") {
-        const { error: insertError } = await supabase
-          .from("custos")
-          .insert([payload]);
+        /*
+         * Mantém o processo atual de inclusão.
+         */
+        const { error: insertError } =
+          await supabase
+            .from("custos")
+            .insert([payload]);
 
         error = insertError;
       } else {
-        const codigoParaBuscar = String(oldCodigo || form["Código"] || "")
-          .trim()
-          .replace(/\s+/g, " ");
-
-        if (!codigoParaBuscar) {
-          throw new Error("Código original inválido para atualização.");
-        }
-
-        const { error: updateError } = await supabase
-          .from("custos")
-          .update(payload)
-          .eq("Código", codigoParaBuscar);
+        /*
+         * Atualiza o mesmo registro.
+         *
+         * O registro é localizado pelo Código Atual
+         * e recebe o Código Novo.
+         *
+         * Portanto, o código anterior deixa de existir
+         * sem precisar excluir e recriar o registro.
+         */
+        const { error: updateError } =
+          await supabase
+            .from("custos")
+            .update(payload)
+            .eq("Código", codigoParaBuscar);
 
         error = updateError;
       }
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
+
+      setForm({
+        ...form,
+        ["Código"]: codigoFinal,
+      });
 
       await createNotification({
-        title: mode === "create" ? "Custo incluído" : "Custo atualizado",
+        title:
+          mode === "create"
+            ? "Custo incluído"
+            : houveRenomeacao
+              ? "Código do custo alterado"
+              : "Custo atualizado",
+
         message:
           mode === "create"
-            ? `O custo "${codigoLimpo}" foi incluído.`
-            : `O custo "${codigoLimpo}" foi atualizado.`,
-        action: mode === "create" ? "create" : "update",
+            ? `O custo "${codigoFinal}" foi incluído.`
+            : houveRenomeacao
+              ? `O código "${codigoParaBuscar}" foi alterado para "${codigoFinal}".`
+              : `O custo "${codigoFinal}" foi atualizado.`,
+
+        action:
+          mode === "create"
+            ? "create"
+            : "update",
+
         entityType: "cost",
-        entityId: codigoLimpo,
+        entityId: codigoFinal,
         link: "/dashboard/custos",
       });
 
@@ -390,21 +639,38 @@ export default function ModalNewCost({
         message:
           mode === "create"
             ? "Custo incluído com sucesso."
-            : "Custo atualizado com sucesso.",
+            : houveRenomeacao
+              ? "Código alterado com sucesso."
+              : "Custo atualizado com sucesso.",
+
         type: "success",
       });
 
+      setNovoCodigo("");
       onOpenChange(false);
       onSave();
     } catch (err: any) {
-      console.error("Erro ao salvar custo:", err?.message || err);
+      console.error(
+        "Erro ao salvar custo:",
+        err?.message || err
+      );
+
       setToast({
-        message: err?.message || "Erro ao salvar custo.",
+        message:
+          err?.message || "Erro ao salvar custo.",
         type: "error",
       });
     } finally {
       setSaving(false);
-      setTimeout(() => setToast({ message: "", type: null }), 3000);
+
+      setTimeout(
+        () =>
+          setToast({
+            message: "",
+            type: null,
+          }),
+        3000
+      );
     }
   };
 
@@ -412,18 +678,23 @@ export default function ModalNewCost({
     <>
       {toast.type && (
         <div
-          className={`fixed bottom-6 right-6 z-[9999] px-4 py-3 rounded-xl shadow-lg text-white text-sm transition-all duration-300 ${
-            toast.type === "success" ? "bg-[#22c55e]" : "bg-[#ef4444]"
+          className={`fixed bottom-6 right-6 z-[9999] rounded-xl px-4 py-3 text-sm text-white shadow-lg transition-all duration-300 ${
+            toast.type === "success"
+              ? "bg-[#22c55e]"
+              : "bg-[#ef4444]"
           }`}
         >
           {toast.message}
         </div>
       )}
 
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog
+        open={open}
+        onOpenChange={onOpenChange}
+      >
         <DialogContent
           className="
-            fixed top-1/2 left-1/2 z-50
+            fixed left-1/2 top-1/2 z-50
             -translate-x-1/2 -translate-y-1/2
 
             bg-[#0f0f0f]
@@ -450,40 +721,105 @@ export default function ModalNewCost({
         >
           <DialogHeader className="shrink-0">
             <div className="flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-white" />
-              <DialogTitle className="text-white text-lg">
-                {mode === "create" ? "Novo Custo" : "Editar Custo"}
+              <DollarSign className="h-5 w-5 text-white" />
+
+              <DialogTitle className="text-lg text-white">
+                {mode === "create"
+                  ? "Novo Custo"
+                  : "Editar Custo"}
               </DialogTitle>
             </div>
           </DialogHeader>
 
-          <div className="flex-1 min-h-0 overflow-y-auto pr-1">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
+              {/* Primeira linha: Código Atual | Código Novo */}
               <div>
-                <Label className="text-neutral-300">Código</Label>
+                <Label className="text-neutral-300">
+                  Código Atual
+                </Label>
+
                 <Input
                   value={form["Código"]}
                   onChange={(e) =>
-                    setForm({ ...form, ["Código"]: e.target.value })
+                    setForm({
+                      ...form,
+                      ["Código"]: e.target.value,
+                    })
                   }
                   disabled={mode === "edit"}
-                  className="bg-white/5 border-neutral-700 text-white rounded-xl"
+                  className="
+                    rounded-xl
+                    border-neutral-700
+                    bg-white/5
+                    text-white
+                    disabled:cursor-not-allowed
+                    disabled:opacity-70
+                  "
                   placeholder="Ex: 5535 ou TN 5AM"
                 />
               </div>
 
-              <div ref={marcaWrapRef} className="relative">
-                <Label className="text-neutral-300">Marca</Label>
+              <div>
+                <Label className="text-neutral-300">
+                  Código Novo
+                </Label>
+
+                <Input
+                  value={novoCodigo}
+                  onChange={(e) =>
+                    setNovoCodigo(e.target.value)
+                  }
+                  disabled={mode === "create"}
+                  className="
+                    rounded-xl
+                    border-neutral-700
+                    bg-white/5
+                    text-white
+                    disabled:cursor-not-allowed
+                    disabled:opacity-50
+                  "
+                  placeholder={
+                    mode === "edit"
+                      ? "Digite somente para renomear"
+                      : "Disponível ao editar um custo"
+                  }
+                  autoComplete="off"
+                />
+
+                {mode === "edit" && (
+                  <p className="mt-1 text-[11px] leading-relaxed text-neutral-500">
+                    Ao salvar, o Código Novo substituirá
+                    o Código Atual.
+                  </p>
+                )}
+              </div>
+
+              {/* Segunda linha: Marca em largura total */}
+              <div
+                ref={marcaWrapRef}
+                className="relative md:col-span-2"
+              >
+                <Label className="text-neutral-300">
+                  Marca
+                </Label>
+
                 <Input
                   value={form["Marca"]}
                   onChange={(e) => {
-                    setForm({ ...form, ["Marca"]: e.target.value });
+                    setForm({
+                      ...form,
+                      ["Marca"]: e.target.value,
+                    });
+
                     setIndiceSelecionado(0);
                     setMarcaFocus(true);
                   }}
-                  onFocus={() => setMarcaFocus(true)}
+                  onFocus={() =>
+                    setMarcaFocus(true)
+                  }
                   onKeyDown={onMarcaKeyDown}
-                  className="bg-white/5 border-neutral-700 text-white rounded-xl"
+                  className="rounded-xl border-neutral-700 bg-white/5 text-white"
                   placeholder="Ex: Liverpool"
                   autoComplete="off"
                 />
@@ -492,26 +828,39 @@ export default function ModalNewCost({
                   isActive={isDropdownActive}
                   sugestoes={sugestoesMarca}
                   listaRef={listaRef}
-                  indiceSelecionado={indiceSelecionado}
-                  onSelect={(marca) => selectMarca(marca)}
+                  indiceSelecionado={
+                    indiceSelecionado
+                  }
+                  onSelect={(marca) =>
+                    selectMarca(marca)
+                  }
                   emptyText="Nenhuma marca cadastrada ainda"
                 />
               </div>
 
               <div className="md:col-span-2">
-                <Label className="text-neutral-300">Produto</Label>
+                <Label className="text-neutral-300">
+                  Produto
+                </Label>
+
                 <Input
                   value={form["Produto"] || ""}
                   onChange={(e) =>
-                    setForm({ ...form, ["Produto"]: e.target.value })
+                    setForm({
+                      ...form,
+                      ["Produto"]: e.target.value,
+                    })
                   }
-                  className="bg-white/5 border-neutral-700 text-white rounded-xl"
+                  className="rounded-xl border-neutral-700 bg-white/5 text-white"
                   placeholder="Ex: Baqueta 7A Liverpool Luminous Series"
                 />
               </div>
 
               <div>
-                <Label className="text-neutral-300">Custo Atual</Label>
+                <Label className="text-neutral-300">
+                  Custo Atual
+                </Label>
+
                 <Input
                   type="text"
                   value={form["Custo Atual"] || ""}
@@ -521,13 +870,16 @@ export default function ModalNewCost({
                       ["Custo Atual"]: e.target.value,
                     })
                   }
-                  className="bg-white/5 border-neutral-700 text-white rounded-xl"
+                  className="rounded-xl border-neutral-700 bg-white/5 text-white"
                   placeholder="Ex: 89,90"
                 />
               </div>
 
               <div>
-                <Label className="text-neutral-300">Custo Antigo</Label>
+                <Label className="text-neutral-300">
+                  Custo Antigo
+                </Label>
+
                 <Input
                   type="text"
                   value={form["Custo Antigo"] || ""}
@@ -537,19 +889,25 @@ export default function ModalNewCost({
                       ["Custo Antigo"]: e.target.value,
                     })
                   }
-                  className="bg-white/5 border-neutral-700 text-white rounded-xl"
+                  className="rounded-xl border-neutral-700 bg-white/5 text-white"
                   placeholder="Ex: 79,90"
                 />
               </div>
 
               <div className="md:col-span-2">
-                <Label className="text-neutral-300">NCM</Label>
+                <Label className="text-neutral-300">
+                  NCM
+                </Label>
+
                 <Input
                   value={form["NCM"]}
                   onChange={(e) =>
-                    setForm({ ...form, ["NCM"]: e.target.value })
+                    setForm({
+                      ...form,
+                      ["NCM"]: e.target.value,
+                    })
                   }
-                  className="bg-white/5 border-neutral-700 text-white rounded-xl"
+                  className="rounded-xl border-neutral-700 bg-white/5 text-white"
                   placeholder="Ex: 85182100"
                 />
               </div>
@@ -575,7 +933,9 @@ export default function ModalNewCost({
                 active:scale-[0.98]
                 sm:hover:scale-105
               "
-              onClick={() => onOpenChange(false)}
+              onClick={() =>
+                onOpenChange(false)
+              }
               disabled={saving}
             >
               Cancelar
