@@ -191,12 +191,6 @@ export default function ModalNewCost({
       : numberValue.toFixed(2).replace(".", ",");
   };
 
-  /*
-   * Guarda o Código Atual original.
-   *
-   * Ele será usado para encontrar o registro no banco,
-   * mesmo que o usuário informe um Código Novo.
-   */
   useEffect(() => {
     if (!open) return;
 
@@ -437,13 +431,6 @@ export default function ModalNewCost({
       .trim()
       .replace(/\s+/g, " ");
 
-    /*
-     * No modo de edição:
-     * - se Código Novo estiver preenchido, ele será o código final;
-     * - se estiver vazio, o Código Atual será mantido.
-     *
-     * No modo de criação, o fluxo atual permanece igual.
-     */
     const codigoFinal =
       mode === "edit" && codigoNovoLimpo
         ? codigoNovoLimpo
@@ -522,10 +509,6 @@ export default function ModalNewCost({
         );
       }
 
-      /*
-       * Antes de renomear, verifica se o Código Novo
-       * já existe na tabela custos.
-       */
       if (houveRenomeacao) {
         const {
           data: codigoExistente,
@@ -573,9 +556,6 @@ export default function ModalNewCost({
       let error = null;
 
       if (mode === "create") {
-        /*
-         * Mantém o processo atual de inclusão.
-         */
         const { error: insertError } =
           await supabase
             .from("custos")
@@ -583,15 +563,6 @@ export default function ModalNewCost({
 
         error = insertError;
       } else {
-        /*
-         * Atualiza o mesmo registro.
-         *
-         * O registro é localizado pelo Código Atual
-         * e recebe o Código Novo.
-         *
-         * Portanto, o código anterior deixa de existir
-         * sem precisar excluir e recriar o registro.
-         */
         const { error: updateError } =
           await supabase
             .from("custos")
@@ -733,7 +704,6 @@ export default function ModalNewCost({
 
           <div className="min-h-0 flex-1 overflow-y-auto pr-1">
             <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
-              {/* Primeira linha: Código Atual | Código Novo */}
               <div>
                 <Label className="text-neutral-300">
                   Código Atual
@@ -779,23 +749,10 @@ export default function ModalNewCost({
                     disabled:cursor-not-allowed
                     disabled:opacity-50
                   "
-                  placeholder={
-                    mode === "edit"
-                      ? "Digite somente para renomear"
-                      : "Disponível ao editar um custo"
-                  }
                   autoComplete="off"
                 />
-
-                {mode === "edit" && (
-                  <p className="mt-1 text-[11px] leading-relaxed text-neutral-500">
-                    Ao salvar, o Código Novo substituirá
-                    o Código Atual.
-                  </p>
-                )}
               </div>
 
-              {/* Segunda linha: Marca em largura total */}
               <div
                 ref={marcaWrapRef}
                 className="relative md:col-span-2"
