@@ -15,21 +15,23 @@ import { AcrescimosSection } from "./AcrescimosSection";
 import { AnimatedNumber } from "./AnimatedNumber";
 import type { Calculo } from "../PricingCalculatorModern";
 
+type CalculoSetter = React.Dispatch<React.SetStateAction<Calculo>>;
+
 type PriceCalculationSectionProps = {
   calculoLoja: Calculo;
-  setCalculoLoja: (c: Calculo) => void;
+  setCalculoLoja: CalculoSetter;
 
   calculoShopee: Calculo;
-  setCalculoShopee: (c: Calculo) => void;
+  setCalculoShopee: CalculoSetter;
 
   calculoMagalu: Calculo;
-  setCalculoMagalu: (c: Calculo) => void;
+  setCalculoMagalu: CalculoSetter;
 
   calculoMLClassico: Calculo;
-  setCalculoMLClassico: (c: Calculo) => void;
+  setCalculoMLClassico: CalculoSetter;
 
   calculoMLPremium: Calculo;
-  setCalculoMLPremium: (c: Calculo) => void;
+  setCalculoMLPremium: CalculoSetter;
 
   precoLoja: number;
   precoShopee: number;
@@ -75,15 +77,19 @@ type PriceCalculationSectionProps = {
 
   userEditedShopeeComissao: boolean;
   setUserEditedShopeeComissao: (v: boolean) => void;
+
   userEditedShopeeFrete: boolean;
   setUserEditedShopeeFrete: (v: boolean) => void;
 
   userEditedShopeeImposto: boolean;
   setUserEditedShopeeImposto: (v: boolean) => void;
+
   userEditedShopeeMargem: boolean;
   setUserEditedShopeeMargem: (v: boolean) => void;
+
   userEditedShopeeMarketing: boolean;
   setUserEditedShopeeMarketing: (v: boolean) => void;
+
   userEditedShopeeEmbalagem: boolean;
   setUserEditedShopeeEmbalagem: (v: boolean) => void;
 };
@@ -122,13 +128,48 @@ const fields: Array<{
   suffix?: string;
   unit: string;
 }> = [
-  { key: "desconto", label: "Desconto", suffix: "%", unit: "(%)" },
-  { key: "embalagem", label: "Embalagem", suffix: "R$", unit: "(R$)" },
-  { key: "frete", label: "Frete", suffix: "R$", unit: "(R$)" },
-  { key: "imposto", label: "Imposto", suffix: "%", unit: "(%)" },
-  { key: "comissao", label: "Comissão", suffix: "%", unit: "(%)" },
-  { key: "margem", label: "Margem de Lucro", suffix: "%", unit: "(%)" },
-  { key: "marketing", label: "Marketing", suffix: "%", unit: "(%)" },
+  {
+    key: "desconto",
+    label: "Desconto",
+    suffix: "%",
+    unit: "(%)",
+  },
+  {
+    key: "embalagem",
+    label: "Embalagem",
+    suffix: "R$",
+    unit: "(R$)",
+  },
+  {
+    key: "frete",
+    label: "Frete",
+    suffix: "R$",
+    unit: "(R$)",
+  },
+  {
+    key: "imposto",
+    label: "Imposto",
+    suffix: "%",
+    unit: "(%)",
+  },
+  {
+    key: "comissao",
+    label: "Comissão",
+    suffix: "%",
+    unit: "(%)",
+  },
+  {
+    key: "margem",
+    label: "Margem de Lucro",
+    suffix: "%",
+    unit: "(%)",
+  },
+  {
+    key: "marketing",
+    label: "Marketing",
+    suffix: "%",
+    unit: "(%)",
+  },
 ];
 
 const formatCurrency = (value: number) => {
@@ -143,15 +184,18 @@ const shortLabel = (key: ChannelKey) => {
   if (key === "shopee") return "Shopee";
   if (key === "magalu") return "Magalu";
   if (key === "mlClassico") return "Clássico";
+
   return "Premium";
 };
 
-const isEmptyOrZero = (v: string) => {
-  const s = (v || "").trim();
-  if (!s) return true;
+const isEmptyOrZero = (value: string) => {
+  const normalized = (value || "").trim();
 
-  const n = Number(s);
-  return !isFinite(n) || n === 0;
+  if (!normalized) return true;
+
+  const numberValue = Number(normalized);
+
+  return !isFinite(numberValue) || numberValue === 0;
 };
 
 const ChannelIcon = ({
@@ -199,7 +243,7 @@ const FieldInput = ({
   fieldKey: keyof Calculo;
   editingKey: string;
   suffix?: string;
-  inputRef: (el: HTMLInputElement | null) => void;
+  inputRef: (element: HTMLInputElement | null) => void;
   navIndex: number;
   totalFields: number;
   refs: React.MutableRefObject<HTMLInputElement[]>;
@@ -207,17 +251,20 @@ const FieldInput = ({
   onBlur: (key: keyof Calculo, value: string) => void;
   isEditing: (key: string) => boolean;
   setEditing: (key: string, editing: boolean) => void;
-  toDisplay: (v: string) => string;
-  toInternal: (v: string) => string;
+  toDisplay: (value: string) => string;
+  toInternal: (value: string) => string;
   handleLinearNav: (
-    e: React.KeyboardEvent<HTMLInputElement>,
+    event: React.KeyboardEvent<HTMLInputElement>,
     index: number,
     refs: React.MutableRefObject<HTMLInputElement[]>,
     total: number
   ) => void;
 }) => {
   const rawValue = value || "";
-  const displayValue = isEditing(editingKey) ? rawValue : toDisplay(rawValue);
+
+  const displayValue = isEditing(editingKey)
+    ? rawValue
+    : toDisplay(rawValue);
 
   return (
     <div className="mx-auto flex h-10 w-full max-w-[96px] items-center rounded-lg border border-white/10 bg-[#070707] px-2 transition focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
@@ -226,16 +273,21 @@ const FieldInput = ({
         value={displayValue}
         inputMode="decimal"
         onFocus={() => setEditing(editingKey, true)}
-        onBlur={(e) => {
+        onBlur={(event) => {
           setEditing(editingKey, false);
-          const internalValue = toInternal(e.target.value);
+
+          const internalValue = toInternal(event.target.value);
+
           onBlur(fieldKey, internalValue);
         }}
-        onChange={(e) => {
-          const internalValue = toInternal(e.target.value);
+        onChange={(event) => {
+          const internalValue = toInternal(event.target.value);
+
           onChange(fieldKey, internalValue);
         }}
-        onKeyDown={(e) => handleLinearNav(e, navIndex, refs, totalFields)}
+        onKeyDown={(event) =>
+          handleLinearNav(event, navIndex, refs, totalFields)
+        }
         className="
           h-full w-full min-w-0 bg-transparent text-center text-sm font-semibold text-white
           outline-none placeholder:text-white/20
@@ -253,47 +305,66 @@ const FieldInput = ({
   );
 };
 
-export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = ({
+export const PriceCalculationSection: React.FC<
+  PriceCalculationSectionProps
+> = ({
   calculoLoja,
   setCalculoLoja,
+
   calculoShopee,
   setCalculoShopee,
+
   calculoMagalu,
   setCalculoMagalu,
+
   calculoMLClassico,
   setCalculoMLClassico,
+
   calculoMLPremium,
   setCalculoMLPremium,
+
   precoLoja,
   precoShopee,
   precoMagalu,
   precoMLClassico,
   precoMLPremium,
+
   acrescimos,
   setAcrescimos,
+
   isEditing,
   setEditing,
   toDisplay,
   toInternal,
+
   handleLinearNav,
+
   calcLojaRefs,
   calcShopeeRefs,
   calcMagaluRefs,
   calcMLClassicoRefs,
   calcMLPremiumRefs,
   acrescimosRefs,
+
+  handleEmbalagemBlurShared,
+  handleEmbalagemChangeShared,
+  handleEmbalagemBlurShopee,
+  handleEmbalagemChangeShopee,
+
   handleDownload,
   handleClearAll,
   isClearing,
   clicks,
+
   statusAcrescimo,
+
   syncDescontoFromLoja,
+
   setUserEditedShopeeComissao,
   setUserEditedShopeeFrete,
   setUserEditedShopeeImposto,
   setUserEditedShopeeMargem,
   setUserEditedShopeeMarketing,
-  setUserEditedShopeeEmbalagem,
 }) => {
   const defaultVisible: Record<ChannelKey, boolean> = React.useMemo(
     () => ({
@@ -310,25 +381,37 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
     React.useState<Record<ChannelKey, boolean>>(defaultVisible);
 
   const [isLayoutOpen, setIsLayoutOpen] = React.useState(false);
-  const [copiedKey, setCopiedKey] = React.useState<ChannelKey | null>(null);
+
+  const [copiedKey, setCopiedKey] =
+    React.useState<ChannelKey | null>(null);
 
   React.useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
+
       if (!raw) return;
 
-      const parsed = JSON.parse(raw) as Partial<Record<ChannelKey, boolean>>;
+      const parsed = JSON.parse(raw) as Partial<
+        Record<ChannelKey, boolean>
+      >;
 
       const next: Record<ChannelKey, boolean> = {
         ...defaultVisible,
         ...parsed,
       };
 
-      const count = Object.values(next).filter(Boolean).length;
+      const visibleCount = Object.values(next).filter(Boolean).length;
 
-      setVisible(count === 0 ? { ...next, loja: true } : next);
+      setVisible(
+        visibleCount === 0
+          ? {
+              ...next,
+              loja: true,
+            }
+          : next
+      );
     } catch {
-      // ignore
+      // Ignora erros de acesso ao localStorage.
     }
   }, [defaultVisible]);
 
@@ -336,14 +419,21 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(visible));
     } catch {
-      // ignore
+      // Ignora erros de acesso ao localStorage.
     }
   }, [visible]);
 
   const ensureAtLeastOneVisible = React.useCallback(
     (next: Record<ChannelKey, boolean>) => {
-      const count = Object.values(next).filter(Boolean).length;
-      if (count === 0) return { ...next, loja: true };
+      const visibleCount = Object.values(next).filter(Boolean).length;
+
+      if (visibleCount === 0) {
+        return {
+          ...next,
+          loja: true,
+        };
+      }
+
       return next;
     },
     []
@@ -351,9 +441,9 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
 
   const hideBlock = React.useCallback(
     (key: ChannelKey) => {
-      setVisible((prev) =>
+      setVisible((previous) =>
         ensureAtLeastOneVisible({
-          ...prev,
+          ...previous,
           [key]: false,
         })
       );
@@ -362,42 +452,54 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
   );
 
   const toggleBlock = (key: ChannelKey) => {
-    setVisible((prev) =>
+    setVisible((previous) =>
       ensureAtLeastOneVisible({
-        ...prev,
-        [key]: !prev[key],
+        ...previous,
+        [key]: !previous[key],
       })
     );
   };
 
   const restore = React.useCallback((key: ChannelKey) => {
-    setVisible((prev) => ({
-      ...prev,
+    setVisible((previous) => ({
+      ...previous,
       [key]: true,
     }));
   }, []);
 
   const hiddenBlocks = React.useMemo(
-    () => BLOCKS.filter((b) => !visible[b.key]),
+    () => BLOCKS.filter((block) => !visible[block.key]),
     [visible]
   );
 
-  const closeLayoutOnOutside = React.useCallback((e: MouseEvent) => {
-    const target = e.target as HTMLElement | null;
+  const closeLayoutOnOutside = React.useCallback(
+    (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
 
-    if (!target) return;
-    if (target.closest?.("[data-layout-dropdown]")) return;
+      if (!target) return;
 
-    setIsLayoutOpen(false);
-  }, []);
+      if (target.closest?.("[data-layout-dropdown]")) {
+        return;
+      }
+
+      setIsLayoutOpen(false);
+    },
+    []
+  );
 
   React.useEffect(() => {
     if (!isLayoutOpen) return;
 
-    window.addEventListener("mousedown", closeLayoutOnOutside);
+    window.addEventListener(
+      "mousedown",
+      closeLayoutOnOutside
+    );
 
     return () => {
-      window.removeEventListener("mousedown", closeLayoutOnOutside);
+      window.removeEventListener(
+        "mousedown",
+        closeLayoutOnOutside
+      );
     };
   }, [isLayoutOpen, closeLayoutOnOutside]);
 
@@ -407,7 +509,8 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
       title: "Loja Própria",
       subtitle: "Site / E-commerce",
       icon: <Store className="h-5 w-5 text-[#1a8ceb]" />,
-      iconClassName: "border-[#1a8ceb]/35 bg-[#1a8ceb]/15",
+      iconClassName:
+        "border-[#1a8ceb]/35 bg-[#1a8ceb]/15",
       state: calculoLoja,
       preco: precoLoja,
       refs: calcLojaRefs,
@@ -417,7 +520,8 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
       title: "Shopee",
       subtitle: "Marketplace",
       icon: <ShoppingBag className="h-5 w-5 text-white" />,
-      iconClassName: "border-orange-500/30 bg-orange-500",
+      iconClassName:
+        "border-orange-500/30 bg-orange-500",
       state: calculoShopee,
       preco: precoShopee,
       refs: calcShopeeRefs,
@@ -427,7 +531,8 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
       title: "Magalu",
       subtitle: "Marketplace",
       icon: <MagaluLogo />,
-      iconClassName: "border-[#1a8ceb]/40 bg-[#1a8ceb]",
+      iconClassName:
+        "border-[#1a8ceb]/40 bg-[#1a8ceb]",
       state: calculoMagalu,
       preco: precoMagalu,
       refs: calcMagaluRefs,
@@ -437,7 +542,8 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
       title: "Mercado Livre",
       subtitle: "Clássico",
       icon: <Handshake className="h-5 w-5 text-white" />,
-      iconClassName: "border-yellow-500/30 bg-yellow-500/80",
+      iconClassName:
+        "border-yellow-500/30 bg-yellow-500/80",
       state: calculoMLClassico,
       preco: precoMLClassico,
       refs: calcMLClassicoRefs,
@@ -447,14 +553,18 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
       title: "Mercado Livre",
       subtitle: "Premium",
       icon: <Handshake className="h-5 w-5 text-white" />,
-      iconClassName: "border-yellow-500/30 bg-yellow-500/80",
+      iconClassName:
+        "border-yellow-500/30 bg-yellow-500/80",
       state: calculoMLPremium,
       preco: precoMLPremium,
       refs: calcMLPremiumRefs,
     },
   ];
 
-  const visibleRows = rows.filter((row) => visible[row.key]);
+  const visibleRows = rows.filter(
+    (row) => visible[row.key]
+  );
+
   const totalFields = fields.length;
 
   const handleChange = (
@@ -463,32 +573,11 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
     internalValue: string
   ) => {
     if (field === "embalagem") {
-      setCalculoLoja({
-        ...calculoLoja,
-        embalagem: internalValue,
-      });
-
-      setCalculoShopee({
-        ...calculoShopee,
-        embalagem: internalValue,
-      });
-
-      setCalculoMagalu({
-        ...calculoMagalu,
-        embalagem: internalValue,
-      });
-
-      setCalculoMLClassico({
-        ...calculoMLClassico,
-        embalagem: internalValue,
-      });
-
-      setCalculoMLPremium({
-        ...calculoMLPremium,
-        embalagem: internalValue,
-      });
-
-      setUserEditedShopeeEmbalagem(true);
+      if (row.key === "shopee") {
+        handleEmbalagemChangeShopee(internalValue);
+      } else {
+        handleEmbalagemChangeShared(internalValue);
+      }
 
       return;
     }
@@ -497,54 +586,66 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
       if (field === "desconto") {
         syncDescontoFromLoja(internalValue);
       } else {
-        setCalculoLoja({
-          ...calculoLoja,
+        setCalculoLoja((previous) => ({
+          ...previous,
           [field]: internalValue,
-        });
+        }));
       }
 
       return;
     }
 
     if (row.key === "shopee") {
-      if (field === "comissao") setUserEditedShopeeComissao(true);
-      if (field === "frete") setUserEditedShopeeFrete(true);
-      if (field === "imposto") setUserEditedShopeeImposto(true);
-      if (field === "margem") setUserEditedShopeeMargem(true);
-      if (field === "marketing") setUserEditedShopeeMarketing(true);
+      if (field === "comissao") {
+        setUserEditedShopeeComissao(true);
+      }
 
-      setCalculoShopee({
-        ...calculoShopee,
+      if (field === "frete") {
+        setUserEditedShopeeFrete(true);
+      }
+
+      if (field === "imposto") {
+        setUserEditedShopeeImposto(true);
+      }
+
+      if (field === "margem") {
+        setUserEditedShopeeMargem(true);
+      }
+
+      if (field === "marketing") {
+        setUserEditedShopeeMarketing(true);
+      }
+
+      setCalculoShopee((previous) => ({
+        ...previous,
         [field]: internalValue,
-      });
+      }));
 
       return;
     }
 
     if (row.key === "magalu") {
-      setCalculoMagalu({
-        ...calculoMagalu,
+      setCalculoMagalu((previous) => ({
+        ...previous,
         [field]: internalValue,
-      });
+      }));
 
       return;
     }
 
     if (row.key === "mlClassico") {
-      setCalculoMLClassico({
-        ...calculoMLClassico,
+      setCalculoMLClassico((previous) => ({
+        ...previous,
         [field]: internalValue,
-      });
+      }));
 
       return;
     }
 
-    if (row.key === "mlPremium") {
-      setCalculoMLPremium({
-        ...calculoMLPremium,
-        [field]: internalValue,
-      });
-    }
+    setCalculoMLPremium((previous) => ({
+      ...previous,
+      [field]: internalValue,
+    }));
   };
 
   const handleBlur = (
@@ -553,35 +654,10 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
     internalValue: string
   ) => {
     if (field === "embalagem") {
-      const value = internalValue || "3";
-
-      setCalculoLoja({
-        ...calculoLoja,
-        embalagem: value,
-      });
-
-      setCalculoShopee({
-        ...calculoShopee,
-        embalagem: value,
-      });
-
-      setCalculoMagalu({
-        ...calculoMagalu,
-        embalagem: value,
-      });
-
-      setCalculoMLClassico({
-        ...calculoMLClassico,
-        embalagem: value,
-      });
-
-      setCalculoMLPremium({
-        ...calculoMLPremium,
-        embalagem: value,
-      });
-
-      if (isEmptyOrZero(value)) {
-        setUserEditedShopeeEmbalagem(false);
+      if (row.key === "shopee") {
+        handleEmbalagemBlurShopee(internalValue);
+      } else {
+        handleEmbalagemBlurShared(internalValue);
       }
 
       return;
@@ -591,76 +667,104 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
       if (field === "desconto") {
         syncDescontoFromLoja(internalValue);
       } else {
-        setCalculoLoja({
-          ...calculoLoja,
+        setCalculoLoja((previous) => ({
+          ...previous,
           [field]: internalValue,
-        });
+        }));
       }
 
       return;
     }
 
     if (row.key === "shopee") {
-      if (field === "comissao" && isEmptyOrZero(internalValue)) {
+      if (
+        field === "comissao" &&
+        isEmptyOrZero(internalValue)
+      ) {
         setUserEditedShopeeComissao(false);
       }
 
-      if (field === "frete" && isEmptyOrZero(internalValue)) {
+      if (
+        field === "frete" &&
+        isEmptyOrZero(internalValue)
+      ) {
         setUserEditedShopeeFrete(false);
       }
 
-      if (field === "imposto" && isEmptyOrZero(internalValue)) {
+      if (
+        field === "imposto" &&
+        isEmptyOrZero(internalValue)
+      ) {
         setUserEditedShopeeImposto(false);
       }
 
-      if (field === "margem" && isEmptyOrZero(internalValue)) {
+      if (
+        field === "margem" &&
+        isEmptyOrZero(internalValue)
+      ) {
         setUserEditedShopeeMargem(false);
       }
 
-      if (field === "marketing" && isEmptyOrZero(internalValue)) {
+      if (
+        field === "marketing" &&
+        isEmptyOrZero(internalValue)
+      ) {
         setUserEditedShopeeMarketing(false);
       }
 
-      setCalculoShopee({
-        ...calculoShopee,
+      setCalculoShopee((previous) => ({
+        ...previous,
         [field]: internalValue,
-      });
+      }));
 
       return;
     }
 
     if (row.key === "magalu") {
-      setCalculoMagalu({
-        ...calculoMagalu,
+      setCalculoMagalu((previous) => ({
+        ...previous,
         [field]: internalValue,
-      });
+      }));
 
       return;
     }
 
     if (row.key === "mlClassico") {
-      setCalculoMLClassico({
-        ...calculoMLClassico,
+      setCalculoMLClassico((previous) => ({
+        ...previous,
         [field]: internalValue,
-      });
+      }));
 
       return;
     }
 
-    if (row.key === "mlPremium") {
-      setCalculoMLPremium({
-        ...calculoMLPremium,
-        [field]: internalValue,
-      });
-    }
+    setCalculoMLPremium((previous) => ({
+      ...previous,
+      [field]: internalValue,
+    }));
   };
 
   const getPriceClass = (row: ChannelRow) => {
-    if (row.key === "loja") return "text-neutral-100";
-    if (row.key === "shopee") return "text-orange-400";
-    if (row.key === "magalu") return "text-[#1a8ceb]";
-    if (row.key === "mlClassico") return "text-yellow-400";
-    if (row.key === "mlPremium") return "text-yellow-400";
+    if (row.key === "loja") {
+      return "text-neutral-100";
+    }
+
+    if (row.key === "shopee") {
+      return "text-orange-400";
+    }
+
+    if (row.key === "magalu") {
+      return "text-[#1a8ceb]";
+    }
+
+    if (row.key === "mlClassico") {
+      return "text-yellow-400";
+    }
+
+    if (row.key === "mlPremium") {
+      return "text-yellow-400";
+    }
+
     return "text-white";
   };
 
@@ -671,23 +775,37 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
     });
   };
 
-  const handleCopyPrice = async (row: ChannelRow) => {
+  const handleCopyPrice = async (
+    row: ChannelRow
+  ) => {
     const value = formatCopyValue(row.preco);
 
     try {
       await navigator.clipboard.writeText(value);
+
       setCopiedKey(row.key);
-      setTimeout(() => setCopiedKey(null), 1200);
+
+      setTimeout(() => {
+        setCopiedKey(null);
+      }, 1200);
     } catch {
       const textarea = document.createElement("textarea");
+
       textarea.value = value;
+
       document.body.appendChild(textarea);
+
       textarea.select();
+
       document.execCommand("copy");
+
       document.body.removeChild(textarea);
 
       setCopiedKey(row.key);
-      setTimeout(() => setCopiedKey(null), 1200);
+
+      setTimeout(() => {
+        setCopiedKey(null);
+      }, 1200);
     }
   };
 
@@ -713,17 +831,33 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
             handleClearAll={handleClearAll}
             isClearing={isClearing}
             clicks={clicks}
-            onToggleLayout={() => setIsLayoutOpen((v) => !v)}
+            onToggleLayout={() =>
+              setIsLayoutOpen((current) => !current)
+            }
           />
         </div>
 
         <AnimatePresence>
           {isLayoutOpen && (
             <motion.div
-              initial={{ opacity: 0, y: 6, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 6, scale: 0.98 }}
-              transition={{ duration: 0.14 }}
+              initial={{
+                opacity: 0,
+                y: 6,
+                scale: 0.98,
+              }}
+              animate={{
+                opacity: 1,
+                y: 0,
+                scale: 1,
+              }}
+              exit={{
+                opacity: 0,
+                y: 6,
+                scale: 0.98,
+              }}
+              transition={{
+                duration: 0.14,
+              }}
               className="absolute right-4 top-14 z-50 w-full max-w-[280px] rounded-xl border border-white/10 bg-black/80 p-2 shadow-xl backdrop-blur-xl"
             >
               <div className="mb-2 flex items-center justify-between">
@@ -749,10 +883,14 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                     <button
                       key={block.key}
                       type="button"
-                      onClick={() => toggleBlock(block.key)}
+                      onClick={() =>
+                        toggleBlock(block.key)
+                      }
                       className={[
                         "flex h-10 cursor-pointer items-center justify-between rounded-lg border border-white/10 px-2 transition",
-                        checked ? "bg-white/10" : "bg-white/5",
+                        checked
+                          ? "bg-white/10"
+                          : "bg-white/5",
                         "hover:bg-white/10",
                       ].join(" ")}
                     >
@@ -769,7 +907,9 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                       <div
                         className={[
                           "flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/10",
-                          checked ? "bg-white/10" : "bg-transparent",
+                          checked
+                            ? "bg-white/10"
+                            : "bg-transparent",
                         ].join(" ")}
                       >
                         {checked && (
@@ -783,7 +923,9 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
 
               <button
                 type="button"
-                onClick={() => setVisible(defaultVisible)}
+                onClick={() =>
+                  setVisible(defaultVisible)
+                }
                 className="mt-2 h-9 w-full cursor-pointer rounded-lg border border-white/10 bg-white/5 text-xs text-white/80 transition hover:bg-white/10"
               >
                 Mostrar todos
@@ -808,6 +950,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                 className="px-2 py-4 text-center text-sm font-semibold text-white"
               >
                 {field.label}
+
                 <div className="mt-1 text-xs text-white/55">
                   {field.unit}
                 </div>
@@ -816,6 +959,7 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
 
             <div className="px-4 py-4 text-center text-sm font-semibold text-white">
               Preço de Venda
+
               <div className="mt-1 text-xs text-white/55">
                 Calculado (R$)
               </div>
@@ -830,7 +974,9 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
               >
                 <div className="flex items-center justify-between gap-3 lg:px-4 lg:py-5">
                   <div className="flex min-w-0 items-center gap-3">
-                    <ChannelIcon className={row.iconClassName}>
+                    <ChannelIcon
+                      className={row.iconClassName}
+                    >
                       {row.icon}
                     </ChannelIcon>
 
@@ -869,14 +1015,19 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                       fieldKey={field.key}
                       editingKey={`${row.key}-${field.key}`}
                       suffix={field.suffix}
-                      inputRef={(el) => {
-                        row.refs.current[index] = el!;
+                      inputRef={(element) => {
+                        row.refs.current[index] =
+                          element!;
                       }}
                       navIndex={index}
                       totalFields={totalFields}
                       refs={row.refs}
-                      onChange={(key, value) => handleChange(row, key, value)}
-                      onBlur={(key, value) => handleBlur(row, key, value)}
+                      onChange={(key, value) =>
+                        handleChange(row, key, value)
+                      }
+                      onBlur={(key, value) =>
+                        handleBlur(row, key, value)
+                      }
                       isEditing={isEditing}
                       setEditing={setEditing}
                       toDisplay={toDisplay}
@@ -897,12 +1048,18 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
                         row
                       )}`}
                     >
-                      R$ <AnimatedNumber value={Number(row.preco || 0)} />
+                      R${" "}
+
+                      <AnimatedNumber
+                        value={Number(row.preco || 0)}
+                      />
                     </span>
 
                     <button
                       type="button"
-                      onClick={() => handleCopyPrice(row)}
+                      onClick={() =>
+                        handleCopyPrice(row)
+                      }
                       className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-white/10 bg-white/[0.03] text-white/50 opacity-0 transition hover:bg-white/[0.08] hover:text-white group-hover/price:opacity-100"
                       title="Copiar preço"
                     >
@@ -923,24 +1080,40 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
           {hiddenBlocks.length > 0 && (
             <motion.div
               layout
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
-              transition={{ duration: 0.18 }}
+              initial={{
+                opacity: 0,
+                y: 8,
+              }}
+              animate={{
+                opacity: 1,
+                y: 0,
+              }}
+              exit={{
+                opacity: 0,
+                y: 8,
+              }}
+              transition={{
+                duration: 0.18,
+              }}
               className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#181818] px-3 py-2"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] text-white/50">Ocultos</span>
+                <span className="text-[11px] text-white/50">
+                  Ocultos
+                </span>
 
                 {hiddenBlocks.map((block) => (
                   <button
                     key={block.key}
                     type="button"
-                    onClick={() => restore(block.key)}
+                    onClick={() =>
+                      restore(block.key)
+                    }
                     className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 text-xs text-white/70 transition hover:bg-white/[0.08] hover:text-white"
                     title={`Restaurar ${block.nome}`}
                   >
                     <ArrowUpCircle className="h-4 w-4" />
+
                     {shortLabel(block.key)}
                   </button>
                 ))}
@@ -948,7 +1121,9 @@ export const PriceCalculationSection: React.FC<PriceCalculationSectionProps> = (
 
               <button
                 type="button"
-                onClick={() => setVisible(defaultVisible)}
+                onClick={() =>
+                  setVisible(defaultVisible)
+                }
                 className="h-8 cursor-pointer rounded-lg border border-white/10 px-3 text-xs text-white/60 transition hover:bg-white/[0.05] hover:text-white"
               >
                 Restaurar todos
