@@ -528,7 +528,7 @@ export default function ModalNewCost({
           codigoExistente.length > 0
         ) {
           throw new Error(
-            `O Código Novo "${codigoFinal}" já existe. Informe outro código.`
+            `O código novo "${codigoFinal}" já existe. Informe outro código.`
           );
         }
       }

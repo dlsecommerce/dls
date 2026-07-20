@@ -1,36 +1,21 @@
-// 📄 src/components/costtable/helpers/exportFilteredToXlsx.ts
+// 📄 src/components/costtable/helpers/exportCodeRenamesToXlsx.ts
+
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { createNotification } from "@/lib/createNotification";
+import type { CustoRow } from "./exportFilteredToXlsx";
 
-/**
- * Tipo que representa uma linha da tabela de custos
- */
-export type CustoRow = {
-  ["Código"]: string;
-  ["Marca"]: string;
-  ["Produto"]?: string;
-  ["Custo Atual"]: number | string;
-  ["Custo Antigo"]: number | string;
-  ["NCM"]: string;
-};
-
-/**
- * Converte valores que podem vir como:
- * - number: 2500
- * - "2500"
- * - "2.500"
- * - "2.500,00"
- * - "2500,00"
- * - "126.97" (excel/US)
- * em number (ex: 2500).
- */
-function parseCostToNumber(value: number | string | null | undefined): number {
+function parseCostToNumber(
+  value: number | string | null | undefined
+): number {
   if (value === null || value === undefined) return 0;
 
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
 
   let raw = String(value).trim();
+
   if (!raw) return 0;
 
   raw = raw.replace(/[^\d.,-]/g, "");
@@ -40,45 +25,42 @@ function parseCostToNumber(value: number | string | null | undefined): number {
     const last = parts[parts.length - 1];
 
     if (/^\d{3}$/.test(last)) {
-      const n = parseFloat(raw.replace(/\./g, ""));
-      return Number.isFinite(n) ? n : 0;
+      const parsed = Number.parseFloat(raw.replace(/\./g, ""));
+      return Number.isFinite(parsed) ? parsed : 0;
     }
 
-    const n = parseFloat(raw);
-    return Number.isFinite(n) ? n : 0;
+    const parsed = Number.parseFloat(raw);
+    return Number.isFinite(parsed) ? parsed : 0;
   }
 
   if (raw.includes(",") && !raw.includes(".")) {
-    const n = parseFloat(raw.replace(",", "."));
-    return Number.isFinite(n) ? n : 0;
+    const parsed = Number.parseFloat(raw.replace(",", "."));
+    return Number.isFinite(parsed) ? parsed : 0;
   }
 
   if (raw.includes(".") && raw.includes(",")) {
-    const n = parseFloat(raw.replace(/\./g, "").replace(",", "."));
-    return Number.isFinite(n) ? n : 0;
+    const parsed = Number.parseFloat(
+      raw.replace(/\./g, "").replace(",", ".")
+    );
+
+    return Number.isFinite(parsed) ? parsed : 0;
   }
 
-  const n = parseFloat(raw);
-  return Number.isFinite(n) ? n : 0;
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-/**
- * Exporta os dados filtrados da tabela de custos em formato XLSX.
- * ⚙️ Otimizado para grandes volumes de dados:
- * - Divide a geração em partes para não travar a UI
- * - Cabeçalho azul estilizado (#1A8CEB)
- * - Mantém custos como NÚMERO no Excel
- * - Gera e baixa automaticamente o arquivo XLSX
- * - Cria notificação informativa após o download ser iniciado
- */
-export async function exportFilteredToXlsx(rows: CustoRow[], filename: string) {
-  if (!rows || rows.length === 0) {
-    alert("Nenhum dado encontrado para exportar.");
-    return;
+export async function exportCodeRenamesToXlsx(
+  rows: CustoRow[],
+  filename = "renomeacao-codigos-custos.xlsx"
+) {
+  if (!rows?.length) {
+    throw new Error("Nenhum custo encontrado para exportar.");
   }
 
   const header = [
     "Código",
+    "Novo Código",
     "Marca",
     "Produto",
     "Custo Atual",
@@ -86,14 +68,20 @@ export async function exportFilteredToXlsx(rows: CustoRow[], filename: string) {
     "NCM",
   ];
 
-  const normalized = rows.map((r) => ({
-    "Código": r["Código"] ?? "",
-    "Marca": r["Marca"] ?? "",
-    "Produto": r["Produto"] ?? "",
-    "Custo Atual": parseCostToNumber(r["Custo Atual"]),
-    "Custo Antigo": parseCostToNumber(r["Custo Antigo"]),
-    "NCM": r["NCM"] ?? "",
-  }));
+  const data = [
+    header,
+    ...rows.map((row) => [
+      String(row["Código"] ?? ""),
+      "", // Campo que será preenchido pelo usuário
+      String(row["Marca"] ?? ""),
+      String(row["Produto"] ?? ""),
+      parseCostToNumber(row["Custo Atual"]),
+      parseCostToNumber(row["Custo Antigo"]),
+      String(row["NCM"] ?? ""),
+    ]),
+  ];
+
+  const worksheet = XLSX.utils.aoa_to_sheet(data);
 
   const headerStyle = {
     fill: {
@@ -101,73 +89,129 @@ export async function exportFilteredToXlsx(rows: CustoRow[], filename: string) {
       patternType: "solid",
       fgColor: { rgb: "1A8CEB" },
     },
-    font: { bold: true, color: { rgb: "FFFFFF" } },
-    alignment: { horizontal: "center", vertical: "center" as const },
+    font: {
+      bold: true,
+      color: { rgb: "FFFFFF" },
+    },
+    alignment: {
+      horizontal: "center",
+      vertical: "center" as const,
+    },
+  };
+
+  const editableCellStyle = {
+    fill: {
+      type: "pattern",
+      patternType: "solid",
+      fgColor: { rgb: "FFF2CC" },
+    },
+    alignment: {
+      horizontal: "left",
+      vertical: "center" as const,
+    },
+    numFmt: "@",
+  };
+
+  const codeCellStyle = {
+    alignment: {
+      horizontal: "left",
+      vertical: "center" as const,
+    },
+    numFmt: "@",
   };
 
   const moneyCellStyle = {
     numFmt: "#,##0.00",
-    alignment: { horizontal: "right", vertical: "center" as const },
+    alignment: {
+      horizontal: "right",
+      vertical: "center" as const,
+    },
   };
 
-  const generateSheetAsync = (): Promise<Blob> =>
-    new Promise((resolve) => {
-      setTimeout(() => {
-        const data = [
-          header,
-          ...normalized.map((o) => [
-            o["Código"],
-            o["Marca"],
-            o["Produto"],
-            o["Custo Atual"],
-            o["Custo Antigo"],
-            o["NCM"],
-          ]),
-        ];
-
-        const ws = XLSX.utils.aoa_to_sheet(data);
-
-        header.forEach((_, col) => {
-          const cellRef = XLSX.utils.encode_cell({ r: 0, c: col });
-          if ((ws as any)[cellRef]) {
-            (ws as any)[cellRef].s = headerStyle;
-          }
-        });
-
-        for (let r = 1; r <= normalized.length; r++) {
-          const cAtualRef = XLSX.utils.encode_cell({ r, c: 3 });
-          if ((ws as any)[cAtualRef]) {
-            (ws as any)[cAtualRef].s = moneyCellStyle;
-          }
-
-          const cAntigoRef = XLSX.utils.encode_cell({ r, c: 4 });
-          if ((ws as any)[cAntigoRef]) {
-            (ws as any)[cAntigoRef].s = moneyCellStyle;
-          }
-        }
-
-        (ws as any)["!cols"] = [
-          { wch: 16 },
-          { wch: 20 },
-          { wch: 34 },
-          { wch: 14 },
-          { wch: 14 },
-          { wch: 14 },
-        ];
-
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Relatorio");
-
-        const buffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-        const blob = new Blob([buffer], {
-          type: "application/octet-stream",
-        });
-
-        resolve(blob);
-      }, 50);
+  header.forEach((_, column) => {
+    const cellReference = XLSX.utils.encode_cell({
+      r: 0,
+      c: column,
     });
 
-  const blob = await generateSheetAsync();
+    const cell = worksheet[cellReference];
+
+    if (cell) {
+      cell.s = headerStyle;
+    }
+  });
+
+  for (let row = 1; row <= rows.length; row++) {
+    const codigoAtualReference = XLSX.utils.encode_cell({
+      r: row,
+      c: 0,
+    });
+
+    const novoCodigoReference = XLSX.utils.encode_cell({
+      r: row,
+      c: 1,
+    });
+
+    const custoAtualReference = XLSX.utils.encode_cell({
+      r: row,
+      c: 4,
+    });
+
+    const custoAntigoReference = XLSX.utils.encode_cell({
+      r: row,
+      c: 5,
+    });
+
+    if (worksheet[codigoAtualReference]) {
+      worksheet[codigoAtualReference].s = codeCellStyle;
+      worksheet[codigoAtualReference].t = "s";
+    }
+
+    if (worksheet[novoCodigoReference]) {
+      worksheet[novoCodigoReference].s = editableCellStyle;
+      worksheet[novoCodigoReference].t = "s";
+    }
+
+    if (worksheet[custoAtualReference]) {
+      worksheet[custoAtualReference].s = moneyCellStyle;
+    }
+
+    if (worksheet[custoAntigoReference]) {
+      worksheet[custoAntigoReference].s = moneyCellStyle;
+    }
+  }
+
+  worksheet["!cols"] = [
+    { wch: 20 }, // Código
+    { wch: 20 }, // Novo Código
+    { wch: 20 }, // Marca
+    { wch: 42 }, // Produto
+    { wch: 14 }, // Custo Atual
+    { wch: 14 }, // Custo Antigo
+    { wch: 14 }, // NCM
+  ];
+
+  worksheet["!autofilter"] = {
+    ref: `A1:G${rows.length + 1}`,
+  };
+
+  const workbook = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    worksheet,
+    "Renomeacao"
+  );
+
+  const buffer = XLSX.write(workbook, {
+    bookType: "xlsx",
+    type: "array",
+  });
+
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+
   const safeFilename = filename.endsWith(".xlsx")
     ? filename
     : `${filename}.xlsx`;
@@ -175,10 +219,10 @@ export async function exportFilteredToXlsx(rows: CustoRow[], filename: string) {
   saveAs(blob, safeFilename);
 
   await createNotification({
-    title: "Relatório de custos exportado",
-    message: `O relatório "${safeFilename}" foi exportado com ${rows.length} custo(s).`,
+    title: "Planilha de renomeação exportada",
+    message: `A planilha foi exportada com ${rows.length} custo(s). Preencha apenas a coluna "Novo Código".`,
     action: "status",
-    entityType: "cost_export",
+    entityType: "cost_code_rename_export",
     link: "/dashboard/custos",
   });
 }

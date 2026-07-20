@@ -8,6 +8,19 @@ type ImportResult = {
   fileName: string;
 };
 
+export type RenomeacaoCodigo = {
+  codigo_antigo: string;
+  codigo_novo: string;
+  linha?: number;
+};
+
+export type RenomeacaoImportResult = {
+  data: RenomeacaoCodigo[];
+  warnings: string[];
+  fileName: string;
+  recalculosProcessados?: number;
+};
+
 // ✅ NOVO: inclui "Produto" como obrigatório no arquivo
 const REQUIRED_COLUMNS = [
   "Código",
@@ -125,13 +138,14 @@ function normalizeMarca(value: any): string | null {
 function normalizeCodigo(value: any): string | null {
   if (value === null || value === undefined || value === "") return null;
 
-  const codigo = String(value).trim();
+  const codigo = String(value)
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
-  if (!codigo) return null;
-  if (codigo.length < 2) return null;
-
-  // bloqueia lixo tipo ---, ***, espaços etc
-  if (!/^[a-zA-Z0-9\-_.]+$/.test(codigo)) return null;
+  if (!codigo || codigo.length < 2) return null;
+  if (/[\u0000-\u001f\u007f]/.test(codigo)) return null;
+  if (!/[a-zA-Z0-9À-ÿ]/.test(codigo)) return null;
 
   const lower = codigo.toLowerCase();
   if (lower === "null" || lower === "undefined" || lower === "nan") {
@@ -501,5 +515,278 @@ export async function importFromXlsxOrCsv(
     data: deduped,
     warnings,
     fileName,
+  };
+}
+
+// =====================================================================
+// 🔄 IMPORTAÇÃO DE RENOMEAÇÃO DE CÓDIGOS
+// =====================================================================
+function normalizeRenameHeader(value: any) {
+  return cleanHeaderKey(String(value ?? ""))
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function findRenameValue(row: Record<string, any>, aliases: string[]) {
+  const normalizedAliases = new Set(aliases.map(normalizeRenameHeader));
+  const key = Object.keys(row).find((k) =>
+    normalizedAliases.has(normalizeRenameHeader(k))
+  );
+  return key ? row[key] : undefined;
+}
+
+function normalizeRenameRows(rawRows: Record<string, any>[]) {
+  const data: RenomeacaoCodigo[] = [];
+  const warnings: string[] = [];
+  const errors: string[] = [];
+  const oldCodes = new Map<string, number>();
+  const newCodes = new Map<string, { oldCode: string; line: number }>();
+
+  rawRows.forEach((row, index) => {
+    const line = Number(row?.linha) || index + 2;
+
+    const oldRaw =
+      row?.codigo_antigo ??
+      findRenameValue(row, [
+        "Código",
+        "Codigo",
+        "Código Atual",
+        "Codigo Atual",
+        "Código Antigo",
+        "Codigo Antigo",
+        "codigo_antigo",
+      ]);
+
+    const newRaw =
+      row?.codigo_novo ??
+      findRenameValue(row, [
+        "Novo Código",
+        "Novo Codigo",
+        "Código Novo",
+        "Codigo Novo",
+        "codigo_novo",
+      ]);
+
+    const oldCode = normalizeCodigo(oldRaw)?.toUpperCase() ?? null;
+    const newCode = normalizeCodigo(newRaw)?.toUpperCase() ?? null;
+
+    // Linhas sem Novo Código são ignoradas.
+    if (!newCode) return;
+
+    if (!oldCode) {
+      errors.push(`Linha ${line}: a coluna "Código" está vazia ou inválida.`);
+      return;
+    }
+
+    if (oldCode === newCode) {
+      warnings.push(
+        `Linha ${line}: ${oldCode} foi ignorado porque o novo código é igual ao atual.`
+      );
+      return;
+    }
+
+    const previousOldLine = oldCodes.get(oldCode);
+
+    if (previousOldLine !== undefined) {
+      errors.push(
+        `Código antigo duplicado: ${oldCode} nas linhas ${previousOldLine} e ${line}.`
+      );
+      return;
+    }
+
+    const previousNewOwner = newCodes.get(newCode);
+
+    if (previousNewOwner && previousNewOwner.oldCode !== oldCode) {
+      errors.push(
+        `Código novo duplicado: ${newCode} será usado por ${previousNewOwner.oldCode} (linha ${previousNewOwner.line}) e ${oldCode} (linha ${line}).`
+      );
+      return;
+    }
+
+    oldCodes.set(oldCode, line);
+    newCodes.set(newCode, { oldCode, line });
+
+    data.push({
+      codigo_antigo: oldCode,
+      codigo_novo: newCode,
+      linha: line,
+    });
+  });
+
+  if (errors.length) {
+    const shown = errors.slice(0, 10);
+    const remaining = errors.length - shown.length;
+
+    throw new Error(
+      `${shown.join("\n")}${
+        remaining > 0
+          ? `\n... e mais ${remaining} erro(s).`
+          : ""
+      }`
+    );
+  }
+
+  if (!data.length) {
+    throw new Error(
+      'Nenhuma renomeação encontrada. Preencha a coluna "Novo Código".'
+    );
+  }
+
+  return {
+    data,
+    warnings,
+  };
+}
+
+async function readRenameFile(file: File) {
+  const workbook = XLSX.read(await file.arrayBuffer(), {
+    type: "array",
+    codepage: 65001,
+    cellDates: true,
+  });
+
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+
+  if (!sheet) {
+    throw new Error("A planilha não possui nenhuma aba válida.");
+  }
+
+  const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
+    defval: "",
+    raw: false,
+  });
+
+  if (!rows.length) {
+    throw new Error("A planilha está vazia.");
+  }
+
+  const headers = Object.keys(rows[0] || {}).map(normalizeRenameHeader);
+
+  if (!headers.includes(normalizeRenameHeader("Código"))) {
+    throw new Error('A planilha precisa conter a coluna "Código".');
+  }
+
+  if (!headers.includes(normalizeRenameHeader("Novo Código"))) {
+    throw new Error('A planilha precisa conter a coluna "Novo Código".');
+  }
+
+  return rows;
+}
+
+async function processRenameQueue() {
+  let total = 0;
+
+  for (let attempt = 0; attempt < 1000; attempt++) {
+    const { data, error } = await (supabase as any).rpc(
+      "fn_processar_fila_recalculo_marketplace",
+      {
+        p_limite: 500,
+      }
+    );
+
+    if (error) throw error;
+
+    const processed = Number(data ?? 0);
+
+    if (!Number.isFinite(processed) || processed <= 0) {
+      break;
+    }
+
+    total += processed;
+  }
+
+  return total;
+}
+
+export async function importRenomeacaoCodigosFromXlsxOrCsv(
+  input: File | RenomeacaoCodigo[],
+  previewOnly = false
+): Promise<RenomeacaoImportResult> {
+  const rawRows =
+    input instanceof File
+      ? await readRenameFile(input)
+      : input;
+
+  if (!Array.isArray(rawRows)) {
+    throw new Error("Formato de importação de renomeação inválido.");
+  }
+
+  const { data, warnings } = normalizeRenameRows(
+    rawRows as Record<string, any>[]
+  );
+
+  const now = new Date();
+
+  const fileName = `RENOMEAÇÃO - ${now
+    .toLocaleDateString("pt-BR")
+    .replace(/\//g, "-")} ${now
+    .toLocaleTimeString("pt-BR")
+    .replace(/:/g, "-")}.xlsx`;
+
+  if (previewOnly) {
+    return {
+      data,
+      warnings,
+      fileName,
+    };
+  }
+
+  const payload = data.map(
+    ({
+      codigo_antigo,
+      codigo_novo,
+    }) => ({
+      codigo_antigo,
+      codigo_novo,
+    })
+  );
+
+  const { error } = await (supabase as any).rpc(
+    "renomear_codigos_composicao_lote",
+    {
+      p_alteracoes: payload,
+    }
+  );
+
+  if (error) throw error;
+
+  let recalculosProcessados = 0;
+
+  try {
+    recalculosProcessados = await processRenameQueue();
+  } catch (err: any) {
+    console.error(
+      "Erro ao processar fila após renomeação:",
+      err
+    );
+
+    warnings.push(
+      `Os códigos foram renomeados, mas a fila apresentou erro: ${
+        err?.message || "erro desconhecido"
+      }.`
+    );
+  }
+
+  try {
+    await createNotification({
+      title: "Renomeação de códigos concluída",
+      message: `${data.length} código(s) foram processados.`,
+      action: "update",
+      entityType: "cost_code_rename",
+      link: "/dashboard/custos",
+    });
+  } catch (err) {
+    console.error(
+      "Erro ao criar notificação de renomeação:",
+      err
+    );
+  }
+
+  return {
+    data,
+    warnings,
+    fileName,
+    recalculosProcessados,
   };
 }

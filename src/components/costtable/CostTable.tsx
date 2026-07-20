@@ -16,7 +16,10 @@ import CostTableHeaderBar from "@/components/costtable/CostTableHeaderBar";
 import { FloatingEditor } from "@/components/costtable/FloatingEditor";
 
 import { exportFilteredToXlsx } from "@/components/costtable/helpers/exportFilteredToXlsx";
-import { importFromXlsxOrCsv } from "@/components/costtable/helpers/importFromXlsx";
+import {
+  importFromXlsxOrCsv,
+  importRenomeacaoCodigosFromXlsxOrCsv,
+} from "@/components/costtable/helpers/importFromXlsx";
 import { playImportSuccessSound } from "@/utils/sound";
 import { toastCustom } from "@/utils/toastCustom";
 
@@ -62,6 +65,7 @@ export default function CostTable() {
   const [totalItems, setTotalItems] = useState(0);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [renamingCodes, setRenamingCodes] = useState(false);
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [itemsPerPage, setItemsPerPage] = useState(initialPerPage);
 
@@ -125,6 +129,7 @@ export default function CostTable() {
 
         next.forEach((row) => {
           const key = getCostKey(row);
+
           if (key) {
             map.set(key, row);
           }
@@ -154,6 +159,7 @@ export default function CostTable() {
 
         prev.forEach((row) => {
           const key = getCostKey(row);
+
           if (key) {
             map.set(key, row);
           }
@@ -161,6 +167,7 @@ export default function CostTable() {
 
         rows.forEach((row) => {
           const key = getCostKey(row);
+
           if (key) {
             map.set(key, row);
           }
@@ -174,14 +181,17 @@ export default function CostTable() {
 
     setSelectedRows((prev) => {
       const pageKeys = new Set(currentPageKeys);
+
       return prev.filter((row) => !pageKeys.has(getCostKey(row)));
     });
   };
 
   const handleCopy = (text: string, key: string) => {
     if (!text) return;
+
     navigator.clipboard.writeText(text);
     setCopiedId(key);
+
     setTimeout(() => setCopiedId(null), 1500);
   };
 
@@ -202,6 +212,7 @@ export default function CostTable() {
   const loadAllBrands = async () => {
     const pageSize = 1000;
     let from = 0;
+
     const setBrands = new Set<string>();
 
     while (true) {
@@ -218,10 +229,13 @@ export default function CostTable() {
       }
 
       (data || []).forEach((r: any) => {
-        if (r?.Marca) setBrands.add(String(r.Marca).trim());
+        if (r?.Marca) {
+          setBrands.add(String(r.Marca).trim());
+        }
       });
 
       if (!data || data.length < pageSize) break;
+
       from += pageSize;
     }
 
@@ -254,6 +268,7 @@ export default function CostTable() {
         if (!term) continue;
 
         const escaped = term.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
         marcaParts.push(`Marca.ilike."%${escaped}%"`);
       }
 
@@ -288,6 +303,7 @@ export default function CostTable() {
     const to = from + limit - 1;
 
     const { count } = await buildQuery(true);
+
     setTotalItems(count || 0);
 
     const { data, error } = await buildQuery(false).range(from, to);
@@ -296,6 +312,7 @@ export default function CostTable() {
       console.error("Erro ao carregar dados:", error);
       setRows([]);
       setLoading(false);
+
       return;
     }
 
@@ -316,13 +333,17 @@ export default function CostTable() {
     setSearch((prev) => (prev !== urlSearch ? urlSearch : prev));
     setCurrentPage((prev) => (prev !== urlPage ? urlPage : prev));
     setItemsPerPage((prev) => (prev !== urlPerPage ? urlPerPage : prev));
+
     setSelectedBrands((prev) =>
       arraysEqual(prev, urlBrands) ? prev : urlBrands
     );
+
     setSortColumn((prev) => (prev !== urlSortColumn ? urlSortColumn : prev));
+
     setSortDirection((prev) =>
       prev !== urlSortDirection ? urlSortDirection : prev
     );
+
     setFilters((prev) =>
       prev.marca !== urlMarca ? { ...prev, marca: urlMarca } : prev
     );
@@ -337,11 +358,13 @@ export default function CostTable() {
     if (itemsPerPage !== 50) params.set("perPage", String(itemsPerPage));
     if (selectedBrands.length) params.set("brands", selectedBrands.join(","));
     if (sortColumn) params.set("sortColumn", sortColumn);
+
     if (sortColumn && sortDirection !== "asc") {
       params.set("sortDirection", sortDirection);
     }
 
     const nextUrl = params.toString() ? `?${params.toString()}` : "?";
+
     router.replace(nextUrl, { scroll: false });
   }, [
     search,
@@ -390,11 +413,14 @@ export default function CostTable() {
 
     if (selectedRows.length > 0) {
       exportFilteredToXlsx(selectedRows as Custo[], fileName);
+
       toastCustom.success("Exportação concluída!", "Download iniciado.");
+
       return;
     }
 
     setExporting(true);
+
     try {
       const pageSize = 1000;
       let all: Custo[] = [];
@@ -402,17 +428,22 @@ export default function CostTable() {
 
       while (true) {
         const to = from + pageSize - 1;
+
         const { data, error } = await buildQuery(false).range(from, to);
+
         if (error) throw error;
 
         const chunk = (data || []) as Custo[];
+
         all = all.concat(chunk);
 
         if (chunk.length < pageSize) break;
+
         from += pageSize;
       }
 
       exportFilteredToXlsx(all, fileName);
+
       toastCustom.success("Exportação concluída!", "Download iniciado.");
     } catch (err: any) {
       toastCustom.error(
@@ -433,6 +464,7 @@ export default function CostTable() {
       "Custo Antigo",
       "NCM",
     ];
+
     const ws = XLSX.utils.aoa_to_sheet([headers]);
 
     const style = {
@@ -443,6 +475,7 @@ export default function CostTable() {
 
     headers.forEach((_, idx) => {
       const cell = XLSX.utils.encode_cell({ r: 0, c: idx });
+
       (ws as any)[cell] = (ws as any)[cell] || {};
       (ws as any)[cell].s = style;
     });
@@ -472,9 +505,11 @@ export default function CostTable() {
     );
 
     const wb = XLSX.utils.book_new();
+
     XLSX.utils.book_append_sheet(wb, ws, "Inclusão");
 
     const now = new Date();
+
     const nomeArquivo = `INCLUSÃO - ${now
       .toLocaleDateString("pt-BR")
       .replace(/\//g, "-")} ${now
@@ -489,6 +524,7 @@ export default function CostTable() {
       const { data } = await supabase.from("custos").select("*");
 
       const now = new Date();
+
       const fileName = `ALTERAÇÃO - ${now
         .toLocaleDateString("pt-BR")
         .replace(/\//g, "-")} ${now
@@ -496,6 +532,7 @@ export default function CostTable() {
         .replace(/:/g, "-")}.xlsx`;
 
       exportFilteredToXlsx((data || []) as Custo[], fileName);
+
       toastCustom.success("Modelo exportado!", "Download iniciado.");
     } catch (err: any) {
       toastCustom.error(
@@ -505,8 +542,246 @@ export default function CostTable() {
     }
   };
 
+  const getRowsForRenameExport = async () => {
+    if (selectedRows.length > 0) return selectedRows;
+
+    const pageSize = 1000;
+    let all: Custo[] = [];
+    let from = 0;
+
+    while (true) {
+      const to = from + pageSize - 1;
+
+      const { data, error } = await buildQuery(false).range(from, to);
+
+      if (error) throw error;
+
+      const chunk = (data || []) as Custo[];
+
+      all = all.concat(chunk);
+
+      if (chunk.length < pageSize) break;
+
+      from += pageSize;
+    }
+
+    return all;
+  };
+
+  const handleExportRenomeacaoCodigos = async () => {
+    setExporting(true);
+
+    try {
+      const exportRows = await getRowsForRenameExport();
+
+      if (!exportRows.length) {
+        throw new Error("Nenhum custo encontrado.");
+      }
+
+      const headers = [
+        "Código",
+        "Novo Código",
+        "Marca",
+        "Produto",
+        "Custo Atual",
+        "Custo Antigo",
+        "NCM",
+      ];
+
+      const data = [
+        headers,
+        ...exportRows.map((row) => [
+          String(row["Código"] ?? ""),
+          "",
+          String(row["Marca"] ?? ""),
+          String(row["Produto"] ?? ""),
+          row["Custo Atual"] ?? "",
+          row["Custo Antigo"] ?? "",
+          String(row["NCM"] ?? ""),
+        ]),
+      ];
+
+      const ws = XLSX.utils.aoa_to_sheet(data);
+
+      const headerStyle = {
+        fill: {
+          type: "pattern",
+          patternType: "solid",
+          fgColor: { rgb: "1A8CEB" },
+        },
+        font: {
+          bold: true,
+          color: { rgb: "FFFFFF" },
+        },
+        alignment: {
+          horizontal: "center",
+          vertical: "center",
+        },
+      };
+
+      const newCodeStyle = {
+        fill: {
+          type: "pattern",
+          patternType: "solid",
+          fgColor: { rgb: "FFF2CC" },
+        },
+        numFmt: "@",
+        alignment: {
+          horizontal: "left",
+          vertical: "center",
+        },
+      };
+
+      headers.forEach((_, col) => {
+        const ref = XLSX.utils.encode_cell({ r: 0, c: col });
+
+        if ((ws as any)[ref]) {
+          (ws as any)[ref].s = headerStyle;
+        }
+      });
+
+      for (let row = 1; row <= exportRows.length; row++) {
+        const codigoRef = XLSX.utils.encode_cell({ r: row, c: 0 });
+        const novoRef = XLSX.utils.encode_cell({ r: row, c: 1 });
+
+        if ((ws as any)[codigoRef]) {
+          (ws as any)[codigoRef].t = "s";
+          (ws as any)[codigoRef].z = "@";
+        }
+
+        if (!(ws as any)[novoRef]) {
+          (ws as any)[novoRef] = {
+            t: "s",
+            v: "",
+          };
+        }
+
+        (ws as any)[novoRef].s = newCodeStyle;
+      }
+
+      (ws as any)["!cols"] = [
+        { wch: 22 },
+        { wch: 22 },
+        { wch: 20 },
+        { wch: 38 },
+        { wch: 15 },
+        { wch: 15 },
+        { wch: 14 },
+      ];
+
+      (ws as any)["!autofilter"] = {
+        ref: `A1:G${exportRows.length + 1}`,
+      };
+
+      const instructions = XLSX.utils.aoa_to_sheet([
+        ["RENOMEAÇÃO DE CÓDIGOS EM MASSA"],
+        [],
+        ["1. Não altere a coluna Código."],
+        ['2. Preencha somente a coluna "Novo Código" nas linhas desejadas.'],
+        ["3. Linhas sem Novo Código serão ignoradas."],
+        [
+          "4. A importação atualizará custos e Código 1 até Código 10 em PK e SB.",
+        ],
+        [
+          "5. Quantidades, IDs, nomes, referências e percentuais serão preservados.",
+        ],
+      ]);
+
+      (instructions as any)["!cols"] = [{ wch: 110 }];
+
+      const wb = XLSX.utils.book_new();
+
+      XLSX.utils.book_append_sheet(wb, ws, "Renomeação");
+      XLSX.utils.book_append_sheet(wb, instructions, "Instruções");
+
+      const now = new Date();
+
+      const fileName = `RENOMEAÇÃO DE CÓDIGOS - ${now
+        .toLocaleDateString("pt-BR")
+        .replace(/\//g, "-")} ${now
+        .toLocaleTimeString("pt-BR")
+        .replace(/:/g, "-")}.xlsx`;
+
+      XLSX.writeFile(wb, fileName);
+
+      toastCustom.success(
+        "Planilha exportada!",
+        `${exportRows.length} custo(s). Preencha a coluna Novo Código.`
+      );
+    } catch (err: any) {
+      toastCustom.error(
+        "Erro ao exportar renomeações",
+        err?.message || "Falha ao gerar a planilha."
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleImportRenomeacaoCodigos = async (file: File) => {
+    if (renamingCodes) return;
+
+    try {
+      toastCustom.message("Lendo planilha...", "Validando as renomeações.");
+
+      const previewResult = await importRenomeacaoCodigosFromXlsxOrCsv(
+        file,
+        true
+      );
+
+      const renomeacoes = previewResult.data;
+
+      const preview = renomeacoes
+        .slice(0, 8)
+        .map((item) => `${item.codigo_antigo} → ${item.codigo_novo}`)
+        .join("\n");
+
+      const confirmed = window.confirm(
+        `Foram encontradas ${renomeacoes.length} renomeação(ões).\n\n${preview}${
+          renomeacoes.length > 8 ? "\n..." : ""
+        }\n\nDeseja executar o lote?`
+      );
+
+      if (!confirmed) return;
+
+      setRenamingCodes(true);
+
+      toastCustom.message(
+        "Renomeando códigos...",
+        "Atualizando custos, anúncios e composições."
+      );
+
+      const result = await importRenomeacaoCodigosFromXlsxOrCsv(
+        renomeacoes,
+        false
+      );
+
+      setSelectedRows([]);
+
+      await loadData(currentPage, itemsPerPage);
+      await loadAllBrands();
+
+      playImportSuccessSound(0.4);
+
+      toastCustom.success(
+        "Renomeação concluída!",
+        `${result.data.length} código(s) processado(s) e ${
+          result.recalculosProcessados ?? 0
+        } recálculo(s) concluído(s).`
+      );
+    } catch (err: any) {
+      toastCustom.error(
+        "Erro ao renomear códigos",
+        err?.message || "Falha no processamento da planilha."
+      );
+    } finally {
+      setRenamingCodes(false);
+    }
+  };
+
   const openCreate = () => {
     setMode("create");
+
     setForm({
       ["Código"]: "",
       ["Marca"]: "",
@@ -515,6 +790,7 @@ export default function CostTable() {
       ["Custo Antigo"]: "",
       ["NCM"]: "",
     });
+
     setOpenNew(true);
   };
 
@@ -564,6 +840,7 @@ export default function CostTable() {
       toastCustom.success("Custo atualizado!", "Alteração salva com sucesso.");
     } catch (err: any) {
       setRows(prevRows);
+
       toastCustom.error(
         "Erro ao atualizar custo",
         err?.message || "Falha ao salvar alteração."
@@ -582,6 +859,7 @@ export default function CostTable() {
 
   const deleteSelected = async () => {
     if (!selectedRows.length) return;
+
     setDeleting(true);
 
     try {
@@ -595,10 +873,12 @@ export default function CostTable() {
 
       setSelectedRows([]);
       setOpenDelete(false);
+
       toastCustom.success(
         "Exclusão concluída!",
         "Registros removidos com sucesso."
       );
+
       loadData();
     } catch (err: any) {
       toastCustom.error(
@@ -660,12 +940,14 @@ export default function CostTable() {
 
   const confirmImport = async () => {
     if (!parsedRows.length) return;
+
     setImporting(true);
 
     try {
       toastCustom.message("Importando...", "Aguarde a conclusão.");
 
       await importFromXlsxOrCsv(parsedRows, false, importTipo);
+
       await loadData();
       await loadAllBrands();
 
@@ -776,13 +1058,15 @@ export default function CostTable() {
         <aside className="relative hidden lg:block">
           <div className="fixed right-5 top-23 h-screen w-[300px] overflow-y-auto bg-[#0b0b0c]">
             <CostActionsSidebar
-              exporting={exporting}
+              exporting={exporting || renamingCodes}
               handleExport={handleExport}
               onOpenCreate={openCreate}
               onExportModeloInclusao={handleExportModeloInclusao}
               onExportModeloAlteracao={handleExportModeloAlteracao}
+              onExportRenomeacaoCodigos={handleExportRenomeacaoCodigos}
               onImportInclusao={handleImportInclusao}
               onImportAlteracao={handleImportAlteracao}
+              onImportRenomeacaoCodigos={handleImportRenomeacaoCodigos}
             />
           </div>
         </aside>
@@ -865,7 +1149,7 @@ export default function CostTable() {
 
             <div className="pb-[calc(1rem+env(safe-area-inset-bottom))]">
               <CostActionsSidebar
-                exporting={exporting}
+                exporting={exporting || renamingCodes}
                 handleExport={handleExport}
                 onOpenCreate={() => {
                   setOpenActionsMobile(false);
@@ -873,6 +1157,7 @@ export default function CostTable() {
                 }}
                 onExportModeloInclusao={handleExportModeloInclusao}
                 onExportModeloAlteracao={handleExportModeloAlteracao}
+                onExportRenomeacaoCodigos={handleExportRenomeacaoCodigos}
                 onImportInclusao={(file) => {
                   setOpenActionsMobile(false);
                   handleImportInclusao(file);
@@ -880,6 +1165,10 @@ export default function CostTable() {
                 onImportAlteracao={(file) => {
                   setOpenActionsMobile(false);
                   handleImportAlteracao(file);
+                }}
+                onImportRenomeacaoCodigos={(file) => {
+                  setOpenActionsMobile(false);
+                  handleImportRenomeacaoCodigos(file);
                 }}
               />
             </div>

@@ -15,12 +15,17 @@ import { unlockAudio } from "@/utils/sound";
 
 type Props = {
   exporting: boolean;
+
   handleExport: () => void | Promise<void>;
   onOpenCreate: () => void | Promise<void>;
+
   onExportModeloInclusao: () => void | Promise<void>;
   onExportModeloAlteracao: () => void | Promise<void>;
-  onImportInclusao: (file: File) => void;
-  onImportAlteracao: (file: File) => void;
+  onExportRenomeacaoCodigos: () => void | Promise<void>;
+
+  onImportInclusao: (file: File) => void | Promise<void>;
+  onImportAlteracao: (file: File) => void | Promise<void>;
+  onImportRenomeacaoCodigos: (file: File) => void | Promise<void>;
 };
 
 type ActionTextButtonProps = {
@@ -101,11 +106,14 @@ export default function CostActionsSidebar({
   onOpenCreate,
   onExportModeloInclusao,
   onExportModeloAlteracao,
+  onExportRenomeacaoCodigos,
   onImportInclusao,
   onImportAlteracao,
+  onImportRenomeacaoCodigos,
 }: Props) {
   const inputInclusaoRef = useRef<HTMLInputElement | null>(null);
   const inputAlteracaoRef = useRef<HTMLInputElement | null>(null);
+  const inputRenomeacaoCodigosRef = useRef<HTMLInputElement | null>(null);
 
   const [hydrated, setHydrated] = useState(false);
   const [showMoreOptions, setShowMoreOptions] = useState(true);
@@ -113,6 +121,7 @@ export default function CostActionsSidebar({
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY);
+
       setShowMoreOptions(saved !== null ? saved === "true" : true);
     } catch {
       setShowMoreOptions(true);
@@ -125,16 +134,33 @@ export default function CostActionsSidebar({
     if (!hydrated) return;
 
     try {
-      window.localStorage.setItem(STORAGE_KEY, String(showMoreOptions));
-    } catch {}
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        String(showMoreOptions)
+      );
+    } catch {
+      // Ignora falhas de acesso ao localStorage.
+    }
   }, [showMoreOptions, hydrated]);
 
   const handleFileChange =
-    (callback: (file: File) => void) =>
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) callback(file);
-      e.target.value = "";
+    (
+      callback: (
+        file: File
+      ) => void | Promise<void>
+    ) =>
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+
+      if (file) {
+        void callback(file);
+      }
+
+      /*
+       * Permite selecionar novamente o mesmo arquivo,
+       * caso o usuário queira repetir a importação.
+       */
+      event.target.value = "";
     };
 
   const triggerFileInput = async (
@@ -149,11 +175,12 @@ export default function CostActionsSidebar({
   return (
     <div
       className="
+        w-full
         bg-transparent
         p-3 sm:p-4
-        w-full
       "
     >
+      {/* Importação de inclusão */}
       <input
         type="file"
         ref={inputInclusaoRef}
@@ -163,6 +190,7 @@ export default function CostActionsSidebar({
         onChange={handleFileChange(onImportInclusao)}
       />
 
+      {/* Importação de alteração */}
       <input
         type="file"
         ref={inputAlteracaoRef}
@@ -170,6 +198,18 @@ export default function CostActionsSidebar({
         accept=".xlsx,.csv"
         aria-label="Importar dados de alteração"
         onChange={handleFileChange(onImportAlteracao)}
+      />
+
+      {/* Importação de renomeação de códigos */}
+      <input
+        type="file"
+        ref={inputRenomeacaoCodigosRef}
+        className="hidden"
+        accept=".xlsx,.csv"
+        aria-label="Importar renomeação de códigos"
+        onChange={handleFileChange(
+          onImportRenomeacaoCodigos
+        )}
       />
 
       <div className="space-y-2 sm:space-y-2">
@@ -190,13 +230,16 @@ export default function CostActionsSidebar({
         <div className="pt-2 sm:pt-1">
           <button
             type="button"
-            onClick={() => setShowMoreOptions((prev) => !prev)}
+            onClick={() =>
+              setShowMoreOptions((previous) => !previous)
+            }
             className="
               mb-2
-              flex items-center gap-2
-              cursor-pointer
+              flex cursor-pointer
+              items-center gap-2
               px-2
-              text-sm font-semibold text-green-400
+              text-sm font-semibold
+              text-green-400
               active:scale-[0.98]
               hover:underline
             "
@@ -206,6 +249,7 @@ export default function CostActionsSidebar({
             ) : (
               <SquarePlus className="h-4 w-4" />
             )}
+
             Mais opções
           </button>
 
@@ -216,27 +260,54 @@ export default function CostActionsSidebar({
               </div>
 
               <ActionTextButton
-                icon={<FileDownIcon className="h-4 w-4" />}
+                icon={
+                  <FileDownIcon className="h-4 w-4" />
+                }
                 label="Baixar planilha modelo de inclusão"
                 onClick={onExportModeloInclusao}
               />
 
               <ActionTextButton
-                icon={<FileSpreadsheet className="h-4 w-4" />}
+                icon={
+                  <FileSpreadsheet className="h-4 w-4" />
+                }
                 label="Baixar planilha modelo de alteração"
                 onClick={onExportModeloAlteracao}
               />
 
               <ActionTextButton
+                icon={
+                  <FileSpreadsheet className="h-4 w-4" />
+                }
+                label="Exportar planilha para renomear códigos"
+                onClick={onExportRenomeacaoCodigos}
+                disabled={exporting}
+              />
+
+              <ActionTextButton
                 icon={<Upload className="h-4 w-4" />}
                 label="Importar dados de inclusão"
-                onClick={() => triggerFileInput(inputInclusaoRef)}
+                onClick={() =>
+                  triggerFileInput(inputInclusaoRef)
+                }
               />
 
               <ActionTextButton
                 icon={<Upload className="h-4 w-4" />}
                 label="Importar dados de alteração"
-                onClick={() => triggerFileInput(inputAlteracaoRef)}
+                onClick={() =>
+                  triggerFileInput(inputAlteracaoRef)
+                }
+              />
+
+              <ActionTextButton
+                icon={<Upload className="h-4 w-4" />}
+                label="Importar renomeação de códigos"
+                onClick={() =>
+                  triggerFileInput(
+                    inputRenomeacaoCodigosRef
+                  )
+                }
               />
             </div>
           )}
