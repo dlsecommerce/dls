@@ -1134,19 +1134,43 @@ export async function importRenomeacaoCodigosFromXlsxOrCsv(
   );
 
   const {
-    error,
-  } = await (
-    supabase as any
-  ).rpc(
-    "renomear_codigos_planilha_v3",
+    data: sessionData,
+    error: sessionError,
+  } = await supabase.auth.getSession();
+
+  if (
+    sessionError ||
+    !sessionData.session?.access_token
+  ) {
+    throw new Error(
+      "Sua sessão expirou. Entre novamente no sistema."
+    );
+  }
+
+  const response = await fetch(
+    "/api/custos/renomear-codigos",
     {
-      p_alteracoes:
-        payload,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessionData.session.access_token}`,
+      },
+      body: JSON.stringify({
+        alteracoes: payload,
+      }),
     }
   );
 
-  if (error) {
-    throw error;
+  const responseBody = await response
+    .json()
+    .catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      responseBody?.error ??
+        responseBody?.message ??
+        "Não foi possível renomear os códigos."
+    );
   }
 
   let recalculosProcessados =
