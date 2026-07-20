@@ -56,9 +56,11 @@ function cleanHeaderKey(key: string) {
  */
 function normalizeRowKeys(row: Record<string, any>) {
   const out: Record<string, any> = {};
+
   for (const [k, v] of Object.entries(row)) {
     out[cleanHeaderKey(k)] = v;
   }
+
   return out;
 }
 
@@ -76,16 +78,23 @@ function parseCurrency(value: any): number | null {
 
   str = str.replace(/R\$/gi, "").replace(/\s/g, "");
   str = str.replace(/[^\d.,-]/g, "");
+
   if (!str) return null;
 
   if (str.includes(".") && str.includes(",")) {
     const n = Number(str.replace(/\./g, "").replace(",", "."));
-    return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
+
+    return Number.isFinite(n)
+      ? Number(n.toFixed(2))
+      : null;
   }
 
   if (str.includes(",") && !str.includes(".")) {
     const n = Number(str.replace(",", "."));
-    return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
+
+    return Number.isFinite(n)
+      ? Number(n.toFixed(2))
+      : null;
   }
 
   if (str.includes(".") && !str.includes(",")) {
@@ -94,61 +103,99 @@ function parseCurrency(value: any): number | null {
 
     if (/^\d{3}$/.test(last)) {
       const n = Number(str.replace(/\./g, ""));
-      return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
+
+      return Number.isFinite(n)
+        ? Number(n.toFixed(2))
+        : null;
     }
 
     const n = Number(str);
-    return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
+
+    return Number.isFinite(n)
+      ? Number(n.toFixed(2))
+      : null;
   }
 
   const n = Number(str);
-  return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
+
+  return Number.isFinite(n)
+    ? Number(n.toFixed(2))
+    : null;
 }
 
 // =====================================================================
 // ✅ NCM como texto (só dígitos) — sua coluna no banco é TEXT
 // =====================================================================
 function normalizeNcm(value: any): string | null {
-  if (value === null || value === undefined || value === "") return null;
-  const digits = String(value).trim().replace(/\D/g, "");
-  return digits ? digits : null;
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const digits = String(value)
+    .trim()
+    .replace(/\D/g, "");
+
+  return digits || null;
 }
 
 // =====================================================================
 // ✅ Produto como texto (trim) — sua coluna no banco é TEXT
 // =====================================================================
 function normalizeProduto(value: any): string | null {
-  if (value === null || value === undefined || value === "") return null;
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
   const s = String(value).trim();
-  return s ? s : null;
+
+  return s || null;
 }
 
 // =====================================================================
 // ✅ Marca como texto (trim)
 // =====================================================================
 function normalizeMarca(value: any): string | null {
-  if (value === null || value === undefined || value === "") return null;
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
   const s = String(value).trim();
-  return s ? s : null;
+
+  return s || null;
 }
 
 // =====================================================================
 // ✅ Código com validação forte
 // =====================================================================
 function normalizeCodigo(value: any): string | null {
-  if (value === null || value === undefined || value === "") return null;
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
 
   const codigo = String(value)
     .replace(/\u00a0/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
-  if (!codigo || codigo.length < 2) return null;
-  if (/[\u0000-\u001f\u007f]/.test(codigo)) return null;
-  if (!/[a-zA-Z0-9À-ÿ]/.test(codigo)) return null;
+  if (!codigo || codigo.length < 2) {
+    return null;
+  }
+
+  if (/[\u0000-\u001f\u007f]/.test(codigo)) {
+    return null;
+  }
+
+  if (!/[a-zA-Z0-9À-ÿ]/.test(codigo)) {
+    return null;
+  }
 
   const lower = codigo.toLowerCase();
-  if (lower === "null" || lower === "undefined" || lower === "nan") {
+
+  if (
+    lower === "null" ||
+    lower === "undefined" ||
+    lower === "nan"
+  ) {
     return null;
   }
 
@@ -165,21 +212,50 @@ function normalizeRow(rowRaw: Record<string, any>) {
     const key = Object.keys(row).find((k) =>
       keys.some(
         (p) =>
-          cleanHeaderKey(k).toLowerCase() === cleanHeaderKey(p).toLowerCase()
+          cleanHeaderKey(k).toLowerCase() ===
+          cleanHeaderKey(p).toLowerCase()
       )
     );
+
     return key ? row[key] : undefined;
   };
 
-  const codigoRaw = findKey(["Código", "codigo", "code"]);
+  const codigoRaw = findKey([
+    "Código",
+    "codigo",
+    "code",
+  ]);
+
   const codigo = normalizeCodigo(codigoRaw);
+
   if (!codigo) return null;
 
-  const marcaRaw = findKey(["Marca", "marca", "brand"]);
-  const produtoRaw = findKey(["Produto", "produto", "product"]);
-  const custoAtualRaw = findKey(["Custo Atual", "custo atual"]);
-  const custoAntigoRaw = findKey(["Custo Antigo", "custo antigo"]);
-  const ncmRaw = findKey(["NCM", "ncm"]);
+  const marcaRaw = findKey([
+    "Marca",
+    "marca",
+    "brand",
+  ]);
+
+  const produtoRaw = findKey([
+    "Produto",
+    "produto",
+    "product",
+  ]);
+
+  const custoAtualRaw = findKey([
+    "Custo Atual",
+    "custo atual",
+  ]);
+
+  const custoAntigoRaw = findKey([
+    "Custo Antigo",
+    "custo antigo",
+  ]);
+
+  const ncmRaw = findKey([
+    "NCM",
+    "ncm",
+  ]);
 
   const custoAtual = parseCurrency(custoAtualRaw);
   const custoAntigo = parseCurrency(custoAntigoRaw);
@@ -189,8 +265,14 @@ function normalizeRow(rowRaw: Record<string, any>) {
     Código: codigo,
     Marca: marca,
     Produto: normalizeProduto(produtoRaw),
-    "Custo Atual": typeof custoAtual === "number" ? custoAtual : 0,
-    "Custo Antigo": typeof custoAntigo === "number" ? custoAntigo : 0,
+    "Custo Atual":
+      typeof custoAtual === "number"
+        ? custoAtual
+        : 0,
+    "Custo Antigo":
+      typeof custoAntigo === "number"
+        ? custoAntigo
+        : 0,
     NCM: normalizeNcm(ncmRaw),
   };
 }
@@ -201,6 +283,7 @@ function normalizeRow(rowRaw: Record<string, any>) {
 function assertNumericOkFast(batch: any[]) {
   for (let idx = 0; idx < batch.length; idx++) {
     const r = batch[idx];
+
     const ca = r["Custo Atual"];
     const co = r["Custo Antigo"];
 
@@ -211,7 +294,12 @@ function assertNumericOkFast(batch: any[]) {
       !Number.isFinite(co);
 
     if (badNumeric) {
-      console.error("🚨 Linha com numeric inválido (índice no batch):", idx, r);
+      console.error(
+        "🚨 Linha com numeric inválido (índice no batch):",
+        idx,
+        r
+      );
+
       throw new Error(
         "Payload inválido: 'Custo Atual'/'Custo Antigo' precisa ser number finito. Verifique o arquivo de origem."
       );
@@ -225,8 +313,11 @@ function assertNumericOkFast(batch: any[]) {
 function assertNoCommaStringsStrict(batch: any[]) {
   for (let idx = 0; idx < batch.length; idx++) {
     const r = batch[idx];
+
     const badCommaString = Object.entries(r).find(
-      ([, v]) => typeof v === "string" && v.includes(",")
+      ([, v]) =>
+        typeof v === "string" &&
+        v.includes(",")
     );
 
     if (badCommaString) {
@@ -252,9 +343,18 @@ function assertNoCommaStringsStrict(batch: any[]) {
 // ✅ Heurística para detectar timeout / 504 / statement_timeout
 // =====================================================================
 function isLikelyTimeout(err: any) {
-  const msg = String(err?.message ?? "").toLowerCase();
-  const code = String(err?.code ?? "").toLowerCase();
-  const status = err?.status ?? err?.statusCode ?? err?.cause?.status;
+  const msg = String(
+    err?.message ?? ""
+  ).toLowerCase();
+
+  const code = String(
+    err?.code ?? ""
+  ).toLowerCase();
+
+  const status =
+    err?.status ??
+    err?.statusCode ??
+    err?.cause?.status;
 
   return (
     status === 504 ||
@@ -267,7 +367,9 @@ function isLikelyTimeout(err: any) {
 }
 
 function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
+  return new Promise((resolve) =>
+    setTimeout(resolve, ms)
+  );
 }
 
 // =====================================================================
@@ -285,13 +387,29 @@ async function upsertInBatches(
     pauseMsBetweenBatches?: number;
   }
 ) {
-  let batchSize = options?.initialBatchSize ?? INITIAL_BATCH_SIZE;
-  const minBatchSize = options?.minBatchSize ?? MIN_BATCH_SIZE;
-  const maxRetries = options?.maxRetries ?? MAX_RETRIES;
-  const validateNumeric = options?.validateNumeric ?? true;
+  let batchSize =
+    options?.initialBatchSize ??
+    INITIAL_BATCH_SIZE;
+
+  const minBatchSize =
+    options?.minBatchSize ??
+    MIN_BATCH_SIZE;
+
+  const maxRetries =
+    options?.maxRetries ??
+    MAX_RETRIES;
+
+  const validateNumeric =
+    options?.validateNumeric ??
+    true;
+
   const strictCommaCheck =
-    options?.strictCommaCheck ?? DEBUG_STRICT_COMMA_CHECK;
-  const pauseMsBetweenBatches = options?.pauseMsBetweenBatches ?? 10;
+    options?.strictCommaCheck ??
+    DEBUG_STRICT_COMMA_CHECK;
+
+  const pauseMsBetweenBatches =
+    options?.pauseMsBetweenBatches ??
+    10;
 
   const upsertArgs =
     tipo === "inclusao"
@@ -306,15 +424,28 @@ async function upsertInBatches(
         };
 
   for (let i = 0; i < rows.length; ) {
-    const batch = rows.slice(i, i + batchSize);
+    const batch = rows.slice(
+      i,
+      i + batchSize
+    );
 
-    if (validateNumeric) assertNumericOkFast(batch);
-    if (strictCommaCheck) assertNoCommaStringsStrict(batch);
+    if (validateNumeric) {
+      assertNumericOkFast(batch);
+    }
+
+    if (strictCommaCheck) {
+      assertNoCommaStringsStrict(batch);
+    }
 
     let attempt = 0;
 
     while (true) {
-      const { error } = await supabase.from("custos").upsert(batch, upsertArgs);
+      const { error } = await supabase
+        .from("custos")
+        .upsert(
+          batch,
+          upsertArgs
+        );
 
       if (!error) {
         i += batch.length;
@@ -333,23 +464,45 @@ async function upsertInBatches(
         progress: `${i}/${rows.length}`,
       });
 
-      if (isLikelyTimeout(error) && batchSize > minBatchSize) {
-        batchSize = Math.max(minBatchSize, Math.floor(batchSize / 2));
+      if (
+        isLikelyTimeout(error) &&
+        batchSize > minBatchSize
+      ) {
+        batchSize = Math.max(
+          minBatchSize,
+          Math.floor(batchSize / 2)
+        );
+
         console.warn(
           `⏳ Timeout detectado. Reduzindo batch para ${batchSize} e tentando novamente...`
         );
+
         await sleep(250 * attempt);
+
         continue;
       }
 
       if (attempt <= maxRetries) {
-        const backoff = Math.min(8000, 400 * 2 ** (attempt - 1));
+        const backoff = Math.min(
+          8000,
+          400 * 2 ** (attempt - 1)
+        );
+
         await sleep(backoff);
+
         continue;
       }
 
-      console.error("📦 Batch (amostra):", batch.slice(0, 5));
-      console.error("📦 Batch[0] (primeiro item):", batch[0]);
+      console.error(
+        "📦 Batch (amostra):",
+        batch.slice(0, 5)
+      );
+
+      console.error(
+        "📦 Batch[0] (primeiro item):",
+        batch[0]
+      );
+
       throw error;
     }
 
@@ -372,12 +525,19 @@ async function notifyCostImportResult(params: {
       tipo === "inclusao"
         ? "Importação de custos concluída"
         : "Atualização de custos concluída",
+
     message:
       tipo === "inclusao"
         ? `${total} custo(s) foram processados. Códigos existentes foram ignorados.`
         : `${total} custo(s) foram atualizados por código.`,
-    action: tipo === "inclusao" ? "create" : "update",
+
+    action:
+      tipo === "inclusao"
+        ? "create"
+        : "update",
+
     entityType: "cost_import",
+
     link: "/dashboard/custos",
   });
 }
@@ -395,7 +555,9 @@ export async function importFromXlsxOrCsv(
   const now = new Date();
 
   const fileName = `${
-    tipo === "inclusao" ? "INCLUSÃO" : "ALTERAÇÃO"
+    tipo === "inclusao"
+      ? "INCLUSÃO"
+      : "ALTERAÇÃO"
   } - ${now
     .toLocaleDateString("pt-BR")
     .replace(/\//g, "-")} ${now
@@ -406,39 +568,65 @@ export async function importFromXlsxOrCsv(
 
   // 📁 INPUT FILE
   if (input instanceof File) {
-    const buffer = await input.arrayBuffer();
+    const buffer =
+      await input.arrayBuffer();
 
-    const workbook = XLSX.read(buffer, {
-      type: "array",
-      codepage: 65001,
-      cellDates: true,
-    });
+    const workbook = XLSX.read(
+      buffer,
+      {
+        type: "array",
+        codepage: 65001,
+        cellDates: true,
+      }
+    );
 
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const sheet =
+      workbook.Sheets[
+        workbook.SheetNames[0]
+      ];
 
-    rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
-      defval: "",
-    });
+    rawRows =
+      XLSX.utils.sheet_to_json<
+        Record<string, any>
+      >(sheet, {
+        defval: "",
+      });
   }
 
   // 📦 INPUT ARRAY
   else if (Array.isArray(input)) {
-    rawRows = input as Record<string, any>[];
+    rawRows =
+      input as Record<string, any>[];
   } else {
-    throw new Error("Formato de importação inválido.");
+    throw new Error(
+      "Formato de importação inválido."
+    );
   }
 
   // 🔎 Validação de colunas (somente quando veio de arquivo)
-  if (rawRows.length > 0 && input instanceof File) {
-    const headers = Object.keys(normalizeRowKeys(rawRows[0] || {}));
-
-    const missing = REQUIRED_COLUMNS.filter(
-      (col) =>
-        !headers.some(
-          (h) =>
-            cleanHeaderKey(h).toLowerCase() === cleanHeaderKey(col).toLowerCase()
-        )
+  if (
+    rawRows.length > 0 &&
+    input instanceof File
+  ) {
+    const headers = Object.keys(
+      normalizeRowKeys(
+        rawRows[0] || {}
+      )
     );
+
+    const missing =
+      REQUIRED_COLUMNS.filter(
+        (col) =>
+          !headers.some(
+            (h) =>
+              cleanHeaderKey(
+                h
+              ).toLowerCase() ===
+              cleanHeaderKey(
+                col
+              ).toLowerCase()
+          )
+      );
 
     if (missing.length > 0) {
       warnings.push(
@@ -448,10 +636,15 @@ export async function importFromXlsxOrCsv(
   }
 
   // 🔧 NORMALIZAÇÃO
-  const normalizedAll = rawRows.map(normalizeRow).filter(Boolean) as any[];
+  const normalizedAll = rawRows
+    .map(normalizeRow)
+    .filter(Boolean) as any[];
 
-  const totalLidas = rawRows.length;
-  const totalValidas = normalizedAll.length;
+  const totalLidas =
+    rawRows.length;
+
+  const totalValidas =
+    normalizedAll.length;
 
   if (totalValidas < totalLidas) {
     warnings.push(
@@ -460,25 +653,41 @@ export async function importFromXlsxOrCsv(
   }
 
   // 🧹 DEDUPE POR "Código" (mantém a última ocorrência)
-  const dedupeMap = new Map<string, any>();
+  const dedupeMap =
+    new Map<string, any>();
+
   let duplicatedCount = 0;
 
   for (const row of normalizedAll) {
-    const key = String(row["Código"] ?? "").trim();
+    const key = String(
+      row["Código"] ?? ""
+    ).trim();
+
     if (!key) continue;
 
-    if (dedupeMap.has(key)) duplicatedCount += 1;
-    dedupeMap.set(key, row);
+    if (dedupeMap.has(key)) {
+      duplicatedCount += 1;
+    }
+
+    dedupeMap.set(
+      key,
+      row
+    );
   }
 
-  const deduped = Array.from(dedupeMap.values());
+  const deduped =
+    Array.from(
+      dedupeMap.values()
+    );
 
   if (duplicatedCount > 0) {
     warnings.push(
       `Detectei ${duplicatedCount} linhas com "Código" repetido. Mantive a última ocorrência de cada código (códigos únicos: ${deduped.length}).`
     );
   } else {
-    warnings.push(`Códigos únicos detectados: ${deduped.length}.`);
+    warnings.push(
+      `Códigos únicos detectados: ${deduped.length}.`
+    );
   }
 
   // 🔍 PREVIEW
@@ -491,19 +700,38 @@ export async function importFromXlsxOrCsv(
   }
 
   // ✅ IMPORTAÇÃO REAL
-  await upsertInBatches(deduped, tipo, {
-    initialBatchSize: INITIAL_BATCH_SIZE,
-    minBatchSize: MIN_BATCH_SIZE,
-    maxRetries: MAX_RETRIES,
-    validateNumeric: true,
-    strictCommaCheck: DEBUG_STRICT_COMMA_CHECK,
-    pauseMsBetweenBatches: 10,
-  });
+  await upsertInBatches(
+    deduped,
+    tipo,
+    {
+      initialBatchSize:
+        INITIAL_BATCH_SIZE,
+
+      minBatchSize:
+        MIN_BATCH_SIZE,
+
+      maxRetries:
+        MAX_RETRIES,
+
+      validateNumeric:
+        true,
+
+      strictCommaCheck:
+        DEBUG_STRICT_COMMA_CHECK,
+
+      pauseMsBetweenBatches:
+        10,
+    }
+  );
 
   if (tipo === "inclusao") {
-    warnings.push("Inclusão concluída. Códigos existentes foram ignorados.");
+    warnings.push(
+      "Inclusão concluída. Códigos existentes foram ignorados."
+    );
   } else {
-    warnings.push("Alteração concluída. Registros atualizados por Código.");
+    warnings.push(
+      "Alteração concluída. Registros atualizados por Código."
+    );
   }
 
   await notifyCostImportResult({
@@ -521,102 +749,190 @@ export async function importFromXlsxOrCsv(
 // =====================================================================
 // 🔄 IMPORTAÇÃO DE RENOMEAÇÃO DE CÓDIGOS
 // =====================================================================
-function normalizeRenameHeader(value: any) {
-  return cleanHeaderKey(String(value ?? ""))
+function normalizeRenameHeader(
+  value: any
+) {
+  return cleanHeaderKey(
+    String(value ?? "")
+  )
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(
+      /[\u0300-\u036f]/g,
+      ""
+    )
     .toLowerCase();
 }
 
-function findRenameValue(row: Record<string, any>, aliases: string[]) {
-  const normalizedAliases = new Set(aliases.map(normalizeRenameHeader));
-  const key = Object.keys(row).find((k) =>
-    normalizedAliases.has(normalizeRenameHeader(k))
+function findRenameValue(
+  row: Record<string, any>,
+  aliases: string[]
+) {
+  const normalizedAliases =
+    new Set(
+      aliases.map(
+        normalizeRenameHeader
+      )
+    );
+
+  const key = Object.keys(
+    row
+  ).find((k) =>
+    normalizedAliases.has(
+      normalizeRenameHeader(k)
+    )
   );
-  return key ? row[key] : undefined;
+
+  return key
+    ? row[key]
+    : undefined;
 }
 
-function normalizeRenameRows(rawRows: Record<string, any>[]) {
+function normalizeRenameRows(
+  rawRows: Record<string, any>[]
+) {
   const data: RenomeacaoCodigo[] = [];
   const warnings: string[] = [];
   const errors: string[] = [];
-  const oldCodes = new Map<string, number>();
-  const newCodes = new Map<string, { oldCode: string; line: number }>();
 
-  rawRows.forEach((row, index) => {
-    const line = Number(row?.linha) || index + 2;
+  const oldCodes =
+    new Map<string, number>();
 
-    const oldRaw =
-      row?.codigo_antigo ??
-      findRenameValue(row, [
-        "Código",
-        "Codigo",
-        "Código Atual",
-        "Codigo Atual",
-        "Código Antigo",
-        "Codigo Antigo",
-        "codigo_antigo",
-      ]);
+  const newCodes =
+    new Map<
+      string,
+      {
+        oldCode: string;
+        line: number;
+      }
+    >();
 
-    const newRaw =
-      row?.codigo_novo ??
-      findRenameValue(row, [
-        "Novo Código",
-        "Novo Codigo",
-        "Código Novo",
-        "Codigo Novo",
-        "codigo_novo",
-      ]);
+  rawRows.forEach(
+    (row, index) => {
+      const line =
+        Number(row?.linha) ||
+        index + 2;
 
-    const oldCode = normalizeCodigo(oldRaw)?.toUpperCase() ?? null;
-    const newCode = normalizeCodigo(newRaw)?.toUpperCase() ?? null;
+      const oldRaw =
+        row?.codigo_antigo ??
+        findRenameValue(
+          row,
+          [
+            "Código",
+            "Codigo",
+            "Código Atual",
+            "Codigo Atual",
+            "Código Antigo",
+            "Codigo Antigo",
+            "codigo_antigo",
+          ]
+        );
 
-    // Linhas sem Novo Código são ignoradas.
-    if (!newCode) return;
+      const newRaw =
+        row?.codigo_novo ??
+        findRenameValue(
+          row,
+          [
+            "Novo Código",
+            "Novo Codigo",
+            "Código Novo",
+            "Codigo Novo",
+            "codigo_novo",
+          ]
+        );
 
-    if (!oldCode) {
-      errors.push(`Linha ${line}: a coluna "Código" está vazia ou inválida.`);
-      return;
-    }
+      const oldCode =
+        normalizeCodigo(
+          oldRaw
+        )?.toUpperCase() ??
+        null;
 
-    if (oldCode === newCode) {
-      warnings.push(
-        `Linha ${line}: ${oldCode} foi ignorado porque o novo código é igual ao atual.`
+      const newCode =
+        normalizeCodigo(
+          newRaw
+        )?.toUpperCase() ??
+        null;
+
+      // Linhas sem Novo Código são ignoradas.
+      if (!newCode) return;
+
+      if (!oldCode) {
+        errors.push(
+          `Linha ${line}: a coluna "Código" está vazia ou inválida.`
+        );
+
+        return;
+      }
+
+      if (oldCode === newCode) {
+        warnings.push(
+          `Linha ${line}: ${oldCode} foi ignorado porque o novo código é igual ao atual.`
+        );
+
+        return;
+      }
+
+      const previousOldLine =
+        oldCodes.get(oldCode);
+
+      if (
+        previousOldLine !==
+        undefined
+      ) {
+        errors.push(
+          `Código antigo duplicado: ${oldCode} nas linhas ${previousOldLine} e ${line}.`
+        );
+
+        return;
+      }
+
+      const previousNewOwner =
+        newCodes.get(newCode);
+
+      if (
+        previousNewOwner &&
+        previousNewOwner.oldCode !==
+          oldCode
+      ) {
+        errors.push(
+          `Código novo duplicado: ${newCode} será usado por ${previousNewOwner.oldCode} (linha ${previousNewOwner.line}) e ${oldCode} (linha ${line}).`
+        );
+
+        return;
+      }
+
+      oldCodes.set(
+        oldCode,
+        line
       );
-      return;
-    }
 
-    const previousOldLine = oldCodes.get(oldCode);
-
-    if (previousOldLine !== undefined) {
-      errors.push(
-        `Código antigo duplicado: ${oldCode} nas linhas ${previousOldLine} e ${line}.`
+      newCodes.set(
+        newCode,
+        {
+          oldCode,
+          line,
+        }
       );
-      return;
+
+      data.push({
+        codigo_antigo:
+          oldCode,
+
+        codigo_novo:
+          newCode,
+
+        linha:
+          line,
+      });
     }
-
-    const previousNewOwner = newCodes.get(newCode);
-
-    if (previousNewOwner && previousNewOwner.oldCode !== oldCode) {
-      errors.push(
-        `Código novo duplicado: ${newCode} será usado por ${previousNewOwner.oldCode} (linha ${previousNewOwner.line}) e ${oldCode} (linha ${line}).`
-      );
-      return;
-    }
-
-    oldCodes.set(oldCode, line);
-    newCodes.set(newCode, { oldCode, line });
-
-    data.push({
-      codigo_antigo: oldCode,
-      codigo_novo: newCode,
-      linha: line,
-    });
-  });
+  );
 
   if (errors.length) {
-    const shown = errors.slice(0, 10);
-    const remaining = errors.length - shown.length;
+    const shown =
+      errors.slice(0, 10);
+
+    const remaining =
+      errors.length -
+      shown.length;
 
     throw new Error(
       `${shown.join("\n")}${
@@ -639,36 +955,71 @@ function normalizeRenameRows(rawRows: Record<string, any>[]) {
   };
 }
 
-async function readRenameFile(file: File) {
-  const workbook = XLSX.read(await file.arrayBuffer(), {
-    type: "array",
-    codepage: 65001,
-    cellDates: true,
-  });
+async function readRenameFile(
+  file: File
+) {
+  const workbook = XLSX.read(
+    await file.arrayBuffer(),
+    {
+      type: "array",
+      codepage: 65001,
+      cellDates: true,
+    }
+  );
 
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const sheet =
+    workbook.Sheets[
+      workbook.SheetNames[0]
+    ];
 
   if (!sheet) {
-    throw new Error("A planilha não possui nenhuma aba válida.");
+    throw new Error(
+      "A planilha não possui nenhuma aba válida."
+    );
   }
 
-  const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
-    defval: "",
-    raw: false,
-  });
+  const rows =
+    XLSX.utils.sheet_to_json<
+      Record<string, any>
+    >(sheet, {
+      defval: "",
+      raw: false,
+    });
 
   if (!rows.length) {
-    throw new Error("A planilha está vazia.");
+    throw new Error(
+      "A planilha está vazia."
+    );
   }
 
-  const headers = Object.keys(rows[0] || {}).map(normalizeRenameHeader);
+  const headers = Object.keys(
+    rows[0] || {}
+  ).map(
+    normalizeRenameHeader
+  );
 
-  if (!headers.includes(normalizeRenameHeader("Código"))) {
-    throw new Error('A planilha precisa conter a coluna "Código".');
+  if (
+    !headers.includes(
+      normalizeRenameHeader(
+        "Código"
+      )
+    )
+  ) {
+    throw new Error(
+      'A planilha precisa conter a coluna "Código".'
+    );
   }
 
-  if (!headers.includes(normalizeRenameHeader("Novo Código"))) {
-    throw new Error('A planilha precisa conter a coluna "Novo Código".');
+  if (
+    !headers.includes(
+      normalizeRenameHeader(
+        "Novo Código"
+      )
+    )
+  ) {
+    throw new Error(
+      'A planilha precisa conter a coluna "Novo Código".'
+    );
   }
 
   return rows;
@@ -677,19 +1028,36 @@ async function readRenameFile(file: File) {
 async function processRenameQueue() {
   let total = 0;
 
-  for (let attempt = 0; attempt < 1000; attempt++) {
-    const { data, error } = await (supabase as any).rpc(
+  for (
+    let attempt = 0;
+    attempt < 1000;
+    attempt++
+  ) {
+    const {
+      data,
+      error,
+    } = await (
+      supabase as any
+    ).rpc(
       "fn_processar_fila_recalculo_marketplace",
       {
         p_limite: 500,
       }
     );
 
-    if (error) throw error;
+    if (error) {
+      throw error;
+    }
 
-    const processed = Number(data ?? 0);
+    const processed =
+      Number(data ?? 0);
 
-    if (!Number.isFinite(processed) || processed <= 0) {
+    if (
+      !Number.isFinite(
+        processed
+      ) ||
+      processed <= 0
+    ) {
       break;
     }
 
@@ -700,29 +1068,52 @@ async function processRenameQueue() {
 }
 
 export async function importRenomeacaoCodigosFromXlsxOrCsv(
-  input: File | RenomeacaoCodigo[],
+  input:
+    | File
+    | RenomeacaoCodigo[],
   previewOnly = false
 ): Promise<RenomeacaoImportResult> {
   const rawRows =
     input instanceof File
-      ? await readRenameFile(input)
+      ? await readRenameFile(
+          input
+        )
       : input;
 
   if (!Array.isArray(rawRows)) {
-    throw new Error("Formato de importação de renomeação inválido.");
+    throw new Error(
+      "Formato de importação de renomeação inválido."
+    );
   }
 
-  const { data, warnings } = normalizeRenameRows(
-    rawRows as Record<string, any>[]
+  const {
+    data,
+    warnings,
+  } = normalizeRenameRows(
+    rawRows as Record<
+      string,
+      any
+    >[]
   );
 
   const now = new Date();
 
-  const fileName = `RENOMEAÇÃO - ${now
-    .toLocaleDateString("pt-BR")
-    .replace(/\//g, "-")} ${now
-    .toLocaleTimeString("pt-BR")
-    .replace(/:/g, "-")}.xlsx`;
+  const fileName =
+    `RENOMEAÇÃO - ${now
+      .toLocaleDateString(
+        "pt-BR"
+      )
+      .replace(
+        /\//g,
+        "-"
+      )} ${now
+      .toLocaleTimeString(
+        "pt-BR"
+      )
+      .replace(
+        /:/g,
+        "-"
+      )}.xlsx`;
 
   if (previewOnly) {
     return {
@@ -742,19 +1133,28 @@ export async function importRenomeacaoCodigosFromXlsxOrCsv(
     })
   );
 
-  const { error } = await (supabase as any).rpc(
-    "renomear_codigos_composicao_lote",
+  const {
+    error,
+  } = await (
+    supabase as any
+  ).rpc(
+    "renomear_codigos_planilha_v3",
     {
-      p_alteracoes: payload,
+      p_alteracoes:
+        payload,
     }
   );
 
-  if (error) throw error;
+  if (error) {
+    throw error;
+  }
 
-  let recalculosProcessados = 0;
+  let recalculosProcessados =
+    0;
 
   try {
-    recalculosProcessados = await processRenameQueue();
+    recalculosProcessados =
+      await processRenameQueue();
   } catch (err: any) {
     console.error(
       "Erro ao processar fila após renomeação:",
@@ -763,18 +1163,28 @@ export async function importRenomeacaoCodigosFromXlsxOrCsv(
 
     warnings.push(
       `Os códigos foram renomeados, mas a fila apresentou erro: ${
-        err?.message || "erro desconhecido"
+        err?.message ||
+        "erro desconhecido"
       }.`
     );
   }
 
   try {
     await createNotification({
-      title: "Renomeação de códigos concluída",
-      message: `${data.length} código(s) foram processados.`,
-      action: "update",
-      entityType: "cost_code_rename",
-      link: "/dashboard/custos",
+      title:
+        "Renomeação de códigos concluída",
+
+      message:
+        `${data.length} código(s) foram processados.`,
+
+      action:
+        "update",
+
+      entityType:
+        "cost_code_rename",
+
+      link:
+        "/dashboard/custos",
     });
   } catch (err) {
     console.error(
