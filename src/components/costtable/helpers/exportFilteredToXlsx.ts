@@ -441,13 +441,4 @@ export async function exportFilteredToXlsx(
   }
 }
 
-/*  
- * Mantém compatibilidade com possíveis imports padrão:
- *
- * import exportFilteredToXlsx from "...";
- *
- * E com o import nomeado utilizado pelo CostTable:
- *
- * import { exportFilteredToXlsx } from "...";
- */
 export default exportFilteredToXlsx;
