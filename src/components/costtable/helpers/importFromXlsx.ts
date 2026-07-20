@@ -21,7 +21,7 @@ export type RenomeacaoImportResult = {
   recalculosProcessados?: number;
 };
 
-// ✅ NOVO: inclui "Produto" como obrigatório no arquivo
+// Inclui "Produto" como obrigatório no arquivo.
 const REQUIRED_COLUMNS = [
   "Código",
   "Marca",
@@ -32,9 +32,14 @@ const REQUIRED_COLUMNS = [
 ];
 
 /**
- * Ajustes para grandes volumes (50k+)
- * - DEBUG_STRICT_COMMA_CHECK: validação bem pesada (desligada por padrão)
- * - INITIAL_BATCH_SIZE: tamanho inicial do lote (vai se adaptar pra baixo se der timeout)
+ * Ajustes para grandes volumes.
+ *
+ * DEBUG_STRICT_COMMA_CHECK:
+ * validação pesada, desligada por padrão.
+ *
+ * INITIAL_BATCH_SIZE:
+ * tamanho inicial do lote, reduzido automaticamente
+ * quando for detectado timeout.
  */
 const DEBUG_STRICT_COMMA_CHECK = false;
 const INITIAL_BATCH_SIZE = 800;
@@ -42,9 +47,9 @@ const MIN_BATCH_SIZE = 50;
 const MAX_RETRIES = 6;
 
 /**
- * Remove espaços invisíveis (NBSP) e normaliza espaços múltiplos
+ * Remove espaços invisíveis e normaliza espaços múltiplos.
  */
-function cleanHeaderKey(key: string) {
+function cleanHeaderKey(key: string): string {
   return String(key)
     .replace(/\u00a0/g, " ")
     .replace(/\s+/g, " ")
@@ -52,82 +57,137 @@ function cleanHeaderKey(key: string) {
 }
 
 /**
- * Normaliza chaves do objeto (headers do XLSX/CSV)
+ * Normaliza as chaves do objeto, correspondentes
+ * aos cabeçalhos do XLSX ou CSV.
  */
-function normalizeRowKeys(row: Record<string, any>) {
+function normalizeRowKeys(
+  row: Record<string, any>
+): Record<string, any> {
   const out: Record<string, any> = {};
 
-  for (const [k, v] of Object.entries(row)) {
-    out[cleanHeaderKey(k)] = v;
+  for (const [key, value] of Object.entries(row)) {
+    out[cleanHeaderKey(key)] = value;
   }
 
   return out;
 }
 
 // =====================================================================
-// ✅ Converte qualquer formato de custo/moeda em NUMBER (ou null)
+// Converte qualquer formato de custo/moeda em number ou null.
 // =====================================================================
 function parseCurrency(value: any): number | null {
-  if (value === null || value === undefined || value === "") return null;
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return null;
+  }
 
   if (typeof value === "number") {
-    return Number.isFinite(value) ? Number(value.toFixed(2)) : null;
+    return Number.isFinite(value)
+      ? Number(value.toFixed(2))
+      : null;
   }
 
   let str = String(value).trim();
 
-  str = str.replace(/R\$/gi, "").replace(/\s/g, "");
+  str = str
+    .replace(/R\$/gi, "")
+    .replace(/\s/g, "");
+
   str = str.replace(/[^\d.,-]/g, "");
 
-  if (!str) return null;
+  if (!str) {
+    return null;
+  }
 
-  if (str.includes(".") && str.includes(",")) {
-    const n = Number(str.replace(/\./g, "").replace(",", "."));
+  /*
+   * Exemplo brasileiro:
+   * 1.234,56
+   */
+  if (
+    str.includes(".") &&
+    str.includes(",")
+  ) {
+    const numberValue = Number(
+      str
+        .replace(/\./g, "")
+        .replace(",", ".")
+    );
 
-    return Number.isFinite(n)
-      ? Number(n.toFixed(2))
+    return Number.isFinite(numberValue)
+      ? Number(numberValue.toFixed(2))
       : null;
   }
 
-  if (str.includes(",") && !str.includes(".")) {
-    const n = Number(str.replace(",", "."));
+  /*
+   * Exemplo:
+   * 1234,56
+   */
+  if (
+    str.includes(",") &&
+    !str.includes(".")
+  ) {
+    const numberValue = Number(
+      str.replace(",", ".")
+    );
 
-    return Number.isFinite(n)
-      ? Number(n.toFixed(2))
+    return Number.isFinite(numberValue)
+      ? Number(numberValue.toFixed(2))
       : null;
   }
 
-  if (str.includes(".") && !str.includes(",")) {
+  /*
+   * Pode ser:
+   * 1234.56
+   *
+   * Ou separador de milhar:
+   * 1.234
+   */
+  if (
+    str.includes(".") &&
+    !str.includes(",")
+  ) {
     const parts = str.split(".");
-    const last = parts[parts.length - 1];
+    const lastPart =
+      parts[parts.length - 1];
 
-    if (/^\d{3}$/.test(last)) {
-      const n = Number(str.replace(/\./g, ""));
+    if (/^\d{3}$/.test(lastPart)) {
+      const numberValue = Number(
+        str.replace(/\./g, "")
+      );
 
-      return Number.isFinite(n)
-        ? Number(n.toFixed(2))
+      return Number.isFinite(numberValue)
+        ? Number(numberValue.toFixed(2))
         : null;
     }
 
-    const n = Number(str);
+    const numberValue = Number(str);
 
-    return Number.isFinite(n)
-      ? Number(n.toFixed(2))
+    return Number.isFinite(numberValue)
+      ? Number(numberValue.toFixed(2))
       : null;
   }
 
-  const n = Number(str);
+  const numberValue = Number(str);
 
-  return Number.isFinite(n)
-    ? Number(n.toFixed(2))
+  return Number.isFinite(numberValue)
+    ? Number(numberValue.toFixed(2))
     : null;
 }
 
 // =====================================================================
-// ✅ NCM como texto (só dígitos) — sua coluna no banco é TEXT
+// NCM como texto contendo somente dígitos.
 // =====================================================================
-function normalizeNcm(value: any): string | null {
-  if (value === null || value === undefined || value === "") {
+function normalizeNcm(
+  value: any
+): string | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
     return null;
   }
 
@@ -139,36 +199,55 @@ function normalizeNcm(value: any): string | null {
 }
 
 // =====================================================================
-// ✅ Produto como texto (trim) — sua coluna no banco é TEXT
+// Produto como texto.
 // =====================================================================
-function normalizeProduto(value: any): string | null {
-  if (value === null || value === undefined || value === "") {
+function normalizeProduto(
+  value: any
+): string | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
     return null;
   }
 
-  const s = String(value).trim();
+  const produto = String(value).trim();
 
-  return s || null;
+  return produto || null;
 }
 
 // =====================================================================
-// ✅ Marca como texto (trim)
+// Marca como texto.
 // =====================================================================
-function normalizeMarca(value: any): string | null {
-  if (value === null || value === undefined || value === "") {
+function normalizeMarca(
+  value: any
+): string | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
     return null;
   }
 
-  const s = String(value).trim();
+  const marca = String(value).trim();
 
-  return s || null;
+  return marca || null;
 }
 
 // =====================================================================
-// ✅ Código com validação forte
+// Código com validação forte.
+// Não troca a letra "l" pelo número "1".
 // =====================================================================
-function normalizeCodigo(value: any): string | null {
-  if (value === null || value === undefined || value === "") {
+function normalizeCodigo(
+  value: any
+): string | null {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
     return null;
   }
 
@@ -177,15 +256,33 @@ function normalizeCodigo(value: any): string | null {
     .replace(/\s+/g, " ")
     .trim();
 
-  if (!codigo || codigo.length < 2) {
+  if (
+    !codigo ||
+    codigo.length < 2
+  ) {
     return null;
   }
 
-  if (/[\u0000-\u001f\u007f]/.test(codigo)) {
+  /*
+   * Impede caracteres de controle.
+   */
+  if (
+    /[\u0000-\u001f\u007f]/.test(
+      codigo
+    )
+  ) {
     return null;
   }
 
-  if (!/[a-zA-Z0-9À-ÿ]/.test(codigo)) {
+  /*
+   * O código precisa ter pelo menos uma letra
+   * ou um número.
+   */
+  if (
+    !/[a-zA-Z0-9À-ÿ]/.test(
+      codigo
+    )
+  ) {
     return null;
   }
 
@@ -203,21 +300,33 @@ function normalizeCodigo(value: any): string | null {
 }
 
 // =====================================================================
-// ✅ normalizeRow já devolve o PAYLOAD FINAL do banco
+// Normaliza uma linha e devolve o payload final do banco.
 // =====================================================================
-function normalizeRow(rowRaw: Record<string, any>) {
-  const row = normalizeRowKeys(rowRaw);
+function normalizeRow(
+  rowRaw: Record<string, any>
+) {
+  const row =
+    normalizeRowKeys(rowRaw);
 
-  const findKey = (keys: string[]) => {
-    const key = Object.keys(row).find((k) =>
-      keys.some(
-        (p) =>
-          cleanHeaderKey(k).toLowerCase() ===
-          cleanHeaderKey(p).toLowerCase()
-      )
+  const findKey = (
+    possibleKeys: string[]
+  ) => {
+    const key = Object.keys(row).find(
+      (currentKey) =>
+        possibleKeys.some(
+          (possibleKey) =>
+            cleanHeaderKey(
+              currentKey
+            ).toLowerCase() ===
+            cleanHeaderKey(
+              possibleKey
+            ).toLowerCase()
+        )
     );
 
-    return key ? row[key] : undefined;
+    return key
+      ? row[key]
+      : undefined;
   };
 
   const codigoRaw = findKey([
@@ -226,9 +335,16 @@ function normalizeRow(rowRaw: Record<string, any>) {
     "code",
   ]);
 
-  const codigo = normalizeCodigo(codigoRaw);
+  const codigo =
+    normalizeCodigo(codigoRaw);
 
-  if (!codigo) return null;
+  /*
+   * Linhas completamente vazias ou sem código
+   * são ignoradas.
+   */
+  if (!codigo) {
+    return null;
+  }
 
   const marcaRaw = findKey([
     "Marca",
@@ -257,79 +373,107 @@ function normalizeRow(rowRaw: Record<string, any>) {
     "ncm",
   ]);
 
-  const custoAtual = parseCurrency(custoAtualRaw);
-  const custoAntigo = parseCurrency(custoAntigoRaw);
-  const marca = normalizeMarca(marcaRaw);
+  const custoAtual =
+    parseCurrency(custoAtualRaw);
+
+  const custoAntigo =
+    parseCurrency(custoAntigoRaw);
+
+  const marca =
+    normalizeMarca(marcaRaw);
+
+  /*
+   * Não transforma custos vazios ou inválidos em zero,
+   * evitando sobrescrever valores existentes por engano.
+   */
+  if (
+    custoAtual === null ||
+    custoAntigo === null
+  ) {
+    throw new Error(
+      `O produto de código "${codigo}" possui "Custo Atual" ou "Custo Antigo" vazio ou inválido.`
+    );
+  }
 
   return {
     Código: codigo,
     Marca: marca,
-    Produto: normalizeProduto(produtoRaw),
-    "Custo Atual":
-      typeof custoAtual === "number"
-        ? custoAtual
-        : 0,
-    "Custo Antigo":
-      typeof custoAntigo === "number"
-        ? custoAntigo
-        : 0,
+    Produto:
+      normalizeProduto(produtoRaw),
+    "Custo Atual": custoAtual,
+    "Custo Antigo": custoAntigo,
     NCM: normalizeNcm(ncmRaw),
   };
 }
 
 // =====================================================================
-// ✅ Validação rápida
+// Validação rápida dos campos numéricos.
 // =====================================================================
-function assertNumericOkFast(batch: any[]) {
-  for (let idx = 0; idx < batch.length; idx++) {
-    const r = batch[idx];
+function assertNumericOkFast(
+  batch: any[]
+): void {
+  for (
+    let index = 0;
+    index < batch.length;
+    index++
+  ) {
+    const row = batch[index];
 
-    const ca = r["Custo Atual"];
-    const co = r["Custo Antigo"];
+    const custoAtual =
+      row["Custo Atual"];
 
-    const badNumeric =
-      typeof ca !== "number" ||
-      !Number.isFinite(ca) ||
-      typeof co !== "number" ||
-      !Number.isFinite(co);
+    const custoAntigo =
+      row["Custo Antigo"];
 
-    if (badNumeric) {
+    const invalidNumeric =
+      typeof custoAtual !== "number" ||
+      !Number.isFinite(custoAtual) ||
+      typeof custoAntigo !== "number" ||
+      !Number.isFinite(custoAntigo);
+
+    if (invalidNumeric) {
       console.error(
-        "🚨 Linha com numeric inválido (índice no batch):",
-        idx,
-        r
+        "Linha com numeric inválido no lote:",
+        index,
+        row
       );
 
       throw new Error(
-        "Payload inválido: 'Custo Atual'/'Custo Antigo' precisa ser number finito. Verifique o arquivo de origem."
+        'Payload inválido: "Custo Atual" e "Custo Antigo" precisam ser números finitos. Verifique o arquivo de origem.'
       );
     }
   }
 }
 
 // =====================================================================
-// 🧪 Validação pesada opcional
+// Validação pesada opcional.
 // =====================================================================
-function assertNoCommaStringsStrict(batch: any[]) {
-  for (let idx = 0; idx < batch.length; idx++) {
-    const r = batch[idx];
+function assertNoCommaStringsStrict(
+  batch: any[]
+): void {
+  for (
+    let index = 0;
+    index < batch.length;
+    index++
+  ) {
+    const row = batch[index];
 
-    const badCommaString = Object.entries(r).find(
-      ([, v]) =>
-        typeof v === "string" &&
-        v.includes(",")
-    );
+    const badCommaString =
+      Object.entries(row).find(
+        ([, value]) =>
+          typeof value === "string" &&
+          value.includes(",")
+      );
 
     if (badCommaString) {
       console.error(
-        "🚨 String com vírgula detectada no payload (índice no batch):",
-        idx,
-        "campo:",
-        badCommaString[0],
-        "valor:",
-        badCommaString[1],
-        "linha:",
-        r
+        "String com vírgula detectada no payload:",
+        {
+          index,
+          field: badCommaString[0],
+          value: badCommaString[1],
+          row,
+        }
       );
 
       throw new Error(
@@ -340,40 +484,49 @@ function assertNoCommaStringsStrict(batch: any[]) {
 }
 
 // =====================================================================
-// ✅ Heurística para detectar timeout / 504 / statement_timeout
+// Detecta timeout, gateway timeout ou statement_timeout.
 // =====================================================================
-function isLikelyTimeout(err: any) {
-  const msg = String(
-    err?.message ?? ""
+function isLikelyTimeout(
+  error: any
+): boolean {
+  const message = String(
+    error?.message ?? ""
   ).toLowerCase();
 
   const code = String(
-    err?.code ?? ""
+    error?.code ?? ""
   ).toLowerCase();
 
   const status =
-    err?.status ??
-    err?.statusCode ??
-    err?.cause?.status;
+    error?.status ??
+    error?.statusCode ??
+    error?.cause?.status;
 
   return (
     status === 504 ||
-    msg.includes("timeout") ||
-    msg.includes("time out") ||
-    msg.includes("gateway") ||
-    msg.includes("statement timeout") ||
+    message.includes("timeout") ||
+    message.includes("time out") ||
+    message.includes("gateway") ||
+    message.includes(
+      "statement timeout"
+    ) ||
     code.includes("57014")
   );
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) =>
-    setTimeout(resolve, ms)
-  );
+function sleep(
+  milliseconds: number
+): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(
+      resolve,
+      milliseconds
+    );
+  });
 }
 
 // =====================================================================
-// 🚚 UPSERT EM LOTES
+// UPSERT EM LOTES
 // =====================================================================
 async function upsertInBatches(
   rows: any[],
@@ -386,7 +539,7 @@ async function upsertInBatches(
     strictCommaCheck?: boolean;
     pauseMsBetweenBatches?: number;
   }
-) {
+): Promise<void> {
   let batchSize =
     options?.initialBatchSize ??
     INITIAL_BATCH_SIZE;
@@ -411,35 +564,53 @@ async function upsertInBatches(
     options?.pauseMsBetweenBatches ??
     10;
 
+  /*
+   * No Supabase JavaScript v2 não é necessário
+   * informar returning: "minimal".
+   */
   const upsertArgs =
     tipo === "inclusao"
       ? {
           onConflict: "Código",
           ignoreDuplicates: true,
-          returning: "minimal" as const,
         }
       : {
           onConflict: "Código",
-          returning: "minimal" as const,
         };
 
-  for (let i = 0; i < rows.length; ) {
-    const batch = rows.slice(
-      i,
-      i + batchSize
-    );
-
-    if (validateNumeric) {
-      assertNumericOkFast(batch);
-    }
-
-    if (strictCommaCheck) {
-      assertNoCommaStringsStrict(batch);
-    }
-
+  for (
+    let currentIndex = 0;
+    currentIndex < rows.length;
+  ) {
     let attempt = 0;
 
     while (true) {
+      /*
+       * O lote é recriado dentro do while.
+       *
+       * Assim, quando batchSize for reduzido após
+       * um timeout, a próxima tentativa realmente
+       * utilizará o novo tamanho.
+       */
+      const batch = rows.slice(
+        currentIndex,
+        currentIndex + batchSize
+      );
+
+      if (!batch.length) {
+        break;
+      }
+
+      if (validateNumeric) {
+        assertNumericOkFast(batch);
+      }
+
+      if (strictCommaCheck) {
+        assertNoCommaStringsStrict(
+          batch
+        );
+      }
+
       const { error } = await supabase
         .from("custos")
         .upsert(
@@ -448,77 +619,111 @@ async function upsertInBatches(
         );
 
       if (!error) {
-        i += batch.length;
+        currentIndex += batch.length;
         break;
       }
 
-      attempt++;
+      attempt += 1;
 
-      console.error("❌ ERRO SUPABASE:", {
-        message: error.message,
-        code: (error as any).code,
-        details: (error as any).details,
-        hint: (error as any).hint,
-        batchSize,
-        attempt,
-        progress: `${i}/${rows.length}`,
-      });
+      console.error(
+        "Erro no upsert do Supabase:",
+        {
+          message: error.message,
+          code: (error as any).code,
+          details:
+            (error as any).details,
+          hint:
+            (error as any).hint,
+          batchSize,
+          attempt,
+          progress:
+            `${currentIndex}/${rows.length}`,
+        }
+      );
 
+      /*
+       * Em caso de timeout, diminui o lote
+       * e recria o batch na próxima tentativa.
+       */
       if (
         isLikelyTimeout(error) &&
         batchSize > minBatchSize
       ) {
         batchSize = Math.max(
           minBatchSize,
-          Math.floor(batchSize / 2)
+          Math.floor(
+            batchSize / 2
+          )
         );
+
+        /*
+         * Reinicia a contagem porque será feita
+         * uma tentativa com tamanho diferente.
+         */
+        attempt = 0;
 
         console.warn(
-          `⏳ Timeout detectado. Reduzindo batch para ${batchSize} e tentando novamente...`
+          `Timeout detectado. Reduzindo o lote para ${batchSize} registros.`
         );
 
-        await sleep(250 * attempt);
-
+        await sleep(250);
         continue;
       }
 
       if (attempt <= maxRetries) {
-        const backoff = Math.min(
-          8000,
-          400 * 2 ** (attempt - 1)
-        );
+        const backoff =
+          Math.min(
+            8000,
+            400 *
+              2 ** (attempt - 1)
+          );
 
         await sleep(backoff);
-
         continue;
       }
 
       console.error(
-        "📦 Batch (amostra):",
+        "Amostra do lote que falhou:",
         batch.slice(0, 5)
       );
 
       console.error(
-        "📦 Batch[0] (primeiro item):",
+        "Primeiro item do lote:",
         batch[0]
       );
 
       throw error;
     }
 
-    if (pauseMsBetweenBatches > 0) {
-      await sleep(pauseMsBetweenBatches);
+    if (
+      pauseMsBetweenBatches > 0
+    ) {
+      await sleep(
+        pauseMsBetweenBatches
+      );
     }
   }
 }
 
-async function notifyCostImportResult(params: {
-  tipo: "inclusao" | "alteracao";
-  total: number;
-}) {
-  const { tipo, total } = params;
+// =====================================================================
+// Cria a notificação do resultado da importação.
+// =====================================================================
+async function notifyCostImportResult(
+  params: {
+    tipo:
+      | "inclusao"
+      | "alteracao";
+    total: number;
+  }
+): Promise<void> {
+  const {
+    tipo,
+    total,
+  } = params;
 
-  if (total <= 0) return;
+  if (total <= 0) {
+    return;
+  }
 
   await createNotification({
     title:
@@ -536,19 +741,23 @@ async function notifyCostImportResult(params: {
         ? "create"
         : "update",
 
-    entityType: "cost_import",
+    entityType:
+      "cost_import",
 
-    link: "/dashboard/custos",
+    link:
+      "/dashboard/custos",
   });
 }
 
 // =====================================================================
-// 🔥 FUNÇÃO PRINCIPAL
+// IMPORTAÇÃO PRINCIPAL DE CUSTOS
 // =====================================================================
 export async function importFromXlsxOrCsv(
   input: File | any[],
   previewOnly = false,
-  tipo: "inclusao" | "alteracao" = "alteracao"
+  tipo:
+    | "inclusao"
+    | "alteracao" = "alteracao"
 ): Promise<ImportResult> {
   const warnings: string[] = [];
 
@@ -564,9 +773,10 @@ export async function importFromXlsxOrCsv(
     .toLocaleTimeString("pt-BR")
     .replace(/:/g, "-")}.xlsx`;
 
-  let rawRows: Record<string, any>[] = [];
+  let rawRows:
+    Record<string, any>[] = [];
 
-  // 📁 INPUT FILE
+  // Arquivo XLSX ou CSV.
   if (input instanceof File) {
     const buffer =
       await input.arrayBuffer();
@@ -580,10 +790,19 @@ export async function importFromXlsxOrCsv(
       }
     );
 
+    const firstSheetName =
+      workbook.SheetNames[0];
+
     const sheet =
       workbook.Sheets[
-        workbook.SheetNames[0]
+        firstSheetName
       ];
+
+    if (!sheet) {
+      throw new Error(
+        "A planilha não possui nenhuma aba válida."
+      );
+    }
 
     rawRows =
       XLSX.utils.sheet_to_json<
@@ -593,21 +812,32 @@ export async function importFromXlsxOrCsv(
       });
   }
 
-  // 📦 INPUT ARRAY
+  // Array de objetos.
   else if (Array.isArray(input)) {
     rawRows =
-      input as Record<string, any>[];
+      input as Record<
+        string,
+        any
+      >[];
   } else {
     throw new Error(
       "Formato de importação inválido."
     );
   }
 
-  // 🔎 Validação de colunas (somente quando veio de arquivo)
-  if (
-    rawRows.length > 0 &&
-    input instanceof File
-  ) {
+  if (!rawRows.length) {
+    throw new Error(
+      "Nenhum registro foi encontrado no arquivo."
+    );
+  }
+
+  /*
+   * Validação das colunas obrigatórias.
+   *
+   * A importação é interrompida em vez de transformar
+   * campos ausentes em valores zero ou null.
+   */
+  if (input instanceof File) {
     const headers = Object.keys(
       normalizeRowKeys(
         rawRows[0] || {}
@@ -616,29 +846,37 @@ export async function importFromXlsxOrCsv(
 
     const missing =
       REQUIRED_COLUMNS.filter(
-        (col) =>
+        (requiredColumn) =>
           !headers.some(
-            (h) =>
+            (header) =>
               cleanHeaderKey(
-                h
+                header
               ).toLowerCase() ===
               cleanHeaderKey(
-                col
+                requiredColumn
               ).toLowerCase()
           )
       );
 
     if (missing.length > 0) {
-      warnings.push(
-        `As seguintes colunas estão ausentes: ${missing.join(", ")}.`
+      throw new Error(
+        `As seguintes colunas obrigatórias estão ausentes: ${missing.join(", ")}.`
       );
     }
   }
 
-  // 🔧 NORMALIZAÇÃO
-  const normalizedAll = rawRows
-    .map(normalizeRow)
-    .filter(Boolean) as any[];
+  /*
+   * Normalização.
+   *
+   * Linhas sem código são ignoradas.
+   * Linhas com código e custo inválido geram erro.
+   */
+  const normalizedAll =
+    rawRows
+      .map(normalizeRow)
+      .filter(
+        Boolean
+      ) as any[];
 
   const totalLidas =
     rawRows.length;
@@ -646,24 +884,40 @@ export async function importFromXlsxOrCsv(
   const totalValidas =
     normalizedAll.length;
 
-  if (totalValidas < totalLidas) {
+  if (
+    totalValidas <
+    totalLidas
+  ) {
     warnings.push(
-      `Foram lidas ${totalLidas} linhas do arquivo, mas apenas ${totalValidas} tinham "Código" válido (linhas sem Código ou com código inválido foram ignoradas).`
+      `Foram lidas ${totalLidas} linhas, mas apenas ${totalValidas} possuíam um "Código" válido. Linhas vazias ou sem código foram ignoradas.`
     );
   }
 
-  // 🧹 DEDUPE POR "Código" (mantém a última ocorrência)
+  if (!totalValidas) {
+    throw new Error(
+      'Nenhuma linha com "Código" válido foi encontrada.'
+    );
+  }
+
+  /*
+   * Remove códigos duplicados, mantendo a última
+   * ocorrência encontrada na planilha.
+   */
   const dedupeMap =
     new Map<string, any>();
 
   let duplicatedCount = 0;
 
-  for (const row of normalizedAll) {
+  for (
+    const row of normalizedAll
+  ) {
     const key = String(
       row["Código"] ?? ""
     ).trim();
 
-    if (!key) continue;
+    if (!key) {
+      continue;
+    }
 
     if (dedupeMap.has(key)) {
       duplicatedCount += 1;
@@ -680,9 +934,11 @@ export async function importFromXlsxOrCsv(
       dedupeMap.values()
     );
 
-  if (duplicatedCount > 0) {
+  if (
+    duplicatedCount > 0
+  ) {
     warnings.push(
-      `Detectei ${duplicatedCount} linhas com "Código" repetido. Mantive a última ocorrência de cada código (códigos únicos: ${deduped.length}).`
+      `Foram encontradas ${duplicatedCount} linha(s) com "Código" repetido. Foi mantida a última ocorrência de cada código. Total de códigos únicos: ${deduped.length}.`
     );
   } else {
     warnings.push(
@@ -690,7 +946,10 @@ export async function importFromXlsxOrCsv(
     );
   }
 
-  // 🔍 PREVIEW
+  /*
+   * Pré-visualização:
+   * não altera o banco.
+   */
   if (previewOnly) {
     return {
       data: deduped,
@@ -699,7 +958,6 @@ export async function importFromXlsxOrCsv(
     };
   }
 
-  // ✅ IMPORTAÇÃO REAL
   await upsertInBatches(
     deduped,
     tipo,
@@ -726,18 +984,33 @@ export async function importFromXlsxOrCsv(
 
   if (tipo === "inclusao") {
     warnings.push(
-      "Inclusão concluída. Códigos existentes foram ignorados."
+      "Inclusão concluída. Códigos que já existiam foram ignorados."
     );
   } else {
     warnings.push(
-      "Alteração concluída. Registros atualizados por Código."
+      "Alteração concluída. Os registros foram atualizados por Código."
     );
   }
 
-  await notifyCostImportResult({
-    tipo,
-    total: deduped.length,
-  });
+  /*
+   * Uma falha na notificação não deve transformar
+   * uma importação já concluída em erro.
+   */
+  try {
+    await notifyCostImportResult({
+      tipo,
+      total: deduped.length,
+    });
+  } catch (error) {
+    console.error(
+      "Erro ao criar a notificação da importação:",
+      error
+    );
+
+    warnings.push(
+      "Os custos foram processados, mas não foi possível criar a notificação."
+    );
+  }
 
   return {
     data: deduped,
@@ -747,11 +1020,11 @@ export async function importFromXlsxOrCsv(
 }
 
 // =====================================================================
-// 🔄 IMPORTAÇÃO DE RENOMEAÇÃO DE CÓDIGOS
+// IMPORTAÇÃO DE RENOMEAÇÃO DE CÓDIGOS
 // =====================================================================
 function normalizeRenameHeader(
   value: any
-) {
+): string {
   return cleanHeaderKey(
     String(value ?? "")
   )
@@ -766,7 +1039,7 @@ function normalizeRenameHeader(
 function findRenameValue(
   row: Record<string, any>,
   aliases: string[]
-) {
+): any {
   const normalizedAliases =
     new Set(
       aliases.map(
@@ -776,9 +1049,11 @@ function findRenameValue(
 
   const key = Object.keys(
     row
-  ).find((k) =>
+  ).find((currentKey) =>
     normalizedAliases.has(
-      normalizeRenameHeader(k)
+      normalizeRenameHeader(
+        currentKey
+      )
     )
   );
 
@@ -788,14 +1063,26 @@ function findRenameValue(
 }
 
 function normalizeRenameRows(
-  rawRows: Record<string, any>[]
-) {
-  const data: RenomeacaoCodigo[] = [];
-  const warnings: string[] = [];
-  const errors: string[] = [];
+  rawRows:
+    Record<string, any>[]
+): {
+  data: RenomeacaoCodigo[];
+  warnings: string[];
+} {
+  const data:
+    RenomeacaoCodigo[] = [];
+
+  const warnings:
+    string[] = [];
+
+  const errors:
+    string[] = [];
 
   const oldCodes =
-    new Map<string, number>();
+    new Map<
+      string,
+      number
+    >();
 
   const newCodes =
     new Map<
@@ -840,6 +1127,13 @@ function normalizeRenameRows(
           ]
         );
 
+      /*
+       * Mantém o comportamento anterior:
+       * códigos são convertidos para maiúsculos.
+       *
+       * Nenhuma substituição de "l" por "1"
+       * é realizada.
+       */
       const oldCode =
         normalizeCodigo(
           oldRaw
@@ -852,8 +1146,12 @@ function normalizeRenameRows(
         )?.toUpperCase() ??
         null;
 
-      // Linhas sem Novo Código são ignoradas.
-      if (!newCode) return;
+      /*
+       * Linhas sem novo código são ignoradas.
+       */
+      if (!newCode) {
+        return;
+      }
 
       if (!oldCode) {
         errors.push(
@@ -863,9 +1161,11 @@ function normalizeRenameRows(
         return;
       }
 
-      if (oldCode === newCode) {
+      if (
+        oldCode === newCode
+      ) {
         warnings.push(
-          `Linha ${line}: ${oldCode} foi ignorado porque o novo código é igual ao atual.`
+          `Linha ${line}: ${oldCode} foi ignorado porque o novo código é igual ao código atual.`
         );
 
         return;
@@ -894,7 +1194,7 @@ function normalizeRenameRows(
           oldCode
       ) {
         errors.push(
-          `Código novo duplicado: ${newCode} será usado por ${previousNewOwner.oldCode} (linha ${previousNewOwner.line}) e ${oldCode} (linha ${line}).`
+          `Código novo duplicado: ${newCode} será usado por ${previousNewOwner.oldCode}, na linha ${previousNewOwner.line}, e por ${oldCode}, na linha ${line}.`
         );
 
         return;
@@ -945,7 +1245,7 @@ function normalizeRenameRows(
 
   if (!data.length) {
     throw new Error(
-      'Nenhuma renomeação encontrada. Preencha a coluna "Novo Código".'
+      'Nenhuma renomeação foi encontrada. Preencha a coluna "Novo Código".'
     );
   }
 
@@ -955,9 +1255,14 @@ function normalizeRenameRows(
   };
 }
 
+// =====================================================================
+// Lê a planilha de renomeação.
+// =====================================================================
 async function readRenameFile(
   file: File
-) {
+): Promise<
+  Record<string, any>[]
+> {
   const workbook = XLSX.read(
     await file.arrayBuffer(),
     {
@@ -967,9 +1272,12 @@ async function readRenameFile(
     }
   );
 
+  const firstSheetName =
+    workbook.SheetNames[0];
+
   const sheet =
     workbook.Sheets[
-      workbook.SheetNames[0]
+      firstSheetName
     ];
 
   if (!sheet) {
@@ -978,6 +1286,10 @@ async function readRenameFile(
     );
   }
 
+  /*
+   * raw: false preserva o valor exibido/formado
+   * pela planilha como texto.
+   */
   const rows =
     XLSX.utils.sheet_to_json<
       Record<string, any>
@@ -992,42 +1304,76 @@ async function readRenameFile(
     );
   }
 
-  const headers = Object.keys(
-    rows[0] || {}
-  ).map(
-    normalizeRenameHeader
-  );
+  const headers =
+    Object.keys(
+      rows[0] || {}
+    ).map(
+      normalizeRenameHeader
+    );
 
-  if (
-    !headers.includes(
-      normalizeRenameHeader(
-        "Código"
+  const hasHeader = (
+    aliases: string[]
+  ): boolean =>
+    aliases
+      .map(
+        normalizeRenameHeader
       )
-    )
-  ) {
+      .some((alias) =>
+        headers.includes(alias)
+      );
+
+  /*
+   * Aceita diferentes nomes equivalentes
+   * para a coluna de código atual.
+   */
+  const hasOldCodeHeader =
+    hasHeader([
+      "Código",
+      "Codigo",
+      "Código Atual",
+      "Codigo Atual",
+      "Código Antigo",
+      "Codigo Antigo",
+      "codigo_antigo",
+    ]);
+
+  /*
+   * Aceita diferentes nomes equivalentes
+   * para a coluna do novo código.
+   */
+  const hasNewCodeHeader =
+    hasHeader([
+      "Novo Código",
+      "Novo Codigo",
+      "Código Novo",
+      "Codigo Novo",
+      "codigo_novo",
+    ]);
+
+  if (!hasOldCodeHeader) {
     throw new Error(
-      'A planilha precisa conter a coluna "Código".'
+      'A planilha precisa conter a coluna "Código" ou "Código Antigo".'
     );
   }
 
-  if (
-    !headers.includes(
-      normalizeRenameHeader(
-        "Novo Código"
-      )
-    )
-  ) {
+  if (!hasNewCodeHeader) {
     throw new Error(
-      'A planilha precisa conter a coluna "Novo Código".'
+      'A planilha precisa conter a coluna "Novo Código" ou "Código Novo".'
     );
   }
 
   return rows;
 }
 
-async function processRenameQueue() {
+// =====================================================================
+// Processa a fila de recálculo dos marketplaces.
+// =====================================================================
+async function processRenameQueue(): Promise<number> {
   let total = 0;
 
+  /*
+   * Limite de segurança para impedir loop infinito.
+   */
   for (
     let attempt = 0;
     attempt < 1000;
@@ -1067,6 +1413,9 @@ async function processRenameQueue() {
   return total;
 }
 
+// =====================================================================
+// Importação principal de renomeação de códigos.
+// =====================================================================
 export async function importRenomeacaoCodigosFromXlsxOrCsv(
   input:
     | File
@@ -1115,6 +1464,10 @@ export async function importRenomeacaoCodigosFromXlsxOrCsv(
         "-"
       )}.xlsx`;
 
+  /*
+   * Pré-visualização:
+   * não envia nenhuma alteração ao servidor.
+   */
   if (previewOnly) {
     return {
       data,
@@ -1133,14 +1486,26 @@ export async function importRenomeacaoCodigosFromXlsxOrCsv(
     })
   );
 
+  /*
+   * A rota do servidor aceita no máximo
+   * 5.000 renomeações por chamada.
+   */
+  if (payload.length > 5000) {
+    throw new Error(
+      `A planilha contém ${payload.length} renomeações. O limite é de 5.000 por importação.`
+    );
+  }
+
   const {
     data: sessionData,
     error: sessionError,
-  } = await supabase.auth.getSession();
+  } = await supabase.auth
+    .getSession();
 
   if (
     sessionError ||
-    !sessionData.session?.access_token
+    !sessionData.session
+      ?.access_token
   ) {
     throw new Error(
       "Sua sessão expirou. Entre novamente no sistema."
@@ -1151,19 +1516,25 @@ export async function importRenomeacaoCodigosFromXlsxOrCsv(
     "/api/custos/renomear-codigos",
     {
       method: "POST",
+
       headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${sessionData.session.access_token}`,
+        "Content-Type":
+          "application/json",
+
+        Authorization:
+          `Bearer ${sessionData.session.access_token}`,
       },
+
       body: JSON.stringify({
         alteracoes: payload,
       }),
     }
   );
 
-  const responseBody = await response
-    .json()
-    .catch(() => null);
+  const responseBody =
+    await response
+      .json()
+      .catch(() => null);
 
   if (!response.ok) {
     throw new Error(
@@ -1173,26 +1544,34 @@ export async function importRenomeacaoCodigosFromXlsxOrCsv(
     );
   }
 
-  let recalculosProcessados =
-    0;
+  let recalculosProcessados = 0;
 
+  /*
+   * A renomeação já foi concluída nesse ponto.
+   * Uma falha na fila será apresentada apenas
+   * como aviso.
+   */
   try {
     recalculosProcessados =
       await processRenameQueue();
-  } catch (err: any) {
+  } catch (error: any) {
     console.error(
-      "Erro ao processar fila após renomeação:",
-      err
+      "Erro ao processar a fila após a renomeação:",
+      error
     );
 
     warnings.push(
-      `Os códigos foram renomeados, mas a fila apresentou erro: ${
-        err?.message ||
+      `Os códigos foram renomeados, mas a fila de recálculo apresentou erro: ${
+        error?.message ||
         "erro desconhecido"
       }.`
     );
   }
 
+  /*
+   * A falha na notificação não desfaz
+   * uma renomeação já concluída.
+   */
   try {
     await createNotification({
       title:
@@ -1210,10 +1589,14 @@ export async function importRenomeacaoCodigosFromXlsxOrCsv(
       link:
         "/dashboard/custos",
     });
-  } catch (err) {
+  } catch (error) {
     console.error(
-      "Erro ao criar notificação de renomeação:",
-      err
+      "Erro ao criar a notificação da renomeação:",
+      error
+    );
+
+    warnings.push(
+      "Os códigos foram renomeados, mas não foi possível criar a notificação."
     );
   }
 
