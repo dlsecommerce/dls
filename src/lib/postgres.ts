@@ -44,20 +44,11 @@ export function getPostgresClient(): Sql {
   const client = postgres(
     databaseUrl,
     {
-      /*
-       * O Supabase está exigindo conexão SSL.
-       */
+
       ssl: "require",
 
-      /*
-       * Necessário para pooler em modo transaction.
-       */
       prepare: false,
 
-      /*
-       * Evita muitas conexões no desenvolvimento
-       * e em rotas do Next.js.
-       */
       max: 1,
 
       connect_timeout: 20,
