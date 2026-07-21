@@ -405,7 +405,7 @@ export default function ConfirmRenameCodesModal({
                   </p>
                 </div>
 
-                <span className="shrink-0 rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-xs text-blue-300">
+                <span className="shrink-0 rounded-full border border-green-500/30 bg-green-500/10 px-2.5 py-1 text-xs text-green-300">
                   {summary.total} item(ns)
                 </span>
               </div>
@@ -565,10 +565,10 @@ export default function ConfirmRenameCodesModal({
               items-center
               justify-center
               gap-2
-              bg-yellow-600
+              bg-green-600
               text-white
               hover:scale-100
-              hover:bg-yellow-700
+              hover:bg-green-700
 
               disabled:cursor-not-allowed
               disabled:opacity-40
@@ -591,6 +591,7 @@ export default function ConfirmRenameCodesModal({
             {loading ? (
               <>
                 <Loader className="h-4 w-4 animate-spin sm:h-5 sm:w-5" />
+                Renomeando...
               </>
             ) : (
               "Confirmar Renomeação"
