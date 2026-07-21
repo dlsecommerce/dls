@@ -1,41 +1,72 @@
-import postgres from "postgres";
+import postgres, {
+  type Sql,
+} from "postgres";
 
-type PostgresClient = ReturnType<typeof postgres>;
+declare global {
+  var postgresClient:
+    | Sql
+    | undefined;
+}
 
-const globalForPostgres = globalThis as typeof globalThis & {
-  __costPostgresClient?: PostgresClient;
-};
+export function getPostgresClient(): Sql {
+  if (globalThis.postgresClient) {
+    return globalThis.postgresClient;
+  }
 
-export function getPostgresClient(): PostgresClient {
-  const connectionString = process.env.DATABASE_URL;
+  const databaseUrl =
+    process.env.DATABASE_URL?.trim();
 
-  if (!connectionString) {
+  if (!databaseUrl) {
     throw new Error(
-      "A variável de ambiente DATABASE_URL não foi configurada."
+      "A variável DATABASE_URL não foi configurada."
     );
   }
 
-  if (!globalForPostgres.__costPostgresClient) {
-    globalForPostgres.__costPostgresClient = postgres(
-      connectionString,
-      {
-        /*
-         * Necessário ao usar o Transaction Pooler
-         * do Supabase/Supavisor.
-         */
-        prepare: false,
+  const parsedUrl =
+    new URL(databaseUrl);
 
-        /*
-         * Evita muitas conexões simultâneas em ambientes
-         * serverless, como a Vercel.
-         */
-        max: 1,
+  console.log(
+    "Conectando ao PostgreSQL:",
+    {
+      hostname:
+        parsedUrl.hostname,
+      port:
+        parsedUrl.port,
+      database:
+        parsedUrl.pathname,
+      username:
+        parsedUrl.username,
+      ssl:
+        "require",
+    }
+  );
 
-        connect_timeout: 15,
-        idle_timeout: 20,
-      }
-    );
-  }
+  const client = postgres(
+    databaseUrl,
+    {
+      /*
+       * O Supabase está exigindo conexão SSL.
+       */
+      ssl: "require",
 
-  return globalForPostgres.__costPostgresClient;
+      /*
+       * Necessário para pooler em modo transaction.
+       */
+      prepare: false,
+
+      /*
+       * Evita muitas conexões no desenvolvimento
+       * e em rotas do Next.js.
+       */
+      max: 1,
+
+      connect_timeout: 20,
+      idle_timeout: 20,
+    }
+  );
+
+  globalThis.postgresClient =
+    client;
+
+  return client;
 }
