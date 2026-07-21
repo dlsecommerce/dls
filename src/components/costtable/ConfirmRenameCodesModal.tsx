@@ -4,9 +4,8 @@ import { useMemo } from "react";
 import {
   AlertTriangle,
   ArrowRight,
-  CheckCircle2,
   FileSpreadsheet,
-  Loader2,
+  Loader,
   XCircle,
 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -109,12 +108,7 @@ function StatusBadge({
     );
   }
 
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-green-500/30 bg-green-500/10 px-2.5 py-1 text-[11px] font-medium text-green-300">
-      <CheckCircle2 className="h-3.5 w-3.5" />
-      Será atualizado
-    </span>
-  );
+  return null;
 }
 
 export default function ConfirmRenameCodesModal({
@@ -245,9 +239,7 @@ export default function ConfirmRenameCodesModal({
         "
       >
         <DialogHeader className="min-w-0 shrink-0">
-          <DialogTitle className="flex items-center gap-2 text-base font-semibold text-white sm:text-lg">
-            <FileSpreadsheet className="h-5 w-5 text-blue-400" />
-
+          <DialogTitle className="text-base font-semibold text-white sm:text-lg">
             Confirmar Renomeação de Códigos
           </DialogTitle>
 
@@ -498,11 +490,11 @@ export default function ConfirmRenameCodesModal({
                             </td>
 
                             <td className="p-3 text-center">
-                              <ArrowRight className="inline-block h-4 w-4 text-blue-400" />
+                              <ArrowRight className="inline-block h-4 w-4 text-green-400" />
                             </td>
 
                             <td
-                              className="max-w-[280px] overflow-hidden text-ellipsis whitespace-nowrap p-3 font-semibold text-blue-300"
+                              className="max-w-[280px] overflow-hidden text-ellipsis whitespace-nowrap p-3 font-semibold text-green-300"
                               title={
                                 newCode || "-"
                               }
@@ -538,20 +530,6 @@ export default function ConfirmRenameCodesModal({
               </p>
             </div>
           )}
-
-          <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3">
-            <p className="text-xs leading-relaxed text-neutral-400 sm:text-sm">
-              Exemplo:{" "}
-              <span className="font-semibold text-white">
-                TN 5AM
-              </span>{" "}
-              será substituído por{" "}
-              <span className="font-semibold text-blue-300">
-                TN5AM
-              </span>
-              . Nenhuma alteração é feita durante a pré-visualização.
-            </p>
-          </div>
         </div>
 
         <DialogFooter className="mt-5 flex shrink-0 flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
@@ -580,13 +558,17 @@ export default function ConfirmRenameCodesModal({
 
           <Button
             className="
+              flex
               h-11
               w-full
               cursor-pointer
-              bg-blue-600
+              items-center
+              justify-center
+              gap-2
+              bg-yellow-600
               text-white
               hover:scale-100
-              hover:bg-blue-700
+              hover:bg-yellow-700
 
               disabled:cursor-not-allowed
               disabled:opacity-40
@@ -608,13 +590,10 @@ export default function ConfirmRenameCodesModal({
           >
             {loading ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader className="h-4 w-4 animate-spin sm:h-5 sm:w-5" />
               </>
             ) : (
-              <>
-                <CheckCircle2 className="mr-2 h-4 w-4" />
-                Confirmar Renomeação
-              </>
+              "Confirmar Renomeação"
             )}
           </Button>
         </DialogFooter>

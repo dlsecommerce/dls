@@ -1,280 +1,599 @@
 "use client";
 
+import { useMemo } from "react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  FileSpreadsheet,
+  Loader,
+  XCircle,
+} from "lucide-react";
+import { motion } from "framer-motion";
+import { toast } from "sonner";
+
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader, AlertTriangle } from "lucide-react";
-import { motion } from "framer-motion";
-import { toast } from "sonner";
 import { unlockAudio } from "@/utils/sound";
+
+export type RenameCodePreviewItem = {
+  linha?: number;
+  codigo_antigo: string;
+  codigo_novo: string;
+};
 
 type Props = {
   open: boolean;
-  onOpenChange: (v: boolean) => void;
-  count: number;
-  onConfirm: () => void;
-  loading: boolean;
-  preview?: any[];
+  onOpenChange: (open: boolean) => void;
+
+  preview: RenameCodePreviewItem[];
+
   warnings?: string[];
   errors?: string[];
-  tipo: "inclusao" | "alteracao";
+
+  loading: boolean;
+  onConfirm: () => void | Promise<void>;
+
+  fileName?: string;
 };
 
-const toastCustom = {
-  success: (title: string, description?: string) =>
-    toast.success(title, {
-      description,
-      className: "bg-green-600 border border-green-500 text-white shadow-lg",
-      duration: 3500,
-    }),
+type RowStatus =
+  | "valid"
+  | "unchanged"
+  | "invalid";
 
-  error: (title: string, description?: string) =>
-    toast.error(title, {
-      description,
-      className: "bg-red-600 border border-red-500 text-white shadow-lg",
-      duration: 4500,
-    }),
+function normalizeCode(
+  value: unknown
+): string {
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return "";
+  }
 
-  warning: (title: string, description?: string) =>
-    toast.warning(title, {
-      description,
-      className: "bg-orange-500 border border-orange-400 text-white shadow-lg",
-      duration: 4000,
-      position: "top-center",
-    }),
+  return String(value).trim();
+}
 
-  message: (title: string, description?: string) =>
-    toast.message(title, {
-      description,
-      className: "bg-neutral-900 border border-neutral-700 text-white shadow-lg",
-      duration: 3000,
-    }),
-};
+function getRowStatus(
+  item: RenameCodePreviewItem
+): RowStatus {
+  const oldCode = normalizeCode(
+    item.codigo_antigo
+  );
 
-export default function ConfirmImportModal({
+  const newCode = normalizeCode(
+    item.codigo_novo
+  );
+
+  if (
+    !oldCode ||
+    !newCode
+  ) {
+    return "invalid";
+  }
+
+  if (oldCode === newCode) {
+    return "unchanged";
+  }
+
+  return "valid";
+}
+
+function StatusBadge({
+  status,
+}: {
+  status: RowStatus;
+}) {
+  if (status === "invalid") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-[11px] font-medium text-red-300">
+        <XCircle className="h-3.5 w-3.5" />
+        Inválido
+      </span>
+    );
+  }
+
+  if (status === "unchanged") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-yellow-500/30 bg-yellow-500/10 px-2.5 py-1 text-[11px] font-medium text-yellow-300">
+        <AlertTriangle className="h-3.5 w-3.5" />
+        Sem alteração
+      </span>
+    );
+  }
+
+  return null;
+}
+
+export default function ConfirmRenameCodesModal({
   open,
   onOpenChange,
-  count,
-  onConfirm,
-  loading,
-  preview = [],
+  preview,
   warnings = [],
   errors = [],
-  tipo,
+  loading,
+  onConfirm,
+  fileName,
 }: Props) {
-  const keys = preview.length > 0 ? Object.keys(preview[0]) : [];
+  const summary = useMemo(() => {
+    let valid = 0;
+    let unchanged = 0;
+    let invalid = 0;
 
-  const titulo =
-    tipo === "inclusao"
-      ? "Confirmar Inclusão de Anúncios"
-      : "Confirmar Alteração de Anúncios";
+    preview.forEach((item) => {
+      const status =
+        getRowStatus(item);
 
-  const texto =
-    tipo === "inclusao"
-      ? "Você está prestes a INCLUIR novos anúncios no sistema."
-      : "Você está prestes a ALTERAR anúncios existentes.";
+      if (status === "valid") {
+        valid += 1;
+      }
+
+      if (status === "unchanged") {
+        unchanged += 1;
+      }
+
+      if (status === "invalid") {
+        invalid += 1;
+      }
+    });
+
+    return {
+      total: preview.length,
+      valid,
+      unchanged,
+      invalid,
+    };
+  }, [preview]);
+
+  const hasBlockingErrors =
+    errors.length > 0 ||
+    summary.invalid > 0 ||
+    summary.valid === 0;
+
+  async function handleConfirm() {
+    if (hasBlockingErrors) {
+      toast.error(
+        "Renomeação bloqueada",
+        {
+          description:
+            "Corrija os erros encontrados antes de confirmar.",
+          className:
+            "bg-red-600 border border-red-500 text-white shadow-lg",
+          duration: 4500,
+        }
+      );
+
+      return;
+    }
+
+    if (warnings.length > 0) {
+      toast.warning(
+        "Atenção",
+        {
+          description:
+            "Existem avisos na importação, mas a operação poderá continuar.",
+          className:
+            "bg-orange-500 border border-orange-400 text-white shadow-lg",
+          duration: 4000,
+          position:
+            "top-center",
+        }
+      );
+    }
+
+    toast.message(
+      "Renomeação iniciada",
+      {
+        description:
+          `${summary.valid} código(s) serão atualizados.`,
+        className:
+          "bg-neutral-900 border border-neutral-700 text-white shadow-lg",
+        duration: 3000,
+      }
+    );
+
+    await unlockAudio();
+    await onConfirm();
+  }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(value) => {
+        if (!loading) {
+          onOpenChange(value);
+        }
+      }}
+    >
       <DialogContent
-        onClick={(e) => e.stopPropagation()}
+        onClick={(event) =>
+          event.stopPropagation()
+        }
         className="
-          bg-[#0f0f0f]/95 backdrop-blur-xl
-          border border-neutral-700
-          rounded-2xl text-white
-          shadow-2xl
-
+          flex
+          max-h-[calc(100dvh-16px)]
           w-[calc(100vw-16px)]
           max-w-[calc(100vw-16px)]
-          max-h-[calc(100dvh-16px)]
-
-          sm:max-w-3xl
-          sm:max-h-[85vh]
-
-          overflow-hidden
           min-w-0
-          p-4 sm:p-6
-
-          flex flex-col
+          flex-col
+          overflow-hidden
+          rounded-2xl
+          border
+          border-neutral-700
+          bg-[#0f0f0f]/95
+          p-4
           pb-[calc(1rem+env(safe-area-inset-bottom))]
+          text-white
+          shadow-2xl
+          backdrop-blur-xl
+
+          sm:max-h-[88vh]
+          sm:max-w-5xl
+          sm:p-6
         "
       >
         <DialogHeader className="min-w-0 shrink-0">
-          <DialogTitle className="text-base sm:text-lg font-semibold text-white">
-            {titulo}
+          <DialogTitle className="text-base font-semibold text-white sm:text-lg">
+            Confirmar Renomeação de Códigos
           </DialogTitle>
+
+          <p className="mt-1 text-sm leading-relaxed text-neutral-400">
+            Confira os códigos atuais e os novos códigos antes de confirmar a atualização.
+          </p>
+
+          {fileName && (
+            <p
+              className="mt-1 truncate text-xs text-neutral-500"
+              title={fileName}
+            >
+              Arquivo: {fileName}
+            </p>
+          )}
         </DialogHeader>
 
-        {/* MIolo */}
-        <div className="mt-3 min-w-0 flex-1 min-h-0 overflow-y-auto pr-1 space-y-4">
-          <p className="text-neutral-300 text-sm sm:text-base leading-relaxed">
-            {texto}
-          </p>
+        <div className="mt-4 min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto pr-1">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="rounded-xl border border-neutral-700 bg-neutral-900/70 p-3">
+              <p className="text-xs text-neutral-500">
+                Linhas lidas
+              </p>
 
-          <p className="text-neutral-300 text-sm sm:text-base">
-            O arquivo contém{" "}
-            <span className="text-white font-semibold">{count}</span>{" "}
-            registros.
-          </p>
+              <p className="mt-1 text-xl font-semibold text-white">
+                {summary.total}
+              </p>
+            </div>
 
-          {/* ERROS */}
+            <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-3">
+              <p className="text-xs text-green-300">
+                Serão atualizados
+              </p>
+
+              <p className="mt-1 text-xl font-semibold text-green-300">
+                {summary.valid}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-3">
+              <p className="text-xs text-yellow-300">
+                Sem alteração
+              </p>
+
+              <p className="mt-1 text-xl font-semibold text-yellow-300">
+                {summary.unchanged}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3">
+              <p className="text-xs text-red-300">
+                Inválidos
+              </p>
+
+              <p className="mt-1 text-xl font-semibold text-red-300">
+                {summary.invalid}
+              </p>
+            </div>
+          </div>
+
           {errors.length > 0 && (
             <motion.div
-              initial={{ opacity: 0, y: -5 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-red-500/10 border border-red-600/40 rounded-xl p-3 text-sm text-red-400 flex items-start gap-2 min-w-0"
+              initial={{
+                opacity: 0,
+                y: -5,
+              }}
+              animate={{
+                opacity: 1,
+                y: 0,
+              }}
+              className="
+                flex
+                min-w-0
+                items-start
+                gap-2
+                rounded-xl
+                border
+                border-red-600/40
+                bg-red-500/10
+                p-3
+                text-sm
+                text-red-300
+              "
             >
-              <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
+
               <div className="min-w-0">
-                <strong className="text-red-400">Erros encontrados:</strong>
-                <ul className="list-disc list-inside mt-1">
-                  {errors.map((msg, i) => (
-                    <li key={i}>{msg}</li>
-                  ))}
+                <strong className="text-red-400">
+                  Erros encontrados:
+                </strong>
+
+                <ul className="mt-1 list-inside list-disc space-y-1">
+                  {errors.map(
+                    (message, index) => (
+                      <li key={index}>
+                        {message}
+                      </li>
+                    )
+                  )}
                 </ul>
-                <p className="mt-1 text-red-500 font-medium">
-                  A importação foi bloqueada. Corrija antes de prosseguir.
+
+                <p className="mt-2 font-medium text-red-400">
+                  A renomeação está bloqueada até que os erros sejam corrigidos.
                 </p>
               </div>
             </motion.div>
           )}
 
-          {/* WARNINGS */}
-          {warnings.length > 0 && errors.length === 0 && (
+          {warnings.length > 0 && (
             <motion.div
-              initial={{ opacity: 0, y: -5 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3 text-sm text-yellow-300 flex items-start gap-2 min-w-0"
+              initial={{
+                opacity: 0,
+                y: -5,
+              }}
+              animate={{
+                opacity: 1,
+                y: 0,
+              }}
+              className="
+                flex
+                min-w-0
+                items-start
+                gap-2
+                rounded-xl
+                border
+                border-yellow-500/30
+                bg-yellow-500/10
+                p-3
+                text-sm
+                text-yellow-300
+              "
             >
-              <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0 mt-0.5" />
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-400" />
+
               <div className="min-w-0">
-                <strong className="text-yellow-400">Avisos:</strong>
-                <ul className="list-disc list-inside mt-1">
-                  {warnings.map((msg, i) => (
-                    <li key={i}>{msg}</li>
-                  ))}
+                <strong className="text-yellow-400">
+                  Avisos:
+                </strong>
+
+                <ul className="mt-1 list-inside list-disc space-y-1">
+                  {warnings.map(
+                    (message, index) => (
+                      <li key={index}>
+                        {message}
+                      </li>
+                    )
+                  )}
                 </ul>
               </div>
             </motion.div>
           )}
 
-          {/* PREVIEW */}
-          {preview.length > 0 && (
-            <div className="mt-2 w-full min-w-0 rounded-xl border border-neutral-700 overflow-hidden">
-              <div className="h-52 sm:h-56 w-full min-w-0 overflow-auto">
-                <table className="min-w-max text-xs sm:text-sm text-neutral-300">
-                  <thead className="bg-neutral-800 sticky top-0 z-10">
+          {preview.length > 0 ? (
+            <div className="min-w-0 overflow-hidden rounded-xl border border-neutral-700">
+              <div className="flex items-center justify-between gap-3 border-b border-neutral-700 bg-neutral-900 px-3 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-white">
+                    Pré-visualização
+                  </p>
+
+                  <p className="text-xs text-neutral-500">
+                    O código da esquerda será substituído pelo código da direita.
+                  </p>
+                </div>
+
+                <span className="shrink-0 rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-xs text-blue-300">
+                  {summary.total} item(ns)
+                </span>
+              </div>
+
+              <div className="h-72 w-full overflow-auto sm:h-80">
+                <table className="w-full min-w-[760px] text-xs text-neutral-300 sm:text-sm">
+                  <thead className="sticky top-0 z-10 bg-neutral-800">
                     <tr>
-                      {keys.map((k) => (
-                        <th
-                          key={k}
-                          className="text-left p-2 font-semibold whitespace-nowrap"
-                        >
-                          {k}
-                        </th>
-                      ))}
+                      <th className="w-20 p-3 text-left font-semibold">
+                        Linha
+                      </th>
+
+                      <th className="p-3 text-left font-semibold">
+                        Código atual
+                      </th>
+
+                      <th className="w-16 p-3 text-center font-semibold">
+                        Alteração
+                      </th>
+
+                      <th className="p-3 text-left font-semibold">
+                        Novo código
+                      </th>
+
+                      <th className="w-40 p-3 text-left font-semibold">
+                        Situação
+                      </th>
                     </tr>
                   </thead>
 
                   <tbody>
-                    {preview.map((row, i) => (
-                      <tr
-                        key={i}
-                        className="odd:bg-neutral-900 even:bg-neutral-800/50"
-                      >
-                        {keys.map((k) => (
-                          <td
-                            key={k}
-                            className="p-2 whitespace-nowrap max-w-[180px] sm:max-w-[240px] overflow-hidden text-ellipsis"
-                            title={String(row?.[k] ?? "-")}
+                    {preview.map(
+                      (item, index) => {
+                        const oldCode =
+                          normalizeCode(
+                            item.codigo_antigo
+                          );
+
+                        const newCode =
+                          normalizeCode(
+                            item.codigo_novo
+                          );
+
+                        const status =
+                          getRowStatus(
+                            item
+                          );
+
+                        const line =
+                          Number.isFinite(
+                            Number(
+                              item.linha
+                            )
+                          )
+                            ? Number(
+                                item.linha
+                              )
+                            : index + 2;
+
+                        return (
+                          <tr
+                            key={`${oldCode}-${newCode}-${index}`}
+                            className="
+                              border-b
+                              border-neutral-800
+                              odd:bg-neutral-950
+                              even:bg-neutral-900/70
+                              last:border-b-0
+                            "
                           >
-                            {row?.[k] ?? "-"}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
+                            <td className="p-3 text-neutral-500">
+                              {line}
+                            </td>
+
+                            <td
+                              className="max-w-[280px] overflow-hidden text-ellipsis whitespace-nowrap p-3 font-medium text-white"
+                              title={
+                                oldCode || "-"
+                              }
+                            >
+                              {oldCode || "-"}
+                            </td>
+
+                            <td className="p-3 text-center">
+                              <ArrowRight className="inline-block h-4 w-4 text-green-400" />
+                            </td>
+
+                            <td
+                              className="max-w-[280px] overflow-hidden text-ellipsis whitespace-nowrap p-3 font-semibold text-green-300"
+                              title={
+                                newCode || "-"
+                              }
+                            >
+                              {newCode || "-"}
+                            </td>
+
+                            <td className="p-3">
+                              <StatusBadge
+                                status={
+                                  status
+                                }
+                              />
+                            </td>
+                          </tr>
+                        );
+                      }
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
+          ) : (
+            <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-neutral-700 bg-neutral-900/40 p-6 text-center">
+              <FileSpreadsheet className="mb-3 h-8 w-8 text-neutral-600" />
+
+              <p className="text-sm font-medium text-neutral-300">
+                Nenhuma renomeação encontrada
+              </p>
+
+              <p className="mt-1 text-xs text-neutral-500">
+                Verifique se a planilha contém as colunas código e novo código.
+              </p>
+            </div>
           )}
         </div>
 
-        {/* FOOTER */}
-        <DialogFooter className="mt-5 shrink-0 min-w-0 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+        <DialogFooter className="mt-5 flex shrink-0 flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
           <Button
             variant="outline"
             className="
-              w-full sm:w-auto
-              h-11 sm:h-auto
-              border-neutral-700 text-white
+              h-11
+              w-full
               cursor-pointer
-              hover:scale-100 sm:hover:scale-105
+              border-neutral-700
+              text-white
+              hover:scale-100
+
+              sm:h-auto
+              sm:w-auto
+              sm:hover:scale-105
             "
-            onClick={(e) => {
-              e.stopPropagation();
+            disabled={loading}
+            onClick={(event) => {
+              event.stopPropagation();
               onOpenChange(false);
             }}
-            disabled={loading}
           >
             Cancelar
           </Button>
 
           <Button
-            className={`
-              w-full sm:w-auto
-              h-11 sm:h-auto
-              text-white flex items-center justify-center gap-2 cursor-pointer
-              hover:scale-100 sm:hover:scale-105
-              ${
-                tipo === "inclusao"
-                  ? "bg-green-600 hover:bg-green-700"
-                  : "bg-yellow-600 hover:bg-yellow-700"
-              }
-              ${errors.length > 0 ? "opacity-40 cursor-not-allowed" : ""}
-            `}
-            disabled={loading || errors.length > 0}
-            onClick={async (e) => {
-              e.stopPropagation();
+            className="
+              flex
+              h-11
+              w-full
+              cursor-pointer
+              items-center
+              justify-center
+              gap-2
+              bg-yellow-600
+              text-white
+              hover:scale-100
+              hover:bg-yellow-700
 
-              if (errors.length > 0) {
-                toastCustom.error(
-                  "Importação bloqueada",
-                  "Corrija os erros para conseguir confirmar."
-                );
-                return;
-              }
+              disabled:cursor-not-allowed
+              disabled:opacity-40
 
-              if (warnings.length > 0) {
-                toastCustom.warning(
-                  "Atenção",
-                  "Existem avisos. Você pode confirmar mesmo assim."
-                );
-              }
-
-              toastCustom.message(
-                "Importação iniciada",
-                "Processando... aguarde a finalização."
-              );
-
-              await unlockAudio();
-              onConfirm();
+              sm:h-auto
+              sm:w-auto
+              sm:hover:scale-105
+            "
+            disabled={
+              loading ||
+              hasBlockingErrors
+            }
+            onClick={async (
+              event
+            ) => {
+              event.stopPropagation();
+              await handleConfirm();
             }}
           >
             {loading ? (
               <>
-                <Loader className="animate-spin w-4 h-4 sm:w-5 sm:h-5" />
-                Importando...
+                <Loader className="h-4 w-4 animate-spin sm:h-5 sm:w-5" />
               </>
-            ) : tipo === "inclusao" ? (
-              "Confirmar Inclusão"
             ) : (
-              "Confirmar Alteração"
+              "Confirmar Renomeação"
             )}
           </Button>
         </DialogFooter>
