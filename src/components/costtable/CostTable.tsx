@@ -9,6 +9,7 @@ import { TableControls } from "@/components/costtable/TableControls";
 import ModalNewCost from "@/components/costtable/ModalNewCost";
 import ConfirmDeleteModal from "@/components/costtable/ConfirmDeleteModal";
 import ConfirmImportModal from "@/components/costtable/ConfirmImportModal";
+import ConfirmRenameCodesModal from "@/components/costtable/ConfirmRenameCodesModal";
 import CostFiltersSidebar from "@/components/costtable/CostFiltersSidebar";
 import CostActionsSidebar from "@/components/costtable/CostActionsSidebar";
 import CostDataTable from "@/components/costtable/CostDataTable";
@@ -43,6 +44,12 @@ import {
   Menu,
   SlidersHorizontal,
 } from "lucide-react";
+
+type RenameCodePreviewItem = {
+  linha?: number;
+  codigo_antigo: string;
+  codigo_novo: string;
+};
 
 const getCostKey = (row: any) => {
   return String(row?.["Código"] ?? row?.codigo ?? row?.id ?? "").trim();
@@ -102,6 +109,12 @@ export default function CostTable() {
   const [importTipo, setImportTipo] = useState<"inclusao" | "alteracao">(
     "inclusao"
   );
+
+  const [openRenamePreview, setOpenRenamePreview] = useState(false);
+  const [renameRows, setRenameRows] = useState<RenameCodePreviewItem[]>([]);
+  const [renameWarnings, setRenameWarnings] = useState<string[]>([]);
+  const [renameErrors, setRenameErrors] = useState<string[]>([]);
+  const [renameFileName, setRenameFileName] = useState("");
 
   const [selectedRows, setSelectedRows] = useState<Custo[]>([]);
   const [openDelete, setOpenDelete] = useState(false);
@@ -729,30 +742,38 @@ export default function CostTable() {
         true
       );
 
-      const renomeacoes = previewResult.data;
+      const renomeacoes = previewResult.data.map((item, index) => ({
+        ...item,
+        linha: index + 2,
+      }));
 
-      const preview = renomeacoes
-        .slice(0, 8)
-        .map((item) => `${item.codigo_antigo} → ${item.codigo_novo}`)
-        .join("\n");
-
-      const confirmed = window.confirm(
-        `Foram encontradas ${renomeacoes.length} renomeação(ões).\n\n${preview}${
-          renomeacoes.length > 8 ? "\n..." : ""
-        }\n\nDeseja executar o lote?`
+      setRenameRows(renomeacoes);
+      setRenameWarnings((previewResult as any).warnings || []);
+      setRenameErrors([]);
+      setRenameFileName(file.name);
+      setOpenRenamePreview(true);
+    } catch (err: any) {
+      toastCustom.error(
+        "Erro ao ler renomeações",
+        err?.message || "Falha no processamento da planilha."
       );
+    }
+  };
 
-      if (!confirmed) return;
+  const confirmRenomeacaoCodigos = async () => {
+    if (!renameRows.length || renamingCodes) return;
 
-      setRenamingCodes(true);
+    setRenamingCodes(true);
+    setRenameErrors([]);
 
+    try {
       toastCustom.message(
         "Renomeando códigos...",
         "Atualizando custos, anúncios e composições."
       );
 
       const result = await importRenomeacaoCodigosFromXlsxOrCsv(
-        renomeacoes,
+        renameRows,
         false
       );
 
@@ -769,11 +790,18 @@ export default function CostTable() {
           result.recalculosProcessados ?? 0
         } recálculo(s) concluído(s).`
       );
+
+      setOpenRenamePreview(false);
+      setRenameRows([]);
+      setRenameWarnings([]);
+      setRenameErrors([]);
+      setRenameFileName("");
     } catch (err: any) {
-      toastCustom.error(
-        "Erro ao renomear códigos",
-        err?.message || "Falha no processamento da planilha."
-      );
+      const message = err?.message || "Falha no processamento da planilha.";
+
+      setRenameErrors([message]);
+
+      toastCustom.error("Erro ao renomear códigos", message);
     } finally {
       setRenamingCodes(false);
     }
@@ -1202,6 +1230,28 @@ export default function CostTable() {
         preview={previewRows}
         warnings={warnings}
         tipo={importTipo}
+      />
+
+      <ConfirmRenameCodesModal
+        open={openRenamePreview}
+        onOpenChange={(open) => {
+          if (renamingCodes) return;
+
+          setOpenRenamePreview(open);
+
+          if (!open) {
+            setRenameRows([]);
+            setRenameWarnings([]);
+            setRenameErrors([]);
+            setRenameFileName("");
+          }
+        }}
+        preview={renameRows}
+        warnings={renameWarnings}
+        errors={renameErrors}
+        loading={renamingCodes}
+        fileName={renameFileName}
+        onConfirm={confirmRenomeacaoCodigos}
       />
 
       {editing && (
