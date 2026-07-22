@@ -1,7 +1,3 @@
-import { Custo as CustoType } from "@/components/costtable/ModalNewCost";
-
-export type Custo = CustoType & { ["Produto"]?: string };
-
 export type CostFilters = {
   situacao: string;
   ncm: string;
@@ -9,7 +5,17 @@ export type CostFilters = {
 };
 
 export const DEFAULT_COST_FILTERS: CostFilters = {
-  situacao: "",
+  situacao: "Todos",
   ncm: "",
   marca: "",
+};
+
+export type Custo = {
+  ["Código"]: string;
+  ["Marca"]: string;
+  ["Produto"]: string;
+  ["Custo Atual"]: string | number;
+  ["Custo Antigo"]: string | number;
+  ["NCM"]: string;
+  [key: string]: any;
 };

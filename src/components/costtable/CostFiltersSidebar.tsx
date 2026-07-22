@@ -216,7 +216,7 @@ export default function CostFiltersSidebar({
           onChange={(value) =>
             updateFilter("situacao", value)
           }
-          options={["Últimos Incluídos"]}
+          options={["Todos", "Últimos Incluídos"]}
           placeholder="Todos"
         />
 

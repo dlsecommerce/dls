@@ -278,19 +278,13 @@ export default function CostTable() {
       .from("custos")
       .select("*", { count: "exact", head: countOnly });
 
-    // PESQUISA GLOBAL: suporta múltiplos termos separados por vírgula
-    // Cada termo gera um OR entre os campos pesquisáveis (buildOrSearchParts)
+    // PESQUISA GLOBAL: parseSearchTokens já suporta múltiplos termos
+    // separados por vírgula e sanitiza os tokens.
     if (appliedSearch.trim()) {
-      const tokens = splitByComma(appliedSearch);
-      const allParts: string[] = [];
+      const orParts = buildOrSearchParts(parseSearchTokens(appliedSearch));
 
-      tokens.forEach((token) => {
-        const orParts = buildOrSearchParts(parseSearchTokens(token));
-        allParts.push(...orParts);
-      });
-
-      if (allParts.length) {
-        q = q.or(allParts.join(","));
+      if (orParts.length) {
+        q = q.or(orParts.join(","));
       }
     }
 
@@ -327,7 +321,7 @@ export default function CostTable() {
       q = q.or('NCM.is.null,NCM.eq.""');
     }
 
-    // FILTRO SITUAÇÃO: "Todos" não aplica filtro extra;
+    // FILTRO SITUAÇÃO: "Todos" usa ordenação neutra por Código;
     // "Últimos Incluídos" força ordenação por criação mais recente
     // quando não há coluna de ordenação manual selecionada.
     if (sortColumn) {
@@ -335,7 +329,7 @@ export default function CostTable() {
     } else if (appliedFilters.situacao === "Últimos Incluídos") {
       q = q.order("created_at", { ascending: false });
     } else {
-      q = q.order("created_at", { ascending: false });
+      q = q.order("Código", { ascending: true });
     }
 
     return q;
@@ -1129,6 +1123,7 @@ export default function CostTable() {
               onSituacaoChange={(value) => {
                 setFilters((prev) => ({ ...prev, situacao: value }));
                 setAppliedFilters((prev) => ({ ...prev, situacao: value }));
+                setCurrentPage(1);
               }}
               onToggleSelectAll={handleToggleSelectAll}
               onRefresh={() => loadData(currentPage, itemsPerPage)}
