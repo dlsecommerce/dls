@@ -7,9 +7,9 @@ export type AnuncioFilters = {
 };
 
 export const DEFAULT_ANUNCIO_FILTERS: AnuncioFilters = {
-  situacao: "",
-  categoria: "",
-  tipo: "",
-  lojasVirtuais: "",
+  situacao: "Todos",
+  categoria: "Todos",
+  tipo: "Todos",
+  lojasVirtuais: "Todos",
   marca: "",
 };

@@ -4,7 +4,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
 import { Anuncio } from "@/components/announce/types/Announce";
-import { AnuncioFilters } from "@/components/announce/AnnounceTable/types";
+import {
+  AnuncioFilters,
+  DEFAULT_ANUNCIO_FILTERS,
+} from "@/components/announce/AnnounceTable/types";
 import { ORDERABLE_COLUMNS } from "../utils/constants";
 import { RowShape, mapRowToAnuncio } from "../utils/mapRowToAnuncio";
 
@@ -18,11 +21,6 @@ function parsePositiveInt(value: string | null, fallback: number) {
 }
 
 function sanitizeTerm(input: string) {
-  /*
-    Mantém underline e hífen para permitir busca por padrões novos:
-    PAI-FIS-3754_3453
-    VAR-LIV-TN_5AM
-  */
   return input.replace(/[%]/g, "").replace(/"/g, "").trim();
 }
 
@@ -43,13 +41,6 @@ function buildOrSearchParts(tokens: string[]) {
   for (const term of tokens) {
     if (!term) continue;
 
-    /*
-      Variações úteis para buscar referência com:
-      - espaço
-      - hífen
-      - underline
-      - tudo junto
-    */
     const variants = Array.from(
       new Set([
         term,
@@ -116,34 +107,6 @@ function normalizeLojaToCode(value: string) {
 function applyTipoFilter(query: any, tipo?: string) {
   const selected = String(tipo || "Todos").trim();
 
-  /*
-    Aceita os dois padrões:
-
-    Antigo:
-    PAI - HICKORY
-    VAR - HICKORY
-
-    Novo:
-    PAI-FIS-3754_3453
-    VAR-FIS-3754_3453
-    PAI-LIV-TN_5AM
-    VAR-LIV-TN_5AM
-
-    Regra:
-    - Todos / Produtos:
-      mostra produtos principais, ou seja, simples + PAI.
-      Não mostra VAR na tela principal.
-
-    - Produtos simples:
-      referência que não começa com PAI nem VAR.
-
-    - Produtos com variações:
-      referência que começa com PAI - ou PAI-
-
-    - Variações:
-      referência que começa com VAR - ou VAR-
-  */
-
   if (!selected || selected === "Todos" || selected === "Produtos") {
     return query
       .not("Referência", "ilike", "VAR -%")
@@ -201,6 +164,8 @@ export function useAnunciosData(filters: AnuncioFilters) {
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
 
   const [allCategorias, setAllCategorias] = useState<string[]>([]);
+  const [allMarcas, setAllMarcas] = useState<string[]>([]);
+
   const [sortColumn, setSortColumn] = useState<string | null>(initialSortColumn);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">(
     initialSortDirection
@@ -214,23 +179,61 @@ export function useAnunciosData(filters: AnuncioFilters) {
   const lastUrlRef = useRef("");
 
   /* ===========================
-     Facets
+     Facets (busca paginada — evita limite do PostgREST)
   =========================== */
 
   const hydrateCategorias = async () => {
-    const { data } = await supabase
-      .from("anuncios_all_com_variacoes")
-      .select("Categoria", { distinct: true })
-      .not("Categoria", "is", null)
-      .neq("Categoria", "")
-      .order("Categoria", { ascending: true })
-      .limit(20000);
+    let allRows: any[] = [];
+    let from = 0;
+    const step = 1000;
+
+    while (true) {
+      const { data, error } = await supabase
+        .from("anuncios_all_com_variacoes")
+        .select("Categoria")
+        .not("Categoria", "is", null)
+        .neq("Categoria", "")
+        .range(from, from + step - 1);
+
+      if (error || !data || data.length === 0) break;
+
+      allRows = allRows.concat(data);
+      if (data.length < step) break;
+      from += step;
+    }
 
     const categorias = [
-      ...new Set((data || []).map((r: any) => String(r.Categoria ?? "").trim())),
+      ...new Set(allRows.map((r: any) => String(r.Categoria ?? "").trim())),
     ].filter(Boolean);
 
     setAllCategorias(categorias.sort((a, b) => a.localeCompare(b)));
+  };
+
+  const hydrateMarcas = async () => {
+    let allRows: any[] = [];
+    let from = 0;
+    const step = 1000;
+
+    while (true) {
+      const { data, error } = await supabase
+        .from("anuncios_all_com_variacoes")
+        .select("Marca")
+        .not("Marca", "is", null)
+        .neq("Marca", "")
+        .range(from, from + step - 1);
+
+      if (error || !data || data.length === 0) break;
+
+      allRows = allRows.concat(data);
+      if (data.length < step) break;
+      from += step;
+    }
+
+    const marcas = [
+      ...new Set(allRows.map((r: any) => String(r.Marca ?? "").trim())),
+    ].filter(Boolean);
+
+    setAllMarcas(marcas.sort((a, b) => a.localeCompare(b)));
   };
 
   /* ===========================
@@ -244,11 +247,6 @@ export function useAnunciosData(filters: AnuncioFilters) {
       const from = (page - 1) * limit;
       const to = from + limit - 1;
 
-      /*
-        IMPORTANTE:
-        Esta view já precisa retornar total_variacoes.
-        O badge verde aparece na tabela quando total_variacoes > 0.
-      */
       let query = supabase
         .from("anuncios_all_com_variacoes")
         .select("*", { count: "exact" })
@@ -325,22 +323,12 @@ export function useAnunciosData(filters: AnuncioFilters) {
             ? "Sóbaquetas"
             : r.Loja || "Desconhecida";
 
-        /*
-          IMPORTANTE:
-          anuncio.id continua sendo o ID real do banco.
-          Não troque para 1, 2, 3 aqui, porque excluir/editar depende do ID real.
-          Para mostrar numeração visual, use numeroLinha/idExibicao na tabela.
-        */
         anuncio.id = r.ID;
 
         (anuncio as any).idReal = r.ID;
         (anuncio as any).numeroLinha = from + index + 1;
         (anuncio as any).idExibicao = from + index + 1;
 
-        /*
-          IMPORTANTE PARA O BADGE VERDE:
-          TableBodyRows mostra o badge quando total_variacoes > 0.
-        */
         (anuncio as any).total_variacoes = Number(
           (r as any).total_variacoes ?? 0
         );
@@ -470,7 +458,7 @@ export function useAnunciosData(filters: AnuncioFilters) {
   ]);
 
   /* ===========================
-     State -> URL
+     State -> URL (search + paginação + sort + filtros)
   =========================== */
 
   useEffect(() => {
@@ -479,6 +467,34 @@ export function useAnunciosData(filters: AnuncioFilters) {
     const params = new URLSearchParams();
 
     if (search.trim()) params.set("search", search.trim());
+
+    if (filters.marca.trim()) params.set("marca", filters.marca.trim());
+
+    if (
+      filters.situacao &&
+      filters.situacao !== DEFAULT_ANUNCIO_FILTERS.situacao
+    ) {
+      params.set("situacao", filters.situacao);
+    }
+
+    if (
+      filters.categoria &&
+      filters.categoria !== DEFAULT_ANUNCIO_FILTERS.categoria
+    ) {
+      params.set("categoria", filters.categoria);
+    }
+
+    if (filters.tipo && filters.tipo !== DEFAULT_ANUNCIO_FILTERS.tipo) {
+      params.set("tipo", filters.tipo);
+    }
+
+    if (
+      filters.lojasVirtuais &&
+      filters.lojasVirtuais !== DEFAULT_ANUNCIO_FILTERS.lojasVirtuais
+    ) {
+      params.set("loja", filters.lojasVirtuais);
+    }
+
     if (currentPage > 1) params.set("page", String(currentPage));
     if (itemsPerPage !== 50) params.set("perPage", String(itemsPerPage));
     if (sortColumn) params.set("sortColumn", sortColumn);
@@ -494,6 +510,7 @@ export function useAnunciosData(filters: AnuncioFilters) {
     router.replace(nextUrl, { scroll: false });
   }, [
     search,
+    filters,
     currentPage,
     itemsPerPage,
     sortColumn,
@@ -507,6 +524,7 @@ export function useAnunciosData(filters: AnuncioFilters) {
 
   useEffect(() => {
     hydrateCategorias();
+    hydrateMarcas();
   }, []);
 
   useEffect(() => {
@@ -606,6 +624,7 @@ export function useAnunciosData(filters: AnuncioFilters) {
     loading,
     totalItems,
     allCategorias,
+    allMarcas,
     currentPage,
     itemsPerPage,
     setCurrentPage,

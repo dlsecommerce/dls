@@ -99,59 +99,6 @@ export default function AnnounceTable() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  React.useEffect(() => {
-    const params = new URLSearchParams();
-
-    if (data.search) params.set("search", data.search);
-    if (filters.marca) params.set("marca", filters.marca);
-
-    if (
-      filters.situacao &&
-      filters.situacao !== DEFAULT_ANUNCIO_FILTERS.situacao
-    ) {
-      params.set("situacao", filters.situacao);
-    }
-
-    if (
-      filters.categoria &&
-      filters.categoria !== DEFAULT_ANUNCIO_FILTERS.categoria
-    ) {
-      params.set("categoria", filters.categoria);
-    }
-
-    if (filters.tipo && filters.tipo !== DEFAULT_ANUNCIO_FILTERS.tipo) {
-      params.set("tipo", filters.tipo);
-    }
-
-    if (
-      filters.lojasVirtuais &&
-      filters.lojasVirtuais !== DEFAULT_ANUNCIO_FILTERS.lojasVirtuais
-    ) {
-      params.set("loja", filters.lojasVirtuais);
-    }
-
-    if (data.currentPage > 1) params.set("page", String(data.currentPage));
-    if (data.itemsPerPage !== 50) {
-      params.set("perPage", String(data.itemsPerPage));
-    }
-
-    if (data.sortColumn) params.set("sortColumn", data.sortColumn);
-    if (data.sortColumn && data.sortDirection !== "asc") {
-      params.set("sortDirection", data.sortDirection);
-    }
-
-    const nextUrl = params.toString() ? `?${params.toString()}` : "?";
-    router.replace(nextUrl, { scroll: false });
-  }, [
-    data.search,
-    filters,
-    data.currentPage,
-    data.itemsPerPage,
-    data.sortColumn,
-    data.sortDirection,
-    router,
-  ]);
-
   const impExp = useImportExport(
     data.loadAnuncios,
     data.currentPage,
@@ -405,6 +352,7 @@ export default function AnnounceTable() {
               filters={filters}
               setFilters={setFilters}
               allCategorias={data.allCategorias}
+              allMarcas={data.allMarcas}
             />
           </div>
         </aside>
@@ -546,6 +494,7 @@ export default function AnnounceTable() {
               filters={filters}
               setFilters={setFilters}
               allCategorias={data.allCategorias}
+              allMarcas={data.allMarcas}
             />
           </div>
         </div>
