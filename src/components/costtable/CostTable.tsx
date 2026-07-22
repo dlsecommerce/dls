@@ -55,6 +55,13 @@ const getCostKey = (row: any) => {
   return String(row?.["Código"] ?? row?.codigo ?? row?.id ?? "").trim();
 };
 
+// Suporta múltiplos termos separados por vírgula (ex: "Liverpool, SKP, 12345")
+const splitByComma = (value: string): string[] =>
+  value
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+
 export default function CostTable() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -271,12 +278,19 @@ export default function CostTable() {
       .from("custos")
       .select("*", { count: "exact", head: countOnly });
 
+    // PESQUISA GLOBAL: suporta múltiplos termos separados por vírgula
+    // Cada termo gera um OR entre os campos pesquisáveis (buildOrSearchParts)
     if (appliedSearch.trim()) {
-      const tokens = parseSearchTokens(appliedSearch);
-      const orParts = buildOrSearchParts(tokens);
+      const tokens = splitByComma(appliedSearch);
+      const allParts: string[] = [];
 
-      if (orParts.length) {
-        q = q.or(orParts.join(","));
+      tokens.forEach((token) => {
+        const orParts = buildOrSearchParts(parseSearchTokens(token));
+        allParts.push(...orParts);
+      });
+
+      if (allParts.length) {
+        q = q.or(allParts.join(","));
       }
     }
 
@@ -284,11 +298,12 @@ export default function CostTable() {
       q = q.in("Marca", appliedSelectedBrands);
     }
 
+    // FILTRO DE MARCA (texto livre): suporta múltiplas marcas separadas por vírgula
     if (appliedFilters.marca.trim()) {
-      const marcaTokens = parseSearchTokens(appliedFilters.marca);
+      const marcaTerms = splitByComma(appliedFilters.marca);
       const marcaParts: string[] = [];
 
-      for (const term of marcaTokens) {
+      for (const term of marcaTerms) {
         if (!term) continue;
 
         const escaped = term.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -297,12 +312,13 @@ export default function CostTable() {
       }
 
       if (marcaParts.length === 1) {
-        q = q.ilike("Marca", `%${marcaTokens[0]}%`);
+        q = q.ilike("Marca", `%${marcaTerms[0]}%`);
       } else if (marcaParts.length > 1) {
         q = q.or(marcaParts.join(","));
       }
     }
 
+    // FILTRO NCM
     if (appliedFilters.ncm === "Com NCM") {
       q = q.not("NCM", "is", null).neq("NCM", "");
     }
@@ -311,8 +327,13 @@ export default function CostTable() {
       q = q.or('NCM.is.null,NCM.eq.""');
     }
 
+    // FILTRO SITUAÇÃO: "Todos" não aplica filtro extra;
+    // "Últimos Incluídos" força ordenação por criação mais recente
+    // quando não há coluna de ordenação manual selecionada.
     if (sortColumn) {
       q = q.order(sortColumn, { ascending: sortDirection === "asc" });
+    } else if (appliedFilters.situacao === "Últimos Incluídos") {
+      q = q.order("created_at", { ascending: false });
     } else {
       q = q.order("created_at", { ascending: false });
     }
