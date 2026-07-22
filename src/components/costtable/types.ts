@@ -6,9 +6,12 @@ export type CostFilters = {
 
 export const DEFAULT_COST_FILTERS: CostFilters = {
   situacao: "Todos",
-  ncm: "",
+  ncm: "Todos",
   marca: "",
 };
+
+export const SITUACAO_OPTIONS = ["Todos", "Últimos Incluídos"];
+export const NCM_OPTIONS = ["Todos", "Com NCM", "Sem NCM"];
 
 export type Custo = {
   ["Código"]: string;

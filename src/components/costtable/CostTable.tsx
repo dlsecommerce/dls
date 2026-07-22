@@ -312,12 +312,10 @@ export default function CostTable() {
       }
     }
 
-    // FILTRO NCM
+    // FILTRO NCM: "Todos" (ou vazio) = sem filtro aplicado
     if (appliedFilters.ncm === "Com NCM") {
       q = q.not("NCM", "is", null).neq("NCM", "");
-    }
-
-    if (appliedFilters.ncm === "Sem NCM") {
+    } else if (appliedFilters.ncm === "Sem NCM") {
       q = q.or('NCM.is.null,NCM.eq.""');
     }
 
@@ -437,7 +435,9 @@ export default function CostTable() {
   const handleApplyFilters = () => {
     setAppliedSearch(search);
     setAppliedSelectedBrands(selectedBrands);
-    setAppliedFilters(filters);
+    // Situação é controlada exclusivamente pelo header (fonte única de verdade),
+    // por isso preservamos o valor já aplicado ao mesclar o restante do rascunho.
+    setAppliedFilters((prev) => ({ ...filters, situacao: prev.situacao }));
 
     setSelectedRows([]);
     setCurrentPage(1);
@@ -1116,11 +1116,13 @@ export default function CostTable() {
             <CostTableHeaderBar
               allSelected={allSelected}
               hasRows={rows.length > 0}
-              situacao={filters.situacao}
+              situacao={appliedFilters.situacao}
               sortColumn={sortColumn}
               sortDirection={sortDirection}
               selectedCount={selectedRows.length}
               onSituacaoChange={(value) => {
+                // Situação é aplicada imediatamente (não depende do botão "Filtrar"),
+                // então atualizamos rascunho e aplicado juntos para manter consistência.
                 setFilters((prev) => ({ ...prev, situacao: value }));
                 setAppliedFilters((prev) => ({ ...prev, situacao: value }));
                 setCurrentPage(1);

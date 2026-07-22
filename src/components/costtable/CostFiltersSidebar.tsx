@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, Search } from "lucide-react";
-import { CostFilters } from "@/components/costtable/types";
+import { CostFilters, NCM_OPTIONS } from "@/components/costtable/types";
 
 type Props = {
   search: string;
@@ -209,17 +209,6 @@ export default function CostFiltersSidebar({
           </div>
         </div>
 
-        {/* SITUAÇÃO */}
-        <FilterSelectBlock
-          label="Situação"
-          value={filters.situacao}
-          onChange={(value) =>
-            updateFilter("situacao", value)
-          }
-          options={["Todos", "Últimos Incluídos"]}
-          placeholder="Todos"
-        />
-
         {/* NCM */}
         <FilterSelectBlock
           label="NCM"
@@ -227,8 +216,8 @@ export default function CostFiltersSidebar({
           onChange={(value) =>
             updateFilter("ncm", value)
           }
-          options={["Com NCM", "Sem NCM"]}
-          placeholder="Selecione"
+          options={NCM_OPTIONS}
+          placeholder="Todos"
         />
 
         {/* MARCAS */}
