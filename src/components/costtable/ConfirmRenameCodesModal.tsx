@@ -494,7 +494,7 @@ export default function ConfirmRenameCodesModal({
                             </td>
 
                             <td
-                              className="max-w-[280px] overflow-hidden text-ellipsis whitespace-nowrap p-3 font-semibold text-green-300"
+                              className="max-w-[280px] overflow-hidden text-ellipsis whitespace-nowrap p-3 font-semibold text-green-300 "
                               title={
                                 newCode || "-"
                               }
@@ -591,7 +591,6 @@ export default function ConfirmRenameCodesModal({
             {loading ? (
               <>
                 <Loader className="h-4 w-4 animate-spin sm:h-5 sm:w-5" />
-                Renomeando...
               </>
             ) : (
               "Confirmar Renomeação"

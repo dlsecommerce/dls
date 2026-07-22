@@ -76,10 +76,20 @@ export default function CostTable() {
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [itemsPerPage, setItemsPerPage] = useState(initialPerPage);
 
+  // Estado "rascunho" — controla os inputs da UI, mas não dispara busca sozinho
   const [search, setSearch] = useState(initialSearch);
   const [allBrands, setAllBrands] = useState<string[]>([]);
   const [selectedBrands, setSelectedBrands] = useState<string[]>(initialBrands);
   const [filters, setFilters] = useState<CostFilters>({
+    ...DEFAULT_COST_FILTERS,
+    marca: initialMarca,
+  });
+
+  // Estado "aplicado" — usado de fato na consulta ao Supabase (buildQuery)
+  const [appliedSearch, setAppliedSearch] = useState(initialSearch);
+  const [appliedSelectedBrands, setAppliedSelectedBrands] =
+    useState<string[]>(initialBrands);
+  const [appliedFilters, setAppliedFilters] = useState<CostFilters>({
     ...DEFAULT_COST_FILTERS,
     marca: initialMarca,
   });
@@ -255,13 +265,14 @@ export default function CostTable() {
     setAllBrands(Array.from(setBrands).sort((a, b) => a.localeCompare(b)));
   };
 
+  // buildQuery agora usa o estado APLICADO, não o rascunho
   const buildQuery = (countOnly = false) => {
     let q = supabase
       .from("custos")
       .select("*", { count: "exact", head: countOnly });
 
-    if (search.trim()) {
-      const tokens = parseSearchTokens(search);
+    if (appliedSearch.trim()) {
+      const tokens = parseSearchTokens(appliedSearch);
       const orParts = buildOrSearchParts(tokens);
 
       if (orParts.length) {
@@ -269,12 +280,12 @@ export default function CostTable() {
       }
     }
 
-    if (selectedBrands.length) {
-      q = q.in("Marca", selectedBrands);
+    if (appliedSelectedBrands.length) {
+      q = q.in("Marca", appliedSelectedBrands);
     }
 
-    if (filters.marca.trim()) {
-      const marcaTokens = parseSearchTokens(filters.marca);
+    if (appliedFilters.marca.trim()) {
+      const marcaTokens = parseSearchTokens(appliedFilters.marca);
       const marcaParts: string[] = [];
 
       for (const term of marcaTokens) {
@@ -292,11 +303,11 @@ export default function CostTable() {
       }
     }
 
-    if (filters.ncm === "Com NCM") {
+    if (appliedFilters.ncm === "Com NCM") {
       q = q.not("NCM", "is", null).neq("NCM", "");
     }
 
-    if (filters.ncm === "Sem NCM") {
+    if (appliedFilters.ncm === "Sem NCM") {
       q = q.or('NCM.is.null,NCM.eq.""');
     }
 
@@ -333,6 +344,34 @@ export default function CostTable() {
     setLoading(false);
   };
 
+  const syncUrl = (params: {
+    search: string;
+    marca: string;
+    page: number;
+    perPage: number;
+    brands: string[];
+    sortColumn: string | null;
+    sortDirection: "asc" | "desc";
+  }) => {
+    const usp = new URLSearchParams();
+
+    if (params.search !== "") usp.set("search", params.search);
+    if (params.marca !== "") usp.set("marca", params.marca);
+    if (params.page > 1) usp.set("page", String(params.page));
+    if (params.perPage !== 50) usp.set("perPage", String(params.perPage));
+    if (params.brands.length) usp.set("brands", params.brands.join(","));
+    if (params.sortColumn) usp.set("sortColumn", params.sortColumn);
+
+    if (params.sortColumn && params.sortDirection !== "asc") {
+      usp.set("sortDirection", params.sortDirection);
+    }
+
+    const nextUrl = usp.toString() ? `?${usp.toString()}` : "?";
+
+    router.replace(nextUrl, { scroll: false });
+  };
+
+  // Lê a URL apenas na primeira carga (deep-link) e sincroniza os estados
   useEffect(() => {
     const urlSearch = searchParams.get("search") ?? "";
     const urlMarca = searchParams.get("marca") ?? "";
@@ -343,69 +382,89 @@ export default function CostTable() {
     const urlSortDirection =
       searchParams.get("sortDirection") === "desc" ? "desc" : "asc";
 
-    setSearch((prev) => (prev !== urlSearch ? urlSearch : prev));
-    setCurrentPage((prev) => (prev !== urlPage ? urlPage : prev));
-    setItemsPerPage((prev) => (prev !== urlPerPage ? urlPerPage : prev));
+    setSearch(urlSearch);
+    setAppliedSearch(urlSearch);
 
-    setSelectedBrands((prev) =>
-      arraysEqual(prev, urlBrands) ? prev : urlBrands
-    );
+    setCurrentPage(urlPage);
+    setItemsPerPage(urlPerPage);
 
-    setSortColumn((prev) => (prev !== urlSortColumn ? urlSortColumn : prev));
+    setSelectedBrands(urlBrands);
+    setAppliedSelectedBrands(urlBrands);
 
-    setSortDirection((prev) =>
-      prev !== urlSortDirection ? urlSortDirection : prev
-    );
+    setSortColumn(urlSortColumn);
+    setSortDirection(urlSortDirection);
 
-    setFilters((prev) =>
-      prev.marca !== urlMarca ? { ...prev, marca: urlMarca } : prev
-    );
-  }, [searchParams]);
-
-  useEffect(() => {
-    const params = new URLSearchParams();
-
-    if (search !== "") params.set("search", search);
-    if (filters.marca !== "") params.set("marca", filters.marca);
-    if (currentPage > 1) params.set("page", String(currentPage));
-    if (itemsPerPage !== 50) params.set("perPage", String(itemsPerPage));
-    if (selectedBrands.length) params.set("brands", selectedBrands.join(","));
-    if (sortColumn) params.set("sortColumn", sortColumn);
-
-    if (sortColumn && sortDirection !== "asc") {
-      params.set("sortDirection", sortDirection);
-    }
-
-    const nextUrl = params.toString() ? `?${params.toString()}` : "?";
-
-    router.replace(nextUrl, { scroll: false });
-  }, [
-    search,
-    filters.marca,
-    currentPage,
-    itemsPerPage,
-    selectedBrands,
-    sortColumn,
-    sortDirection,
-    router,
-  ]);
+    setFilters((prev) => ({ ...prev, marca: urlMarca }));
+    setAppliedFilters((prev) => ({ ...prev, marca: urlMarca }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     loadAllBrands();
   }, []);
 
+  // Recarrega dados quando página, itens por página, ordenação OU
+  // filtros aplicados (não rascunho) mudam
   useEffect(() => {
     loadData(currentPage, itemsPerPage);
-  }, [currentPage, itemsPerPage, sortColumn, sortDirection]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    currentPage,
+    itemsPerPage,
+    sortColumn,
+    sortDirection,
+    appliedSearch,
+    appliedSelectedBrands,
+    appliedFilters,
+  ]);
 
-  useEffect(() => {
+  // Aplica os filtros do rascunho (chamado pelo botão "Filtrar" ou Enter)
+  const handleApplyFilters = () => {
+    setAppliedSearch(search);
+    setAppliedSelectedBrands(selectedBrands);
+    setAppliedFilters(filters);
+
     setSelectedRows([]);
     setCurrentPage(1);
-  }, [search, selectedBrands, filters.marca, filters.ncm, filters.situacao]);
 
-  useEffect(() => {
-    loadData(1, itemsPerPage);
-  }, [search, selectedBrands, filters.marca, filters.ncm, filters.situacao]);
+    syncUrl({
+      search,
+      marca: filters.marca,
+      page: 1,
+      perPage: itemsPerPage,
+      brands: selectedBrands,
+      sortColumn,
+      sortDirection,
+    });
+
+    setOpenFiltersMobile(false);
+  };
+
+  // Limpa todos os filtros (rascunho + aplicado) e recarrega imediatamente
+  const handleClearFilters = () => {
+    setSearch("");
+    setSelectedBrands([]);
+    setFilters({ ...DEFAULT_COST_FILTERS });
+
+    setAppliedSearch("");
+    setAppliedSelectedBrands([]);
+    setAppliedFilters({ ...DEFAULT_COST_FILTERS });
+
+    setSelectedRows([]);
+    setCurrentPage(1);
+
+    syncUrl({
+      search: "",
+      marca: "",
+      page: 1,
+      perPage: itemsPerPage,
+      brands: [],
+      sortColumn,
+      sortDirection,
+    });
+
+    setOpenFiltersMobile(false);
+  };
 
   const handleExport = async () => {
     const now = new Date();
@@ -413,8 +472,8 @@ export default function CostTable() {
     const time = now.toLocaleTimeString("pt-BR").replace(/:/g, "-");
 
     const brandTag =
-      selectedBrands.length > 0
-        ? selectedBrands
+      appliedSelectedBrands.length > 0
+        ? appliedSelectedBrands
             .map((b) => String(b).trim().substring(0, 3).toUpperCase())
             .filter(Boolean)
             .join("-")
@@ -1007,6 +1066,12 @@ export default function CostTable() {
               setSearch={setSearch}
               filters={filters}
               setFilters={setFilters}
+              allBrands={allBrands}
+              selectedBrands={selectedBrands}
+              setSelectedBrands={setSelectedBrands}
+              onApplyFilters={handleApplyFilters}
+              onClearFilters={handleClearFilters}
+              isLoading={loading}
             />
           </div>
         </aside>
@@ -1040,9 +1105,10 @@ export default function CostTable() {
               sortColumn={sortColumn}
               sortDirection={sortDirection}
               selectedCount={selectedRows.length}
-              onSituacaoChange={(value) =>
-                setFilters((prev) => ({ ...prev, situacao: value }))
-              }
+              onSituacaoChange={(value) => {
+                setFilters((prev) => ({ ...prev, situacao: value }));
+                setAppliedFilters((prev) => ({ ...prev, situacao: value }));
+              }}
               onToggleSelectAll={handleToggleSelectAll}
               onRefresh={() => loadData(currentPage, itemsPerPage)}
               onSort={handleSort}
@@ -1140,6 +1206,12 @@ export default function CostTable() {
               setSearch={setSearch}
               filters={filters}
               setFilters={setFilters}
+              allBrands={allBrands}
+              selectedBrands={selectedBrands}
+              setSelectedBrands={setSelectedBrands}
+              onApplyFilters={handleApplyFilters}
+              onClearFilters={handleClearFilters}
+              isLoading={loading}
             />
           </div>
         </div>
