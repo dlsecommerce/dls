@@ -752,7 +752,7 @@ export default function CostTable() {
         ['2. Preencha somente a coluna "Novo Código" nas linhas desejadas.'],
         ["3. Linhas sem Novo Código serão ignoradas."],
         [
-          "4. A importação atualizará custos e Código 1 até Código 10 em PK e SB.",
+          "4. A importação atualizará custos e Código 1 até Código 10 em Pikot shop e Sóbaquetas.",
         ],
         [
           "5. Quantidades, IDs, nomes, referências e percentuais serão preservados.",
