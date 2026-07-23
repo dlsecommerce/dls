@@ -8,35 +8,35 @@ import React, {
   useMemo,
   useRef,
 } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
 import { createNotification } from "@/lib/createNotification";
-import { useTrayImportExport } from "@/components/marketplaces/magalu/hooks/useTrayImportExport";
+import { useTrayImportExport } from "@/components/marketplaces/shopee/hooks/useTrayImportExport";
 import { Table, TableBody } from "@/components/ui/table";
 import { GlassmorphicCard } from "@/components/ui/glassmorphic-card";
 import { TableControls } from "@/components/announce/AnnounceTable/TableControls";
-import { FloatingEditor } from "@/components/marketplaces/magalu/FloatingEditor";
-import { TableRows } from "@/components/marketplaces/magalu/TableRows";
-import { toBR, parseBR } from "@/components/marketplaces/magalu/hooks/helpers";
+import { FloatingEditor } from "./FloatingEditor";
+import { TableRows } from "@/components/marketplaces/shopee/TableRows";
+import { toBR, parseBR } from "@/components/marketplaces/shopee/hooks/helpers";
 import {
   calcPrecoVendaWithApplied,
   parseBRNullable,
-} from "@/components/marketplaces/magalu/hooks/calcPrecoVenda";
-import { Row } from "@/components/marketplaces/magalu/hooks/types";
+} from "@/components/marketplaces/shopee/hooks/calcPrecoVenda";
+import { Row } from "@/components/marketplaces/shopee/hooks/types";
 import {
   Check as CheckIcon,
   X as XIcon,
   Menu,
   SlidersHorizontal,
 } from "lucide-react";
-import MarketplaceHeaderRow from "@/components/marketplaces/magalu/MarketplaceHeaderRow";
-import MarketplaceFiltersSidebar from "@/components/marketplaces/magalu/MarketplaceFiltersSidebar";
-import MarketplaceActionsSidebar from "@/components/marketplaces/magalu/MarketplaceActionsSidebar";
-import PricingMassEditionModal from "@/components/marketplaces/magalu/PricingMassEditionModal";
+import MarketplaceHeaderRow from "@/components/marketplaces/shopee/MarketplaceHeaderRow";
+import MarketplaceFiltersSidebar from "@/components/marketplaces/shopee/MarketplaceFiltersSidebar";
+import MarketplaceActionsSidebar from "@/components/marketplaces/shopee/MarketplaceActionsSidebar";
+import PricingMassEditionModal from "@/components/marketplaces/shopee/PricingMassEditionModal";
 import {
   MarketplaceFilters,
   DEFAULT_MARKETPLACE_FILTERS,
-} from "@/components/marketplaces/magalu/types";
+} from "@/components/marketplaces/shopee/types";
 
 type CacheEntry = {
   rows: Row[];
@@ -46,7 +46,7 @@ type CacheEntry = {
 
 const CACHE_TTL_MS = 10 * 60_000;
 const CACHE_MAX_KEYS = 25;
-const MAGALU_CACHE = new Map<string, CacheEntry>();
+const SHOPEE_CACHE = new Map<string, CacheEntry>();
 
 function makeCacheKey(params: {
   currentPage: number;
@@ -63,7 +63,7 @@ function makeCacheKey(params: {
   const brands = [...params.selectedBrands].sort().join("|");
 
   return [
-    "magalu",
+    "shopee",
     `p=${params.currentPage}`,
     `pp=${params.itemsPerPage}`,
     `loja=${loja}`,
@@ -77,47 +77,47 @@ function makeCacheKey(params: {
 }
 
 function setCache(key: string, entry: CacheEntry) {
-  if (MAGALU_CACHE.size >= CACHE_MAX_KEYS) {
+  if (SHOPEE_CACHE.size >= CACHE_MAX_KEYS) {
     let oldestKey: string | null = null;
     let oldestAt = Infinity;
 
-    for (const [k, v] of MAGALU_CACHE.entries()) {
+    for (const [k, v] of SHOPEE_CACHE.entries()) {
       if (v.savedAt < oldestAt) {
         oldestAt = v.savedAt;
         oldestKey = k;
       }
     }
 
-    if (oldestKey) MAGALU_CACHE.delete(oldestKey);
+    if (oldestKey) SHOPEE_CACHE.delete(oldestKey);
   }
 
-  MAGALU_CACHE.set(key, entry);
+  SHOPEE_CACHE.set(key, entry);
 }
 
 function getCache(key: string) {
-  const entry = MAGALU_CACHE.get(key);
+  const entry = SHOPEE_CACHE.get(key);
   if (!entry) return null;
 
   if (Date.now() - entry.savedAt > CACHE_TTL_MS) {
-    MAGALU_CACHE.delete(key);
+    SHOPEE_CACHE.delete(key);
     return null;
   }
 
   return entry;
 }
 
-function clearMagaluCache() {
-  MAGALU_CACHE.clear();
+function clearShopeeCache() {
+  SHOPEE_CACHE.clear();
 }
 
-function notifyMagaluPricingAtualizado(detail?: any) {
+function notifyShopeePricingAtualizado(detail?: any) {
   if (typeof window === "undefined") return;
 
   try {
     const value = String(Date.now());
 
     window.dispatchEvent(
-      new CustomEvent("magalu-pricing-atualizado", {
+      new CustomEvent("shopee-pricing-atualizado", {
         detail: {
           value,
           ...(detail || {}),
@@ -199,7 +199,7 @@ function normalizeLojaCode(lojaRaw: unknown): "PK" | "SB" | null {
 }
 
 function tableByLojaCode(code: "PK" | "SB") {
-  return code === "PK" ? "marketplace_magalu_pk" : "marketplace_magalu_sb";
+  return code === "PK" ? "marketplace_shopee_pk" : "marketplace_shopee_sb";
 }
 
 function isUuid(value: string) {
@@ -214,23 +214,41 @@ function isValidRow(r: any) {
 
   const sID = pick(r?.ID);
   const sid = pick(r?.id);
-  const anuncioId = pick(r?.anuncio_id);
-  const idBling = pick(r?.["ID Bling"]);
-  const referencia = pick(r?.Referência);
 
   const hasSomeId =
-    (sID && sID !== "0" && sID !== "-") ||
-    (sid && sid !== "0" && sid !== "-") ||
-    (anuncioId && anuncioId !== "0" && anuncioId !== "-") ||
-    (idBling && idBling !== "0" && idBling !== "-") ||
-    (referencia && referencia !== "0" && referencia !== "-");
+    (sID && sID !== "0" && sID !== "-") || (sid && sid !== "0" && sid !== "-");
 
   return Boolean(hasSomeId);
+}
+
+function parsePositiveInt(value: string | null, fallback: number) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function parseArrayParam(value: string | null) {
+  if (!value) return [];
+
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function arraysEqual(a: string[], b: string[]) {
   if (a.length !== b.length) return false;
   return a.every((item, idx) => item === b[idx]);
+}
+
+function lojaCodesToFilterValue(lojas: string[]) {
+  if (!lojas.length) return DEFAULT_MARKETPLACE_FILTERS.lojasVirtuais;
+
+  const first = lojas[0];
+
+  if (first === "PK") return "Pikot Shop";
+  if (first === "SB") return "Sóbaquetas";
+
+  return first;
 }
 
 function lojaFilterValueToCodes(value: string) {
@@ -243,29 +261,7 @@ function lojaFilterValueToCodes(value: string) {
   return [v];
 }
 
-function getLojaFilterVariants(lojas: string[]) {
-  const variants = new Set<string>();
-
-  for (const loja of lojas) {
-    const code = normalizeLojaCode(loja);
-
-    if (code === "PK") {
-      variants.add("PK");
-      variants.add("Pikot Shop");
-      variants.add("Pikot");
-    } else if (code === "SB") {
-      variants.add("SB");
-      variants.add("Sóbaquetas");
-      variants.add("Sobaquetas");
-    } else if (loja) {
-      variants.add(loja);
-    }
-  }
-
-  return Array.from(variants);
-}
-
-function getMagaluPricingLabel(row: any, fallbackId: string) {
+function getShopeePricingLabel(row: any, fallbackId: string) {
   return row?.Nome || row?.Referência || row?.ID || fallbackId || "anúncio";
 }
 
@@ -284,21 +280,25 @@ const CAMPOS_PRECIFICACAO_VISIVEIS = [
 
 export default function PricingTable() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  const initialSearch = "";
-  const initialPage = 1;
-  const initialPerPage = 50;
-  const initialLojas: string[] = [];
-  const initialBrands: string[] = [];
-  const initialSortColumn = null;
-  const initialSortDirection: "asc" | "desc" = "asc";
+  const initialSearch = searchParams.get("search") ?? "";
+  const initialPage = parsePositiveInt(searchParams.get("page"), 1);
+  const initialPerPage = parsePositiveInt(searchParams.get("perPage"), 50);
+  const initialLojas = parseArrayParam(searchParams.get("lojas"));
+  const initialBrands = parseArrayParam(searchParams.get("brands"));
+  const initialSortColumn = searchParams.get("sortColumn") || null;
+  const initialSortDirection =
+    searchParams.get("sortDirection") === "desc" ? "desc" : "asc";
 
   const initialFilters: MarketplaceFilters = {
     ...DEFAULT_MARKETPLACE_FILTERS,
-    situacao: DEFAULT_MARKETPLACE_FILTERS.situacao,
-    tipo: "Todos",
-    lojasVirtuais: "Todos",
-    marca: "",
+    situacao:
+      searchParams.get("situacao") ?? DEFAULT_MARKETPLACE_FILTERS.situacao,
+    tipo: searchParams.get("tipo") ?? DEFAULT_MARKETPLACE_FILTERS.tipo,
+    lojasVirtuais:
+      searchParams.get("loja") ?? lojaCodesToFilterValue(initialLojas),
+    marca: searchParams.get("marca") ?? initialBrands.join(", "),
   };
 
   const [rows, setRows] = useState<Row[]>([]);
@@ -333,6 +333,10 @@ export default function PricingTable() {
   const [openFiltersMobile, setOpenFiltersMobile] = useState(false);
   const [openActionsMobile, setOpenActionsMobile] = useState(false);
 
+  // NOVO: lista de todas as marcas disponíveis para o combobox de filtro
+  const [allMarcas, setAllMarcas] = useState<string[]>([]);
+
+  const didHydrateFromUrlRef = useRef(false);
   const lastUrlRef = useRef("");
   const reqIdRef = useRef(0);
 
@@ -356,14 +360,54 @@ export default function PricingTable() {
     [],
   );
 
+  // NOVO: busca todas as marcas distintas para popular o combobox
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchMarcas() {
+      const pageSize = 1000;
+      let page = 0;
+      let all: any[] = [];
+
+      while (true) {
+        const { data, error } = await supabase
+          .from("marketplace_shopee_all")
+          .select("Marca")
+          .not("Marca", "is", null)
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (error || cancelled) return;
+        if (!data?.length) break;
+
+        all = all.concat(data);
+
+        if (data.length < pageSize) break;
+        page++;
+      }
+
+      if (cancelled) return;
+
+      const unicas = Array.from(
+        new Set(
+          all
+            .map((r: any) => String(r.Marca || "").trim())
+            .filter(Boolean),
+        ),
+      ).sort((a, b) => a.localeCompare(b));
+
+      setAllMarcas(unicas);
+    }
+
+    fetchMarcas();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     const nextLojas = lojaFilterValueToCodes(filters.lojasVirtuais);
-
-    const marcaNormalizada = String(filters.marca || "").trim();
-    const nextBrands =
-      marcaNormalizada && marcaNormalizada !== "Todos"
-        ? [marcaNormalizada]
-        : [];
+    const nextBrands = filters.marca.trim() ? [filters.marca.trim()] : [];
 
     setSelectedLoja((prev) =>
       arraysEqual(prev, nextLojas) ? prev : nextLojas,
@@ -373,6 +417,45 @@ export default function PricingTable() {
       arraysEqual(prev, nextBrands) ? prev : nextBrands,
     );
   }, [filters.lojasVirtuais, filters.marca]);
+
+  useEffect(() => {
+    const urlSearch = searchParams.get("search") ?? "";
+    const urlPage = parsePositiveInt(searchParams.get("page"), 1);
+    const urlPerPage = parsePositiveInt(searchParams.get("perPage"), 50);
+    const urlLojas = parseArrayParam(searchParams.get("lojas"));
+    const urlBrands = parseArrayParam(searchParams.get("brands"));
+    const urlSortColumn = searchParams.get("sortColumn") || null;
+    const urlSortDirection =
+      searchParams.get("sortDirection") === "desc" ? "desc" : "asc";
+
+    const urlFilters: MarketplaceFilters = {
+      ...DEFAULT_MARKETPLACE_FILTERS,
+      situacao:
+        searchParams.get("situacao") ?? DEFAULT_MARKETPLACE_FILTERS.situacao,
+      tipo: searchParams.get("tipo") ?? DEFAULT_MARKETPLACE_FILTERS.tipo,
+      lojasVirtuais:
+        searchParams.get("loja") ?? lojaCodesToFilterValue(urlLojas),
+      marca: searchParams.get("marca") ?? urlBrands.join(", "),
+    };
+
+    setSearch((prev) => (prev !== urlSearch ? urlSearch : prev));
+    setDebouncedSearch((prev) => (prev !== urlSearch ? urlSearch : prev));
+    setCurrentPage((prev) => (prev !== urlPage ? urlPage : prev));
+    setItemsPerPage((prev) => (prev !== urlPerPage ? urlPerPage : prev));
+    setSelectedLoja((prev) => (arraysEqual(prev, urlLojas) ? prev : urlLojas));
+    setSelectedBrands((prev) =>
+      arraysEqual(prev, urlBrands) ? prev : urlBrands,
+    );
+    setSortColumn((prev) => (prev !== urlSortColumn ? urlSortColumn : prev));
+    setSortDirection((prev) =>
+      prev !== urlSortDirection ? urlSortDirection : prev,
+    );
+    setFilters((prev) =>
+      JSON.stringify(prev) === JSON.stringify(urlFilters) ? prev : urlFilters,
+    );
+
+    didHydrateFromUrlRef.current = true;
+  }, [searchParams]);
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearch(search.trim()), 300);
@@ -390,12 +473,12 @@ export default function PricingTable() {
   ]);
 
   useEffect(() => {
+    if (!didHydrateFromUrlRef.current) return;
+
     const params = new URLSearchParams();
 
     if (search.trim()) params.set("search", search.trim());
-    if (filters.marca.trim() && filters.marca.trim() !== "Todos") {
-      params.set("marca", filters.marca.trim());
-    }
+    if (filters.marca.trim()) params.set("marca", filters.marca.trim());
 
     if (
       filters.situacao &&
@@ -404,13 +487,12 @@ export default function PricingTable() {
       params.set("situacao", filters.situacao);
     }
 
-    if (filters.tipo && filters.tipo !== "Todos") {
+    if (filters.tipo && filters.tipo !== DEFAULT_MARKETPLACE_FILTERS.tipo) {
       params.set("tipo", filters.tipo);
     }
 
     if (
       filters.lojasVirtuais &&
-      filters.lojasVirtuais !== "Todos" &&
       filters.lojasVirtuais !== DEFAULT_MARKETPLACE_FILTERS.lojasVirtuais
     ) {
       params.set("loja", filters.lojasVirtuais);
@@ -423,9 +505,7 @@ export default function PricingTable() {
     if (sortColumn) params.set("sortColumn", sortColumn);
     if (sortDirection !== "asc") params.set("sortDirection", sortDirection);
 
-    const nextUrl = params.toString()
-      ? `/dashboard/marketplaces/magalu?${params.toString()}`
-      : "/dashboard/marketplaces/magalu";
+    const nextUrl = params.toString() ? `?${params.toString()}` : "?";
 
     if (lastUrlRef.current === nextUrl) return;
 
@@ -571,7 +651,6 @@ export default function PricingTable() {
 
       const idAtual = String(currentRow?.id ?? dbIdStr ?? "").trim();
       const idLogico = String(currentRow?.ID ?? "").trim();
-      const idBling = String(currentRow?.["ID Bling"] ?? "").trim();
       const referencia = String(currentRow?.Referência ?? "").trim();
 
       const selectFields = `
@@ -617,18 +696,6 @@ export default function PricingTable() {
               .from(table)
               .update(payload)
               .eq("ID", idLogico as any)
-              .select(selectFields),
-        });
-      }
-
-      if (idBling) {
-        tentativas.push({
-          label: `ID Bling=${idBling}`,
-          run: () =>
-            supabase
-              .from(table)
-              .update(payload)
-              .eq("ID Bling", idBling)
               .select(selectFields),
         });
       }
@@ -695,7 +762,7 @@ export default function PricingTable() {
       const start = (currentPage - 1) * itemsPerPage;
       const end = start + itemsPerPage - 1;
 
-      let query = supabase.from("marketplace_magalu_all").select(
+      let query = supabase.from("marketplace_shopee_all").select(
         `
         id,
         anuncio_id,
@@ -722,15 +789,8 @@ export default function PricingTable() {
         { count: "exact" },
       );
 
-      const lojasFiltro = getLojaFilterVariants(selectedLoja);
-
-      if (lojasFiltro.length) {
-        query = query.in("Loja", lojasFiltro);
-      }
-
-      if (selectedBrands.length) {
-        query = query.in("Marca", selectedBrands);
-      }
+      if (selectedLoja.length) query = query.in("Loja", selectedLoja);
+      if (selectedBrands.length) query = query.in("Marca", selectedBrands);
 
       if (filters.tipo && filters.tipo !== "Todos") {
         if (filters.tipo === "Produtos") {
@@ -750,9 +810,7 @@ export default function PricingTable() {
         const tokens = parseSearchTokens(debouncedSearch);
         const orParts = buildOrSearchParts(tokens);
 
-        if (orParts.length) {
-          query = query.or(orParts.join(","));
-        }
+        if (orParts.length) query = query.or(orParts.join(","));
       }
 
       if (filters.situacao === "Últimos Incluídos") {
@@ -779,10 +837,11 @@ export default function PricingTable() {
       if (myReqId !== reqIdRef.current) return;
 
       if (error) {
-        console.error("❌ ERRO COMPLETO MAGALU:", error);
-
-        alert(
-          `Erro ao carregar Magalu:\n\n${error.message || ""}\n${error.details || ""}\n${error.hint || ""}`,
+        console.error(
+          "❌ Supabase error:",
+          error.message,
+          error.details,
+          error.hint,
         );
 
         setRows([]);
@@ -793,17 +852,6 @@ export default function PricingTable() {
       }
 
       const safeData = (data || []).filter(isValidRow);
-
-      console.log("✅ MAGALU DATA BRUTA:", data);
-      console.log("✅ MAGALU COUNT:", count);
-      console.log("✅ MAGALU SAFE DATA:", safeData);
-      console.log("✅ MAGALU FILTROS:", {
-        selectedLoja,
-        lojasFiltro,
-        selectedBrands,
-        filters,
-        debouncedSearch,
-      });
 
       const normalized = safeData.map((r: any) => {
         let OD = 3;
@@ -856,12 +904,12 @@ export default function PricingTable() {
     ],
   );
 
-  const forceReloadMagaluTable = useCallback(async () => {
+  const forceReloadShopeeTable = useCallback(async () => {
     try {
-      sessionStorage.removeItem("magalu-pricing-precisa-recarregar");
+      sessionStorage.removeItem("shopee-pricing-precisa-recarregar");
     } catch {}
 
-    clearMagaluCache();
+    clearShopeeCache();
     await loadData({ force: true });
   }, [loadData]);
 
@@ -891,14 +939,14 @@ export default function PricingTable() {
 
     try {
       precisaRecarregar = Boolean(
-        sessionStorage.getItem("magalu-pricing-precisa-recarregar"),
+        sessionStorage.getItem("shopee-pricing-precisa-recarregar"),
       );
     } catch {}
 
     if (!precisaRecarregar) return;
 
-    void forceReloadMagaluTable();
-  }, [forceReloadMagaluTable]);
+    void forceReloadShopeeTable();
+  }, [forceReloadShopeeTable]);
 
   useEffect(() => {
     const handleFocusOrVisible = () => {
@@ -906,12 +954,12 @@ export default function PricingTable() {
 
       try {
         precisaRecarregar = Boolean(
-          sessionStorage.getItem("magalu-pricing-precisa-recarregar"),
+          sessionStorage.getItem("shopee-pricing-precisa-recarregar"),
         );
       } catch {}
 
       if (precisaRecarregar) {
-        void forceReloadMagaluTable();
+        void forceReloadShopeeTable();
       }
     };
 
@@ -928,10 +976,10 @@ export default function PricingTable() {
       window.removeEventListener("focus", handleFocusOrVisible);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [forceReloadMagaluTable]);
+  }, [forceReloadShopeeTable]);
 
   useEffect(() => {
-    const handleMagaluPricingAtualizado = (event: Event) => {
+    const handleShopeePricingAtualizado = (event: Event) => {
       const customEvent = event as CustomEvent<any>;
       const detail = customEvent?.detail || {};
 
@@ -942,7 +990,7 @@ export default function PricingTable() {
           : [];
 
       if (!rowsAtualizadas.length) {
-        void forceReloadMagaluTable();
+        void forceReloadShopeeTable();
         return;
       }
 
@@ -952,21 +1000,21 @@ export default function PricingTable() {
         });
       }
 
-      clearMagaluCache();
+      clearShopeeCache();
     };
 
     window.addEventListener(
-      "magalu-pricing-atualizado",
-      handleMagaluPricingAtualizado,
+      "shopee-pricing-atualizado",
+      handleShopeePricingAtualizado,
     );
 
     return () => {
       window.removeEventListener(
-        "magalu-pricing-atualizado",
-        handleMagaluPricingAtualizado,
+        "shopee-pricing-atualizado",
+        handleShopeePricingAtualizado,
       );
     };
-  }, [atualizarCamposPrecificacaoNaLinha, forceReloadMagaluTable]);
+  }, [atualizarCamposPrecificacaoNaLinha, forceReloadShopeeTable]);
 
   useEffect(() => {
     const aplicarPayloadRealtime = (payload: any, lojaFallback: "PK" | "SB") => {
@@ -982,17 +1030,17 @@ export default function PricingTable() {
         lojaFallback,
       });
 
-      clearMagaluCache();
+      clearShopeeCache();
     };
 
     const channel = supabase
-      .channel("magalu-pricing-table-realtime")
+      .channel("shopee-pricing-table-realtime")
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
-          table: "marketplace_magalu_pk",
+          table: "marketplace_shopee_pk",
         },
         (payload) => {
           if (payload.eventType === "DELETE") return;
@@ -1004,7 +1052,7 @@ export default function PricingTable() {
         {
           event: "*",
           schema: "public",
-          table: "marketplace_magalu_sb",
+          table: "marketplace_shopee_sb",
         },
         (payload) => {
           if (payload.eventType === "DELETE") return;
@@ -1012,7 +1060,7 @@ export default function PricingTable() {
         },
       )
       .subscribe((status) => {
-        console.log("📡 Magalu pricing realtime:", status);
+        console.log("📡 Shopee pricing realtime:", status);
       });
 
     return () => {
@@ -1039,14 +1087,7 @@ export default function PricingTable() {
 
   const handleEditFull = useCallback(
     (row: Row) => {
-      const idParam = String(
-        (row as any).ID ||
-          (row as any).anuncio_id ||
-          (row as any)["ID Bling"] ||
-          (row as any)["ID Tray"] ||
-          (row as any).id ||
-          "",
-      ).trim();
+      const idParam = String((row as any).ID || "").trim();
 
       const lojaCode = normalizeLojaCode((row as any).Loja);
 
@@ -1072,7 +1113,7 @@ export default function PricingTable() {
       }
 
       router.push(
-        `/dashboard/marketplaces/magalu/edit?id=${encodeURIComponent(
+        `/dashboard/marketplaces/shopee/edit?id=${encodeURIComponent(
           idParam,
         )}&loja=${encodeURIComponent(lojaParam)}`,
       );
@@ -1238,15 +1279,15 @@ export default function PricingTable() {
       }
 
       await createNotification({
-        title: "Precificação Magalu atualizada",
-        message: `O campo "${String(field)}" do anúncio "${getMagaluPricingLabel(
+        title: "Precificação Shopee atualizada",
+        message: `O campo "${String(field)}" do anúncio "${getShopeePricingLabel(
           currentRow,
           dbIdStr,
         )}" foi atualizado.`,
         action: "update",
-        entityType: "magalu_pricing",
+        entityType: "shopee_pricing",
         entityId: String((currentRow as any)?.ID || dbIdStr),
-        link: "/dashboard/marketplaces/magalu",
+        link: "/dashboard/marketplaces/shopee",
       });
 
       if (newRowUpdated) {
@@ -1257,9 +1298,9 @@ export default function PricingTable() {
         });
       }
 
-      clearMagaluCache();
+      clearShopeeCache();
 
-      notifyMagaluPricingAtualizado(
+      notifyShopeePricingAtualizado(
         newRowUpdated ? { row: newRowUpdated } : undefined,
       );
     } catch (e: any) {
@@ -1293,7 +1334,7 @@ export default function PricingTable() {
   const handlePricingImport = useCallback(
     async (_data: any[]) => {
       setOpenPricingModal(false);
-      clearMagaluCache();
+      clearShopeeCache();
       await loadData({ force: true });
     },
     [loadData],
@@ -1318,7 +1359,7 @@ export default function PricingTable() {
 
       while (true) {
         let exportQuery = supabase
-          .from("marketplace_magalu_all")
+          .from("marketplace_shopee_all")
           .select(
             `
             id,
@@ -1348,10 +1389,8 @@ export default function PricingTable() {
           .order("id", { ascending: false })
           .range(page * pageSize, (page + 1) * pageSize - 1);
 
-        const lojasFiltro = getLojaFilterVariants(selectedLoja);
-
-        if (lojasFiltro.length) {
-          exportQuery = exportQuery.in("Loja", lojasFiltro);
+        if (selectedLoja.length) {
+          exportQuery = exportQuery.in("Loja", selectedLoja);
         }
 
         if (selectedBrands.length) {
@@ -1412,6 +1451,7 @@ export default function PricingTable() {
               setSearch={setSearch}
               filters={filters}
               setFilters={setFilters}
+              allMarcas={allMarcas}
             />
           </div>
         </aside>
@@ -1534,6 +1574,7 @@ export default function PricingTable() {
               setSearch={setSearch}
               filters={filters}
               setFilters={setFilters}
+              allMarcas={allMarcas}
             />
           </div>
         </div>

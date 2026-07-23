@@ -261,6 +261,16 @@ function lojaFilterValueToCodes(value: string) {
   return [v];
 }
 
+// Converte filters.marca (string "Marca A, Marca B") em array de marcas
+function parseMarcasSelecionadas(marca: string) {
+  return marca
+    ? marca
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+}
+
 function getShopeePricingLabel(row: any, fallbackId: string) {
   return row?.Nome || row?.Referência || row?.ID || fallbackId || "anúncio";
 }
@@ -308,6 +318,8 @@ export default function PricingTable() {
   const [selectedLoja, setSelectedLoja] = useState<string[]>(initialLojas);
   const [selectedBrands, setSelectedBrands] = useState<string[]>(initialBrands);
   const [filters, setFilters] = useState<MarketplaceFilters>(initialFilters);
+
+  const [allMarcas, setAllMarcas] = useState<string[]>([]);
 
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [itemsPerPage, setItemsPerPage] = useState(initialPerPage);
@@ -357,9 +369,44 @@ export default function PricingTable() {
     [],
   );
 
+  // Carrega lista completa de marcas para o combobox de filtro
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMarcas() {
+      const { data, error } = await supabase
+        .from("marketplace_shopee_all")
+        .select("Marca")
+        .not("Marca", "is", null);
+
+      if (error) {
+        console.error("❌ Erro ao carregar marcas:", error.message);
+        return;
+      }
+
+      if (cancelled) return;
+
+      const unicas = Array.from(
+        new Set(
+          (data || [])
+            .map((r: any) => String(r.Marca || "").trim())
+            .filter(Boolean),
+        ),
+      ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+      setAllMarcas(unicas);
+    }
+
+    void loadMarcas();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     const nextLojas = lojaFilterValueToCodes(filters.lojasVirtuais);
-    const nextBrands = filters.marca.trim() ? [filters.marca.trim()] : [];
+    const nextBrands = parseMarcasSelecionadas(filters.marca);
 
     setSelectedLoja((prev) =>
       arraysEqual(prev, nextLojas) ? prev : nextLojas,
@@ -1403,6 +1450,7 @@ export default function PricingTable() {
               setSearch={setSearch}
               filters={filters}
               setFilters={setFilters}
+              allMarcas={allMarcas}
             />
           </div>
         </aside>
@@ -1525,6 +1573,7 @@ export default function PricingTable() {
               setSearch={setSearch}
               filters={filters}
               setFilters={setFilters}
+              allMarcas={allMarcas}
             />
           </div>
         </div>

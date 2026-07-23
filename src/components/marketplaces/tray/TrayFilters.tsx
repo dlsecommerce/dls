@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/select";
 import { Search } from "lucide-react";
 
+import FilterMarcaCombobox from "@/components/marketplaces/tray/FilterMarcaCombobox";
+
 import {
   TrayFilters,
   DEFAULT_TRAY_FILTERS,
@@ -22,6 +24,7 @@ type Props = {
   setSearch: (value: string) => void;
   filters: TrayFilters;
   setFilters: React.Dispatch<React.SetStateAction<TrayFilters>>;
+  allMarcas: string[];
 };
 
 function FilterLabel({ label }: { label: string }) {
@@ -81,53 +84,47 @@ function FilterSelectBlock({
   );
 }
 
-function FilterInputBlock({
-  label,
-  value,
-  onChange,
-  placeholder = "Todos",
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <div className="w-full">
-      <FilterLabel label={label} />
-
-      <Input
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        className="
-          h-11 w-full cursor-text rounded-lg
-          border border-neutral-700 bg-[#161616]
-          text-white placeholder:text-white/25
-          focus-visible:border-green-500
-          focus-visible:ring-2 focus-visible:ring-green-500/20
-        "
-      />
-    </div>
-  );
-}
-
 export default function TrayFiltersSidebar({
   search,
   setSearch,
   filters,
   setFilters,
+  allMarcas,
 }: Props) {
-  const updateFilter = (key: keyof TrayFilters, value: string) => {
-    setFilters((prev) => ({
+  // 🔹 Estado LOCAL — só aplica quando clicar em "Filtrar" ou apertar Enter
+  const [localSearch, setLocalSearch] = useState(search);
+  const [localFilters, setLocalFilters] = useState<TrayFilters>(filters);
+
+  // Mantém sincronizado se os filtros globais mudarem externamente (ex: via URL)
+  useEffect(() => {
+    setLocalSearch(search);
+  }, [search]);
+
+  useEffect(() => {
+    setLocalFilters(filters);
+  }, [filters]);
+
+  const updateLocalFilter = (key: keyof TrayFilters, value: string) => {
+    setLocalFilters((prev) => ({
       ...prev,
       [key]: value === "Todos" ? "" : value,
     }));
   };
 
+  const applyFilters = () => {
+    setSearch(localSearch);
+    setFilters(localFilters);
+  };
+
   const clearFilters = () => {
+    setLocalSearch("");
+    setLocalFilters(DEFAULT_TRAY_FILTERS);
     setSearch("");
     setFilters(DEFAULT_TRAY_FILTERS);
+  };
+
+  const handleEnter = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") applyFilters();
   };
 
   return (
@@ -146,8 +143,9 @@ export default function TrayFiltersSidebar({
 
             <Input
               placeholder="Pesquisar"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              onKeyDown={handleEnter}
               className="
                 h-11 w-full cursor-text rounded-lg
                 border border-neutral-700 bg-[#161616]
@@ -162,16 +160,16 @@ export default function TrayFiltersSidebar({
         {/* FILTROS */}
         <FilterSelectBlock
           label="Situação"
-          value={filters.situacao}
-          onChange={(v) => updateFilter("situacao", v)}
+          value={localFilters.situacao}
+          onChange={(v) => updateLocalFilter("situacao", v)}
           options={["Todos", "Últimos Incluídos"]}
           placeholder="Todos"
         />
 
         <FilterSelectBlock
           label="Tipo"
-          value={filters.tipo}
-          onChange={(v) => updateFilter("tipo", v)}
+          value={localFilters.tipo}
+          onChange={(v) => updateLocalFilter("tipo", v)}
           options={[
             "Todos",
             "Produtos",
@@ -184,34 +182,31 @@ export default function TrayFiltersSidebar({
 
         <FilterSelectBlock
           label="Lojas Virtuais"
-          value={filters.lojasVirtuais}
-          onChange={(v) => updateFilter("lojasVirtuais", v)}
+          value={localFilters.lojasVirtuais}
+          onChange={(v) => updateLocalFilter("lojasVirtuais", v)}
           options={["Todos", "Pikot Shop", "Sóbaquetas"]}
           placeholder="Todos"
         />
 
-        <FilterInputBlock
-          label="Marca"
-          value={filters.marca}
-          onChange={(v) => updateFilter("marca", v)}
-          placeholder="Ex: Liverpool"
+        <FilterMarcaCombobox
+          allMarcas={allMarcas}
+          value={localFilters.marca}
+          onChange={(v) => updateLocalFilter("marca", v)}
+          onSubmit={applyFilters}
         />
 
         {/* AÇÕES */}
-        <div className="w-full pt-2 lg:pt-1">
+        <div className="w-full pt-2 space-y-3">
           <Button
             type="button"
+            onClick={applyFilters}
             className="
-              h-11 lg:h-10
-              w-full
-              cursor-pointer
-              rounded-lg
-              bg-gradient-to-r from-green-500 to-green-600
-              text-white
-              transition-all duration-200
-              active:scale-[0.98]
-              lg:hover:from-green-400 lg:hover:to-green-500
-              lg:hover:shadow-[0_0_14px_rgba(34,197,94,0.22)]
+               h-11 w-full rounded-lg
+                cursor-pointer
+                bg-green-500 text-white font-medium
+                hover:bg-green-600
+                  transition
+                  active:scale-[0.98]
             "
           >
             Filtrar
@@ -220,7 +215,6 @@ export default function TrayFiltersSidebar({
           <div
             onClick={clearFilters}
             className="
-              mt-3
               cursor-pointer
               text-center text-green-400
               active:scale-[0.98]
