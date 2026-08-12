@@ -1,6 +1,5 @@
 // types/supabase.ts
 
-// JSON genérico usado pelo Supabase
 export type Json =
   | string
   | number
@@ -9,9 +8,6 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-// =============================
-// Definição do Database
-// =============================
 export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "13.0.5"
@@ -21,7 +17,7 @@ export type Database = {
       // --- PERFIS ---
       profiles: {
         Row: {
-          id: string // uuid tratado como string
+          id: string
           name: string | null
           avatar_url: string | null
           status: "online" | "away" | "offline" | null
@@ -88,6 +84,103 @@ export type Database = {
           "id" | "id_geral" | "created_at" | "updated_at"
         >
         Update: Partial<Database["public"]["Tables"]["anuncios_sb"]["Row"]>
+      }
+    }
+
+    Views: {
+      [_ in never]: never
+    }
+
+    Functions: {
+      [_ in never]: never
+    }
+
+    Enums: {
+      [_ in never]: never
+    }
+
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
+
+  // ✅ Schema: newsystem
+  newsystem: {
+    Tables: {
+      // --- CUSTOS ---
+      costs: {
+        Row: {
+          id: string
+          code: string
+          product: string | null
+          mark: string | null
+          ncm: string | null
+          current_cost: number | null
+          previous_cost: number | null
+          packaging_cost: number | null
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          code: string
+          product?: string | null
+          mark?: string | null
+          ncm?: string | null
+          current_cost?: number | null
+          previous_cost?: number | null
+          packaging_cost?: number | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: Partial<{
+          code: string
+          product: string | null
+          mark: string | null
+          ncm: string | null
+          current_cost: number | null
+          previous_cost: number | null
+          packaging_cost: number | null
+          updated_at: string
+          deleted_at: string | null
+        }>
+      }
+
+      // --- REGRAS DE PRECIFICAÇÃO ---
+      pricing_rules: {
+        Row: {
+          id: string
+          rule_type: string
+          scope: string
+          scope_value: string
+          cost_id: string | null
+          rate: number
+          active: boolean | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          rule_type: string
+          scope: string
+          scope_value: string
+          cost_id?: string | null
+          rate: number
+          active?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: Partial<{
+          rule_type: string
+          scope: string
+          scope_value: string
+          cost_id: string | null
+          rate: number
+          active: boolean | null
+          updated_at: string | null
+        }>
       }
     }
 
@@ -184,6 +277,14 @@ export type ProfileUpdate = Database["public"]["Tables"]["profiles"]["Update"]
 export type AnuncioRow = Database["public"]["Tables"]["anuncios_sb"]["Row"]
 export type AnuncioInsert = Database["public"]["Tables"]["anuncios_sb"]["Insert"]
 export type AnuncioUpdate = Database["public"]["Tables"]["anuncios_sb"]["Update"]
+
+export type CostRow = Database["newsystem"]["Tables"]["costs"]["Row"]
+export type CostInsert = Database["newsystem"]["Tables"]["costs"]["Insert"]
+export type CostUpdate = Database["newsystem"]["Tables"]["costs"]["Update"]
+
+export type PricingRuleRow = Database["newsystem"]["Tables"]["pricing_rules"]["Row"]
+export type PricingRuleInsert = Database["newsystem"]["Tables"]["pricing_rules"]["Insert"]
+export type PricingRuleUpdate = Database["newsystem"]["Tables"]["pricing_rules"]["Update"]
 
 // Constantes opcionais
 export const Constants = {

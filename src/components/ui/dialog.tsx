@@ -1,3 +1,6 @@
+// dialog.tsx
+"use client";
+
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
@@ -19,7 +22,8 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "fixed inset-0 z-50 bg-black/80 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "will-change-[opacity] transform-gpu",
       className,
     )}
     {...props}
@@ -37,17 +41,16 @@ const DialogContent = React.forwardRef<
       ref={ref}
       className={cn(
         // ✅ Base shadcn ORIGINAL (mantém tamanho/visual)
-        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 sm:rounded-lg",
+        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-700 sm:rounded-lg",
         "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-        "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
-        "data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%]",
-        "data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]",
+
+        // ✅ Deslize de cima para baixo (mesmo efeito original)
+        "data-[state=open]:slide-in-from-top-32 data-[state=closed]:slide-out-to-top-32",
+
+        // 🚀 Aceleração de GPU (mantém efeito, remove travamento)
+        "will-change-transform transform-gpu backface-hidden",
 
         // ✅ PROTEÇÕES (não mudam o layout normal):
-        // - max-w-[95vw]: só evita estourar em telas menores/zoom
-        // - max-h-[90vh]: só evita estourar altura
-        // - overflow-hidden: impede conteúdo "vazar" pra fora
-        // - min-w-0: impede tabelas/conteúdo largo de expandir o modal
         "max-w-[95vw] max-h-[90vh] overflow-hidden min-w-0",
 
         className,
@@ -119,7 +122,6 @@ DialogDescription.displayName = DialogPrimitive.Description.displayName;
 export {
   Dialog,
   DialogPortal,
-  DialogOverlay,
   DialogClose,
   DialogTrigger,
   DialogContent,

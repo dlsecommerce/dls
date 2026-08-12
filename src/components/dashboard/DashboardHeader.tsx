@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   useRef,
@@ -173,7 +174,18 @@ export default function DashboardHeader({}: DashboardHeaderProps) {
   const loadingRef = useRef<LoadingBarRef>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const handleNavigate = (href: string) => {
+  const handleNavigate = (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    href: string
+  ) => {
+    // ✅ Deixa o navegador tratar nativamente: Ctrl/Cmd+clique, clique do meio,
+    // "abrir em nova guia", "abrir em nova janela" etc.
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) {
+      return;
+    }
+
+    e.preventDefault();
+
     if (pathname === href) {
       setMobileMenuOpen(false);
       return;
@@ -276,9 +288,9 @@ export default function DashboardHeader({}: DashboardHeaderProps) {
 
                               return (
                                 <DropdownMenuItem key={child.href} asChild>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleNavigate(child.href)}
+                                  <Link
+                                    href={child.href}
+                                    onClick={(e) => handleNavigate(e, child.href)}
                                     className={`
                                       flex w-full items-center rounded-md px-3 py-2 text-sm
                                       ${
@@ -289,7 +301,7 @@ export default function DashboardHeader({}: DashboardHeaderProps) {
                                     `}
                                   >
                                     {child.title}
-                                  </button>
+                                  </Link>
                                 </DropdownMenuItem>
                               );
                             })}
@@ -300,10 +312,10 @@ export default function DashboardHeader({}: DashboardHeaderProps) {
                   }
 
                   return (
-                    <button
+                    <Link
                       key={item.title}
-                      type="button"
-                      onClick={() => handleNavigate(item.href!)}
+                      href={item.href!}
+                      onClick={(e) => handleNavigate(e, item.href!)}
                       className={`
                         rounded-md px-4 py-2 text-sm font-medium
                         ${
@@ -314,7 +326,7 @@ export default function DashboardHeader({}: DashboardHeaderProps) {
                       `}
                     >
                       {item.title}
-                    </button>
+                    </Link>
                   );
                 })}
               </nav>
@@ -385,10 +397,10 @@ export default function DashboardHeader({}: DashboardHeaderProps) {
                             const childActive = pathname === child.href;
 
                             return (
-                              <button
+                              <Link
                                 key={child.href}
-                                type="button"
-                                onClick={() => handleNavigate(child.href)}
+                                href={child.href}
+                                onClick={(e) => handleNavigate(e, child.href)}
                                 className={`flex w-full rounded-md px-3 py-2.5 text-left text-sm transition ${
                                   childActive
                                     ? "bg-[#2699fe]/10 text-[#58b7ff]"
@@ -396,7 +408,7 @@ export default function DashboardHeader({}: DashboardHeaderProps) {
                                 }`}
                               >
                                 {child.title}
-                              </button>
+                              </Link>
                             );
                           })}
                         </div>
@@ -405,10 +417,10 @@ export default function DashboardHeader({}: DashboardHeaderProps) {
                   }
 
                   return (
-                    <button
+                    <Link
                       key={item.title}
-                      type="button"
-                      onClick={() => handleNavigate(item.href!)}
+                      href={item.href!}
+                      onClick={(e) => handleNavigate(e, item.href!)}
                       className={`flex w-full rounded-md px-1 py-1 text-left text-[15px] font-medium transition ${
                         active
                           ? "text-[#58b7ff]"
@@ -416,7 +428,7 @@ export default function DashboardHeader({}: DashboardHeaderProps) {
                       }`}
                     >
                       {item.title}
-                    </button>
+                    </Link>
                   );
                 })}
               </nav>

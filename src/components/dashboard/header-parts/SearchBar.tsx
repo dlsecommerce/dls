@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
-import { useTranslation } from "react-i18next";
 import { useRouter } from "next/navigation";
 import { SuggestionDropdown } from "@/components/dashboard/header-parts/SuggestionDropdown";
 import { GLOBAL_SEARCH_ITEMS } from "@/hooks/global-search-items";
@@ -13,7 +12,6 @@ interface SearchBarProps {
 }
 
 export function SearchBar({ expanded }: SearchBarProps) {
-  const { t } = useTranslation();
   const router = useRouter();
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -181,7 +179,6 @@ export function SearchBar({ expanded }: SearchBarProps) {
                 setDropdownOpen(true);
               }
             }}
-            placeholder={t("Pesquisar")}
             className="min-w-0 flex-1 bg-transparent text-sm text-dashboard-text-primary outline-none placeholder-dashboard-text-muted"
           />
 

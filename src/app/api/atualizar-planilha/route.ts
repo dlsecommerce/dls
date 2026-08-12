@@ -1,301 +1,380 @@
-import { NextResponse } from "next/server";
-import ExcelJS from "exceljs";
-import he from "he";
+// app/api/announce/importar/route.ts
+
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { getPostgresClient } from "@/lib/postgres";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function limparTexto(valor: unknown) {
-  const texto = he
-    .decode(String(valor ?? "").trim())
-    .replace(/^&[a-z]+;$/i, "")
-    .trim();
+type AnnouncePayload = {
+  store: string;
+  id_bling: string | null;
+  reference: string;
+  product: string | null;
+  mark: string | null;
+  code_id: number | null;
+  parent_id: string | null;
+};
 
-  if (
-    !texto ||
-    /^[^a-zA-Z0-9>]+$/.test(texto) ||
-    ["undefined", "null"].includes(texto.toLowerCase())
-  ) {
-    return "";
+type RegistroResultado = {
+  store: string;
+  reference: string;
+  status: "ok" | "erro";
+  message: string;
+};
+
+type RequestBody = {
+  registros?: unknown;
+};
+
+const MAX_REGISTROS = 60_000;
+
+function getBearerToken(request: NextRequest): string | null {
+  const authorization = request.headers.get("authorization");
+
+  if (!authorization) {
+    return null;
   }
-  return texto;
+
+  const [type, token] = authorization.split(" ");
+
+  if (type?.toLowerCase() !== "bearer" || !token?.trim()) {
+    return null;
+  }
+
+  return token.trim();
 }
 
-function normalize(s = "") {
-  return String(s)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+function normalizeText(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text || null;
 }
 
-/** CSV ; -> objetos + __cols (para BF=58) */
-function lerCSVBuffer(buf: Buffer) {
-  const texto = buf.toString("utf8").replace(/^\uFEFF/, "");
-  const linhas = texto.split(/\r?\n/).filter((l) => l.trim() !== "");
-  if (linhas.length < 2) return [];
+function normalizeStore(value: unknown): string {
+  return normalizeText(value) ?? "";
+}
 
-  const headers = linhas[0]
-    .split(";")
-    .map((h) => h.replace(/(^"|"$)/g, "").trim());
+function normalizeReference(value: unknown): string {
+  return normalizeText(value) ?? "";
+}
 
-  return linhas.slice(1).map((linha) => {
-    const valores = linha
-      .split(";")
-      .map((v) => v.replace(/(^"|"$)/g, "").trim());
+function parseInteiro(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.trunc(n);
+}
 
-    const obj: any = {};
-    headers.forEach((h, i) => (obj[h] = valores[i] ?? ""));
-    obj.__cols = valores; // BF -> __cols[57]
-    return obj;
+function parseUuid(value: unknown): string | null {
+  const text = normalizeText(value);
+  if (!text) return null;
+
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  return uuidRegex.test(text) ? text : null;
+}
+
+function validateRegistros(value: unknown): AnnouncePayload[] {
+  if (!Array.isArray(value)) {
+    throw new Error("O campo registros precisa ser uma lista.");
+  }
+
+  if (value.length === 0) {
+    throw new Error("Nenhum registro foi enviado.");
+  }
+
+  if (value.length > MAX_REGISTROS) {
+    throw new Error(
+      `A importação não pode ultrapassar ${MAX_REGISTROS} registros por vez.`
+    );
+  }
+
+  const chavesVistas = new Set<string>();
+
+  return value.map((item: unknown, index: number): AnnouncePayload => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error(`Registro inválido na posição ${index + 1}.`);
+    }
+
+    const row = item as Record<string, unknown>;
+    const store = normalizeStore(row.store);
+    const reference = normalizeReference(row.reference);
+
+    if (!store) {
+      throw new Error(
+        `Campo "store" ausente ou inválido na posição ${index + 1}.`
+      );
+    }
+
+    if (!reference) {
+      throw new Error(
+        `Campo "reference" ausente ou inválido na posição ${index + 1} (loja "${store}").`
+      );
+    }
+
+    const chave = `${store}::${reference}`;
+    if (chavesVistas.has(chave)) {
+      throw new Error(
+        `Combinação duplicada de loja + referência na posição ${index + 1}: "${store}" / "${reference}". Remova a duplicidade antes de enviar.`
+      );
+    }
+    chavesVistas.add(chave);
+
+    const codeIdRaw = row.code_id;
+    const codeId = parseInteiro(codeIdRaw);
+
+    if (
+      codeIdRaw !== null &&
+      codeIdRaw !== undefined &&
+      codeIdRaw !== "" &&
+      codeId === null
+    ) {
+      throw new Error(
+        `Campo "code_id" inválido na posição ${index + 1} (loja "${store}", referência "${reference}"). Deve ser um número inteiro.`
+      );
+    }
+
+    const parentIdRaw = row.parent_id;
+    const parentId = parseUuid(parentIdRaw);
+
+    if (
+      parentIdRaw !== null &&
+      parentIdRaw !== undefined &&
+      normalizeText(parentIdRaw) !== null &&
+      parentId === null
+    ) {
+      throw new Error(
+        `Campo "parent_id" inválido na posição ${index + 1} (loja "${store}", referência "${reference}"). Deve ser um UUID válido.`
+      );
+    }
+
+    return {
+      store,
+      id_bling: normalizeText(row.id_bling),
+      reference,
+      product: normalizeText(row.product),
+      mark: normalizeText(row.mark),
+      code_id: codeId,
+      parent_id: parentId,
+    };
   });
 }
 
-function pick(obj: any, keyCandidates: string[] = []) {
-  const map = new Map(Object.keys(obj || {}).map((k) => [normalize(k), obj[k]]));
-  const allKeys = Array.from(map.keys());
-
-  for (const cand of keyCandidates) {
-    const v = map.get(normalize(cand));
-    if (v !== undefined && v !== null && String(v).trim() !== "") return v;
-  }
-
-  for (const cand of keyCandidates) {
-    const normCand = normalize(cand);
-    const keyEncontrada = allKeys.find((k) => k.includes(normCand) || normCand.includes(k));
-    if (keyEncontrada) {
-      const v = map.get(keyEncontrada);
-      if (v !== undefined && v !== null && String(v).trim() !== "") return v;
-    }
-  }
-
-  return "";
-}
-
-function encontrarProdutoNoBling(
-  bling: any[],
-  { idProduto, referencia, nomeVinculo }: { idProduto: string; referencia: string; nomeVinculo: string }
-) {
-  const idProd = String(idProduto || "").trim();
-  const ref = String(referencia || "").trim().toLowerCase();
-  const nomeNorm = normalize(nomeVinculo);
-
-  let prod =
-    bling.find((b) => String(pick(b, ["ID", "Id", "Id Produto", "ID Produto"])).trim() === idProd) ||
-    null;
-  if (prod) return prod;
-
-  prod =
-    bling.find((b) => {
-      const codigo = String(pick(b, ["Código", "Codigo", "SKU"]) || "")
-        .trim()
-        .toLowerCase();
-      if (!codigo || !ref) return false;
-      return codigo === ref || codigo.includes(ref) || ref.includes(codigo);
-    }) || null;
-  if (prod) return prod;
-
-  prod =
-    bling.find((b) => {
-      const nomeB = String(pick(b, ["Descrição", "Descricao", "Nome"]) || "");
-      const nomeBNorm = normalize(nomeB);
-      return nomeBNorm && nomeNorm && nomeBNorm.includes(nomeNorm);
-    }) || null;
-
-  return prod || null;
-}
-
-/** ✅ Categoria = BF (58ª) */
-function getCategoriaFromBlingBF(blingProd: any) {
-  if (!blingProd) return "";
-  const cols = blingProd.__cols;
-  if (Array.isArray(cols) && cols.length >= 58) {
-    const bf = limparTexto(cols[57]);
-    if (bf) return bf.replace(/\s*>>\s*/g, " » ").trim();
-  }
-  const cat = limparTexto(
-    pick(blingProd, ["Categoria", "Categoria do produto", "Categoria Produto", "Categoria do Produto"])
-  );
-  return cat ? cat.replace(/\s*>>\s*/g, " » ").trim() : "";
-}
-
-/**
- * ✅ Referência:
- * - itens separados por "/"
- * - se houver número em algum token antes do último: qtd = número, codigo = último token
- * - senão: qtd=1, codigo=item
- */
-function parseReferencia(refRaw: string) {
-  const ref = String(refRaw || "").trim();
-  if (!ref) return [];
-
-  const limpo = ref.replace(/^\s*(PAI|VAR)\s*-\s*/i, "").trim();
-
-  const items = limpo.split("/").map((s) => s.trim()).filter(Boolean);
-  const out: Array<{ codigo: string; qtd: number }> = [];
-
-  for (const item of items) {
-    const parts = item.split("-").map((s) => s.trim()).filter(Boolean);
-
-    if (parts.length >= 2) {
-      const last = parts[parts.length - 1];
-      let qtd = 1;
-
-      for (let i = 0; i < parts.length - 1; i++) {
-        if (/^\d+$/.test(parts[i])) {
-          qtd = parseInt(parts[i], 10);
-          break;
-        }
-      }
-
-      if (qtd >= 2 && last) {
-        out.push({ codigo: last, qtd });
-        continue;
-      }
-    }
-
-    out.push({ codigo: item, qtd: 1 });
-  }
-
-  return out;
-}
-
-function buildHeaderMap(sheet: ExcelJS.Worksheet, headerRow = 2) {
-  const map = new Map<string, number>();
-  const row = sheet.getRow(headerRow);
-  row.eachCell({ includeEmpty: false }, (cell, col) => {
-    const key = String(cell.value ?? "").trim();
-    if (!key) return;
-    map.set(normalize(key), col);
-  });
-  return map;
-}
-
-function colOf(headerMap: Map<string, number>, name: string) {
-  return headerMap.get(normalize(name));
-}
-
-export async function POST(req: Request) {
+export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    const formData = await req.formData();
+    /*
+     * 1. Obtém o token enviado pelo navegador.
+     */
+    const accessToken = getBearerToken(request);
 
-    const lojaRaw = String(formData.get("loja") || "").trim();
-    const lojaNorm = normalize(lojaRaw);
-
-    const isSoba = lojaNorm.includes("sobaquetas");
-    const lojaSigla = isSoba ? "SB" : "PK"; // ✅ regra que você pediu
-
-    const modeloFile = formData.get("modelo") as File | null;
-    const blingFile = formData.get("bling") as File | null;
-    const vinculoFile = formData.get("vinculo") as File | null;
-
-    if (!modeloFile || !blingFile || !vinculoFile) {
+    if (!accessToken) {
       return NextResponse.json(
-        { error: "⚠️ Envie Modelo, Bling e Vínculo." },
+        {
+          error: "Usuário não autenticado. Entre novamente no sistema.",
+        },
+        { status: 401 }
+      );
+    }
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+    const supabaseKey =
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error(
+        "As variáveis do Supabase não foram configuradas no servidor."
+      );
+    }
+
+    /*
+     * 2. Valida o token diretamente no Supabase Auth.
+     */
+    const authClient = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    });
+
+    const { data: userData, error: userError } =
+      await authClient.auth.getUser(accessToken);
+
+    if (userError || !userData.user) {
+      return NextResponse.json(
+        {
+          error:
+            "Sua sessão não é válida ou expirou. Entre novamente no sistema.",
+        },
+        { status: 401 }
+      );
+    }
+
+    /*
+     * 3. Lê o corpo da requisição.
+     */
+    let body: RequestBody;
+
+    try {
+      body = (await request.json()) as RequestBody;
+    } catch {
+      return NextResponse.json(
+        {
+          error: "O corpo da requisição não contém um JSON válido.",
+        },
         { status: 400 }
       );
     }
 
-    const modeloBuf = Buffer.from(await modeloFile.arrayBuffer());
-    const blingBuf = Buffer.from(await blingFile.arrayBuffer());
-    const vinculoBuf = Buffer.from(await vinculoFile.arrayBuffer());
+    /*
+     * 4. Valida e normaliza os registros.
+     */
+    const registros = validateRegistros(body.registros);
 
-    const bling = lerCSVBuffer(blingBuf);
-    const vinculo = lerCSVBuffer(vinculoBuf);
+    const sql = getPostgresClient();
 
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(modeloBuf);
-    const sheet = workbook.worksheets[0];
+    /*
+     * 5. Executa diretamente no PostgreSQL, sem PostgREST,
+     * sem /rest/v1/rpc e sem schema cache.
+     *
+     * upsert_announce_bulk retorna uma TABELA (store, reference, status, message),
+     * então agregamos o SETOF em jsonb_agg dentro da própria query,
+     * mantendo o mesmo padrão de validação de tipo do payload usado em custos.
+     */
+    const resultado = await sql.begin(async (transaction) => {
+      /*
+       * Reproduz o contexto do usuário autenticado
+       * para auth.uid() e RLS.
+       */
+      const jwtClaims = JSON.stringify({
+        sub: userData.user.id,
+        role: "authenticated",
+        email: userData.user.email ?? null,
+      });
 
-    const headerMap = buildHeaderMap(sheet, 2);
+      await transaction`
+        select set_config(
+          'request.jwt.claims',
+          ${jwtClaims},
+          true
+        )
+      `;
 
-    const colLoja = colOf(headerMap, "Loja");
-    const colIdTray = colOf(headerMap, "ID TRAY") ?? colOf(headerMap, "ID Tray");
-    const colIdVar = colOf(headerMap, "ID VAR") ?? colOf(headerMap, "ID Var");
-    const colReferencia =
-      colOf(headerMap, "Referência") ?? colOf(headerMap, "Referencia");
+      await transaction`
+        select set_config(
+          'request.jwt.claim.sub',
+          ${userData.user.id},
+          true
+        )
+      `;
 
-    if (!colLoja) throw new Error("Coluna 'Loja' não encontrada no MODELO.");
-    if (!colIdTray) throw new Error("Coluna 'ID TRAY' não encontrada no MODELO.");
-    if (!colIdVar) throw new Error("Coluna 'ID VAR' não encontrada no MODELO.");
-    if (!colReferencia) throw new Error("Coluna 'Referência' não encontrada no MODELO.");
+      await transaction`
+        select set_config(
+          'request.jwt.claim.role',
+          'authenticated',
+          true
+        )
+      `;
 
-    // Categoria = coluna J
-    const colCategoriaModelo = 10;
+      await transaction`
+        set local role authenticated
+      `;
 
-    // Código/Quant 1..10
-    const codigoCols: number[] = [];
-    const quantCols: number[] = [];
-    for (let i = 1; i <= 10; i++) {
-      const c = colOf(headerMap, `Código ${i}`) ?? colOf(headerMap, `Codigo ${i}`);
-      const q = colOf(headerMap, `Quant. ${i}`) ?? colOf(headerMap, `Quant ${i}`);
-      if (!c || !q) {
-        throw new Error(`Colunas 'Código ${i}' e/ou 'Quant. ${i}' não encontradas no MODELO.`);
+      const rows = await transaction`
+        with payload as (
+          select
+            ${transaction.json(registros)}::jsonb as valor
+        ),
+        execucao as (
+          select
+            jsonb_typeof(payload.valor) as tipo_payload,
+            resultado.*
+          from payload
+          left join lateral (
+            select *
+            from newsystem.upsert_announce_bulk(payload.valor)
+            where jsonb_typeof(payload.valor) = 'array'
+          ) as resultado on true
+        )
+        select
+          (select tipo_payload from execucao limit 1) as tipo_payload,
+          coalesce(
+            jsonb_agg(
+              jsonb_build_object(
+                'store', store,
+                'reference', reference,
+                'status', status,
+                'message', message
+              )
+            ) filter (where store is not null),
+            '[]'::jsonb
+          ) as resultado
+        from execucao
+      `;
+
+      const tipoPayload = rows[0]?.tipo_payload;
+
+      if (tipoPayload !== "array") {
+        throw new Error(
+          `O payload enviado ao PostgreSQL deveria ser um array JSON, mas foi recebido como "${
+            tipoPayload ?? "desconhecido"
+          }".`
+        );
       }
-      codigoCols.push(c);
-      quantCols.push(q);
-    }
 
-    // limpa linhas 3+
-    sheet.eachRow((row, rowNumber) => {
-      if (rowNumber >= 3) row.eachCell((cell) => (cell.value = null));
+      return (rows[0]?.resultado ?? []) as RegistroResultado[];
     });
 
-    let linhaAtual = 3;
+    const total = resultado.length;
+    const importados = resultado.filter((r) => r.status === "ok").length;
+    const erros = resultado.filter((r) => r.status === "erro");
 
-    for (const v of vinculo) {
-      const idProduto = String(v["IdProduto"] || "").trim();
-      const nomeVinculo = limparTexto(String(v["Nome"] || "").trim());
-      const referencia = String(v["Código"] || "").trim();
-
-      if (!idProduto && !nomeVinculo && !referencia) continue;
-
-      const blProduto = encontrarProdutoNoBling(bling, { idProduto, referencia, nomeVinculo });
-      const categoria = getCategoriaFromBlingBF(blProduto);
-
-      const row = sheet.getRow(linhaAtual);
-
-      // ✅ Loja SB/PK
-      row.getCell(colLoja).value = lojaSigla;
-
-      // ✅ Categoria (J) = BF
-      row.getCell(colCategoriaModelo).value = categoria || "";
-
-      // ✅ ID TRAY e ID VAR = "N TRAY" (texto)
-      row.getCell(colIdTray).value = "N TRAY";
-      row.getCell(colIdVar).value = "N TRAY";
-
-      // ✅ Código/Quantidade da referência
-      const parsed = parseReferencia(referencia);
-      for (let i = 0; i < 10; i++) {
-        row.getCell(codigoCols[i]).value = null;
-        row.getCell(quantCols[i]).value = null;
-      }
-      for (let i = 0; i < Math.min(parsed.length, 10); i++) {
-        row.getCell(codigoCols[i]).value = parsed[i].codigo;
-        row.getCell(quantCols[i]).value = parsed[i].qtd;
-      }
-
-      row.commit?.();
-      linhaAtual++;
-    }
-
-    const out = await workbook.xlsx.writeBuffer();
-    const fileName = `AUTOMACAO-${lojaSigla}-${Date.now()}.xlsx`;
-
-    return new NextResponse(Buffer.from(out), {
-      status: 200,
-      headers: {
-        "Content-Type":
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${fileName}"`,
-      },
-    });
-  } catch (err: any) {
     return NextResponse.json(
-      { error: err?.message || "Erro ao processar as planilhas." },
-      { status: 500 }
+      {
+        success: true,
+        total,
+        importados,
+        errosCount: erros.length,
+        erros,
+      },
+      { status: 200 }
+    );
+  } catch (error: unknown) {
+    const databaseError = error as {
+      name?: string;
+      message?: string;
+      code?: string;
+      detail?: string;
+      hint?: string;
+      where?: string;
+    };
+
+    console.error("Erro na importação de announce:", {
+      name: databaseError?.name ?? null,
+      message: databaseError?.message ?? null,
+      code: databaseError?.code ?? null,
+      detail: databaseError?.detail ?? null,
+      hint: databaseError?.hint ?? null,
+      where: databaseError?.where ?? null,
+    });
+
+    const status = databaseError?.code === "42501" ? 403 : 400;
+
+    return NextResponse.json(
+      {
+        error:
+          databaseError?.message ?? "Não foi possível importar os anúncios.",
+        code: databaseError?.code ?? null,
+        detail: databaseError?.detail ?? null,
+        hint: databaseError?.hint ?? null,
+        where: databaseError?.where ?? null,
+      },
+      { status }
     );
   }
 }

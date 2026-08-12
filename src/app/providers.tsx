@@ -2,8 +2,6 @@
 
 import { ThemeProvider } from "next-themes";
 import { ProfileProvider } from "@/context/ProfileContext";
-import { I18nextProvider } from "react-i18next";
-import i18n from "@/local/i18n";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -13,9 +11,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       enableSystem={true}         // respeita o sistema
       disableTransitionOnChange   // evita flickers
     >
-      <I18nextProvider i18n={i18n}>
-        <ProfileProvider>{children}</ProfileProvider>
-      </I18nextProvider>
+      <ProfileProvider>{children}</ProfileProvider>
     </ThemeProvider>
   );
 }

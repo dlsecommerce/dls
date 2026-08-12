@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 /* =========================================================
   🌑 DARK THEME (ÚNICO)
@@ -226,4 +227,20 @@ a {
 *::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.14);
   border-radius: 999px;
+}
+body {
+  contain: layout paint;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #404040;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #525252;
 }

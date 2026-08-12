@@ -3,15 +3,14 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useRef, useMemo } from "react";
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
 
-import { AnimatedNumber } from "@/components/announce/ProductDetails/AnimatedNumber";
-import { CompositionSection } from "@/components/announce/ProductDetails/CompositionSection";
-import { ProductInfoSection } from "@/components/announce/ProductDetails/ProductInfoSection";
-import { DimensionsSection } from "@/components/announce/ProductDetails/DimensionsSection";
-import { VariationsSection } from "@/components/announce/ProductDetails/VariationsSection";
+import { AnimatedNumber } from "@/components/announce/Productedit/AnimatedNumber";
+import { CompositionSection } from "@/components/announce/Productedit/CompositionSection";
 import { LoadingBar } from "@/components/ui/loading-bar";
-import ConfirmExitModal from "@/components/announce/ProductDetails/ConfirmExitModal";
+import ConfirmExitModal from "@/components/announce/Productedit/ConfirmExitModal";
+import ProductNameSection from "@/components/announce/Productedit/Productnamesection";
+import ProductStatusSection from "@/components/announce/Productedit/Productstatussection";
+import AnnounceLocation from "@/components/announce/Announcelocation";
 
 import { useKeyboardShortcuts } from "@/components/announce/hooks/useKeyboardShortcuts";
 import {
@@ -772,44 +771,29 @@ export default function ProductDetails() {
     <>
       <LoadingBar ref={loadingBarRef} />
 
-      <div className="min-h-screen overflow-x-clip bg-gradient-to-br from-[#070707] via-[#0b0b0b] to-[#070707] px-4 pb-24 pt-4 text-white sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-[1880px]">
-          <header className="mb-4">
-            <button
-              type="button"
-              onClick={() => router.push("/dashboard/anuncios")}
-              className="mb-3 inline-flex cursor-pointer items-center gap-2 text-xs font-semibold text-white/55 transition-colors hover:text-white"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Anúncios
-            </button>
+      <div className="min-h-screen overflow-x-clip bg-gradient-to-br from-[#070707] via-[#0b0b0b] to-[#070707] pb-24 text-white">
+     <div className="border-b border-neutral-900">
+    <div className="px-4 py-4 lg:px-6">
+      <AnnounceLocation
+        path={[
+          { label: "Dashboard", href: "/dashboard" },
+          { label: "Anúncios", href: "/dashboard/anuncios" },
+          { label: "Editar produto" },
+        ]}
+      />
+    </div>
+  </div>
 
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+  <div className="px-4 py-5 lg:px-6">
+    <div className="mx-auto max-w-[1880px]">
+      {/* aqui continua: título, botões, grid com main/aside — sem o breadcrumb */}
+
+
+            <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div className="min-w-0">
                 <h1 className="max-w-[1180px] truncate text-2xl font-bold tracking-tight text-white md:text-3xl">
                   {tituloPagina}
                 </h1>
-
-                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-white/55">
-                  <span>
-                    ID interno: {getField(produtoTela, "ID", "id") || "Novo"}
-                  </span>
-
-                  <span>
-                    Loja: {lojaRealProduto || "Não informada"}
-                  </span>
-
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 font-semibold text-emerald-400">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Salvamento automático ativo
-                  </span>
-
-                  <span>
-                    {loading
-                      ? "Carregando dados..."
-                      : "Última alteração: agora há pouco"}
-                  </span>
-                </div>
               </div>
 
               <div className="flex shrink-0 flex-wrap items-center justify-start gap-2 xl:justify-end">
@@ -817,8 +801,8 @@ export default function ProductDetails() {
                   type="button"
                   onClick={() => router.push("/dashboard/anuncios")}
                   className="
-                    inline-flex h-9 cursor-pointer items-center justify-center rounded-lg
-                    border border-white/10 bg-white/[0.04] px-6
+                    inline-flex h-9 cursor-pointer items-center justify-center border
+                    border-white/10 bg-white/[0.04] px-6
                     text-xs font-semibold text-white/75
                     transition-all duration-200
                     hover:border-white/20 hover:bg-white/[0.08] hover:text-white
@@ -833,8 +817,8 @@ export default function ProductDetails() {
                   onClick={handleSaveAtual}
                   disabled={saving || loading}
                   className="
-                    inline-flex h-9 cursor-pointer items-center justify-center rounded-lg
-                    border border-[#1a8ceb]/60 bg-[#1a8ceb] px-7
+                    inline-flex h-9 cursor-pointer items-center justify-center border
+                    border-[#1a8ceb]/60 bg-[#1a8ceb] px-7
                     text-xs font-bold text-white
                     transition-all duration-200
                     hover:border-[#2d99ee] hover:bg-[#2d99ee]
@@ -846,50 +830,80 @@ export default function ProductDetails() {
                 </button>
               </div>
             </div>
-          </header>
 
-          <div
-            className="
-              grid grid-cols-1 gap-5
-              xl:grid-cols-[430px_minmax(700px,1fr)_430px]
-            "
-          >
-            <aside className="min-w-0">
-              <CompositionSection
-                composicao={composicao}
-                setComposicao={setComposicao}
-                toInternal={toInternal}
-                toDisplay={toDisplay}
-                custoTotal={custoTotal}
-                AnimatedNumber={AnimatedNumber}
-                supabase={supabase}
-                anuncioData={produtoTela}
-                setAnuncioData={setProduto}
-              />
-            </aside>
+            <div
+              className="
+                grid grid-cols-1 gap-5
+                xl:grid-cols-[minmax(700px,1fr)_430px]
+              "
+            >
+              <main className="min-w-0 space-y-4">
+                <ProductNameSection
+                  nome={produtoTela?.nome ?? produtoTela?.Nome ?? ""}
+                  onNomeChange={(value) =>
+                    setProduto((prev: any) => ({
+                      ...prev,
+                      nome: value,
+                      Nome: value,
+                    }))
+                  }
+                  idBling={getIdBling(produtoTela)}
+                  referencia={getReferencia(produtoTela)}
+                  onReferenciaChange={(value) =>
+                    setProduto((prev: any) => ({
+                      ...prev,
+                      referencia: value,
+                      Referencia: value,
+                      "Referência": value,
+                      sku: value,
+                    }))
+                  }
+                  marca={produtoTela?.marca ?? produtoTela?.Marca ?? ""}
+                  onMarcaChange={(value) =>
+                    setProduto((prev: any) => ({
+                      ...prev,
+                      marca: value,
+                      Marca: value,
+                    }))
+                  }
+                  loja={lojaRealProduto}
+                  onLojaChange={(value) =>
+                    setProduto((prev: any) => ({
+                      ...prev,
+                      loja: value,
+                      Loja: value,
+                    }))
+                  }
+                  codigoAnuncio={getField(produtoTela, "ID", "id")}
+                  criadoEm={produtoTela?.created_at ?? produtoTela?.criado_em}
+                />
+              </main>
 
-            <main className="min-w-0 space-y-4">
-              <ProductInfoSection
-                produto={produtoTela}
-                setProduto={setProduto}
-                router={router}
-                saving={saving}
-                handleSave={handleSaveAtual}
-                handleDelete={() => router.push("/dashboard/anuncios")}
-                setComposicao={setComposicao}
-                setCustoTotal={setCustoTotal}
-              />
-            </main>
+              <aside className="min-w-0 space-y-4">
+                <ProductStatusSection
+                  ativo={produtoTela?.ativo ?? true}
+                  onAtivoChange={(value) =>
+                    setProduto((prev: any) => ({ ...prev, ativo: value }))
+                  }
+                  exibirNaLoja={produtoTela?.exibirNaLoja ?? true}
+                  onExibirNaLojaChange={(value) =>
+                    setProduto((prev: any) => ({ ...prev, exibirNaLoja: value }))
+                  }
+                />
 
-            <aside className="min-w-0 space-y-4">
-              <DimensionsSection produto={produtoTela} setProduto={setProduto} />
-
-              <VariationsSection
-                produto={produtoTela}
-                setProduto={setProduto}
-                AnimatedNumber={AnimatedNumber}
-              />
-            </aside>
+                <CompositionSection
+                  composicao={composicao}
+                  setComposicao={setComposicao}
+                  toInternal={toInternal}
+                  toDisplay={toDisplay}
+                  custoTotal={custoTotal}
+                  AnimatedNumber={AnimatedNumber}
+                  supabase={supabase}
+                  anuncioData={produtoTela}
+                  setAnuncioData={setProduto}
+                />
+              </aside>
+            </div>
           </div>
         </div>
       </div>

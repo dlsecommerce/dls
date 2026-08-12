@@ -1,3 +1,4 @@
+// client.ts
 import { createBrowserClient } from "@supabase/ssr";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -10,12 +11,25 @@ if (!url || !anon) {
   );
 }
 
-// ✅ Cria client Supabase com cookies persistentes por 30 dias
+// ✅ Client padrão (schema public)
 export const supabase = createBrowserClient<Database>(url, anon, {
   cookieOptions: {
-    path: "/",          
-    sameSite: "lax",     
-    secure: true,         
-    maxAge: 60 * 60 * 24 * 30, 
+    path: "/",
+    sameSite: "lax",
+    secure: true,
+    maxAge: 60 * 60 * 24 * 30,
+  },
+});
+
+// ✅ Client para o schema "newsystem"
+export const supabaseNewSystem = createBrowserClient<Database>(url, anon, {
+  cookieOptions: {
+    path: "/",
+    sameSite: "lax",
+    secure: true,
+    maxAge: 60 * 60 * 24 * 30,
+  },
+  db: {
+    schema: "newsystem",
   },
 });

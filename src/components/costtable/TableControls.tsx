@@ -211,7 +211,7 @@ export function TableControls({
               variant="default"
               className="
                 w-fit
-                border border-[#1A8CEB]
+                border border-[#4ade80]
                 bg-[#1e1e1e]
                 text-white
               "

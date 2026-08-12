@@ -8,7 +8,7 @@ import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import InfoGeraisBox from "./InfoGeraisBox";
 import CalculoPrecoBox from "./CalculoPrecoBox";
-import { CompositionSection } from "@/components/announce/ProductDetails/CompositionSection";
+import { CompositionSection } from "@/components/announce/Productedit/CompositionSection";
 
 type CalculoLoja = {
   desconto: string;
