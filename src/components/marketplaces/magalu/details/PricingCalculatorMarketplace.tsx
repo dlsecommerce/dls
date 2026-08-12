@@ -10,8 +10,8 @@ import InfoGeraisBox from "@/components/marketplaces/magalu/details/InfoGeraisBo
 import MarketplaceSection from "@/components/marketplaces/magalu/details/MagaluMarketplaceSection";
 import { VariationMagaluSection } from "@/components/marketplaces/magalu/details/VariationMagaluSection";
 
-import { CompositionSection } from "@/components/announce/Productedit/CompositionSection";
-import ConfirmExitModal from "@/components/announce/Productedit/ConfirmExitModal";
+import { CompositionSection } from "@/components/announce/edit/CompositionSection";
+import ConfirmExitModal from "@/components/announce/edit/ConfirmExitModal";
 import { LoadingBar } from "@/components/ui/loading-bar";
 
 import { useMarketplaceDetails } from "@/components/marketplaces/magalu/hooks/useMarketplaceDetails";

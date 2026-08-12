@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import InfoGeraisBox from "./InfoGeraisBox";
 import MarketplaceSection from "./MarketplaceSection";
 import CalculoPrecoBox from "./CalculoPrecoBox";
-import { CompositionSection } from "@/components/announce/Productedit/CompositionSection";
+import { CompositionSection } from "@/components/announce/edit/CompositionSection";
 
 type CalculoLoja = {
   desconto: string;

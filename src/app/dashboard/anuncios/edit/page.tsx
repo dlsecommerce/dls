@@ -1,7 +1,7 @@
 "use client";
 
 import React, { Suspense } from "react";
-import ProductDetails from "@/components/announce/Productedit/ProductDetails";
+import ProductDetails from "@/components/announce/edit/ProductDetails";
 
 export const dynamic = "force-dynamic";
 

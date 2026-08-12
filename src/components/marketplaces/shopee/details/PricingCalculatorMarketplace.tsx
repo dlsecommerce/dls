@@ -10,8 +10,8 @@ import InfoGeraisBox from "@/components/marketplaces/shopee/details/InfoGeraisBo
 import MarketplaceSection from "@/components/marketplaces/shopee/details/ShopeeMarketplaceSection";
 import { VariationShopeeSection } from "@/components/marketplaces/shopee/details/VariationShopeeSection";
 
-import { CompositionSection } from "@/components/announce/Productedit/CompositionSection";
-import ConfirmExitModal from "@/components/announce/Productedit/ConfirmExitModal";
+import { CompositionSection } from "@/components/announce/edit/CompositionSection";
+import ConfirmExitModal from "@/components/announce/edit/ConfirmExitModal";
 import { LoadingBar } from "@/components/ui/loading-bar";
 
 import { useMarketplaceDetails } from "@/components/marketplaces/shopee/hooks/useMarketplaceDetails";

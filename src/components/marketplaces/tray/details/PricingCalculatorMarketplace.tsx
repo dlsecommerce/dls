@@ -10,8 +10,8 @@ import InfoGeraisBox from "@/components/marketplaces/tray/details/InfoGeraisBox"
 import MarketplaceSection from "@/components/marketplaces/tray/details/MarketplaceSection";
 import { VariationMarketplaceSection } from "@/components/marketplaces/tray/details/VariationMarketplaceSection";
 
-import { CompositionSection } from "@/components/announce/Productedit/CompositionSection";
-import ConfirmExitModal from "@/components/announce/Productedit/ConfirmExitModal";
+import { CompositionSection } from "@/components/announce/edit/CompositionSection";
+import ConfirmExitModal from "@/components/announce/edit/ConfirmExitModal";
 import { LoadingBar } from "@/components/ui/loading-bar";
 
 import { useMarketplaceDetails } from "@/components/marketplaces/tray/hooks/useMarketplaceDetails";

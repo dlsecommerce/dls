@@ -4,12 +4,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useRef, useMemo } from "react";
 
-import { AnimatedNumber } from "@/components/announce/Productedit/AnimatedNumber";
-import { CompositionSection } from "@/components/announce/Productedit/CompositionSection";
+import { AnimatedNumber } from "@/components/announce/edit/AnimatedNumber";
+import { CompositionSection } from "@/components/announce/edit/CompositionSection";
 import { LoadingBar } from "@/components/ui/loading-bar";
-import ConfirmExitModal from "@/components/announce/Productedit/ConfirmExitModal";
-import ProductNameSection from "@/components/announce/Productedit/Productnamesection";
-import ProductStatusSection from "@/components/announce/Productedit/Productstatussection";
+import ConfirmExitModal from "@/components/announce/edit/ConfirmExitModal";
+import ProductNameSection from "@/components/announce/edit/Productnamesection";
+import ProductStatusSection from "@/components/announce/edit/Productstatussection";
 import AnnounceLocation from "@/components/announce/Announcelocation";
 
 import { useKeyboardShortcuts } from "@/components/announce/hooks/useKeyboardShortcuts";
