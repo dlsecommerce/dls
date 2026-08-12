@@ -1,42 +1,56 @@
-// src/lib/supabase/admin.ts
-
 import "server-only";
+
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+let cachedClient: SupabaseClient<Database> | null = null;
 
-function validateEnv(): { url: string; serviceRoleKey: string } {
+function validateEnv(): {
+  url: string;
+  serviceRoleKey: string;
+} {
+  // IMPORTANTE:
+  // lê process.env somente quando a função é realmente chamada,
+  // não durante o import do módulo.
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
   const missing: string[] = [];
 
-  if (!SUPABASE_URL) missing.push("NEXT_PUBLIC_SUPABASE_URL");
-  if (!SUPABASE_SERVICE_ROLE_KEY) missing.push("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl) {
+    missing.push("NEXT_PUBLIC_SUPABASE_URL");
+  }
+
+  if (!serviceRoleKey) {
+    missing.push("SUPABASE_SERVICE_ROLE_KEY");
+  }
 
   if (missing.length > 0) {
     throw new Error(
-      `⚠️ Variáveis de ambiente ausentes: ${missing.join(", ")}. ` +
-        `Defina-as no arquivo .env.local antes de iniciar o servidor.`
+      `Variáveis de ambiente ausentes no servidor: ${missing.join(", ")}.`
     );
   }
 
   return {
-    url: SUPABASE_URL as string,
-    serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY as string,
+    url: supabaseUrl,
+    serviceRoleKey,
   };
 }
 
-let cachedClient: SupabaseClient<Database> | null = null;
-
 /**
- * Retorna a instância singleton do cliente admin do Supabase.
- * A instância é criada uma única vez e reutilizada em todas as
- * chamadas subsequentes, evitando overhead de recriação do client.
+ * Retorna o cliente ADMIN do Supabase.
+ *
+ * O cliente é criado somente na primeira utilização real,
+ * evitando inicialização durante o build do Next.js.
  */
-function createSupabaseAdminClient(): SupabaseClient<Database> {
+export function getSupabaseAdmin(): SupabaseClient<Database> {
+  if (cachedClient) {
+    return cachedClient;
+  }
+
   const { url, serviceRoleKey } = validateEnv();
 
-  return createClient<Database>(url, serviceRoleKey, {
+  cachedClient = createClient<Database>(url, serviceRoleKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -48,36 +62,39 @@ function createSupabaseAdminClient(): SupabaseClient<Database> {
       },
     },
   });
+
+  return cachedClient;
 }
 
 /**
- * Cliente ADMIN do Supabase (schema public).
- * Use apenas em contexto server-side. Ignora RLS.
+ * Valida um token de acesso e retorna o usuário autenticado.
  */
-export const supabaseAdmin: SupabaseClient<Database> =
-  cachedClient ?? (cachedClient = createSupabaseAdminClient());
-
-/**
- * Valida um token de acesso (JWT) e retorna o usuário autenticado.
- * Retorna `null` se o token for inválido, expirado ou ausente.
- *
- * @param accessToken - Token JWT enviado no header Authorization (Bearer)
- */
-export async function getUserFromAccessToken(accessToken: string | null) {
+export async function getUserFromAccessToken(
+  accessToken: string | null
+) {
   if (!accessToken) return null;
 
-  const { data, error } = await supabaseAdmin.auth.getUser(accessToken);
+  const supabaseAdmin = getSupabaseAdmin();
 
-  if (error || !data.user) return null;
+  const { data, error } =
+    await supabaseAdmin.auth.getUser(accessToken);
+
+  if (error || !data.user) {
+    return null;
+  }
 
   return data.user;
 }
 
 /**
- * Extrai o token Bearer de um header Authorization padrão.
- * Ex: "Bearer eyJhbGci..." -> "eyJhbGci..."
+ * Extrai o token Bearer do header Authorization.
  */
-export function extractBearerToken(authorizationHeader: string | null): string | null {
-  if (!authorizationHeader?.startsWith("Bearer ")) return null;
+export function extractBearerToken(
+  authorizationHeader: string | null
+): string | null {
+  if (!authorizationHeader?.startsWith("Bearer ")) {
+    return null;
+  }
+
   return authorizationHeader.slice(7).trim() || null;
 }
