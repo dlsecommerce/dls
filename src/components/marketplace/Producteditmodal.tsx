@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { X } from "lucide-react";
-import ProductDetails from "@/components/announce/edit/Productdetails";
+import ProductDetails from "@/components/marketplace/edit/Compositionmodal";
 
 type Props = {
   id?: string;

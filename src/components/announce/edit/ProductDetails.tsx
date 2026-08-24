@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import { toast } from "sonner";
 
-import { AnimatedNumber } from "@/components/announce/edit/Animatednumber";
+import { AnimatedNumber } from "@/components/announce/edit/AnimatedNumber";
 import { LoadingBar } from "@/components/ui/loading-bar";
 import CompositionModal from "@/components/announce/edit/Compositionmodal";
 import ActionsMenu from "@/components/announce/edit/Actionsmenu";
