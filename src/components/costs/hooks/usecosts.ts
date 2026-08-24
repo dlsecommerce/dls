@@ -1266,11 +1266,13 @@ export function useCosts() {
       setApplyingAdjustments(true);
 
       try {
+        // ✅ CORREÇÃO: adicionado cost_id?: string | null ao tipo do array
         const rulesToCreate: {
           rule_type: string;
           scope: "global" | "store" | "channel" | "product";
-          scope_value: string;
+          scope_value: string | null;
           rate: number;
+          cost_id?: string | null;
         }[] = [];
 
         if (isGlobal || isStore || isChannel) {
@@ -1317,14 +1319,23 @@ export function useCosts() {
           }
         } else {
           // scope === "product"
+          // ✅ CORREÇÃO: incluído cost_id: costId em todos os pushes deste bloco
           for (const row of selectedRows) {
             const code = row["Código"];
+            const costId = row.id; // <-- UUID real do custo (obrigatório para escopo product)
+
+            if (!costId) {
+              throw new Error(
+                `Produto "${code}" não possui id válido — não é possível aplicar regra de escopo "product".`
+              );
+            }
 
             if (values.imposto.trim() !== "") {
               rulesToCreate.push({
                 rule_type: "imposto",
                 scope: "product",
                 scope_value: code,
+                cost_id: costId,
                 rate: parseDecimalToNumber(values.imposto)!,
               });
             }
@@ -1334,6 +1345,7 @@ export function useCosts() {
                 rule_type: "marketing",
                 scope: "product",
                 scope_value: code,
+                cost_id: costId,
                 rate: parseDecimalToNumber(values.marketing)!,
               });
             }
@@ -1343,6 +1355,7 @@ export function useCosts() {
                 rule_type: "margem_minima",
                 scope: "product",
                 scope_value: code,
+                cost_id: costId,
                 rate: parseDecimalToNumber(values.margemMinima)!,
               });
             }
@@ -1359,6 +1372,7 @@ export function useCosts() {
                 rule_type: "desconto",
                 scope: "product",
                 scope_value: code,
+                cost_id: costId,
                 rate: discountRate,
               });
             }

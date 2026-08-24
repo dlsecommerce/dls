@@ -134,7 +134,7 @@ export function applyRule(baseValue: number, rule: any) {
  * um valor para uma regra que já existe.
  *
  * Para escopo "product", o índice único usa (cost_id, rule_type), então
- * scope_value é opcional e cost_id deve ser informado.
+ * scope_value é opcional, mas cost_id é OBRIGATÓRIO.
  */
 export async function createRule(payload: {
   rule_type: string;
@@ -143,6 +143,13 @@ export async function createRule(payload: {
   rate: number;
   cost_id?: string | null;
 }) {
+  // ✅ Validação explícita: escopo "product" exige cost_id válido
+  if (payload.scope === "product" && !payload.cost_id) {
+    throw new Error(
+      `cost_id é obrigatório para regras de escopo "product" (rule_type: ${payload.rule_type}, scope_value: ${payload.scope_value}).`
+    );
+  }
+
   const dbRuleType = toDbRuleType(payload.rule_type);
 
   // 1. Desativa a regra ativa existente no mesmo escopo/tipo
@@ -155,7 +162,8 @@ export async function createRule(payload: {
     .eq("active", true);
 
   if (payload.scope === "product") {
-    deactivateQuery = deactivateQuery.eq("cost_id", payload.cost_id ?? "");
+    // ✅ Removido fallback `?? ""` — cost_id já garantido pela validação acima
+    deactivateQuery = deactivateQuery.eq("cost_id", payload.cost_id as string);
   } else if (payload.scope !== "global") {
     deactivateQuery = deactivateQuery.eq("scope_value", payload.scope_value ?? "");
   }
