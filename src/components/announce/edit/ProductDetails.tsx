@@ -8,7 +8,7 @@ import { AnimatedNumber } from "@/components/announce/edit/AnimatedNumber";
 import { LoadingBar } from "@/components/ui/loading-bar";
 import CompositionModal from "@/components/announce/edit/Compositionmodal";
 import ActionsMenu from "@/components/announce/edit/Actionsmenu";
-import ProductInfoSection from "@/components/announce/edit/Productinfosection";
+import ProductInfoSection from "@/components/announce/edit/ProductInfosection";
 
 import { useKeyboardShortcuts } from "@/components/announce/hooks/useKeyboardShortcuts";
 import {
