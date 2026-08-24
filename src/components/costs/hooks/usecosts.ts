@@ -182,8 +182,6 @@ export function useCosts() {
 
   const [openNew, setOpenNew] = useState(false);
   const [mode, setMode] = useState<"create" | "edit">("create");
-  // ✅ Form agora é tipado como CustoForm (chaves em inglês), igual o
-  // NewCost.tsx espera. Nada de mistura de português/inglês aqui.
   const [form, setForm] = useState<CustoForm>({ ...EMPTY_FORM });
 
   const [openImport, setOpenImport] = useState(false);
@@ -220,7 +218,6 @@ export function useCosts() {
   const [openFiltersMobile, setOpenFiltersMobile] = useState(false);
   const [openActionsMobile, setOpenActionsMobile] = useState(false);
 
-  // ✅ Novo: estado de loading do "Selecionar todos (filtrado)"
   const [selectingAll, setSelectingAll] = useState(false);
 
   const loadRequestIdRef = useRef(0);
@@ -458,9 +455,6 @@ export function useCosts() {
     return results.flatMap((r) => (r.data || []).map(mapRowToUI));
   }, [buildQuery]);
 
-  // ✅ Novo: seleciona todos os registros que batem com os filtros/busca
-  // aplicados no momento (respeita código, marca, produto, NCM, marcas
-  // selecionadas), independente da paginação atual.
   const handleSelectAllFiltered = useCallback(async () => {
     if (selectingAll) return;
 
@@ -971,14 +965,12 @@ export function useCosts() {
     }
   }, [renameRows, renamingCodes, loadData, currentPage, itemsPerPage, loadAllBrands]);
 
-  // ✅ Cria formulário vazio (modo criação)
   const openCreate = useCallback(() => {
     setMode("create");
     setForm({ ...EMPTY_FORM });
     setOpenNew(true);
   }, []);
 
-  // ✅ Converte a linha da tabela (português) para o formato do modal (inglês)
   const openEdit = useCallback((row: Custo) => {
     setMode("edit");
     setForm(mapRowToForm(row));
@@ -1112,7 +1104,7 @@ export function useCosts() {
 
   /**
    * Busca os códigos de custo vinculados a uma loja específica,
-   * via join com a tabela `announce` (announce.code = costs.code).
+   * via a coluna `announce.reference` (equivalente ao `costs.code`).
    */
   const fetchCostCodesByStore = useCallback(async (store: string): Promise<string[]> => {
     const codes = new Set<string>();
@@ -1123,7 +1115,7 @@ export function useCosts() {
       const { data, error } = await supabase
         .schema(SCHEMA)
         .from("announce")
-        .select("code")
+        .select("reference")
         .eq("store", store)
         .range(from, to);
 
@@ -1131,7 +1123,7 @@ export function useCosts() {
       if (!data || data.length === 0) break;
 
       data.forEach((r: any) => {
-        if (r.code) codes.add(r.code);
+        if (r.reference) codes.add(r.reference);
       });
 
       if (data.length < PAGE_SIZE_BULK) break;
@@ -1218,22 +1210,24 @@ export function useCosts() {
 
   /**
    * Ajustes em massa: cria regras em pricing_rules (imposto, marketing,
-   * margem_minima, desconto) com scope "global" | "store" | "product".
+   * margem_minima, desconto) com scope "global" | "store" | "channel" | "product".
    * Regra de negócio: Liverpool sempre recebe 23% de desconto fixo,
    * sobrescrevendo o valor digitado no modal (apenas no escopo "product").
    *
    * Embalagem é aplicada diretamente no campo físico packaging_cost da
-   * tabela costs (fixo em R$ ou percentual sobre current_cost), disponível
-   * em qualquer escopo:
+   * tabela costs (fixo em R$ ou percentual sobre current_cost). Não se
+   * aplica ao escopo "channel" (canal não possui vínculo direto com
+   * costs.packaging_cost — é regra de precificação, não custo direto):
    *  - "product": aplica apenas nos produtos selecionados.
    *  - "global": aplica em todos os produtos ativos (costs.deleted_at is null).
    *  - "store": aplica em todos os produtos vinculados à loja selecionada
-   *    (via join com announce.code = costs.code).
+   *    (via announce.reference = costs.code).
    */
   const applyAdjustmentsToSelected = useCallback(
     async (values: ApplyPayload): Promise<ApplyResult> => {
       const isGlobal = values.scope === "global";
       const isStore = values.scope === "store";
+      const isChannel = values.scope === "channel";
       const isProduct = values.scope === "product";
 
       if (isProduct && !selectedRows.length) {
@@ -1244,12 +1238,19 @@ export function useCosts() {
         return { success: false, error: "Selecione uma loja." };
       }
 
+      if (isChannel && !values.channel) {
+        return { success: false, error: "Selecione um canal." };
+      }
+
       if (applyingAdjustments) {
         return { success: false, error: "Já existe uma operação em andamento." };
       }
 
+      // Embalagem não se aplica ao escopo "channel"
       const embalagemValue =
-        values.embalagem.trim() !== "" ? parseDecimalToNumber(values.embalagem) : null;
+        !isChannel && values.embalagem.trim() !== ""
+          ? parseDecimalToNumber(values.embalagem)
+          : null;
 
       const hasAnyField =
         values.imposto.trim() !== "" ||
@@ -1267,13 +1268,17 @@ export function useCosts() {
       try {
         const rulesToCreate: {
           rule_type: string;
-          scope: "global" | "store" | "product";
+          scope: "global" | "store" | "channel" | "product";
           scope_value: string;
           rate: number;
         }[] = [];
 
-        if (isGlobal || isStore) {
-          const scopeValue = isGlobal ? "global" : values.store!;
+        if (isGlobal || isStore || isChannel) {
+          const scopeValue = isGlobal
+            ? "global"
+            : isStore
+            ? values.store!
+            : values.channel!;
 
           if (values.imposto.trim() !== "") {
             rulesToCreate.push({
@@ -1362,7 +1367,7 @@ export function useCosts() {
 
         const created = await Promise.all(rulesToCreate.map((r) => createRule(r)));
 
-        // Embalagem: aplicada em costs.packaging_cost, agora em qualquer escopo
+        // Embalagem: aplicada em costs.packaging_cost (indisponível para escopo "channel")
         let costsUpdated = 0;
 
         if (embalagemValue !== null) {

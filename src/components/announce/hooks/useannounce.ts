@@ -19,6 +19,7 @@ export type AnnounceRow = {
   reference: string | null;
   product: string | null;
   mark: string | null;
+  ativo: boolean;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -34,7 +35,12 @@ export type AnnounceTypeFilter =
   | "Produtos"
   | "Variações";
 
-export type AnnounceSituacaoFilter = "Todos" | "Ativos" | "Excluídos";
+export type AnnounceSituacaoFilter =
+  | "Todos"
+  | "Ativos"
+  | "Inativos"
+  | "Excluídos"
+  | "Últimos incluídos";
 
 export type AnnounceSortField =
   | "created_at"
@@ -318,9 +324,17 @@ function applySharedFilters(query: any, args: SharedFilterArgs) {
   const { situacao, store, search, type, marks } = args;
 
   if (situacao === "Ativos") {
-    query = query.is("deleted_at", null);
+    query = query.is("deleted_at", null).eq("active", true);
+  } else if (situacao === "Inativos") {
+    query = query.is("deleted_at", null).eq("active", false);
   } else if (situacao === "Excluídos") {
     query = query.not("deleted_at", "is", null);
+  } else if (situacao === "Últimos incluídos") {
+    // FIX: sem cutoff de tempo — traz sempre os mais recentes
+    // (ordenação por created_at desc é aplicada no fetchAll).
+    // Antes havia um "gte(created_at, cutoff de 48h)" que zerava
+    // a lista quando não havia inclusões dentro dessa janela.
+    query = query.is("deleted_at", null);
   }
 
   if (store && store !== "Todos") {
@@ -390,8 +404,21 @@ export function useAnnounce(filters?: UseAnnounceFilters) {
   const requestIdRef = useRef(0);
 
   const situacao = filters?.situacao ?? "Ativos";
-  const sortBy = filters?.sortBy ?? "created_at";
-  const sortDir = filters?.sortDir ?? "desc";
+
+  // ── FIX: quando o filtro for "Últimos incluídos", força
+  // ordenação por created_at desc (mais recentes primeiro),
+  // independentemente do que vier em filters.sortBy/sortDir.
+  // Para os demais filtros, mantém o padrão code_id asc.
+  const isUltimosIncluidos = situacao === "Últimos incluídos";
+
+  const sortBy: AnnounceSortField = isUltimosIncluidos
+    ? "created_at"
+    : filters?.sortBy ?? "code_id";
+
+  const sortDir: AnnounceSortDir = isUltimosIncluidos
+    ? "desc"
+    : filters?.sortDir ?? "asc";
+
   const store = filters?.store ?? null;
   const search = filters?.search ?? null;
   const type = normalizeTypeFilter(filters?.type);
@@ -422,7 +449,7 @@ export function useAnnounce(filters?: UseAnnounceFilters) {
         .schema("newsystem")
         .from("announce")
         .select(
-          "id, code_id, store, id_bling, reference, product, mark, deleted_at, created_at, updated_at",
+          "id, code_id, store, id_bling, reference, product, mark, active, deleted_at, created_at, updated_at",
           { count: "exact" }
         )
         .order(sortBy, { ascending: sortDir === "asc" })
@@ -464,6 +491,7 @@ export function useAnnounce(filters?: UseAnnounceFilters) {
         ...item,
         id,
         code_id: String(item.code_id ?? ""),
+        ativo: Boolean(item.active),
         is_variation: isVariation,
       };
     });
@@ -523,6 +551,8 @@ export function useAnnounce(filters?: UseAnnounceFilters) {
 
       const product = normalizeRequired(getField(produto, "product", "nome", "Nome"));
       const mark = normalizeNullable(getField(produto, "mark", "marca", "Marca"));
+      const ativoRaw = getField(produto, "ativo");
+      const ativo = ativoRaw === "" ? true : Boolean(ativoRaw);
 
       if (!product) {
         toast.error("Informe o nome do produto para salvar o anúncio.");
@@ -544,6 +574,7 @@ export function useAnnounce(filters?: UseAnnounceFilters) {
             p_reference: reference,
             p_product: product,
             p_mark: mark,
+            p_ativo: ativo,
           })
         );
 

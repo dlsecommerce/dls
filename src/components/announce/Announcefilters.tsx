@@ -302,7 +302,7 @@ export default function AnnounceFilters({
   };
 
   const hasActiveFilters =
-    filters.situacao !== "Todos" ||
+    filters.situacao !== "Ativos" ||
     filters.loja !== "Todos" ||
     filters.tipo !== "Todos" ||
     filters.codigo.trim() !== "" ||
@@ -319,7 +319,7 @@ export default function AnnounceFilters({
               <FieldLabel label="Código" htmlFor="filtro-codigo" />
               <Input
                 id="filtro-codigo"
-                placeholder="Ex: TN 5AM, Q10 MK2"
+                placeholder="Ex: PAI-TN 5AM, VAR-Q10 MK2"
                 value={filters.codigo}
                 onChange={(e) => updateFilter("codigo", e.target.value)}
                 className={inputClass}

@@ -65,12 +65,14 @@ export const DEFAULT_COST_ADJUSTMENTS: CostAdjustments = {
 
 export type EmbalagemMode = "fixed" | "percent";
 
-export type RuleScope = "global" | "store" | "product";
+export type RuleScope = "global" | "store" | "channel" | "product";
 
 export type ApplyPayload = CostAdjustments & {
   embalagemMode: EmbalagemMode;
   scope: RuleScope;
   store?: string;
+  channel?: string;
+  brand?: string;
 };
 
 export type ApplyResult = {

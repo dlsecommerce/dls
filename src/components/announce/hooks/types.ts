@@ -23,7 +23,7 @@ export interface AnnounceFilters {
   tipo: TipoOption;
 }
 
-export const SITUACAO_OPTIONS = ["Todos", "Ativos", "Excluídos"] as const;
+export const SITUACAO_OPTIONS = ["Todos", "Ativos", "Inativos", "Excluídos"] as const;
 
 export const STORE_OPTIONS = ["Todos", "Pikot Shop", "Sóbaquetas"] as const;
 
@@ -46,9 +46,10 @@ export const TIPO_TO_FILTER_VALUE: Record<TipoOption, string> = {
 };
 
 export const DEFAULT_ANUNCIO_FILTERS: AnnounceFilters = {
-  situacao: "Todos",
+  situacao: "Ativos",
   loja: "Todos",
   codigo: "",
   produto: "",
   tipo: "Todos",
 };
+

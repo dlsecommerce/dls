@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import CostTable from "@/components/costtable/CostTable";
+import CostTable from "@/components/costs/Costs";
 
 export default function Page() {
   return (

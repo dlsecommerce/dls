@@ -1,7 +1,7 @@
 "use client";
 
 import React, { Suspense } from "react";
-import PricingTable from "@/components/marketplaces/shopee/PricingTable";
+import PricingTable from "@/components/marketplace/shopee/PricingTable";
 
 export const dynamic = "force-dynamic";
 

@@ -171,6 +171,7 @@ export function SearchBar({ expanded }: SearchBarProps) {
           <input
             ref={inputRef}
             type="text"
+            placeholder="Pesquisar"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => {

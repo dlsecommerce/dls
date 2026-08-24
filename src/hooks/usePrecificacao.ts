@@ -73,7 +73,7 @@ export function usePrecificacao() {
   // ==================================================
   // Custo total
   // ==================================================
-  const EMBALAGEM_FIXA = 2.5;
+  const EMBALAGEM_FIXA = 5;
 
   const custoTotal = composicao.reduce(
     (sum, item) => sum + parseBR(item.custo) * parseBR(item.quantidade),

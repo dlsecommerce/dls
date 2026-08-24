@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Menu, SlidersHorizontal, X as XIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -14,6 +14,7 @@ import ConfirmImportModal, { RowError } from "@/components/announce/Confirmimpor
 import { Controls } from "@/components/announce/Controls";
 import ExportProgressToast from "@/components/announce/Exportprogresstoast";
 import ImportProgressToast from "@/components/announce/Importprogresstoast";
+import ProductEditModal from "@/components/announce/Producteditmodal";
 
 import {
   Announce as AnnounceRow,
@@ -50,6 +51,8 @@ function buildModeloFileName(): string {
 
 export default function Announce() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const [filters, setFilters] = React.useState<AnnounceFiltersType>(
     DEFAULT_ANUNCIO_FILTERS
@@ -63,12 +66,14 @@ export default function Announce() {
   const storeValue =
     appliedFilters.loja !== "Todos" ? appliedFilters.loja : undefined;
 
-  /* ── ORDENAÇÃO (enviada ao banco) ── */
   const [sortColumn, setSortColumn] = React.useState<string | null>(null);
   const [sortDirection, setSortDirection] = React.useState<"asc" | "desc">("asc");
 
-  const sortByField: AnnounceSortField = (sortColumn as AnnounceSortField) ?? "created_at";
-  const sortDirValue: AnnounceSortDir = sortColumn ? sortDirection : "desc";
+  const sortByField: AnnounceSortField | undefined =
+    sortColumn as AnnounceSortField | undefined;
+  const sortDirValue: AnnounceSortDir | undefined = sortColumn
+    ? sortDirection
+    : undefined;
 
   const {
     announces,
@@ -80,7 +85,6 @@ export default function Announce() {
     handleRestoreSelected,
     deleting,
 
-    // paginação server-side
     page,
     setPage,
     pageSize,
@@ -88,7 +92,6 @@ export default function Announce() {
     totalCount,
     totalPages,
 
-    // seleção total (id + deleted_at, sem paginar)
     fetchAllMatchingIds,
   } = useAnnounce({
     store: storeValue,
@@ -97,13 +100,11 @@ export default function Announce() {
     situacao: appliedFilters.situacao as AnnounceSituacaoFilter,
     sortBy: sortByField,
     sortDir: sortDirValue,
-    marks: appliedBrands, // filtro de marca agora resolvido no banco
+    marks: appliedBrands,
   });
 
-  // A página já vem filtrada, ordenada e paginada pelo servidor.
   const paginatedRows = announces;
 
-  /* ── LISTA DE MARCAS (dropdown) — busca independente da paginação ── */
   const [allBrands, setAllBrands] = React.useState<string[]>([]);
   const [brandsLoading, setBrandsLoading] = React.useState(false);
 
@@ -115,9 +116,7 @@ export default function Announce() {
       .then((brands) => {
         if (active) setAllBrands(brands);
       })
-      .catch(() => {
-        // silencioso: dropdown apenas fica vazio em caso de falha
-      })
+      .catch(() => {})
       .finally(() => {
         if (active) setBrandsLoading(false);
       });
@@ -127,7 +126,6 @@ export default function Announce() {
     };
   }, []);
 
-  // currentPage (1-based, pra UI) <-> page (0-based, pro hook)
   const currentPage = page + 1;
 
   const handleApplyFilters = () => {
@@ -157,15 +155,6 @@ export default function Announce() {
     setPage(0);
   };
 
-  /* ── SELEÇÃO ─────────────────────────────────
-   * `selectedRows` guarda objetos completos quando vêm da página atual,
-   * mas ao usar "selecionar tudo" guardamos apenas `{ id, deleted_at }`
-   * (linhas "fantasma"), suficiente para exclusão em lote — o
-   * `deleted_at` é o que decide, dentro do hook, se cada item deve ser
-   * movido para a lixeira (soft delete) ou excluído permanentemente
-   * (hard delete). Isso evita trazer os 15.700 registros completos
-   * pro client.
-   * ─────────────────────────────────────────── */
   const [selectedRows, setSelectedRows] = React.useState<AnnounceRow[]>([]);
   const [selectAllMatchingActive, setSelectAllMatchingActive] = React.useState(false);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
@@ -188,7 +177,6 @@ export default function Announce() {
     );
 
   const handleToggleSelectAll = (checked: boolean) => {
-    // Qualquer interação manual desfaz o modo "selecionar tudo o conjunto filtrado"
     setSelectAllMatchingActive(false);
 
     if (checked) {
@@ -204,11 +192,6 @@ export default function Announce() {
 
   const [selectingAll, setSelectingAll] = React.useState(false);
 
-  /* ── "Selecionar tudo" real: busca `id` + `deleted_at` de TODOS os
-   * registros que casam com o filtro atual (sem trazer o dataset
-   * completo), e cria linhas "fantasma" com esses dois campos —
-   * suficientes para o hook decidir soft/hard delete corretamente
-   * mesmo no filtro "Todos" (que mistura ativos e excluídos). ── */
   const handleSelectAllTable = async () => {
     setSelectingAll(true);
     try {
@@ -231,11 +214,6 @@ export default function Announce() {
 
   const [openDelete, setOpenDelete] = React.useState(false);
 
-  /* ── EXCLUSÃO ─────────────────────────────────
-   * O hook já faz update otimista no estado local ao excluir
-   * (não precisa de refetch aqui) — só limpamos a seleção local
-   * da tela para refletir o resultado imediatamente.
-   * ─────────────────────────────────────────── */
   const deleteSelected = async () => {
     if (selectedRows.length === 1) {
       await handleDelete(selectedRows[0] as any, () => {
@@ -251,11 +229,6 @@ export default function Announce() {
     setOpenDelete(false);
   };
 
-  /* ── RESTAURAÇÃO ───────────────────────────────
-   * Só faz sentido para itens com deleted_at != null.
-   * O hook já filtra internamente quem pode ser restaurado
-   * e faz update otimista no estado local.
-   * ─────────────────────────────────────────── */
   const restoreSelectedRows = async () => {
     await handleRestoreSelected(selectedRows as any[], () => {
       setSelectedRows([]);
@@ -263,7 +236,6 @@ export default function Announce() {
     });
   };
 
-  /* ── EXPORTAÇÃO ─────────────────────────────── */
   const [exporting, setExporting] = React.useState(false);
   const [exportProgressOpen, setExportProgressOpen] = React.useState(false);
   const [exportProgress, setExportProgress] = React.useState(0);
@@ -290,8 +262,6 @@ export default function Announce() {
       await exportAnnounceFromApi(
         { store: storeValue, format: "xlsx", signal: controller.signal },
         (percent) => {
-          // Progresso real reportado pelo helper (bytes recebidos),
-          // sem simulação artificial por tempo.
           if (cancelExportRef.current) return;
           setExportProgress(percent);
           setExportProgressCount(
@@ -311,7 +281,6 @@ export default function Announce() {
       setExportProgress(0);
     } finally {
       setExporting(false);
-      // Mantém o toast visível brevemente em 100% antes de fechar
       setTimeout(() => {
         if (!cancelExportRef.current) setExportProgressOpen(false);
       }, 1500);
@@ -327,7 +296,6 @@ export default function Announce() {
     document.body.removeChild(a);
   };
 
-  /* ── IMPORTAÇÃO ─────────────────────────────── */
   const [openImport, setOpenImport] = React.useState(false);
   const [importCount, setImportCount] = React.useState(0);
   const [previewRows, setPreviewRows] = React.useState<any[]>([]);
@@ -363,8 +331,6 @@ export default function Announce() {
       setImportCount(result.data.length);
       setWarnings(result.warnings ?? []);
       setImportErrors(result.errors ?? []);
-      // Se o helper de importação já retornar erros amarrados a linha/coluna,
-      // eles são usados para destacar as células na tabela de preview.
       setImportRowErrors(result.rowErrors ?? []);
       setOpenImport(true);
     } catch (err: any) {
@@ -410,21 +376,12 @@ export default function Announce() {
           setImportProgress(percent);
           setImportProgressCount(progress.processed);
         },
-        importMode // ← modo (inclusão/alteração) repassado ao helper,
-                    //   que por sua vez envia ao backend em cada lote.
+        importMode
       );
 
       setImportProgress(100);
       setImportProgressCount(result.data.length);
 
-      // ── TOASTS DE RESULTADO ──────────────────────────────────
-      // Regra: apenas dois estados visuais importam ao usuário:
-      //  - VERMELHO (erro): quando houver qualquer registro rejeitado
-      //    (regra de negócio, dado inválido, ou falha técnica).
-      //  - AZUL (sucesso): quando houver registros importados/alterados
-      //    com sucesso.
-      // Warnings neutros (dedupe, contagem, etc.) não geram toast —
-      // ficam disponíveis apenas dentro do modal de importação.
       const hasErrors = (result.errosCount ?? 0) > 0 || (result.errors?.length ?? 0) > 0;
       const importedCount = result.importados ?? 0;
 
@@ -473,11 +430,48 @@ export default function Announce() {
   const [openFiltersMobile, setOpenFiltersMobile] = React.useState(false);
   const [openActionsMobile, setOpenActionsMobile] = React.useState(false);
 
-  const handleEdit = (row: AnnounceRow) => {
-    router.push(
-      `/dashboard/anuncios/edit?id=${row.id}&loja=${encodeURIComponent(row.store)}`
-    );
-  };
+  /* ── MODAL DE EDIÇÃO/CRIAÇÃO (controlado via query params) ──
+   * `id` → edição de um anúncio existente.
+   * `new=1` → criação de um anúncio novo, SEM registro no banco.
+   * O anúncio só é persistido de fato quando o usuário clicar em
+   * "Salvar" dentro do modal (ProductEditModal / useAnnounceEdit).
+   * ─────────────────────────────────────────── */
+  const editId = searchParams.get("id");
+  const editLoja = searchParams.get("loja");
+  const isCreating = searchParams.has("new");
+  const isEditOpen = searchParams.has("id") || isCreating;
+
+  const openEditModal = React.useCallback(
+    (row: AnnounceRow) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("new");
+      params.set("id", String(row.id));
+      params.set("loja", row.store);
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [router, pathname, searchParams]
+  );
+
+  const openCreateModal = React.useCallback(() => {
+    // ✅ Sem RPC, sem registro no banco — só abre o modal em modo
+    // de criação. O anúncio só é persistido quando o usuário salvar.
+    const storeParaNovo = storeValue ?? "Pikot Shop";
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("id");
+    params.set("new", "1");
+    params.set("loja", storeParaNovo);
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [router, pathname, searchParams, storeValue]);
+
+  const closeEditModal = React.useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("id");
+    params.delete("loja");
+    params.delete("new");
+    const query = params.toString();
+    router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [router, pathname, searchParams]);
 
   const handleDeleteOne = (row: AnnounceRow) => {
     setSelectedRows([row]);
@@ -492,6 +486,10 @@ export default function Announce() {
 
   const handleSituacaoChange = (value: string) => {
     setFilters((prev) => ({ ...prev, situacao: value }));
+    setAppliedFilters((prev) => ({ ...prev, situacao: value }));
+    setSortColumn(null);
+    setSortDirection("asc");
+    setPage(0);
   };
 
   return (
@@ -501,12 +499,12 @@ export default function Announce() {
           <div className="border-b border-neutral-900 bg-[#050505] px-4 py-4 lg:px-6">
             <div className="flex items-center justify-between gap-2">
               <AnnounceLocation
-              path={[
-              { label: "Dashboard", href: "/dashboard" },
-              { label: "Anúncios" },
-              ]}
-            />
-            
+                path={[
+                  { label: "Dashboard", href: "/dashboard" },
+                  { label: "Anúncios" },
+                ]}
+              />
+
               <div className="flex items-center gap-2 lg:hidden">
                 <button
                   type="button"
@@ -553,7 +551,7 @@ export default function Announce() {
                 setSelectedRows={setSelectedRows}
                 copiedId={copiedId}
                 handleCopy={handleCopy}
-                openEdit={handleEdit}
+                openEdit={openEditModal}
                 openDeleteOne={handleDeleteOne}
                 allSelected={allSelected}
                 situacao={filters.situacao}
@@ -599,7 +597,7 @@ export default function Announce() {
             <AnnounceActions
               exporting={exporting}
               handleExport={handleExport}
-              onOpenCreate={() => router.push("/dashboard/anuncios/edit")}
+              onOpenCreate={openCreateModal}
               onExportModelo={handleExportModelo}
               onImportInclusao={handleImportInclusao}
               onImportAlteracao={handleImportAlteracao}
@@ -701,7 +699,7 @@ export default function Announce() {
                 }}
                 onOpenCreate={() => {
                   setOpenActionsMobile(false);
-                  router.push("/dashboard/anuncios/edit");
+                  openCreateModal();
                 }}
                 onExportModelo={() => {
                   setOpenActionsMobile(false);
@@ -769,6 +767,18 @@ export default function Announce() {
         }
         onClose={() => setImportProgressOpen(false)}
       />
+
+      {isEditOpen && (
+        <ProductEditModal
+          id={isCreating ? undefined : editId ?? undefined}
+          loja={editLoja ?? undefined}
+          onClose={closeEditModal}
+          onSaved={() => {
+            closeEditModal();
+            refetch();
+          }}
+        />
+      )}
     </div>
   );
 }

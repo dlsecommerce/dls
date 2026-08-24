@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import AnnounceTable from "@/components/announce/AnnounceTable/AnnounceTable";
+import AnnounceTable from "@/components/announce/Announce";
 import { LoadingBar } from "@/components/ui/loading-bar";
 
 export default function AnnouncePage() {

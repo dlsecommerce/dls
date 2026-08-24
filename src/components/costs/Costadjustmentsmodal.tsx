@@ -21,6 +21,8 @@ import {
   ChevronDown,
   Check,
   Search,
+  Radio,
+  Tag,
 } from "lucide-react";
 
 import {
@@ -30,15 +32,21 @@ import {
 } from "@/components/costs/hooks/types";
 import { sanitizeDecimalInput, formatDecimalOnBlur } from "@/components/costs/hooks/utils";
 
-import { loadDistinctStores } from "@/components/costs/hooks/usepricingrules";
+import {
+  loadDistinctStores,
+  loadDistinctChannels,
+  loadDistinctBrands,
+} from "@/components/costs/hooks/usepricingrules";
 
 export type EmbalagemMode = "fixed" | "percent";
-export type RuleScope = "global" | "store" | "product";
+export type RuleScope = "global" | "store" | "channel" | "product";
 
 export type ApplyPayload = CostAdjustmentsType & {
   embalagemMode: EmbalagemMode;
   scope: RuleScope;
   store?: string;
+  channel?: string;
+  brand?: string;
 };
 
 export type ApplyResult = {
@@ -89,6 +97,7 @@ const ALL_FIELDS: FieldConfig[] = [...COST_FIELDS, ...RULE_FIELDS];
 const SCOPE_TABS: { key: RuleScope; label: string; icon: React.ReactNode }[] = [
   { key: "global", label: "Global", icon: <Globe className="h-3.5 w-3.5" /> },
   { key: "store", label: "Loja", icon: <Store className="h-3.5 w-3.5" /> },
+  { key: "channel", label: "Canal", icon: <Radio className="h-3.5 w-3.5" /> },
   { key: "product", label: "Produto", icon: <Boxes className="h-3.5 w-3.5" /> },
 ];
 
@@ -216,19 +225,29 @@ function AdjustmentField({
   );
 }
 
-/** Dropdown personalizado de loja (estilo sistema) */
-function StoreDropdown({
-  stores,
+/** Dropdown genérico (loja/canal/marca) — estilo sistema */
+function OptionDropdown({
+  options,
   selected,
   onSelect,
   loading,
   disabled,
+  icon,
+  placeholder,
+  loadingLabel,
+  searchPlaceholder,
+  emptyLabel,
 }: {
-  stores: string[];
+  options: string[];
   selected: string;
-  onSelect: (store: string) => void;
+  onSelect: (value: string) => void;
   loading: boolean;
   disabled: boolean;
+  icon: React.ReactNode;
+  placeholder: string;
+  loadingLabel: string;
+  searchPlaceholder: string;
+  emptyLabel: string;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -241,28 +260,26 @@ function StoreDropdown({
         setOpen(false);
       }
     };
-    if (open) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
+    if (open) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
   useEffect(() => {
     if (open) {
-      setTimeout(() => inputRef.current?.focus(), 50);
+      setTimeout(() => inputRef.current?.focus(), 30);
+    } else {
+      setSearch("");
     }
   }, [open]);
 
-  const filteredStores = useMemo(() => {
+  const filteredOptions = useMemo(() => {
     const term = search.toLowerCase();
-    if (!term) return stores;
-    return stores.filter((s) => s.toLowerCase().includes(term));
-  }, [stores, search]);
+    if (!term) return options;
+    return options.filter((s) => s.toLowerCase().includes(term));
+  }, [options, search]);
 
-  const handleSelect = (store: string) => {
-    onSelect(store);
+  const handleSelect = (value: string) => {
+    onSelect(value);
     setOpen(false);
   };
 
@@ -282,32 +299,33 @@ function StoreDropdown({
         `}
       >
         <span className="flex items-center gap-2 truncate">
-          <Store className="h-3.5 w-3.5 shrink-0 text-neutral-500" />
+          {icon}
           <span className={selected ? "text-white" : "text-neutral-500"}>
-            {loading ? "Carregando lojas..." : selected || "Selecione uma loja"}
+            {loading ? loadingLabel : selected || placeholder}
           </span>
         </span>
         <ChevronDown
           className={`h-3.5 w-3.5 shrink-0 text-neutral-500 transition-transform ${open ? "rotate-180" : ""}`}
         />
       </button>
+
       {open && !isDisabled && (
-        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 border border-neutral-800 bg-[#0a0a0a] shadow-2xl animate-in fade-in-0 zoom-in-95">
+        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[100] border border-neutral-800 bg-[#0a0a0a] shadow-2xl">
           <div className="relative border-b border-neutral-900 px-3 pt-2 pb-1">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-600" />
             <input
               ref={inputRef}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar loja..."
+              placeholder={searchPlaceholder}
               className="h-9 w-full bg-transparent pl-9 pr-3 text-xs text-white outline-none placeholder:text-neutral-600"
             />
           </div>
-          <div className="max-h-52 overflow-y-auto py-1">
-            {filteredStores.length === 0 && (
-              <div className="px-3 py-2 text-[11px] text-neutral-600">Nenhuma loja encontrada</div>
+          <div className="max-h-36 overflow-y-auto py-1">
+            {filteredOptions.length === 0 && (
+              <div className="px-3 py-2 text-[11px] text-neutral-600">{emptyLabel}</div>
             )}
-            {filteredStores.map((s) => {
+            {filteredOptions.map((s) => {
               const selectedFlag = s === selected;
               return (
                 <button
@@ -330,7 +348,7 @@ function StoreDropdown({
   );
 }
 
-/** Componente modal ajustado com dropdown custom de loja e embalagem liberada para todos os escopos */
+/** Componente modal ajustado com dropdown custom de loja/canal/marca e embalagem liberada para os escopos aplicáveis */
 export default function CostAdjustmentsModal({
   open,
   onOpenChange,
@@ -346,6 +364,14 @@ export default function CostAdjustmentsModal({
   const [stores, setStores] = useState<string[]>([]);
   const [selectedStore, setSelectedStore] = useState<string>("");
   const [loadingStores, setLoadingStores] = useState(false);
+  const [channels, setChannels] = useState<string[]>([]);
+  const [selectedChannel, setSelectedChannel] = useState<string>("");
+  const [loadingChannels, setLoadingChannels] = useState(false);
+
+  // Marca — escopo adicional exclusivo do campo Desconto (rules_brand no SQL)
+  const [brands, setBrands] = useState<string[]>([]);
+  const [selectedBrand, setSelectedBrand] = useState<string>("");
+  const [loadingBrands, setLoadingBrands] = useState(false);
 
   useEffect(() => {
     setScope(selectedRows.length > 0 ? "product" : "global");
@@ -359,6 +385,33 @@ export default function CostAdjustmentsModal({
       .catch(() => setStores([]))
       .finally(() => setLoadingStores(false));
   }, [scope, stores.length]);
+
+  useEffect(() => {
+    if (scope !== "channel" || channels.length > 0) return;
+    setLoadingChannels(true);
+    loadDistinctChannels()
+      .then(setChannels)
+      .catch(() => setChannels([]))
+      .finally(() => setLoadingChannels(false));
+  }, [scope, channels.length]);
+
+  // Carrega marcas apenas quando o campo Desconto estiver preenchido
+  const descontoFilled = parseValue(values.desconto) !== null;
+  useEffect(() => {
+    if (!descontoFilled || brands.length > 0) return;
+    setLoadingBrands(true);
+    loadDistinctBrands()
+      .then(setBrands)
+      .catch(() => setBrands([]))
+      .finally(() => setLoadingBrands(false));
+  }, [descontoFilled, brands.length]);
+
+  // Limpa a marca selecionada se o campo Desconto for esvaziado
+  useEffect(() => {
+    if (!descontoFilled && selectedBrand) {
+      setSelectedBrand("");
+    }
+  }, [descontoFilled, selectedBrand]);
 
   const update = useCallback((k: keyof CostAdjustmentsType, v: string) => {
     setValues((p) => ({ ...p, [k]: v }));
@@ -385,16 +438,28 @@ export default function CostAdjustmentsModal({
   const hasAny = useMemo(() => Object.values(values).some((v) => v.trim() !== ""), [values]);
   const isProductScope = scope === "product";
   const isStoreScope = scope === "store";
+  const isChannelScope = scope === "channel";
   const isGlobalScope = scope === "global";
 
   const targetLabel = useMemo(() => {
     if (isGlobalScope) return "Todos os produtos (regra global)";
     if (isStoreScope) return selectedStore ? `Loja: ${selectedStore}` : "Selecione uma loja";
+    if (isChannelScope) return selectedChannel ? `Canal: ${selectedChannel}` : "Selecione um canal";
     return `${selectedRows.length} produto(s) selecionado(s)`;
-  }, [isGlobalScope, isStoreScope, selectedStore, selectedRows.length]);
+  }, [isGlobalScope, isStoreScope, isChannelScope, selectedStore, selectedChannel, selectedRows.length]);
 
   const sampleProduct = selectedRows[0];
 
+  /**
+   * getPreview — CORRIGIDO
+   *
+   * 1. `desconto` agora reduz o valor (base * (1 - v/100)), nunca aumenta.
+   * 2. `margemMinima` não é mais tratado como acréscimo de preço — é exibido
+   *    apenas como informação de piso de validação, sem simular cálculo de preço.
+   * 3. Cada campo de regra (imposto, marketing, desconto) continua sendo
+   *    mostrado isoladamente no preview (por campo), mas com o sinal correto
+   *    de cada operação, evitando a impressão de que desconto "aumenta preço".
+   */
   const getPreview = useCallback(
     (k: keyof CostAdjustmentsType, s: "R$" | "%") => {
       if (!isProductScope || !sampleProduct) return null;
@@ -403,14 +468,32 @@ export default function CostAdjustmentsModal({
       if (v === null) return null;
       const base = sampleProduct.current_cost ?? 0;
       if (base <= 0) return null;
+
+      // Embalagem em modo percentual — acréscimo de custo (correto, é custo direto)
       if (k === "embalagem" && embalagemMode === "percent") {
         const res = base * (1 + v / 100);
         return `Ex: ${sampleProduct.code} → ${formatCurrency(base)} (+${v}%) = ${formatCurrency(res)}`;
       }
+
+      // Embalagem em modo fixo — soma direta em R$ (correto, é custo direto)
       if (s === "R$") {
         const res = base + v;
         return `Ex: ${sampleProduct.code} → ${formatCurrency(base)} + ${formatCurrency(v)} = ${formatCurrency(res)}`;
       }
+
+      // Mínimo de margem NÃO é um componente de acréscimo de preço.
+      // É uma regra de piso/validação — não deve simular cálculo de preço final.
+      if (k === "margemMinima") {
+        return `Piso de margem: vendas com margem abaixo de ${v}% serão sinalizadas/bloqueadas`;
+      }
+
+      // Desconto reduz o valor, nunca aumenta
+      if (k === "desconto") {
+        const res = base * (1 - v / 100);
+        return `Ex: ${sampleProduct.code} → ${formatCurrency(base)} (-${v}%) = ${formatCurrency(res)}`;
+      }
+
+      // Demais campos de regra (imposto, marketing) — acréscimo percentual isolado
       const res = base * (1 + v / 100);
       const sign = v >= 0 ? "+" : "";
       return `Ex: ${sampleProduct.code} → ${formatCurrency(base)} (${sign}${v}%) = ${formatCurrency(res)}`;
@@ -418,7 +501,7 @@ export default function CostAdjustmentsModal({
     [sampleProduct, values, errors, embalagemMode, isProductScope]
   );
 
-  /** Preview/descrição específico da embalagem, considerando que agora afeta todos os produtos do escopo */
+  /** Preview/descrição específico da embalagem. Não se aplica ao escopo Canal (custo direto do produto). */
   const embalagemPreview = useMemo(() => {
     if (isProductScope) {
       return getPreview("embalagem", "R$");
@@ -431,17 +514,28 @@ export default function CostAdjustmentsModal({
         ? `Será aplicado a todos os produtos da loja: ${selectedStore}`
         : "Selecione uma loja para aplicar";
     }
+    if (isChannelScope) {
+      return "Embalagem não se aplica ao escopo Canal (custo direto do produto)";
+    }
     return null;
-  }, [isProductScope, isGlobalScope, isStoreScope, selectedStore, getPreview]);
+  }, [isProductScope, isGlobalScope, isStoreScope, isChannelScope, selectedStore, getPreview]);
+
+  /** Preview específico do desconto por marca */
+  const descontoBrandPreview = useMemo(() => {
+    if (!descontoFilled) return null;
+    return selectedBrand
+      ? `Desconto será aplicado apenas para a marca: ${selectedBrand}`
+      : "Nenhuma marca selecionada — Desconto seguirá o escopo principal";
+  }, [descontoFilled, selectedBrand]);
 
   const summary = useMemo(() => {
     const productCount = isProductScope ? selectedRows.length : 0;
-    const embalagemFilled = parseValue(values.embalagem) !== null;
+    const embalagemFilled = !isChannelScope && parseValue(values.embalagem) !== null;
     const rulesFilledCount = RULE_FIELDS.filter((f) => parseValue(values[f.key]) !== null).length;
 
     const rulesAffected = isProductScope ? rulesFilledCount * productCount : rulesFilledCount;
 
-    // embalagem agora afeta todos os produtos do escopo, não só os selecionados
+    // embalagem afeta todos os produtos do escopo (exceto canal, onde não se aplica)
     const costsAffected = embalagemFilled
       ? isProductScope
         ? productCount
@@ -449,7 +543,7 @@ export default function CostAdjustmentsModal({
       : 0;
 
     return { rulesAffected, costsAffected, productCount, embalagemFilled, rulesFilledCount };
-  }, [values, isProductScope, selectedRows.length]);
+  }, [values, isProductScope, isChannelScope, selectedRows.length]);
 
   const summaryText = useMemo(() => {
     const parts: string[] = [];
@@ -470,17 +564,22 @@ export default function CostAdjustmentsModal({
     setEmbalagemMode("fixed");
     setShowSummary(false);
     setSelectedStore("");
+    setSelectedChannel("");
+    setSelectedBrand("");
   }, []);
 
   const handleApply = useCallback(async () => {
     if (!hasAny || applying || hasErrors) return;
     if (isStoreScope && !selectedStore) return;
+    if (isChannelScope && !selectedChannel) return;
     const payload: ApplyPayload = {
       ...values,
       embalagemMode,
       scope,
     };
     if (isStoreScope) payload.store = selectedStore;
+    if (isChannelScope) payload.channel = selectedChannel;
+    if (descontoFilled && selectedBrand) payload.brand = selectedBrand;
     const r = await onApply(payload);
     if (r.success) {
       resetState();
@@ -491,7 +590,11 @@ export default function CostAdjustmentsModal({
     applying,
     hasErrors,
     isStoreScope,
+    isChannelScope,
     selectedStore,
+    selectedChannel,
+    descontoFilled,
+    selectedBrand,
     onApply,
     values,
     embalagemMode,
@@ -509,7 +612,11 @@ export default function CostAdjustmentsModal({
     [applying, onOpenChange, resetState]
   );
 
-  const canApply = hasAny && !hasErrors && (!isStoreScope || !!selectedStore);
+  const canApply =
+    hasAny &&
+    !hasErrors &&
+    (!isStoreScope || !!selectedStore) &&
+    (!isChannelScope || !!selectedChannel);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -546,12 +653,35 @@ export default function CostAdjustmentsModal({
         {/* Dropdown Loja custom */}
         {scope === "store" && (
           <div className="mt-3">
-            <StoreDropdown
-              stores={stores}
+            <OptionDropdown
+              options={stores}
               selected={selectedStore}
               onSelect={setSelectedStore}
               loading={loadingStores}
               disabled={applying}
+              icon={<Store className="h-3.5 w-3.5 shrink-0 text-neutral-500" />}
+              placeholder="Selecione uma loja"
+              loadingLabel="Carregando lojas..."
+              searchPlaceholder="Buscar loja..."
+              emptyLabel="Nenhuma loja encontrada"
+            />
+          </div>
+        )}
+
+        {/* Dropdown Canal custom */}
+        {scope === "channel" && (
+          <div className="mt-3">
+            <OptionDropdown
+              options={channels}
+              selected={selectedChannel}
+              onSelect={setSelectedChannel}
+              loading={loadingChannels}
+              disabled={applying}
+              icon={<Radio className="h-3.5 w-3.5 shrink-0 text-neutral-500" />}
+              placeholder="Selecione um canal"
+              loadingLabel="Carregando canais..."
+              searchPlaceholder="Buscar canal..."
+              emptyLabel="Nenhum canal encontrado"
             />
           </div>
         )}
@@ -574,14 +704,14 @@ export default function CostAdjustmentsModal({
                   onChange={(v) => update(field.key, v)}
                   onBlur={() => handleBlur(field.key)}
                   suffix={embalagemMode === "percent" ? "%" : field.suffix}
-                  disabled={applying}
+                  disabled={applying || isChannelScope}
                   error={errors[field.key]}
                   previewText={embalagemPreview}
                   toggle={
                     <div className="flex overflow-hidden border border-neutral-800 text-[10px]">
                       <button
                         type="button"
-                        disabled={applying}
+                        disabled={applying || isChannelScope}
                         onClick={() => setEmbalagemMode("fixed")}
                         className={`px-2 py-0.5 transition-colors cursor-pointer ${
                           embalagemMode === "fixed" ? "bg-neutral-800 text-white" : "text-neutral-500 hover:text-neutral-300"
@@ -591,7 +721,7 @@ export default function CostAdjustmentsModal({
                       </button>
                       <button
                         type="button"
-                        disabled={applying}
+                        disabled={applying || isChannelScope}
                         onClick={() => setEmbalagemMode("percent")}
                         className={`px-2 py-0.5 transition-colors cursor-pointer ${
                           embalagemMode === "percent" ? "bg-neutral-800 text-white" : "text-neutral-500 hover:text-neutral-300"
@@ -618,23 +748,50 @@ export default function CostAdjustmentsModal({
                   ? "Aplicado como regra global (todos os produtos)"
                   : isStoreScope
                   ? "Aplicado apenas para a loja selecionada"
+                  : isChannelScope
+                  ? "Aplicado apenas para o canal selecionado"
                   : "Aplicado como regra específica por produto"
               }
             />
             <div className="space-y-3">
               {RULE_FIELDS.map((f) => (
-                <AdjustmentField
-                  key={f.key}
-                  label={f.label}
-                  value={values[f.key]}
-                  onChange={(v) => update(f.key, v)}
-                  onBlur={() => handleBlur(f.key)}
-                  suffix={f.suffix}
-                  disabled={applying}
-                  error={errors[f.key]}
-                  existingRate={existingRules?.[f.key]}
-                  previewText={getPreview(f.key, f.suffix)}
-                />
+                <React.Fragment key={f.key}>
+                  <AdjustmentField
+                    label={f.label}
+                    value={values[f.key]}
+                    onChange={(v) => update(f.key, v)}
+                    onBlur={() => handleBlur(f.key)}
+                    suffix={f.suffix}
+                    disabled={applying}
+                    error={errors[f.key]}
+                    existingRate={existingRules?.[f.key]}
+                    previewText={f.key === "desconto" ? descontoBrandPreview : getPreview(f.key, f.suffix)}
+                  />
+
+                  {/* Seletor de marca — exclusivo do campo Desconto */}
+                  {f.key === "desconto" && descontoFilled && (
+                    <div className="pl-1">
+                      <div className="mb-1.5 flex items-center gap-1.5">
+                        <Tag className="h-3 w-3 text-neutral-500" />
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500">
+                          Restringir por marca (opcional)
+                        </span>
+                      </div>
+                      <OptionDropdown
+                        options={brands}
+                        selected={selectedBrand}
+                        onSelect={setSelectedBrand}
+                        loading={loadingBrands}
+                        disabled={applying}
+                        icon={<Tag className="h-3.5 w-3.5 shrink-0 text-neutral-500" />}
+                        placeholder="Todas as marcas"
+                        loadingLabel="Carregando marcas..."
+                        searchPlaceholder="Buscar marca..."
+                        emptyLabel="Nenhuma marca encontrada"
+                      />
+                    </div>
+                  )}
+                </React.Fragment>
               ))}
             </div>
           </div>
@@ -663,6 +820,8 @@ export default function CostAdjustmentsModal({
                         ? "Global (todos os produtos)"
                         : isStoreScope
                         ? `Loja: ${selectedStore}`
+                        : isChannelScope
+                        ? `Canal: ${selectedChannel}`
                         : `${selectedRows.length} produto(s)`}
                     </li>
                     {summary.embalagemFilled && (
@@ -674,6 +833,9 @@ export default function CostAdjustmentsModal({
                     )}
                     {summary.rulesFilledCount > 0 && (
                       <li>Campos de regra preenchidos: {summary.rulesFilledCount}</li>
+                    )}
+                    {descontoFilled && selectedBrand && (
+                      <li>Desconto restrito à marca: {selectedBrand}</li>
                     )}
                   </ul>
                 </div>
@@ -703,6 +865,8 @@ export default function CostAdjustmentsModal({
                 ? "Corrija os campos com erro"
                 : isStoreScope && !selectedStore
                 ? "Selecione uma loja"
+                : isChannelScope && !selectedChannel
+                ? "Selecione um canal"
                 : undefined
             }
             className={`

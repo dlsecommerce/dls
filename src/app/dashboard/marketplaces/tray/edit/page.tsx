@@ -1,7 +1,7 @@
 "use client";
 
 import React, { Suspense } from "react";
-import PricingDetails from "@/components/marketplaces/tray/details/PricingCalculatorMarketplace";
+import PricingDetails from "@/components/marketplace/tray/details/PricingCalculatorMarketplace";
 
 export const dynamic = "force-dynamic";
 

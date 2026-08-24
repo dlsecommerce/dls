@@ -45,7 +45,7 @@ type SortHeaderProps = {
 // ---------------------------------------------------------------------
 // Constantes
 // ---------------------------------------------------------------------
-const SITUACAO_OPTIONS = ["Todos", "Ativos", "Excluídos"];
+const SITUACAO_OPTIONS = ["Todos", "Últimos incluídos"];
 
 // ---------------------------------------------------------------------
 // Subcomponente — cabeçalho ordenável

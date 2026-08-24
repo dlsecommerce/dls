@@ -7,9 +7,9 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
-import { Loader2, AlertTriangle } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Loader2, AlertTriangle, ClipboardList } from "lucide-react";
 
 type Severity = "danger" | "warning";
 
@@ -28,18 +28,76 @@ type Props = {
   errorMessage?: string | null;
 };
 
-const SEVERITY_MAP = {
-  danger: {
-    icon: "text-red-500",
-    box: "border-red-500/30 bg-red-500/5 text-red-400",
-    button: "bg-red-600 hover:bg-red-500",
-  },
-  warning: {
-    icon: "text-amber-500",
-    box: "border-amber-500/30 bg-amber-500/5 text-amber-400",
-    button: "bg-amber-600 hover:bg-amber-500",
-  },
-} as const;
+const RED = "#ef4444";
+const AMBER = "#f59e0b";
+
+const SEVERITY_COLOR: Record<Severity, string> = {
+  danger: RED,
+  warning: AMBER,
+};
+
+const SEVERITY_HOVER: Record<Severity, string> = {
+  danger: "#f87171",
+  warning: "#fbbf24",
+};
+
+/** Componente cabeçalho das seções (idêntico ao ConfirmImportModal) */
+function SectionHeader({
+  icon,
+  title,
+  description,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="mb-2 flex items-center gap-2">
+      <div className="flex h-6 w-6 items-center justify-center border border-neutral-800 text-neutral-500">
+        {icon}
+      </div>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">{title}</p>
+        <p className="text-[10px] text-neutral-600">{description}</p>
+      </div>
+    </div>
+  );
+}
+
+/** Caixa de alerta (mesmo padrão do ConfirmImportModal) */
+function AlertBox({
+  color,
+  title,
+  message,
+}: {
+  color: string;
+  title: string;
+  message: string;
+}) {
+  return (
+    <div
+      role="alert"
+      aria-live="polite"
+      className="border border-neutral-800 p-3"
+      style={{ borderLeft: `2px solid ${color}` }}
+    >
+      <div className="flex gap-2">
+        <div
+          className="flex h-6 w-6 shrink-0 items-center justify-center border border-neutral-800"
+          style={{ color }}
+        >
+          <AlertTriangle className="h-3.5 w-3.5" />
+        </div>
+        <div>
+          <strong className="text-[11px] font-semibold uppercase tracking-[0.1em]" style={{ color }}>
+            {title}
+          </strong>
+          <p className="mt-1.5 text-[11px] text-neutral-400">{message}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function ConfirmDelete({
   open,
@@ -55,7 +113,9 @@ export default function ConfirmDelete({
   requireExtraConfirmThreshold = 20,
   errorMessage,
 }: Props) {
-  const s = SEVERITY_MAP[severity];
+  const ACCENT = SEVERITY_COLOR[severity];
+  const ACCENT_HOVER = SEVERITY_HOVER[severity];
+
   const needsExtraConfirm = count >= requireExtraConfirmThreshold;
   const [extraConfirmed, setExtraConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -82,6 +142,7 @@ export default function ConfirmDelete({
 
   const previewItems = items?.slice(0, 3);
   const remainingCount = items ? Math.max(items.length - 3, 0) : 0;
+  const targetLabel = `${count} ${count === 1 ? itemLabel : itemLabelPlural}`;
 
   return (
     <Dialog
@@ -92,97 +153,140 @@ export default function ConfirmDelete({
       }}
     >
       <DialogContent
+        onClick={(e) => e.stopPropagation()}
         onEscapeKeyDown={(e) => isBusy && e.preventDefault()}
         onInteractOutside={(e) => isBusy && e.preventDefault()}
         data-testid="confirm-delete-dialog"
-        className="
-          w-[calc(100vw-16px)] max-w-[calc(100vw-16px)]
-          sm:max-w-md
-          max-h-[calc(100dvh-16px)] overflow-y-auto
-          !rounded-[2px] border border-neutral-800
-          bg-[#0a0a0a] text-white
-          p-0
-          [&>button]:hidden
-        "
+        className="bg-[#0a0a0a] border border-neutral-800 shadow-2xl rounded-none w-[calc(100vw-16px)] max-w-[calc(100vw-16px)] max-h-[calc(100dvh-16px)] sm:max-w-md sm:w-[90%] flex flex-col overflow-hidden p-4 sm:p-6 pb-[calc(1rem+env(safe-area-inset-bottom))] [&>button]:hidden"
       >
         {/* Cabeçalho */}
-        <DialogHeader className="border-b border-neutral-800 px-5 py-4">
-          <DialogTitle className="flex items-center gap-2 text-[15px] font-semibold text-white">
-            <AlertTriangle className={cn("h-4 w-4", s.icon)} />
-            {title}
-          </DialogTitle>
+        <DialogHeader className="shrink-0 border-b border-neutral-900 pb-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" style={{ color: ACCENT }} />
+            <DialogTitle className="text-base font-semibold text-white sm:text-lg">{title}</DialogTitle>
+          </div>
+          <p className="mt-1 text-[11px] text-neutral-500">{targetLabel}</p>
         </DialogHeader>
 
-        {/* Corpo */}
-        <div className="px-5 py-4 space-y-4">
-          <p className="text-sm text-neutral-300">
-            Deseja realmente excluir{" "}
-            <span className="font-semibold text-red-500">{count}</span>{" "}
-            {count === 1 ? itemLabel : itemLabelPlural}?
-          </p>
-
-          {previewItems && (
-            <ul className="border border-neutral-800 bg-neutral-900/40 p-2 text-xs text-neutral-500 space-y-1">
-              {previewItems.map((name, i) => (
-                <li key={i} className="truncate">• {name}</li>
-              ))}
-              {remainingCount > 0 && (
-                <li className="text-neutral-600">
-                  e mais {remainingCount} {remainingCount === 1 ? "item" : "itens"}...
-                </li>
-              )}
-            </ul>
-          )}
-
-          <div className={cn("flex items-start gap-2 border p-3 text-sm", s.box)}>
-            <AlertTriangle className={cn("mt-0.5 h-4 w-4 shrink-0", s.icon)} />
-            <span>
-              <strong>Atenção:</strong> Esta ação é permanente e não poderá ser desfeita.
-            </span>
+        {/* Conteúdo */}
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1 mt-4">
+          {/* Resumo */}
+          <div>
+            <SectionHeader
+              icon={<ClipboardList className="h-3.5 w-3.5" />}
+              title="Resumo da exclusão"
+              description="Confira os itens antes de confirmar."
+            />
+            <div className="flex items-center gap-2 border border-neutral-800 px-3 py-2">
+              <span className="text-[11px] text-neutral-500">Deseja excluir</span>
+              <span
+                className="border px-2 py-0.5 text-[11px] font-semibold"
+                style={{ borderColor: `${ACCENT}40`, color: ACCENT, backgroundColor: `${ACCENT}14` }}
+              >
+                {count} {count === 1 ? itemLabel : itemLabelPlural}
+              </span>
+            </div>
           </div>
 
-          {needsExtraConfirm && (
-            <label className="flex items-start gap-2 text-sm text-neutral-300 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={extraConfirmed}
-                onChange={(e) => setExtraConfirmed(e.target.checked)}
-                disabled={isBusy}
-                className="mt-0.5 h-4 w-4 accent-red-500"
-              />
-              Confirmo que quero excluir esses {count} itens em massa.
-            </label>
+          {/* Preview de itens */}
+          {previewItems && previewItems.length > 0 && (
+            <>
+              <div className="my-5 h-px bg-neutral-900" />
+              <div>
+                <SectionHeader
+                  icon={<ClipboardList className="h-3.5 w-3.5" />}
+                  title="Itens selecionados"
+                  description="Amostra dos itens que serão excluídos"
+                />
+                <div className="border border-neutral-800 p-2">
+                  <ul className="space-y-1 text-[11px] text-neutral-400">
+                    {previewItems.map((name, i) => (
+                      <li key={i} className="truncate">• {name}</li>
+                    ))}
+                    {remainingCount > 0 && (
+                      <li className="text-neutral-600">
+                        e mais {remainingCount} {remainingCount === 1 ? "item" : "itens"}...
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              </div>
+            </>
           )}
 
+          {/* Alerta de permanência */}
+          <div className="my-5 h-px bg-neutral-900" />
+          <AlertBox
+            color={ACCENT}
+            title="Atenção"
+            message="Esta ação é permanente e não poderá ser desfeita."
+          />
+
+          {/* Confirmação extra */}
+          {needsExtraConfirm && (
+            <>
+              <div className="my-5 h-px bg-neutral-900" />
+              <label className="flex items-start gap-2 text-[13px] text-neutral-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={extraConfirmed}
+                  onChange={(e) => setExtraConfirmed(e.target.checked)}
+                  disabled={isBusy}
+                  className="mt-0.5 h-4 w-4 accent-red-500"
+                />
+                Confirmo que quero excluir esses {count} itens em massa.
+              </label>
+            </>
+          )}
+
+          {/* Erro */}
           {errorMessage && (
-            <div role="alert" className="border border-red-500/30 bg-red-500/10 p-2 text-sm text-red-400">
-              {errorMessage}
-            </div>
+            <>
+              <div className="my-5 h-px bg-neutral-900" />
+              <AlertBox color={RED} title="Erro" message={errorMessage} />
+            </>
           )}
         </div>
 
-        {/* Rodapé */}
-        <div className="flex flex-col-reverse gap-2 border-t border-neutral-800 px-5 py-4 sm:flex-row sm:justify-end sm:gap-3">
+        {/* Botões */}
+        <DialogFooter className="mt-5 flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
           <button
             type="button"
             disabled={isBusy}
-            onClick={() => onOpenChange(false)}
-            className="h-9 w-full sm:w-auto px-4 border border-neutral-700 text-sm text-white hover:bg-neutral-900 disabled:opacity-50 rounded-[2px] cursor-pointer disabled:cursor-not-allowed"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenChange(false);
+            }}
+            className="flex h-11 w-full items-center justify-center rounded-none border border-neutral-800 text-sm text-white transition-colors hover:bg-neutral-900 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 sm:h-10 sm:w-auto sm:px-6"
           >
             Cancelar
           </button>
           <button
             type="button"
             disabled={confirmDisabled}
-            onClick={handleConfirm}
-            className={cn(
-              "h-9 w-full sm:w-auto px-4 flex items-center justify-center gap-2 text-sm font-medium text-white disabled:opacity-60 rounded-[2px] cursor-pointer disabled:cursor-not-allowed",
-              s.button
-            )}
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleConfirm();
+            }}
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-none border text-sm font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50 sm:h-10 sm:w-auto sm:px-6 cursor-pointer"
+            style={{ backgroundColor: ACCENT, borderColor: ACCENT }}
+            onMouseEnter={(e) => {
+              if (!confirmDisabled) (e.currentTarget as HTMLButtonElement).style.backgroundColor = ACCENT_HOVER;
+            }}
+            onMouseLeave={(e) => {
+              if (!confirmDisabled) (e.currentTarget as HTMLButtonElement).style.backgroundColor = ACCENT;
+            }}
           >
-            {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Excluir"}
+            {isBusy ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Excluindo...
+              </>
+            ) : (
+              "Excluir"
+            )}
           </button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

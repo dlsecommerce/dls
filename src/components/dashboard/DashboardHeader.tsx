@@ -132,26 +132,9 @@ const navigationItems = [
     icon: Package,
   },
   {
-    title: "Marketplaces",
+    title: "Marketplace",
+    href: "/dashboard/marketplace",
     icon: Store,
-    children: [
-      {
-        title: "Bling",
-        href: "/dashboard/marketplaces/bling",
-      },
-      {
-        title: "Tray",
-        href: "/dashboard/marketplaces/tray",
-      },
-      {
-        title: "Shopee",
-        href: "/dashboard/marketplaces/shopee",
-      },
-      {
-        title: "Magalu",
-        href: "/dashboard/marketplaces/magalu",
-      },
-    ],
   },
 ];
 
@@ -178,8 +161,6 @@ export default function DashboardHeader({}: DashboardHeaderProps) {
     e: React.MouseEvent<HTMLAnchorElement>,
     href: string
   ) => {
-    // ✅ Deixa o navegador tratar nativamente: Ctrl/Cmd+clique, clique do meio,
-    // "abrir em nova guia", "abrir em nova janela" etc.
     if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) {
       return;
     }

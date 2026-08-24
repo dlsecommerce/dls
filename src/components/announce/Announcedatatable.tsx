@@ -56,6 +56,29 @@ type Props = {
 
 const getRowKey = (row: any) => String(row?.id ?? "").trim();
 
+/* ─────────────────────────────────────────────
+ * HELPER — detecta itens recentes ("Novos")
+ * ───────────────────────────────────────────── */
+const NEW_THRESHOLD_HOURS = 24 * 5; // 5 dias
+
+function isRecent(createdAt?: string | null, hours = NEW_THRESHOLD_HOURS) {
+  if (!createdAt) return false;
+  const created = new Date(createdAt).getTime();
+  if (Number.isNaN(created)) return false;
+  return Date.now() - created <= hours * 60 * 60 * 1000;
+}
+
+function NewBadge() {
+  return (
+    <span
+      className="ml-1.5 inline-flex shrink-0 items-center rounded-none border border-[#1a8ceb]/40 bg-[#1a8ceb]/10 px-1.5 py-[1px] text-[9px] font-semibold uppercase tracking-wide text-[#1a8ceb]"
+      title="Adicionado recentemente"
+    >
+      Novo
+    </span>
+  );
+}
+
 function IconBtn({
   onClick,
   variant,
@@ -193,6 +216,8 @@ const AnnounceTableRow = React.memo(
     openDeleteOne: (row: Announce) => void;
     onToggle: (row: Announce, checked: boolean) => void;
   }) {
+    const showNewBadge = isRecent((row as any)?.created_at);
+
     return (
       <TableRow
         className={`group border-b border-neutral-900 transition-colors ${
@@ -210,19 +235,10 @@ const AnnounceTableRow = React.memo(
         </TableCell>
 
         <TableCell className="text-left text-[13px] text-neutral-300">
-          <div className="inline-flex items-center gap-1.5">
-            <span className="truncate">{row.code_id}</span>
-            <CopyBtn
-              value={String(row.code_id ?? "")}
-              copyKey={`codigo-${index}`}
-              copiedId={copiedId}
-              handleCopy={handleCopy}
-              label="código"
-            />
-          </div>
+          <span className="truncate">{row.code_id}</span>
         </TableCell>
 
-        <TableCell className="text-left text-[13px] text-neutral-400">
+        <TableCell className="text-left text-[13px] text-neutral-300">
           <span className="truncate">{row.store}</span>
         </TableCell>
 
@@ -255,6 +271,7 @@ const AnnounceTableRow = React.memo(
         <TableCell className="text-left text-[13px] text-neutral-300">
           <div className="inline-flex max-w-full items-center gap-1.5">
             <span className="truncate">{row.product || "-"}</span>
+            {showNewBadge && <NewBadge />}
             <CopyBtn
               value={row.product || ""}
               copyKey={`produto-${index}`}
@@ -265,7 +282,7 @@ const AnnounceTableRow = React.memo(
           </div>
         </TableCell>
 
-        <TableCell className="text-left text-[13px] text-neutral-400">
+        <TableCell className="text-left text-[13px] text-neutral-300">
           <span className="truncate">{row.mark || "-"}</span>
         </TableCell>
 
@@ -356,6 +373,7 @@ export default function AnnounceDataTable({
         ) : (
           rows.map((a, i) => {
             const isSelected = selectedKeys.has(getRowKey(a));
+            const showNewBadge = isRecent((a as any)?.created_at);
 
             return (
               <div
@@ -371,6 +389,7 @@ export default function AnnounceDataTable({
                     </div>
                     <div className="mt-1 flex min-w-0 items-center gap-1.5 text-sm font-medium text-white">
                       <span className="truncate">{a.product || "-"}</span>
+                      {showNewBadge && <NewBadge />}
                     </div>
                   </div>
 

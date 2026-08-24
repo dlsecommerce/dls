@@ -1,7 +1,7 @@
 "use client";
 
 import React, { Suspense } from "react";
-import PricingTable from "@/components/marketplaces/tray/PricingTable";
+import PricingTable from "@/components/marketplace/tray/PricingTable";
 
 export const dynamic = "force-dynamic";
 

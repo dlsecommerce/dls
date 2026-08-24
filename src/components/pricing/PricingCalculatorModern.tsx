@@ -30,6 +30,11 @@ type Sugestao = {
 type TipoBuscaProduto = "codigo" | "descricao";
 
 // =====================
+// Embalagem padrão (fixa) do sistema
+// =====================
+const EMBALAGEM_PADRAO = "5";
+
+// =====================
 // Helpers de número
 // =====================
 const toInternal = (v: string): string => {
@@ -84,6 +89,24 @@ function debounce<T extends (...args: any[]) => any>(fn: T, delay: number) {
   };
 }
 
+// =====================
+// Faixas oficiais da regra Shopee
+// (usadas para detectar a faixa de custo do produto)
+// =====================
+type ShopeeTier = {
+  min: number;
+  max: number;
+  frete: string;
+  comissao: string;
+};
+
+const SHOPEE_TIERS: ShopeeTier[] = [
+  { min: 0, max: 79.99, frete: "4", comissao: "20" },
+  { min: 80, max: 99.99, frete: "16", comissao: "14" },
+  { min: 100, max: 199.99, frete: "20", comissao: "14" },
+  { min: 200, max: Infinity, frete: "26", comissao: "14" },
+];
+
 export default function PricingCalculatorModern() {
   const {
     composicao,
@@ -121,7 +144,7 @@ export default function PricingCalculatorModern() {
     frete: "",
     comissao: "6",
     marketing: "3",
-    embalagem: "3",
+    embalagem: EMBALAGEM_PADRAO,
   });
 
   const [calculoShopee, setCalculoShopee] = useState<Calculo>({
@@ -131,7 +154,7 @@ export default function PricingCalculatorModern() {
     frete: "4",
     comissao: "20",
     marketing: "3",
-    embalagem: "3",
+    embalagem: EMBALAGEM_PADRAO,
   });
 
   const [calculoMagalu, setCalculoMagalu] = useState<Calculo>({
@@ -141,7 +164,7 @@ export default function PricingCalculatorModern() {
     frete: "",
     comissao: "20",
     marketing: "3",
-    embalagem: "3",
+    embalagem: EMBALAGEM_PADRAO,
   });
 
   const [calculoMarketplaceClassico, setCalculoMarketplaceClassico] =
@@ -152,7 +175,7 @@ export default function PricingCalculatorModern() {
       frete: "",
       comissao: "11",
       marketing: "3",
-      embalagem: "3",
+      embalagem: EMBALAGEM_PADRAO,
     });
 
   const [calculoMarketplacePremium, setCalculoMarketplacePremium] =
@@ -163,7 +186,7 @@ export default function PricingCalculatorModern() {
       frete: "",
       comissao: "16",
       marketing: "3",
-      embalagem: "3",
+      embalagem: EMBALAGEM_PADRAO,
     });
 
   // =====================
@@ -188,11 +211,11 @@ export default function PricingCalculatorModern() {
   /*
    * IMPORTANTE:
    *
-   * Não deve existir um useEffect com dependência [composicao]
-   * redefinindo as flags acima para false.
-   *
-   * Alterar quantidade, custo ou código na composição não significa
-   * que o usuário deixou de editar manualmente os valores da Shopee.
+   * A trava manual de comissão/frete da Shopee só é válida até a
+   * PRÓXIMA alteração na composição (adicionar, remover, editar
+   * código/custo/quantidade). Qualquer alteração reseta a trava
+   * automaticamente (ver useEffect de reset abaixo), e a regra
+   * automática reaplica os valores corretos da faixa vigente.
    */
 
   // =====================
@@ -333,6 +356,9 @@ export default function PricingCalculatorModern() {
 
   const ultimaBuscaRef = useRef("");
 
+  // =====================
+  // Busca de sugestões da Composição (AJUSTADO: newsystem.costs)
+  // =====================
   const buscarSugestoes = async (termo: string, idx: number) => {
     const raw = termo.trim();
 
@@ -344,9 +370,10 @@ export default function PricingCalculatorModern() {
     }
 
     const exact = await supabase
-      .from("custos")
-      .select('"Código", "Custo Atual", "Produto"')
-      .eq('"Código"', raw)
+      .schema("newsystem")
+      .from("costs")
+      .select("code, current_cost, product")
+      .eq("code", raw)
       .limit(5);
 
     if (ultimaBuscaRef.current !== raw) {
@@ -358,9 +385,9 @@ export default function PricingCalculatorModern() {
 
       setSugestoes(
         exact.data.map((item) => ({
-          codigo: item["Código"],
-          custo: Number(item["Custo Atual"]) || 0,
-          produto: item["Produto"] || "",
+          codigo: item.code,
+          custo: Number(item.current_cost) || 0,
+          produto: item.product || "",
         }))
       );
 
@@ -370,9 +397,10 @@ export default function PricingCalculatorModern() {
     }
 
     const starts = await supabase
-      .from("custos")
-      .select('"Código", "Custo Atual", "Produto"')
-      .ilike('"Código"', `${raw}%`)
+      .schema("newsystem")
+      .from("costs")
+      .select("code, current_cost, product")
+      .ilike("code", `${raw}%`)
       .limit(5);
 
     if (ultimaBuscaRef.current !== raw) {
@@ -384,9 +412,9 @@ export default function PricingCalculatorModern() {
 
       setSugestoes(
         starts.data.map((item) => ({
-          codigo: item["Código"],
-          custo: Number(item["Custo Atual"]) || 0,
-          produto: item["Produto"] || "",
+          codigo: item.code,
+          custo: Number(item.current_cost) || 0,
+          produto: item.product || "",
         }))
       );
 
@@ -396,9 +424,10 @@ export default function PricingCalculatorModern() {
     }
 
     const partial = await supabase
-      .from("custos")
-      .select('"Código", "Custo Atual", "Produto"')
-      .ilike('"Código"', `%${raw}%`)
+      .schema("newsystem")
+      .from("costs")
+      .select("code, current_cost, product")
+      .ilike("code", `%${raw}%`)
       .limit(5);
 
     if (ultimaBuscaRef.current !== raw) {
@@ -409,9 +438,9 @@ export default function PricingCalculatorModern() {
 
     setSugestoes(
       partial.data?.map((item) => ({
-        codigo: item["Código"],
-        custo: Number(item["Custo Atual"]) || 0,
-        produto: item["Produto"] || "",
+        codigo: item.code,
+        custo: Number(item.current_cost) || 0,
+        produto: item.product || "",
       })) || []
     );
 
@@ -423,7 +452,7 @@ export default function PricingCalculatorModern() {
   ).current;
 
   // =====================
-  // Busca de sugestão do Produto
+  // Busca de sugestão do Produto (AJUSTADO: newsystem.costs)
   // =====================
   const buscarSugestoesProduto = async (
     termo: string,
@@ -442,19 +471,20 @@ export default function PricingCalculatorModern() {
       return;
     }
 
-    const coluna = tipo === "codigo" ? "Código" : "Produto";
+    const coluna = tipo === "codigo" ? "code" : "product";
 
     const mapResultados = (data: any[] | null) =>
       data?.map((item) => ({
-        codigo: item["Código"],
-        custo: Number(item["Custo Atual"]) || 0,
-        produto: item["Produto"] || "",
+        codigo: item.code,
+        custo: Number(item.current_cost) || 0,
+        produto: item.product || "",
       })) || [];
 
     const exact = await supabase
-      .from("custos")
-      .select('"Código", "Custo Atual", "Produto"')
-      .eq(`"${coluna}"`, raw)
+      .schema("newsystem")
+      .from("costs")
+      .select("code, current_cost, product")
+      .eq(coluna, raw)
       .limit(8);
 
     if (ultimaBuscaProdutoRef.current !== buscaAtual) {
@@ -472,9 +502,10 @@ export default function PricingCalculatorModern() {
     }
 
     const starts = await supabase
-      .from("custos")
-      .select('"Código", "Custo Atual", "Produto"')
-      .ilike(`"${coluna}"`, `${raw}%`)
+      .schema("newsystem")
+      .from("costs")
+      .select("code, current_cost, product")
+      .ilike(coluna, `${raw}%`)
       .limit(8);
 
     if (ultimaBuscaProdutoRef.current !== buscaAtual) {
@@ -492,9 +523,10 @@ export default function PricingCalculatorModern() {
     }
 
     const partial = await supabase
-      .from("custos")
-      .select('"Código", "Custo Atual", "Produto"')
-      .ilike(`"${coluna}"`, `%${raw}%`)
+      .schema("newsystem")
+      .from("costs")
+      .select("code, current_cost, product")
+      .ilike(coluna, `%${raw}%`)
       .limit(8);
 
     if (ultimaBuscaProdutoRef.current !== buscaAtual) {
@@ -848,9 +880,9 @@ export default function PricingCalculatorModern() {
   };
 
   const handleEmbalagemBlurShared = (raw: string) => {
-    const internal = toInternal(raw || "3");
+    const internal = toInternal(raw || EMBALAGEM_PADRAO);
 
-    const value = internal || "3";
+    const value = internal || EMBALAGEM_PADRAO;
 
     setCalculoLoja((prev) => ({
       ...prev,
@@ -891,7 +923,7 @@ export default function PricingCalculatorModern() {
       setUserEditedShopeeEmbalagem(false);
     }
 
-    const value = internal || "3";
+    const value = internal || EMBALAGEM_PADRAO;
 
     setCalculoShopee((prev) => ({
       ...prev,
@@ -919,7 +951,7 @@ export default function PricingCalculatorModern() {
 
     const frete = parseFloat(dados.frete) || 0;
 
-    const embalagem = parseFloat(dados.embalagem || "3") || 0;
+    const embalagem = parseFloat(dados.embalagem || EMBALAGEM_PADRAO) || 0;
 
     const custoLiquido = custo * (1 - desconto);
 
@@ -949,7 +981,7 @@ export default function PricingCalculatorModern() {
       (parseFloat(toInternal(calculoLoja.marketing)) || 0) / 100;
     const frete = parseFloat(toInternal(calculoLoja.frete)) || 0;
     const embalagem =
-      parseFloat(toInternal(calculoLoja.embalagem || "3")) || 0;
+      parseFloat(toInternal(calculoLoja.embalagem || EMBALAGEM_PADRAO)) || 0;
 
     const custoLiquido = custoItem * (1 - desconto);
     const divisor = 1 - (imposto + margem + comissao + marketing);
@@ -971,49 +1003,64 @@ export default function PricingCalculatorModern() {
   const precoMLPremium = calcularPreco(calculoMarketplacePremium);
 
   // =====================
+  // Reset da trava manual Shopee a cada alteração na composição
+  // =====================
+  const isFirstRenderComposicaoRef = useRef(true);
+  const lastComposicaoSnapshotRef = useRef<string>("");
+
+  useEffect(() => {
+    const snapshot = JSON.stringify(
+      composicao.map((item: any) => ({
+        codigo: item.codigo,
+        custo: item.custo,
+        quantidade: item.quantidade,
+      }))
+    );
+
+    if (isFirstRenderComposicaoRef.current) {
+      isFirstRenderComposicaoRef.current = false;
+      lastComposicaoSnapshotRef.current = snapshot;
+      return;
+    }
+
+    if (snapshot !== lastComposicaoSnapshotRef.current) {
+      lastComposicaoSnapshotRef.current = snapshot;
+
+      if (userEditedShopeeComissao) {
+        setUserEditedShopeeComissao(false);
+      }
+
+      if (userEditedShopeeFrete) {
+        setUserEditedShopeeFrete(false);
+      }
+    }
+  }, [composicao]);
+
+  // =====================
   // Regra automática Shopee
   // =====================
   useEffect(() => {
-    let regras: Calculo = {
-      desconto: calculoShopee.desconto,
-      embalagem: "3",
-      frete: "4",
-      imposto: "14",
-      comissao: "20",
-      margem: "15",
-      marketing: "3",
-    };
+    const embalagemPadraoTeste = userEditedShopeeEmbalagem
+      ? calculoShopee.embalagem || EMBALAGEM_PADRAO
+      : EMBALAGEM_PADRAO;
 
-    if (precoShopee >= 80 && precoShopee <= 99.99) {
-      regras = {
+    let tierDetectado: ShopeeTier = SHOPEE_TIERS[0];
+
+    for (const tier of SHOPEE_TIERS) {
+      const precoTeste = calcularPreco({
         desconto: calculoShopee.desconto,
-        embalagem: "3",
-        frete: "16",
+        embalagem: embalagemPadraoTeste,
         imposto: "14",
-        comissao: "14",
         margem: "15",
         marketing: "3",
-      };
-    } else if (precoShopee >= 100 && precoShopee <= 199.99) {
-      regras = {
-        desconto: calculoShopee.desconto,
-        embalagem: "3",
-        frete: "20",
-        imposto: "14",
-        comissao: "14",
-        margem: "15",
-        marketing: "3",
-      };
-    } else if (precoShopee >= 200) {
-      regras = {
-        desconto: calculoShopee.desconto,
-        embalagem: "3",
-        frete: "26",
-        imposto: "14",
-        comissao: "14",
-        margem: "15",
-        marketing: "3",
-      };
+        comissao: tier.comissao,
+        frete: tier.frete,
+      });
+
+      if (precoTeste >= tier.min && precoTeste <= tier.max) {
+        tierDetectado = tier;
+        break;
+      }
     }
 
     setCalculoShopee((prev) => {
@@ -1022,19 +1069,19 @@ export default function PricingCalculatorModern() {
 
         embalagem: userEditedShopeeEmbalagem
           ? prev.embalagem
-          : regras.embalagem,
+          : EMBALAGEM_PADRAO,
 
-        imposto: userEditedShopeeImposto ? prev.imposto : regras.imposto,
+        imposto: userEditedShopeeImposto ? prev.imposto : "14",
 
-        margem: userEditedShopeeMargem ? prev.margem : regras.margem,
+        margem: userEditedShopeeMargem ? prev.margem : "15",
 
-        marketing: userEditedShopeeMarketing
-          ? prev.marketing
-          : regras.marketing,
+        marketing: userEditedShopeeMarketing ? prev.marketing : "3",
 
-        comissao: userEditedShopeeComissao ? prev.comissao : regras.comissao,
+        comissao: userEditedShopeeComissao
+          ? prev.comissao
+          : tierDetectado.comissao,
 
-        frete: userEditedShopeeFrete ? prev.frete : regras.frete,
+        frete: userEditedShopeeFrete ? prev.frete : tierDetectado.frete,
       };
 
       const semAlteracoes =
@@ -1048,7 +1095,7 @@ export default function PricingCalculatorModern() {
       return semAlteracoes ? prev : next;
     });
   }, [
-    precoShopee,
+    custoTotal,
     calculoShopee.desconto,
     userEditedShopeeComissao,
     userEditedShopeeFrete,
@@ -1113,7 +1160,7 @@ export default function PricingCalculatorModern() {
           frete: "",
           comissao: "6",
           marketing: "3",
-          embalagem: "3",
+          embalagem: EMBALAGEM_PADRAO,
         });
 
         setCalculoShopee({
@@ -1123,7 +1170,7 @@ export default function PricingCalculatorModern() {
           frete: "4",
           comissao: "20",
           marketing: "3",
-          embalagem: "3",
+          embalagem: EMBALAGEM_PADRAO,
         });
 
         setCalculoMagalu({
@@ -1133,7 +1180,7 @@ export default function PricingCalculatorModern() {
           frete: "",
           comissao: "20",
           marketing: "3",
-          embalagem: "3",
+          embalagem: EMBALAGEM_PADRAO,
         });
 
         setCalculoMarketplaceClassico({
@@ -1143,7 +1190,7 @@ export default function PricingCalculatorModern() {
           frete: "",
           comissao: "11",
           marketing: "3",
-          embalagem: "3",
+          embalagem: EMBALAGEM_PADRAO,
         });
 
         setCalculoMarketplacePremium({
@@ -1153,7 +1200,7 @@ export default function PricingCalculatorModern() {
           frete: "",
           comissao: "16",
           marketing: "3",
-          embalagem: "3",
+          embalagem: EMBALAGEM_PADRAO,
         });
 
         setAcrescimos({
@@ -1168,10 +1215,6 @@ export default function PricingCalculatorModern() {
           acrescimoPremium: 0,
         });
 
-        /*
-         * As flags são redefinidas somente
-         * ao limpar toda a precificação.
-         */
         setUserEditedShopeeComissao(false);
 
         setUserEditedShopeeFrete(false);
@@ -1183,6 +1226,9 @@ export default function PricingCalculatorModern() {
         setUserEditedShopeeMarketing(false);
 
         setUserEditedShopeeEmbalagem(false);
+
+        isFirstRenderComposicaoRef.current = true;
+        lastComposicaoSnapshotRef.current = "";
 
         setTimeout(() => {
           setIsClearing(false);
@@ -1349,8 +1395,8 @@ export default function PricingCalculatorModern() {
   };
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-[#070707] via-[#0c0c0c] to-[#070707] px-4 pb-24 pt-6 sm:px-6 sm:pb-8 lg:px-8">
-      <div className="mx-auto max-w-[1880px]">
+    <div className="min-h-[100dvh] w-full overflow-x-hidden bg-gradient-to-br from-[#070707] via-[#0c0c0c] to-[#070707] px-3 pb-24 pt-4 sm:px-6 sm:pb-8 sm:pt-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[1880px]">
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
           <div
             className={`min-w-0 space-y-4 lg:col-span-3 ${
