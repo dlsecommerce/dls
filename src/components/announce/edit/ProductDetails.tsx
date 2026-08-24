@@ -1,4 +1,5 @@
 "use client";
+// build fix: casing ProductInfoSection
 
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useRef, useMemo, useState, useCallback } from "react";
@@ -8,7 +9,7 @@ import { AnimatedNumber } from "@/components/announce/edit/AnimatedNumber";
 import { LoadingBar } from "@/components/ui/loading-bar";
 import CompositionModal from "@/components/announce/edit/Compositionmodal";
 import ActionsMenu from "@/components/announce/edit/Actionsmenu";
-import ProductInfoSection from "@/components/announce/edit/ProductInfosection";
+import ProductInfoSection from "@/components/announce/edit/ProductInfoSection";
 
 import { useKeyboardShortcuts } from "@/components/announce/hooks/useKeyboardShortcuts";
 import {
