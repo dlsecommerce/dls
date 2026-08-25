@@ -34,9 +34,16 @@ type Props = {
   loja?: string;
   onSaved?: () => void;
   onCancel?: () => void;
+  onCloseModal?: () => void;
 };
 
-export default function ProductDetails({ id, loja, onSaved, onCancel }: Props) {
+export default function ProductDetails({
+  id,
+  loja,
+  onSaved,
+  onCancel,
+  onCloseModal,
+}: Props) {
   const isEditing = Boolean(id);
 
   const lojaCodigo = useMemo(() => {
@@ -204,6 +211,7 @@ export default function ProductDetails({ id, loja, onSaved, onCancel }: Props) {
   // -----------------------------------------------------------------
   // Salvar (pai + variações + composição) — 1 única RPC combinada
   // no hook (upsert_announce_with_variations), sem loop de rede aqui.
+  // ✅ Ao concluir com sucesso, fecha o modal via onCloseModal.
   // -----------------------------------------------------------------
   const handleSaveAtual = useCallback(async () => {
     if (!nomeValido) return;
@@ -226,7 +234,17 @@ export default function ProductDetails({ id, loja, onSaved, onCancel }: Props) {
     toast.success(isEditing ? "Anúncio editado com sucesso!" : "Anúncio criado com sucesso!");
 
     onSaved?.();
-  }, [nomeValido, produto, composicao, salvarAnuncio, setProduto, onSaved, isEditing]);
+    onCloseModal?.();
+  }, [
+    nomeValido,
+    produto,
+    composicao,
+    salvarAnuncio,
+    setProduto,
+    onSaved,
+    onCloseModal,
+    isEditing,
+  ]);
 
   useKeyboardShortcuts({
     saving,
