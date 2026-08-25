@@ -235,7 +235,7 @@ const CostTableRow = React.memo(
           </div>
         </TableCell>
 
-        <TableCell className="text-left text-[13px] text-neutral-400">
+        <TableCell className="text-left text-[13px] text-neutral-300">
           <span className="truncate">{row["Marca"]}</span>
         </TableCell>
 
@@ -290,7 +290,7 @@ const CostTableRow = React.memo(
           </button>
         </TableCell>
 
-        <TableCell className="text-left text-[13px] text-neutral-400">
+        <TableCell className="text-left text-[13px] text-neutral-300">
           <div className="inline-flex items-center gap-1.5">
             <span className="truncate">{row["NCM"]}</span>
             <CopyBtn
@@ -417,7 +417,7 @@ export default function CostDataTable({
                   />
                 </div>
 
-                <div className="mt-3 grid grid-cols-2 gap-1.5 text-xs text-neutral-400">
+                <div className="mt-3 grid grid-cols-2 gap-1.5 text-xs text-neutral-500">
                   <div className="min-w-0 border border-neutral-800 bg-[#080808] p-2">
                     <div className="text-[10px] uppercase tracking-wide text-neutral-500">Código</div>
                     <div className="mt-1 truncate text-white">{c["Código"] || "-"}</div>

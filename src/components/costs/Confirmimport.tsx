@@ -73,7 +73,7 @@ function SectionHeader({
 }
 
 /** Utils de preview */
-const COLUMN_PRIORITY = ["code_id"];
+const COLUMN_PRIORITY = ["code_id", "linha", "codigo_antigo", "codigo_novo"];
 
 /** Tradução das colunas técnicas para rótulos em português */
 const COLUMN_LABELS: Record<string, string> = {
@@ -86,6 +86,9 @@ const COLUMN_LABELS: Record<string, string> = {
   packaging_cost: "Embalagem",
   created_at: "Criado em",
   updated_at: "Atualizado em",
+  linha: "Linha",
+  codigo_antigo: "Código Antigo",
+  codigo_novo: "Código Novo",
 };
 
 function translateColumn(key: string): string {

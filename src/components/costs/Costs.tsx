@@ -389,7 +389,34 @@ export default function Costs() {
         warnings={warnings}
         tipo={importTipo}
       />
-      
+
+      {/* Preview/confirmação de Renomeação de Códigos */}
+      <ConfirmImport
+        open={openRenamePreview}
+        onOpenChange={(v) => {
+          setOpenRenamePreview(v);
+          if (!v) {
+            setRenameRows([]);
+            setRenameWarnings([]);
+            setRenameErrors([]);
+            setRenameFileName(null);
+          }
+        }}
+        count={renameRows.length}
+        onConfirm={confirmRenomeacaoCodigos}
+        loading={renamingCodes}
+        preview={renameRows}
+        warnings={renameWarnings}
+        errors={renameErrors}
+        tipo="alteracao"
+        customTitle="Confirmar Renomeação de Códigos"
+        customText={
+          renameFileName
+            ? `Arquivo: ${renameFileName}. Você está prestes a RENOMEAR códigos de custo existentes.`
+            : "Você está prestes a RENOMEAR códigos de custo existentes."
+        }
+      />
+
       <CostAdjustmentsModal
         open={openAdjustments}
         onOpenChange={setOpenAdjustments}
