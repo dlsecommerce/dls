@@ -328,7 +328,7 @@ export async function POST(
                     payload.valor
                   ) = 'array'
                   then
-                    public.renomear_codigos_composicao_lote(
+                    newsystem.rename_costs_codes_batch(
                       payload.valor
                     )
                   else null

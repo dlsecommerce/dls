@@ -559,20 +559,38 @@ async function readRenameFile(file: File): Promise<Record<string, any>[]> {
   return rows;
 }
 
+/**
+ * Processa a fila de recálculo (newsystem.recalc_queue) chamando a
+ * função `fn_process_recalc_batch(p_batch_size int)`, que retorna
+ * uma tabela com (processed, errors).
+ *
+ * IMPORTANTE: confirme os nomes reais das colunas retornadas com:
+ *   select proname, proargnames, prorettype::regtype
+ *   from pg_proc where proname = 'fn_process_recalc_batch';
+ * Ajuste `row.processed` / `row.errors` abaixo se os nomes forem
+ * diferentes (ex: v_processed / v_errors).
+ */
 async function processRenameQueue(): Promise<number> {
   let total = 0;
 
   for (let attempt = 0; attempt < 1000; attempt++) {
     const { data, error } = await (supabase as any)
       .schema(SCHEMA_NAME)
-      .rpc("fn_processar_fila_recalculo_marketplace", { p_limite: 500 });
+      .rpc("fn_process_recalc_batch", { p_batch_size: 500 });
 
     if (error) throw error;
 
-    const processed = Number(data ?? 0);
+    const row = Array.isArray(data) ? data[0] : data;
+    const processed = Number(row?.processed ?? row?.v_processed ?? 0);
+    const errorsCount = Number(row?.errors ?? row?.v_errors ?? 0);
+
     if (!Number.isFinite(processed) || processed <= 0) break;
 
     total += processed;
+
+    if (errorsCount > 0) {
+      console.warn(`[processRenameQueue] ${errorsCount} erro(s) no lote de recálculo.`);
+    }
   }
 
   return total;

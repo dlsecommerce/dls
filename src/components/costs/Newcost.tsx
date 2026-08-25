@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { DollarSign, Loader2, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { createNotification } from "@/lib/createNotification";
-import { toast } from "sonner";
+import { toastCustom } from "@/utils/toastCustom";
 
 const SCHEMA = "newsystem";
 
@@ -207,6 +207,9 @@ export default function NewCost({
     return isNaN(numberValue) ? "0,00" : numberValue.toFixed(2).replace(".", ",");
   };
 
+  // ✅ Esse efeito deve rodar SOMENTE quando o modal abre ou o modo muda,
+  // nunca quando o código do formulário é atualizado internamente
+  // (ex: após salvar com sucesso).
   useEffect(() => {
     if (!open) return;
 
@@ -225,7 +228,8 @@ export default function NewCost({
     }, 50);
 
     return () => clearTimeout(t);
-  }, [open, mode, form.code]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, mode]);
 
   const marcaWrapRef = useRef<HTMLDivElement>(null);
   const listaRef = useRef<HTMLDivElement>(null);
@@ -511,11 +515,10 @@ export default function NewCost({
 
     if (Object.keys(novosErros).length > 0) {
       setErrors(novosErros);
-      toast.error("Verifique os campos", {
-        description: Object.values(novosErros)[0] || "Corrija os campos destacados.",
-        className: "bg-neutral-900 border border-red-500/40 text-white shadow-xl",
-        duration: 4000,
-      });
+      toastCustom.error(
+        "Verifique os campos",
+        Object.values(novosErros)[0] || "Corrija os campos destacados."
+      );
       return;
     }
 
@@ -601,22 +604,17 @@ export default function NewCost({
         link: "/dashboard/custos",
       });
 
-      toast.message(
+      toastCustom.success(
         mode === "create"
-          ? "Custo incluído"
+          ? "Custo incluído!"
           : houveRenomeacao
-            ? "Código alterado"
-            : "Custo atualizado",
-        {
-          description:
-            mode === "create"
-              ? `O custo "${codigoFinal}" foi incluído com sucesso.`
-              : houveRenomeacao
-                ? `Código alterado com sucesso para "${codigoFinal}".`
-                : `O custo "${codigoFinal}" foi atualizado com sucesso.`,
-          className: "bg-neutral-900 border border-neutral-700 text-white shadow-xl",
-          duration: 3000,
-        }
+            ? "Código alterado!"
+            : "Custo atualizado!",
+        mode === "create"
+          ? `O custo "${codigoFinal}" foi incluído com sucesso.`
+          : houveRenomeacao
+            ? `Código alterado com sucesso para "${codigoFinal}".`
+            : `O custo "${codigoFinal}" foi atualizado com sucesso.`
       );
 
       setNovoCodigo("");
@@ -625,11 +623,10 @@ export default function NewCost({
     } catch (err: any) {
       console.error("Erro ao salvar custo:", err?.message || err);
 
-      toast.error("Falha ao salvar custo", {
-        description: err?.message || "Ocorreu um erro inesperado. Tente novamente.",
-        className: "bg-neutral-900 border border-red-500/40 text-white shadow-xl",
-        duration: 5000,
-      });
+      toastCustom.error(
+        "Falha ao salvar custo",
+        err?.message || "Ocorreu um erro inesperado. Tente novamente."
+      );
     } finally {
       setSaving(false);
     }
