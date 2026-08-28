@@ -9,6 +9,9 @@ export type ImportResult = {
   warnings: string[];
   errors?: string[];
   fileName: string;
+  importados?: number;
+  errosCount?: number;
+  erros?: RegistroResultado[];
 };
 
 export type ImportProgress = {
@@ -475,6 +478,9 @@ export async function importAnnounceFromXlsxOrCsv(
     warnings,
     errors: rowErrors.length > 0 ? rowErrors : undefined,
     fileName,
+    importados: resultado.importados,
+    errosCount: resultado.errosCount,
+    erros: resultado.erros,
   };
 }
 
