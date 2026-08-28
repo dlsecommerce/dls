@@ -151,6 +151,69 @@ export async function exportAnnounceToXlsx(
 }
 
 // ---------------------------------------------------------------------
+// ✅ NOVO — Planilha modelo (gerada 100% no client, mesmo padrão
+// visual do export normal). Usada pelo botão "Baixar planilha modelo".
+// Não depende de nenhum arquivo estático em /public.
+// ---------------------------------------------------------------------
+export async function exportAnnounceModelo(): Promise<void> {
+  const XLSX = await import("xlsx-js-style");
+
+  const headers = ["Loja", "ID Bling", "Referência", "Produto", "Marca", "Código ID"];
+  const exampleRow = [
+    "Pikot Shop",
+    "16653222561",
+    "FIS-19784",
+    "Cooktop a Gás Fischer 5 Bocas Tripla Chama",
+    "Fischer",
+    "",
+  ];
+
+  const headerStyle = {
+    fill: { type: "pattern", patternType: "solid", fgColor: { rgb: "1A8CEB" } },
+    font: { bold: true, color: { rgb: "FFFFFF" } },
+    alignment: { horizontal: "center", vertical: "center" },
+  };
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, exampleRow]);
+
+  headers.forEach((_, col) => {
+    const ref = XLSX.utils.encode_cell({ r: 0, c: col });
+    if ((ws as any)[ref]) (ws as any)[ref].s = headerStyle;
+  });
+
+  // Referência e ID Bling como texto (evita perda de zeros à esquerda)
+  ["B2", "C2"].forEach((ref) => {
+    if ((ws as any)[ref]) {
+      (ws as any)[ref].t = "s";
+      (ws as any)[ref].z = "@";
+    }
+  });
+
+  (ws as any)["!cols"] = [
+    { wch: 15 }, // Loja
+    { wch: 16 }, // ID Bling
+    { wch: 18 }, // Referência
+    { wch: 42 }, // Produto
+    { wch: 16 }, // Marca
+    { wch: 12 }, // Código ID
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Modelo");
+
+  const buffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+
+  const now = new Date();
+  const datePart = now.toLocaleDateString("pt-BR").replace(/\//g, "-");
+  const timePart = now.toLocaleTimeString("pt-BR").replace(/:/g, "-");
+
+  saveAs(blob, `MODELO - PLANILHA - ${datePart} ${timePart}.xlsx`);
+}
+
+// ---------------------------------------------------------------------
 // Busca no servidor + export — usado quando os dados não vêm
 // já filtrados/prontos em memória (ex.: exportar tudo, ou por loja)
 // ---------------------------------------------------------------------

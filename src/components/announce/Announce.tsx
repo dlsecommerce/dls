@@ -38,16 +38,10 @@ import {
   ImportProgress,
 } from "@/components/announce/helpers/Importannounce";
 
-import { exportAnnounceFromApi } from "@/components/announce/helpers/Exportannounce";
-
-const MODELO_URL = "/templates/announce_modelo.xlsx";
-
-function buildModeloFileName(): string {
-  const now = new Date();
-  const datePart = now.toLocaleDateString("pt-BR").replace(/\//g, "-");
-  const timePart = now.toLocaleTimeString("pt-BR").replace(/:/g, "-");
-  return `PLANILHA - MODELO ${datePart} ${timePart}.xlsx`;
-}
+import {
+  exportAnnounceFromApi,
+  exportAnnounceModelo,
+} from "@/components/announce/helpers/Exportannounce";
 
 export default function Announce() {
   const router = useRouter();
@@ -288,12 +282,11 @@ export default function Announce() {
   };
 
   const handleExportModelo = async () => {
-    const a = document.createElement("a");
-    a.href = MODELO_URL;
-    a.download = buildModeloFileName();
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    try {
+      await exportAnnounceModelo();
+    } catch (err) {
+      console.error("Erro ao gerar planilha modelo:", err);
+    }
   };
 
   const [openImport, setOpenImport] = React.useState(false);

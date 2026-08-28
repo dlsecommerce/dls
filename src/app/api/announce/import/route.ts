@@ -25,23 +25,13 @@ type RegistroResultado = {
 };
 
 const MAX_REGISTROS = 100_000;
-
-// Lote fixo para o upsert em massa via unnest.
-// 5 colunas x 10.000 linhas = 50.000 parâmetros (limite do Postgres é 65.534).
-// Rápido e seguro mesmo em arquivos de 100k+ linhas.
 const BATCH_SIZE = 10_000;
 
-// -----------------------------------------------------------------------
-// Autenticação — valida o Bearer token via cliente admin do Supabase
-// -----------------------------------------------------------------------
 async function getAuthenticatedUser(request: NextRequest) {
   const token = extractBearerToken(request.headers.get("authorization"));
   return getUserFromAccessToken(token);
 }
 
-// -----------------------------------------------------------------------
-// Validação
-// -----------------------------------------------------------------------
 function isValidRegistro(r: any): r is RegistroInput {
   return (
     r &&
@@ -57,14 +47,6 @@ function isValidModo(m: unknown): m is ModoImportacao {
   return m === "inclusao" || m === "alteracao";
 }
 
-// -----------------------------------------------------------------------
-// Chaves de correspondência — DIFERENTES por modo:
-//  - Inclusão: casa por (store, reference), pois é a chave única da
-//    tabela e o que o "on conflict" usa para detectar duplicidade.
-//  - Alteração: casa por (store, id_bling), pois agora a "reference"
-//    pode ser livremente reescrita nesse modo. id_bling é o
-//    identificador estável e NUNCA é sobrescrito aqui.
-// -----------------------------------------------------------------------
 function keyOfInclusao(store: string, reference: string): string {
   return `${store}::ref::${reference}`;
 }
@@ -74,12 +56,12 @@ function keyOfAlteracao(store: string, idBling: string | null): string {
 }
 
 // -----------------------------------------------------------------------
-// INCLUSÃO — insere apenas o que NÃO existe. "on conflict do nothing"
-// garante que registros já existentes não sejam sobrescritos. O
-// "returning" identifica exatamente quais linhas do lote foram de
-// fato inseridas; as demais são rejeitadas por regra de negócio.
+// INCLUSÃO
 // -----------------------------------------------------------------------
-async function insertBatchOnlyNew(transaction: any, batch: RegistroInput[]): Promise<Set<string>> {
+async function insertBatchOnlyNew(
+  transaction: any,
+  batch: RegistroInput[]
+): Promise<Set<string>> {
   const stores = batch.map((r) => r.store);
   const idBlings = batch.map((r) => r.id_bling);
   const references = batch.map((r) => r.reference);
@@ -102,17 +84,20 @@ async function insertBatchOnlyNew(transaction: any, batch: RegistroInput[]): Pro
     returning store, reference
   `;
 
-  return new Set(inserted.map((r: any) => keyOfInclusao(r.store, r.reference)));
+  const affectedKeys = new Set<string>();
+  for (const r of inserted) {
+    affectedKeys.add(keyOfInclusao(r.store, r.reference));
+  }
+  return affectedKeys;
 }
 
 // -----------------------------------------------------------------------
-// ALTERAÇÃO — atualiza apenas o que JÁ existe, casando por
-// (store, id_bling). A "reference" agora É editável neste modo.
-// O "id_bling" NUNCA é sobrescrito: é a chave de busca, não um campo
-// de atualização. Sem cláusula "insert": linhas sem correspondência
-// simplesmente não afetam nenhuma linha, detectado via "returning".
+// ALTERAÇÃO
 // -----------------------------------------------------------------------
-async function updateBatchOnlyExisting(transaction: any, batch: RegistroInput[]): Promise<Set<string>> {
+async function updateBatchOnlyExisting(
+  transaction: any,
+  batch: RegistroInput[]
+): Promise<Set<string>> {
   const stores = batch.map((r) => r.store);
   const idBlings = batch.map((r) => r.id_bling);
   const references = batch.map((r) => r.reference);
@@ -138,12 +123,15 @@ async function updateBatchOnlyExisting(transaction: any, batch: RegistroInput[])
     returning a.store, a.id_bling
   `;
 
-  return new Set(updated.map((r: any) => keyOfAlteracao(r.store, r.id_bling)));
+  const affectedKeys = new Set<string>();
+  for (const r of updated) {
+    affectedKeys.add(keyOfAlteracao(r.store, r.id_bling));
+  }
+  return affectedKeys;
 }
 
 // -----------------------------------------------------------------------
-// Fallback linha a linha — mesma regra de rejeição do modo bulk,
-// usado apenas quando o lote inteiro falha tecnicamente (erro de banco).
+// Fallback linha a linha
 // -----------------------------------------------------------------------
 async function processRowByRow(
   transaction: any,
@@ -164,7 +152,7 @@ async function processRowByRow(
             ${registro.product}, ${registro.mark}, now(), null
           )
           on conflict (store, reference) do nothing
-          returning store
+          returning id
         `;
 
         if (result.length === 0) {
@@ -174,12 +162,9 @@ async function processRowByRow(
             status: "erro",
             message: "Referência já existe. Use o modo 'Alteração' para atualizá-la.",
           });
-        } else {
-          processados++;
+          continue;
         }
       } else {
-        // Modo alteração: id_bling é obrigatório e é a chave de busca.
-        // reference É atualizável; id_bling NUNCA é sobrescrito.
         if (!registro.id_bling) {
           erros.push({
             store: registro.store,
@@ -199,7 +184,7 @@ async function processRowByRow(
             updated_at = now(),
             deleted_at = null
           where store = ${registro.store} and id_bling = ${registro.id_bling}
-          returning store
+          returning id
         `;
 
         if (result.length === 0) {
@@ -209,10 +194,11 @@ async function processRowByRow(
             status: "erro",
             message: "ID Bling não encontrado. Use o modo 'Inclusão' para criá-lo, ou verifique se o ID Bling está correto.",
           });
-        } else {
-          processados++;
+          continue;
         }
       }
+
+      processados++;
     } catch (error: unknown) {
       const dbError = error as { message?: string };
       erros.push({
@@ -227,16 +213,6 @@ async function processRowByRow(
   return processados;
 }
 
-/**
- * Processa TODOS os registros em lotes fixos de BATCH_SIZE.
- * Cada lote roda em savepoint: se falhar tecnicamente (erro de banco),
- * cai para linha a linha SÓ naquele lote (isola o problema sem
- * penalizar os demais).
- *
- * Linhas rejeitadas por REGRA DE NEGÓCIO (já existe / não existe,
- * conforme o modo) são sempre detectadas via "returning" — mesmo no
- * caminho bulk, sem precisar de query extra de verificação.
- */
 async function processAllBatches(
   transaction: any,
   registros: RegistroInput[],
@@ -359,8 +335,6 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
   }
 
-  // No modo alteração, id_bling é obrigatório: é a chave de busca.
-  // Registros sem id_bling são rejeitados aqui, antes de ir ao banco.
   let registrosParaProcessar = registros;
 
   if (modo === "alteracao") {
@@ -396,9 +370,6 @@ export async function POST(request: NextRequest): Promise<Response> {
         email: user.email ?? null,
       });
 
-      // Comando 1: os 3 set_config combinados em um único SELECT com
-      // parâmetros — é 1 comando só, então funciona como prepared
-      // statement normal (não viola a restrição de multi-comando).
       await transaction.unsafe(
         `select
            set_config('request.jwt.claims', $1, true),
@@ -407,10 +378,6 @@ export async function POST(request: NextRequest): Promise<Response> {
         [jwtClaims, user.id]
       );
 
-      // Comando 2: os dois SET LOCAL combinados. Sem parâmetros, então
-      // { prepare: false } permite múltiplos comandos na mesma chamada
-      // (contorna a restrição "multiple commands into a prepared
-      // statement" do driver, já que aqui não há bind de valores).
       await transaction.unsafe(
         `set local role authenticated; set local work_mem = '256MB';`,
         [],

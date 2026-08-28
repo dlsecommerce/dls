@@ -371,11 +371,11 @@ export async function GET(request: NextRequest): Promise<Response> {
       if (format === "csv") {
         const csv = rowsToCsv(allRows);
         buffer = Buffer.from(csv, "utf-8");
-        fileName = buildTimestampedFileName("MODELO - PLANILHA", "csv");
+        fileName = buildTimestampedFileName("ANÚNCIOS - PLANILHA", "csv");
         mimeType = "text/csv; charset=utf-8";
       } else {
         buffer = buildStyledXlsxBuffer(allRows);
-        fileName = buildTimestampedFileName("MODELO - PLANILHA", "xlsx");
+        fileName = buildTimestampedFileName("ANÚNCIOS - PLANILHA", "xlsx");
         mimeType =
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
       }

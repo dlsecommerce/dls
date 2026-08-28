@@ -112,6 +112,9 @@ type NormalizeOutcome =
  * No modo "alteracao", "ID Bling" é a CHAVE DE BUSCA no servidor
  * (a referência agora É editável nesse modo) — por isso é exigido
  * aqui, antes mesmo de enviar a linha à API.
+ *
+ * A composição/kit do anúncio é resolvida automaticamente pelo banco
+ * (não é lida nem enviada pela planilha).
  */
 function normalizeRow(
   rowRaw: Record<string, any>,
@@ -297,6 +300,9 @@ function buildTimestampedFileName(prefix: string): string {
 //    (store, id_bling) — a referência agora PODE ser alterada nesse
 //    modo. "ID Bling" que não existir é REJEITADO. "id_bling" NUNCA é
 //    sobrescrito: é a chave de busca, não um campo editável.
+//
+// A composição/kit do anúncio NÃO vem da planilha: é resolvida
+// automaticamente pelo banco.
 // ---------------------------------------------------------------------
 export async function importAnnounceFromXlsxOrCsv(
   input: File | any[],
