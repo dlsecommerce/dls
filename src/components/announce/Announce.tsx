@@ -3,7 +3,6 @@
 import React from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Menu, SlidersHorizontal, X as XIcon } from "lucide-react";
-import { toast } from "sonner";
 
 import AnnounceActions from "@/components/announce/Announceactions";
 import AnnounceDataTable from "@/components/announce/Announcedatatable";
@@ -44,6 +43,7 @@ import {
 } from "@/components/announce/helpers/Exportannounce";
 
 import { playImportSuccessSound } from "@/utils/sound";
+import { toastCustom } from "@/utils/toastCustom";
 
 export default function Announce() {
   const router = useRouter();
@@ -382,28 +382,19 @@ export default function Announce() {
 
       if (hasErrors) {
         const totalErros = result.errosCount ?? result.errors?.length ?? 0;
-        toast.error(
-          `${totalErros} registro(s) não foram processados. Veja os detalhes no resumo da importação.`,
-          { duration: 8000 }
+        toastCustom.error(
+          `${totalErros} registro(s) não foram processados.`,
+          "Veja os detalhes no resumo da importação."
         );
       }
 
       if (importedCount > 0) {
         playImportSuccessSound();
 
-        toast.success(
+        toastCustom.success(
           importMode === "alteracao"
             ? `${importedCount} anúncio(s) alterado(s) com sucesso.`
-            : `${importedCount} anúncio(s) importado(s) com sucesso.`,
-          {
-            duration: 6000,
-            style: {
-              background: "#0a1a2e",
-              border: "1px solid #1a8ceb",
-              color: "#e6f2ff",
-            },
-            className: "border-[#1a8ceb]",
-          }
+            : `${importedCount} anúncio(s) importado(s) com sucesso.`
         );
       }
 
@@ -417,7 +408,7 @@ export default function Announce() {
     } catch (err: any) {
       const message = err?.message ?? "Não foi possível importar os anúncios.";
       setImportErrors([message]);
-      toast.error(message, { duration: 8000 });
+      toastCustom.error(message);
     } finally {
       setImporting(false);
       setTimeout(() => setImportProgressOpen(false), 1500);
