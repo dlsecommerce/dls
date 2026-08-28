@@ -80,7 +80,13 @@ async function insertBatchOnlyNew(
       ${products}::text[],
       ${marks}::text[]
     ) as s(store, id_bling, reference, product, mark)
-    on conflict (store, reference) do nothing
+    on conflict (store, reference) do update set
+      id_bling   = excluded.id_bling,
+      product    = excluded.product,
+      mark       = excluded.mark,
+      updated_at = now(),
+      deleted_at = null
+    where newsystem.announce.deleted_at is not null
     returning store, reference
   `;
 
@@ -151,7 +157,13 @@ async function processRowByRow(
             ${registro.store}, ${registro.id_bling}, ${registro.reference},
             ${registro.product}, ${registro.mark}, now(), null
           )
-          on conflict (store, reference) do nothing
+          on conflict (store, reference) do update set
+            id_bling   = excluded.id_bling,
+            product    = excluded.product,
+            mark       = excluded.mark,
+            updated_at = now(),
+            deleted_at = null
+          where newsystem.announce.deleted_at is not null
           returning id
         `;
 
