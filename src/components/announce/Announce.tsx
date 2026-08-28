@@ -43,6 +43,8 @@ import {
   exportAnnounceModelo,
 } from "@/components/announce/helpers/Exportannounce";
 
+import { playImportSuccessSound } from "@/utils/sound";
+
 export default function Announce() {
   const router = useRouter();
   const pathname = usePathname();
@@ -387,6 +389,8 @@ export default function Announce() {
       }
 
       if (importedCount > 0) {
+        playImportSuccessSound();
+
         toast.success(
           importMode === "alteracao"
             ? `${importedCount} anúncio(s) alterado(s) com sucesso.`
