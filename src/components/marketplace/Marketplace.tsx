@@ -33,12 +33,7 @@ import {
   MarketplaceSortDir,
 } from "@/components/marketplace/hooks/usemarketplace";
 
-// TODO: reintroduzir quando os helpers de import/export do marketplace estiverem prontos
-// import {
-//   importMarketplaceFromXlsxOrCsv,
-//   ImportProgress,
-// } from "@/components/marketplace/helpers/Importmarketplace";
-// import { exportMarketplaceFromApi } from "@/components/marketplace/helpers/Exportmarketplace";
+import { useMarketplaceImportExport } from "@/components/marketplace/hooks/Exportmarketplace";
 
 const MODELO_URL = "/templates/marketplace_modelo.xlsx";
 
@@ -340,9 +335,20 @@ export default function Marketplace() {
     totalCountRef.current = totalCount;
   }, [totalCount]);
 
-  // TODO: reimplementar quando exportMarketplaceFromApi estiver disponível
+  // Hook de import/export (planilha Excel do marketplace).
+  const {
+    handleExport: exportXlsx,
+    parseImportFile,
+    sendImport,
+  } = useMarketplaceImportExport(marketplaces, appliedFilters.loja, appliedBrands);
+
   const handleExport = async () => {
-    toast.info("Exportação ainda não implementada para marketplaces.");
+    setExporting(true);
+    try {
+      await exportXlsx();
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleExportModelo = async () => {
@@ -369,13 +375,25 @@ export default function Marketplace() {
   const [importProgressCount, setImportProgressCount] = React.useState(0);
   const [pendingFile, setPendingFile] = React.useState<File | null>(null);
 
-  // TODO: reimplementar quando importMarketplaceFromXlsxOrCsv estiver disponível
   const runImportPreview = async (
     file: File,
     tipo: "inclusao" | "alteracao"
   ) => {
     setImportMode(tipo);
-    toast.info("Importação ainda não implementada para marketplaces.");
+
+    try {
+      const result = await parseImportFile(file);
+
+      setImportCount(result.registros.length);
+      setPreviewRows(result.previewRows);
+      setWarnings(result.warnings);
+      setImportErrors(result.errors);
+      setImportRowErrors(result.rowErrors as RowError[]);
+      setPendingFile(file);
+      setOpenImport(true);
+    } catch (err: any) {
+      toast.error(err?.message || "Falha ao processar a planilha.");
+    }
   };
 
   const handleImportInclusao = async (file: File) => {
@@ -386,10 +404,21 @@ export default function Marketplace() {
     await runImportPreview(file, "alteracao");
   };
 
-  // TODO: reimplementar quando importMarketplaceFromXlsxOrCsv estiver disponível
   const confirmImport = async () => {
-    setOpenImport(false);
-    setPendingFile(null);
+    if (!pendingFile) return;
+
+    setImporting(true);
+    try {
+      const result = await parseImportFile(pendingFile);
+      await sendImport(result.registros);
+      await refetch();
+    } catch (err: any) {
+      toast.error(err?.message || "Falha ao importar a planilha.");
+    } finally {
+      setImporting(false);
+      setOpenImport(false);
+      setPendingFile(null);
+    }
   };
 
   const [openFiltersMobile, setOpenFiltersMobile] = React.useState(false);
