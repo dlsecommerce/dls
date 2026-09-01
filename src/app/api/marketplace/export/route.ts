@@ -11,8 +11,8 @@ const COL = {
   COMISSAO: 9, FRETE: 10, MARGEM: 11, CUSTO: 13, PRECO_VENDA: 14,
 };
 
-const COLOR_BLUE = "1A8CEB";
-const COLOR_GREEN = "#5cff8d";
+const COLOR_BLUE = "FF1A8CEB";
+const COLOR_GREEN = "FF5CFF8D";
 const BLUE_COLS = [1, 2, 3, 4, 5, 6, 7];
 const GREEN_COLS = [9, 10, 11, 13, 14];
 
@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
           if (BLUE_COLS.includes(col)) fillColor = COLOR_BLUE;
           if (GREEN_COLS.includes(col)) fillColor = COLOR_GREEN;
           if (fillColor) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
-          cell.font = { bold: true, color: { argb: BLUE_COLS.includes(col) ? "FFFFFF" : "000000" } };
+          cell.font = { bold: true, color: { argb: BLUE_COLS.includes(col) ? "FFFFFFFF" : "FF000000" } };
           cell.alignment = { horizontal: "center", vertical: "middle" };
         });
         headerRow.commit();
