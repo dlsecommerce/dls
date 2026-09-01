@@ -32,6 +32,14 @@ export interface MarketplaceFilters {
    * deve permanecer "Todos" e ser ignorado na query.
    */
   condicao: string;
+  /**
+   * Marcas selecionadas (multi-seleção). Usado apenas em contextos que
+   * precisam do filtro completo (ex: export/import via RPC). Não é
+   * persistido dentro de `filters`/`appliedFilters` da tela — é passado
+   * separadamente (`selectedBrands`/`appliedBrands`) e mesclado aqui
+   * apenas na hora de repassar para hooks que aceitam o filtro completo.
+   */
+  brands?: string[];
 }
 
 export const SITUACAO_OPTIONS = ["Todos", "Ativos", "Inativos"] as const;
@@ -51,6 +59,7 @@ export const DEFAULT_MARKETPLACE_FILTERS: MarketplaceFilters = {
   canal: "Todos",
   tipo: "Todos",
   condicao: "Todos",
+  brands: [],
 };
 
 /* ---------------------------------------------------------------------- */

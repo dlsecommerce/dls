@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { unlockAudio, playImportSuccessSound } from "@/utils/sound";
 import { toastCustom } from "@/utils/toastCustom";
 import { createNotification } from "@/lib/createNotification";
+import type { Marketplace, MarketplaceFilters } from "@/components/marketplace/hooks/types";
 
 export type MarketplaceImportRegistro = {
   id: string;
@@ -21,6 +22,7 @@ export type MarketplaceImportRegistro = {
 
 export type MarketplaceImportRowError = {
   row: number;
+  field?: string;
   message: string;
 };
 
@@ -32,20 +34,28 @@ export type MarketplaceImportParseResult = {
   rowErrors: MarketplaceImportRowError[];
 };
 
-// Índices das colunas na planilha (1-based, seguindo o export).
+type ExportFiltros = Partial<MarketplaceFilters> & { brands?: string[] };
+
+// ---------------------------------------------------------------------------
+// Layout final da planilha (1-based)
+// A-G: identificação (azul) | H: vazio | I,J,K: regras editáveis (verde)
+// L: vazio | M: Custo | N: Preço de Venda (fórmula, recalcula em tempo real)
+// ---------------------------------------------------------------------------
 const COL = {
-  ID: 1,
-  LOJA: 2,
-  CANAL: 3,
-  ID_BLING: 4,
-  REFERENCIA: 5,
-  PRODUTO: 6,
-  MARCA: 7,
-  CUSTO: 8,
-  FRETE: 9,
-  COMISSAO: 10,
-  MARGEM: 11,
-  PRECO_VENDA: 12,
+  ID: 1,           // A
+  LOJA: 2,          // B
+  CANAL: 3,         // C
+  ID_BLING: 4,      // D
+  REFERENCIA: 5,    // E
+  PRODUTO: 6,       // F
+  MARCA: 7,         // G
+  // H (8) vazio
+  COMISSAO: 9,       // I
+  FRETE: 10,         // J
+  MARGEM: 11,        // K
+  // L (12) vazio
+  CUSTO: 13,          // M
+  PRECO_VENDA: 14,    // N
 };
 
 const UUID_REGEX =
@@ -57,18 +67,52 @@ function toNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+const COLOR_BLUE = "1A8CEB";
+const COLOR_GREEN = "C7F5C4";
+
 export function useMarketplaceImportExport(
-  rows: any[],
-  lojasFiltro?: string[] | string,
-  marcasFiltro?: string[] | string
+  rows: Marketplace[],
+  filtros?: ExportFiltros
 ) {
   // -----------------------------
   // EXPORT
   // -----------------------------
   const handleExport = useCallback(
-    async (dataToExport?: any[]) => {
+    async (dataToExport?: Marketplace[]) => {
       try {
-        const data = dataToExport ?? rows;
+        // -------------------------------------------------------------
+        // Busca TODOS os registros que batem no filtro (sem paginação),
+        // via RPC dedicada — não depende da página atual da tela.
+        // -------------------------------------------------------------
+        let data: Marketplace[];
+
+        if (dataToExport && dataToExport.length > 0) {
+          data = dataToExport;
+        } else {
+          const f = filtros || {};
+          const storeParam = f.loja && f.loja !== "Todos" ? f.loja : null;
+          const channelParam = f.canal && f.canal !== "Todos" ? f.canal : null;
+          const tipoParam = f.tipo && f.tipo !== "Todos" ? f.tipo : null;
+          const condicaoParam = f.condicao && f.condicao !== "Todos" ? f.condicao : null;
+          const searchParam = f.produto || f.codigo || null;
+          const situacaoParam = f.situacao || "Ativos";
+          const brandsParam = f.brands && f.brands.length > 0 ? f.brands : null;
+
+          const { data: fetched, error: fetchError } = await supabase
+            .schema("newsystem")
+            .rpc("fetch_all_marketplace_filtered", {
+              p_store: storeParam,
+              p_channel: channelParam,
+              p_tipo: tipoParam,
+              p_condicao: condicaoParam,
+              p_search: searchParam,
+              p_situacao: situacaoParam,
+              p_brands: brandsParam,
+            });
+
+          if (fetchError) throw fetchError;
+          data = (fetched ?? []) as Marketplace[];
+        }
 
         if (!data || data.length === 0) {
           toastCustom.warning(
@@ -78,102 +122,139 @@ export function useMarketplaceImportExport(
           return;
         }
 
-        const lojasSelecionadas = Array.isArray(lojasFiltro)
-          ? lojasFiltro
-          : lojasFiltro
-          ? [lojasFiltro]
-          : [];
+        // -----------------------------
+        // Nome do arquivo
+        // -----------------------------
+        const partes: string[] = [];
+        if (filtros?.loja && filtros.loja !== "Todos") partes.push(filtros.loja);
+        if (filtros?.canal && filtros.canal !== "Todos") partes.push(filtros.canal);
 
-        const marcasSelecionadas = Array.isArray(marcasFiltro)
-          ? marcasFiltro
-          : marcasFiltro
-          ? [marcasFiltro]
-          : [];
-
-        const mapMarcaSigla = (marca: string) =>
-          String(marca || "")
-            .trim()
-            .toUpperCase()
-            .replace(/\s+/g, "")
-            .replace(/[^A-Z0-9-]/g, "");
-
-        const partes = Array.from(
-          new Set([...lojasSelecionadas, ...marcasSelecionadas.map(mapMarcaSigla)])
-        ).filter(Boolean);
-
-        const middle = partes.join("-");
+        const middle = partes.join("-").toUpperCase();
         const stamp = format(new Date(), "dd-MM-yyyy HH'h'mm", { locale: ptBR });
         const fileName =
           middle.length > 0
-            ? `MARKETPLACE - ${middle} - RELATÓRIO - ${stamp}.xlsx`
-            : `MARKETPLACE - RELATÓRIO - ${stamp}.xlsx`;
+            ? `PRECIFICAÇÃO - MARKETPLACE - ${middle} - ${stamp}.xlsx`
+            : `PRECIFICAÇÃO - MARKETPLACE - ${stamp}.xlsx`;
 
+        // -------------------------------------------------------------
+        // Busca imposto/marketing (não exibidos — embutidos na fórmula)
+        // por anúncio, via function bulk.
+        // -------------------------------------------------------------
+        const ids = data.map((r) => r.id).filter(Boolean);
+
+        const { data: regrasData, error: regrasError } = await supabase
+          .schema("newsystem")
+          .rpc("get_marketplace_pricing_rules_bulk", { p_marketplace_ids: ids });
+
+        if (regrasError) {
+          console.error("Erro ao buscar regras de precificação:", regrasError);
+        }
+
+        const regrasMap = new Map<string, { tax: number; marketing: number }>();
+        (regrasData || []).forEach((r: any) => {
+          regrasMap.set(r.marketplace_id, {
+            tax: Number(r.out_imposto) || 0,
+            marketing: Number(r.out_marketing) || 0,
+          });
+        });
+
+        // -------------------------------------------------------------
+        // Monta a planilha
+        // -------------------------------------------------------------
         const workbook = new ExcelJS.Workbook();
         const sheet = workbook.addWorksheet("MARKETPLACE");
 
-        const colors = {
-          azulEscuro: "1A8CEB",
-          azulClaro: "D6E9FF",
-          verdeEscuro: "22C55E",
-          verdeClaro: "C7F5C4",
-        };
-
         const headers = [
-          "ID",
-          "Loja",
-          "Canal",
-          "ID Bling",
-          "Referência",
-          "Produto",
-          "Marca",
-          "Custo",
-          "Frete",
-          "Comissão",
-          "Margem de Lucro",
-          "Preço de Venda",
+          "ID",              // A
+          "Loja",            // B
+          "Canal",           // C
+          "ID Bling",        // D
+          "Referência",      // E
+          "Produto",         // F
+          "Marca",           // G
+          "",                // H (vazia)
+          "Comissão",        // I
+          "Frete",           // J
+          "Margem de Lucro", // K
+          "",                // L (vazia)
+          "Custo",           // M
+          "Preço de Venda",  // N
         ];
 
         sheet.addRow(headers);
-        sheet.columns = headers.map((h) => ({ header: h, key: h, width: 18 }));
+        sheet.columns = headers.map((h) => ({
+          header: h,
+          key: h || `col_${Math.random()}`,
+          width: h ? 18 : 4,
+        }));
         sheet.views = [{ state: "frozen", ySplit: 1 }];
 
-        const row1 = sheet.getRow(1);
-        row1.eachCell((cell, col) => {
-          const editable = col >= 8; // Custo, Frete, Comissão, Margem, Preço
-          cell.fill = {
-            type: "pattern",
-            pattern: "solid",
-            fgColor: { argb: editable ? colors.verdeClaro : colors.azulClaro },
-          };
-          cell.font = { bold: true, color: { argb: "000000" } };
+        const BLUE_COLS = [1, 2, 3, 4, 5, 6, 7]; // A-G
+        const GREEN_COLS = [9, 10, 11, 13, 14]; // I,J,K,M,N
+        // colunas 8 (H) e 12 (L) ficam sem cor
+
+        sheet.getRow(1).eachCell((cell, col) => {
+          let fillColor: string | null = null;
+          if (BLUE_COLS.includes(col)) fillColor = COLOR_BLUE;
+          if (GREEN_COLS.includes(col)) fillColor = COLOR_GREEN;
+
+          if (fillColor) {
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
+          }
+
+          cell.font = { bold: true, color: { argb: BLUE_COLS.includes(col) ? "FFFFFF" : "000000" } };
           cell.alignment = { horizontal: "center", vertical: "middle" };
         });
 
         data.forEach((row) => {
+          const regras = regrasMap.get(row.id) || { tax: 0, marketing: 0 };
+
           const newRow = sheet.addRow([
-            row.id || "",
-            row.store || "",
-            row.channel || "",
-            row.id_bling || "",
-            row.reference || "",
-            row.product || "",
-            row.mark || "",
-            row.current_cost ?? 0,
-            row.freight ?? 0,
-            row.commission_rate ?? 0,
-            row.profit_margin ?? 0,
-            row.selling_price ?? 0,
+            row.id || "",              // A
+            row.store || "",           // B
+            row.channel || "",         // C
+            row.id_bling || "",        // D
+            row.reference || "",       // E
+            row.product || "",         // F
+            row.mark || "",            // G
+            "",                        // H (vazia)
+            row.commission_rate ?? 0,  // I
+            row.freight ?? 0,          // J
+            row.profit_margin ?? 0,    // K
+            "",                        // L (vazia)
+            row.current_cost ?? 0,     // M
+            null,                      // N (fórmula abaixo)
           ]);
 
+          const rowNumber = newRow.number;
+
           newRow.eachCell((cell, col) => {
-            if ([8, 9, 12].includes(col)) {
+            if ([10, 13, 14].includes(col)) {
+              // Frete (J), Custo (M), Preço (N)
               cell.numFmt = '_("R$"* #,##0.00_)';
             }
-            if ([10, 11].includes(col)) {
+            if ([9, 11].includes(col)) {
+              // Comissão (I), Margem (K)
               cell.numFmt = '0.00 " %"';
             }
             cell.alignment = { horizontal: "center", vertical: "middle" };
           });
+
+          // -----------------------------------------------------------
+          // Fórmula Excel — recalcula em tempo real ao editar
+          // Comissão (I), Frete (J) ou Margem (K).
+          // Imposto e Marketing entram embutidos como constante da linha
+          // (já vêm calculados pela get_marketplace_pricing_rules_bulk).
+          // Reflete newsystem.fn_calc_marketplace_price (desconto já
+          // aplicado dentro de Custo/current_cost).
+          // -----------------------------------------------------------
+          const impostoConst = regras.tax;
+          const marketingConst = regras.marketing;
+
+          sheet.getCell(`N${rowNumber}`).value = {
+            formula: `ROUND((M${rowNumber}+J${rowNumber})/(1-((I${rowNumber}+K${rowNumber}+${impostoConst}+${marketingConst})/100)),2)`,
+          };
+          sheet.getCell(`N${rowNumber}`).numFmt = '_("R$"* #,##0.00_)';
         });
 
         sheet.getRow(1).height = 24;
@@ -206,11 +287,11 @@ export function useMarketplaceImportExport(
         );
       }
     },
-    [rows, lojasFiltro, marcasFiltro]
+    [rows, filtros]
   );
 
   // -----------------------------
-  // IMPORT — ETAPA 1: leitura/validação (para preview no modal)
+  // IMPORT — ETAPA 1: leitura/validação
   // -----------------------------
   const parseImportFile = useCallback(
     async (file: File): Promise<MarketplaceImportParseResult> => {
@@ -236,8 +317,7 @@ export function useMarketplaceImportExport(
         const rawId = row.getCell(COL.ID).value;
         const rawLoja = row.getCell(COL.LOJA).value;
 
-        // Linha totalmente vazia — ignora silenciosamente.
-        if (!rawId && !rawLoja) return;
+        if (!rawId && !rawLoja) return; // linha vazia
 
         const id = rawId ? String(rawId).trim() : "";
 
@@ -258,17 +338,17 @@ export function useMarketplaceImportExport(
         }
         idsVistos.add(id);
 
-        const currentCost = toNumber(row.getCell(COL.CUSTO).value);
-        const freight = toNumber(row.getCell(COL.FRETE).value);
         const commissionRate = toNumber(row.getCell(COL.COMISSAO).value);
+        const freight = toNumber(row.getCell(COL.FRETE).value);
         const profitMargin = toNumber(row.getCell(COL.MARGEM).value);
+        const currentCost = toNumber(row.getCell(COL.CUSTO).value);
         const sellingPrice = toNumber(row.getCell(COL.PRECO_VENDA).value);
 
         if (
-          currentCost === null ||
-          freight === null ||
           commissionRate === null ||
+          freight === null ||
           profitMargin === null ||
+          currentCost === null ||
           sellingPrice === null
         ) {
           rowErrors.push({
@@ -281,6 +361,7 @@ export function useMarketplaceImportExport(
         if (commissionRate < 0 || commissionRate > 100) {
           rowErrors.push({
             row: rowNumber,
+            field: "commission_rate",
             message: `Comissão fora do intervalo 0-100 na linha ${rowNumber}.`,
           });
           return;
@@ -289,6 +370,7 @@ export function useMarketplaceImportExport(
         if (profitMargin < 0 || profitMargin > 100) {
           rowErrors.push({
             row: rowNumber,
+            field: "profit_margin",
             message: `Margem de lucro fora do intervalo 0-100 na linha ${rowNumber}.`,
           });
           return;
@@ -341,7 +423,7 @@ export function useMarketplaceImportExport(
   );
 
   // -----------------------------
-  // IMPORT — ETAPA 2: envio efetivo (após confirmação no modal)
+  // IMPORT — ETAPA 2: envio efetivo
   // -----------------------------
   const sendImport = useCallback(
     async (registros: MarketplaceImportRegistro[]) => {
@@ -400,9 +482,6 @@ export function useMarketplaceImportExport(
     []
   );
 
-  // -----------------------------
-  // IMPORT — versão direta (sem preview), mantida por compatibilidade
-  // -----------------------------
   const handleImport = useCallback(
     async (file: File) => {
       try {

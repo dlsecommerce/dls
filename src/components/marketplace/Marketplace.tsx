@@ -336,11 +336,16 @@ export default function Marketplace() {
   }, [totalCount]);
 
   // Hook de import/export (planilha Excel do marketplace).
+  // Passa o objeto completo de filtros aplicados + marcas selecionadas,
+  // pois o hook busca TODOS os registros filtrados via RPC (não só a página atual).
   const {
     handleExport: exportXlsx,
     parseImportFile,
     sendImport,
-  } = useMarketplaceImportExport(marketplaces, appliedFilters.loja, appliedBrands);
+  } = useMarketplaceImportExport(marketplaces, {
+    ...appliedFilters,
+    brands: appliedBrands,
+  });
 
   const handleExport = async () => {
     setExporting(true);
