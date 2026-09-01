@@ -16,6 +16,10 @@ import {
   Copy,
   Check,
   Lock,
+  Receipt,
+  Megaphone,
+  Tag,
+  ShieldAlert,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
@@ -66,18 +70,35 @@ function calcularShopee(custoProduto: number, profitMargin: number): ShopeeTierR
 const isShopee = (channel: string) => channel.trim().toLocaleLowerCase("pt-BR") === "shopee";
 
 // ───────────────────────────────
-// Helpers de formatação/parsing/cálculo
+// Cálculo de preço — espelha fielmente newsystem.fn_calc_marketplace_price
 // ───────────────────────────────
+//
+// v_divisor := 1 - (tax + margin/100 + commission/100 + marketing)
+// v_price   := ((cost_total * (1 - discount)) + packaging) / v_divisor + freight
+//
+// Retorna null quando o divisor é <= 0 (equivalente à exceção lançada pelo banco).
 
 function calcularPrecoVenda(
-  custoBase: number,
+  custoTotal: number,
+  embalagem: number,
+  freight: number,
   commissionRate: number,
-  profitMargin: number
-): number {
-  const percentualTotal = (Number(commissionRate) || 0) / 100 + (Number(profitMargin) || 0) / 100;
-  if (percentualTotal >= 1) return 0;
-  const preco = custoBase / (1 - percentualTotal);
-  return Number.isFinite(preco) ? preco : 0;
+  profitMargin: number,
+  imposto: number,
+  marketing: number,
+  desconto: number
+): number | null {
+  const tax = (Number(imposto) || 0) / 100;
+  const mkt = (Number(marketing) || 0) / 100;
+  const disc = (Number(desconto) || 0) / 100;
+  const margin = (Number(profitMargin) || 0) / 100;
+  const commission = (Number(commissionRate) || 0) / 100;
+
+  const divisor = 1 - (tax + margin + commission + mkt);
+  if (divisor <= 0) return null;
+
+  const preco = (Number(custoTotal) * (1 - disc) + Number(embalagem)) / divisor + Number(freight);
+  return Number.isFinite(preco) ? Math.round(preco * 100) / 100 : null;
 }
 
 const formatBR = (v: any) => {
@@ -189,6 +210,25 @@ function EditableNumberField({
   );
 }
 
+// Pequeno badge somente-leitura para taxas resolvidas via pricing_rules
+function RuleBadge({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+}) {
+  if (!value) return null;
+  return (
+    <span className="flex items-center gap-1 border border-neutral-800 bg-neutral-950/60 px-1.5 py-0.5 text-[10px] font-medium text-neutral-400">
+      {icon}
+      {label} {formatBR(value)}%
+    </span>
+  );
+}
+
 // Skeleton shimmer
 function FieldSkeleton() {
   return (
@@ -217,6 +257,18 @@ interface MarketplaceData {
   profit_margin: number;
 }
 
+interface PricingRules {
+  imposto: number;
+  marketing: number;
+  desconto: number;
+  margemMinima: number;
+}
+
+interface PricingBase {
+  custoTotal: number;
+  embalagem: number;
+}
+
 const EMPTY_DATA: MarketplaceData = {
   product: "",
   store: "",
@@ -226,6 +278,9 @@ const EMPTY_DATA: MarketplaceData = {
   commission_rate: 0,
   profit_margin: 0,
 };
+
+const EMPTY_RULES: PricingRules = { imposto: 0, marketing: 0, desconto: 0, margemMinima: 0 };
+const EMPTY_BASE: PricingBase = { custoTotal: 0, embalagem: 0 };
 
 export default function MarketplacePricingModal({
   open,
@@ -242,6 +297,8 @@ export default function MarketplacePricingModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<MarketplaceData>(EMPTY_DATA);
+  const [rules, setRules] = useState<PricingRules>(EMPTY_RULES);
+  const [base, setBase] = useState<PricingBase>(EMPTY_BASE);
   const [precoAnterior, setPrecoAnterior] = useState(0);
   const [copiado, setCopiado] = useState(false);
 
@@ -255,14 +312,20 @@ export default function MarketplacePricingModal({
     setError(null);
 
     (async () => {
-      const { data: row, error } = await supabase
-        .schema("newsystem")
-        .from("marketplace")
-        .select("product, store, channel, current_cost, freight, commission_rate, profit_margin, selling_price")
-        .eq("id", marketplaceId)
-        .single();
+      const [{ data: row, error: rowError }, { data: preview, error: previewError }] = await Promise.all([
+        supabase
+          .schema("newsystem")
+          .from("marketplace")
+          .select("product, store, channel, current_cost, freight, commission_rate, profit_margin, selling_price")
+          .eq("id", marketplaceId)
+          .single(),
+        supabase
+          .schema("newsystem")
+          .rpc("get_pricing_preview", { p_marketplace_id: marketplaceId })
+          .single(),
+      ]);
 
-      if (error || !row) {
+      if (rowError || !row) {
         setError("Não foi possível carregar os dados.");
         setLoading(false);
         return;
@@ -280,6 +343,24 @@ export default function MarketplacePricingModal({
 
       setData(loaded);
       setPrecoAnterior(Number(row.selling_price) || 0);
+
+      if (!previewError && preview) {
+        setRules({
+          imposto: Number(preview.imposto) || 0,
+          marketing: Number(preview.marketing) || 0,
+          desconto: Number(preview.desconto) || 0,
+          margemMinima: Number(preview.margem_minima) || 0,
+        });
+        setBase({
+          custoTotal: Number(preview.cost_total) || 0,
+          embalagem: Number(preview.packaging) || 0,
+        });
+      } else {
+        // fallback: sem regras resolvidas, usa current_cost como base íntegra
+        setRules(EMPTY_RULES);
+        setBase({ custoTotal: loaded.current_cost, embalagem: 0 });
+      }
+
       carregouRef.current = marketplaceId;
       setLoading(false);
     })();
@@ -300,23 +381,37 @@ export default function MarketplacePricingModal({
   const freteEfetivo = shopeeAtivo ? shopeeCalc!.freight : data.freight;
   const comissaoEfetiva = shopeeAtivo ? shopeeCalc!.commission : data.commission_rate;
 
-  const custoBase = data.current_cost + freteEfetivo;
-
   const precoFinal = useMemo(
-    () => calcularPrecoVenda(custoBase, comissaoEfetiva, data.profit_margin),
-    [custoBase, comissaoEfetiva, data.profit_margin]
+    () =>
+      calcularPrecoVenda(
+        base.custoTotal,
+        base.embalagem,
+        freteEfetivo,
+        comissaoEfetiva,
+        data.profit_margin,
+        rules.imposto,
+        rules.marketing,
+        rules.desconto
+      ),
+    [base, freteEfetivo, comissaoEfetiva, data.profit_margin, rules]
   );
 
-  const percentualTotal = (comissaoEfetiva + data.profit_margin) / 100;
-  const percentualInvalido = percentualTotal >= 1 || data.profit_margin < 0;
+  const custoBase = base.custoTotal * (1 - rules.desconto / 100) + base.embalagem + freteEfetivo;
+
+  const divisorInvalido = precoFinal === null;
+  const margemNegativa = data.profit_margin < 0;
+  const margemAbaixoMinima = rules.margemMinima > 0 && data.profit_margin < rules.margemMinima;
+  const percentualInvalido = divisorInvalido || margemNegativa;
+
+  const precoExibido = precoFinal ?? 0;
 
   const status = margemStatus(data.profit_margin, percentualInvalido);
   const statusColor = STATUS_COLORS[status];
 
-  const valorComissao = precoFinal * (comissaoEfetiva / 100);
-  const valorMargem = precoFinal * (data.profit_margin / 100);
+  const valorComissao = precoExibido * (comissaoEfetiva / 100);
+  const valorMargem = precoExibido * (data.profit_margin / 100);
 
-  const diferenca = precoFinal - precoAnterior;
+  const diferenca = precoExibido - precoAnterior;
   const percentualMudanca = precoAnterior > 0 ? (diferenca / precoAnterior) * 100 : 0;
 
   const faltaParaSaudavel = status === "warning" ? MARGEM_MINIMA_SAUDAVEL - data.profit_margin : 0;
@@ -325,14 +420,19 @@ export default function MarketplacePricingModal({
     percentualInvalido || data.profit_margin <= 0 ? "border-red-500/50" : "border-emerald-500/50";
 
   const handleSugerirMinimo = () => {
-    const margemMaxima = 99 - comissaoEfetiva;
-    const margemSugerida = Math.max(MARGEM_MINIMA_VIAVEL, Math.min(MARGEM_MINIMA_VIAVEL, margemMaxima));
+    const margemMaxima = 99 - comissaoEfetiva - rules.imposto - rules.marketing;
+    const pisoMinimo = Math.max(MARGEM_MINIMA_VIAVEL, rules.margemMinima || 0);
+    const margemSugerida = Math.max(pisoMinimo, Math.min(pisoMinimo, margemMaxima));
     setData((prev) => ({ ...prev, profit_margin: margemSugerida }));
+  };
+
+  const handleAplicarMinima = () => {
+    setData((prev) => ({ ...prev, profit_margin: rules.margemMinima }));
   };
 
   const handleCopiarPreco = async () => {
     try {
-      await navigator.clipboard.writeText(formatBR(precoFinal));
+      await navigator.clipboard.writeText(formatBR(precoExibido));
       setCopiado(true);
       toast.success("Preço copiado!");
       setTimeout(() => setCopiado(false), 1500);
@@ -342,7 +442,7 @@ export default function MarketplacePricingModal({
   };
 
   const handleSalvar = useCallback(async () => {
-    if (!marketplaceId || percentualInvalido || saving || loading) return;
+    if (!marketplaceId || percentualInvalido || precoFinal === null || saving || loading) return;
     setSaving(true);
 
     // ⚠️ Usa RPC em vez de .update() direto: a função no banco seta
@@ -434,6 +534,14 @@ export default function MarketplacePricingModal({
               </div>
             </div>
           )}
+
+          {!loading && (rules.imposto > 0 || rules.marketing > 0 || rules.desconto > 0) && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <RuleBadge label="Imposto" value={rules.imposto} icon={<Receipt className="h-2.5 w-2.5" />} />
+              <RuleBadge label="Marketing" value={rules.marketing} icon={<Megaphone className="h-2.5 w-2.5" />} />
+              <RuleBadge label="Desconto" value={rules.desconto} icon={<Tag className="h-2.5 w-2.5" />} />
+            </div>
+          )}
         </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3 sm:px-6 sm:pt-4">
@@ -455,7 +563,7 @@ export default function MarketplacePricingModal({
                 <div className="flex h-10 items-center border border-neutral-800 bg-neutral-950/60 px-3">
                   <span className="mr-1.5 text-[12px] font-medium text-neutral-500">R$</span>
                   <span className="text-[14px] font-semibold text-neutral-400">
-                    {formatBR(data.current_cost)}
+                    {formatBR(base.custoTotal + base.embalagem)}
                   </span>
                 </div>
               </div>
@@ -505,8 +613,28 @@ export default function MarketplacePricingModal({
                 />
               </div>
 
+              {/* Aviso de margem abaixo do mínimo exigido pela regra */}
+              {margemAbaixoMinima && !margemNegativa && (
+                <div className="space-y-2 border border-amber-400/30 bg-amber-400/[0.06] px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                    <p className="text-[11px] font-medium text-amber-400">
+                      Margem mínima exigida para este produto/loja: {formatBR(rules.margemMinima)}%.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAplicarMinima}
+                    className="flex cursor-pointer items-center gap-1.5 border border-amber-400/40 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-amber-300 transition-colors hover:bg-amber-400/10 active:scale-[0.98]"
+                  >
+                    <Wand2 className="h-3 w-3" />
+                    Aplicar margem mínima ({formatBR(rules.margemMinima)}%)
+                  </button>
+                </div>
+              )}
+
               {/* Aviso de margem baixa (vermelho) */}
-              {status === "warning" && !percentualInvalido && (
+              {status === "warning" && !percentualInvalido && !margemAbaixoMinima && (
                 <div className="flex items-center gap-2 border border-red-400/30 bg-red-400/[0.06] px-3 py-2">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-400" />
                   <p className="text-[11px] font-medium text-red-400">
@@ -521,9 +649,9 @@ export default function MarketplacePricingModal({
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-400" />
                     <p className="text-[11px] font-medium text-red-400">
-                      {data.profit_margin < 0
+                      {margemNegativa
                         ? "Margem resultante é negativa."
-                        : "Comissão + Margem não pode ser ≥ 100%."}
+                        : "Comissão + Margem + Imposto + Marketing não pode ser ≥ 100%."}
                     </p>
                   </div>
                   <button
@@ -532,7 +660,7 @@ export default function MarketplacePricingModal({
                     className="flex cursor-pointer items-center gap-1.5 border border-red-400/40 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-red-300 transition-colors hover:bg-red-400/10 active:scale-[0.98]"
                   >
                     <Wand2 className="h-3 w-3" />
-                    Sugerir margem mínima viável ({MARGEM_MINIMA_VIAVEL}%)
+                    Sugerir margem mínima viável
                   </button>
                 </div>
               )}
@@ -548,7 +676,7 @@ export default function MarketplacePricingModal({
                   <span className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
                     Preço de Venda
                   </span>
-                  {precoAnterior > 0 && Math.abs(diferenca) > 0.001 && (
+                  {precoAnterior > 0 && Math.abs(diferenca) > 0.001 && !divisorInvalido && (
                     <span
                       className={`flex items-center gap-0.5 border px-1.5 py-0.5 text-[10px] font-semibold ${
                         diferenca > 0
@@ -570,15 +698,16 @@ export default function MarketplacePricingModal({
                   <div className="flex items-baseline gap-1 transition-all duration-200">
                     <span className="text-[13px] font-medium text-neutral-500">R$</span>
                     <span className="text-2xl font-bold tabular-nums text-white">
-                      {formatBR(precoFinal)}
+                      {divisorInvalido ? "—" : formatBR(precoExibido)}
                     </span>
                   </div>
 
                   <button
                     type="button"
                     onClick={handleCopiarPreco}
+                    disabled={divisorInvalido}
                     title="Copiar preço"
-                    className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center border border-neutral-700 text-neutral-400 transition-colors hover:border-neutral-500 hover:text-white active:scale-[0.95]"
+                    className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center border border-neutral-700 text-neutral-400 transition-colors hover:border-neutral-500 hover:text-white active:scale-[0.95] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {copiado ? (
                       <Check className="h-3.5 w-3.5 text-emerald-400" />
@@ -588,20 +717,20 @@ export default function MarketplacePricingModal({
                   </button>
                 </div>
 
-                {precoFinal > 0 && (
+                {!divisorInvalido && precoExibido > 0 && (
                   <div className="mt-3">
                     <div className="flex h-1.5 w-full overflow-hidden bg-neutral-900">
                       <div
                         className="bg-neutral-500 transition-all duration-300"
-                        style={{ width: `${Math.min(100, (custoBase / precoFinal) * 100)}%` }}
+                        style={{ width: `${Math.min(100, (custoBase / precoExibido) * 100)}%` }}
                       />
                       <div
                         className="bg-red-500 transition-all duration-300"
-                        style={{ width: `${Math.min(100, (valorComissao / precoFinal) * 100)}%` }}
+                        style={{ width: `${Math.min(100, (valorComissao / precoExibido) * 100)}%` }}
                       />
                       <div
                         className={`transition-all duration-300 ${statusColor.bg}`}
-                        style={{ width: `${Math.max(0, Math.min(100, (valorMargem / precoFinal) * 100))}%` }}
+                        style={{ width: `${Math.max(0, Math.min(100, (valorMargem / precoExibido) * 100))}%` }}
                       />
                     </div>
                     <div className="mt-1.5 flex items-center gap-3 text-[9px] text-neutral-500">
