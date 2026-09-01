@@ -15,6 +15,7 @@ import {
   Wand2,
   Copy,
   Check,
+  Lock,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
@@ -27,6 +28,42 @@ import { toast } from "sonner";
 const MARGEM_MINIMA_SAUDAVEL = 10; // %
 const MARGEM_MINIMA_VIAVEL = 5; // % usada na sugestão automática
 const AZUL = "#1a8ceb";
+
+// ───────────────────────────────
+// Regra de faixas da Shopee (mesma lógica usada no export Excel)
+// ───────────────────────────────
+
+interface ShopeeTierResult {
+  freight: number;
+  commission: number;
+  price: number;
+}
+
+function calcularShopee(custoProduto: number, profitMargin: number): ShopeeTierResult {
+  const margem = Number(profitMargin) || 0;
+  const custo = Number(custoProduto) || 0;
+
+  const calcPreco = (frete: number, comissao: number) => {
+    const percentual = (comissao + margem) / 100;
+    if (percentual >= 1) return 0;
+    const preco = (custo + frete) / (1 - percentual);
+    return Number.isFinite(preco) ? preco : 0;
+  };
+
+  const price1 = calcPreco(4, 20);
+  if (price1 <= 79.99) return { freight: 4, commission: 20, price: price1 };
+
+  const price2 = calcPreco(16, 14);
+  if (price2 <= 99.99) return { freight: 16, commission: 14, price: price2 };
+
+  const price3 = calcPreco(20, 14);
+  if (price3 <= 199.99) return { freight: 20, commission: 14, price: price3 };
+
+  const price4 = calcPreco(26, 14);
+  return { freight: 26, commission: 14, price: price4 };
+}
+
+const isShopee = (channel: string) => channel.trim().toLocaleLowerCase("pt-BR") === "shopee";
 
 // ───────────────────────────────
 // Helpers de formatação/parsing/cálculo
@@ -90,6 +127,8 @@ function EditableNumberField({
   prefix,
   icon,
   highlight,
+  disabled,
+  disabledHint,
 }: {
   label: string;
   value: number;
@@ -97,6 +136,8 @@ function EditableNumberField({
   prefix?: string;
   icon?: React.ReactNode;
   highlight?: boolean;
+  disabled?: boolean;
+  disabledHint?: string;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [rawValue, setRawValue] = useState("");
@@ -108,30 +149,42 @@ function EditableNumberField({
       <label className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-neutral-500">
         {icon}
         {label}
+        {disabled && <Lock className="h-2.5 w-2.5 text-neutral-600" />}
       </label>
       <div
-        className={`flex h-10 items-center border bg-neutral-950 px-3 transition-colors focus-within:border-[${AZUL}]/60 ${
-          highlight ? `border-[${AZUL}]/40 bg-[${AZUL}]/[0.03]` : "border-neutral-800"
+        className={`flex h-10 items-center border px-3 transition-colors ${
+          disabled
+            ? "border-neutral-800 bg-neutral-950/40"
+            : `bg-neutral-950 focus-within:border-[${AZUL}]/60 ${
+                highlight ? `border-[${AZUL}]/40 bg-[${AZUL}]/[0.03]` : "border-neutral-800"
+              }`
         }`}
       >
         {prefix && <span className="mr-1.5 text-[12px] font-medium text-neutral-500">{prefix}</span>}
-        <input
-          type="text"
-          inputMode="decimal"
-          value={displayValue}
-          onFocus={() => {
-            setIsEditing(true);
-            setRawValue(formatBR(value));
-          }}
-          onChange={(e) => setRawValue(e.target.value)}
-          onBlur={() => {
-            const parsed = parseInputNumber(rawValue);
-            onChange(parsed);
-            setIsEditing(false);
-          }}
-          className="w-full bg-transparent text-[14px] font-semibold text-white outline-none"
-        />
+        {disabled ? (
+          <span className="text-[14px] font-semibold text-neutral-400">{formatBR(value)}</span>
+        ) : (
+          <input
+            type="text"
+            inputMode="decimal"
+            value={displayValue}
+            onFocus={() => {
+              setIsEditing(true);
+              setRawValue(formatBR(value));
+            }}
+            onChange={(e) => setRawValue(e.target.value)}
+            onBlur={() => {
+              const parsed = parseInputNumber(rawValue);
+              onChange(parsed);
+              setIsEditing(false);
+            }}
+            className="w-full bg-transparent text-[14px] font-semibold text-white outline-none"
+          />
+        )}
       </div>
+      {disabled && disabledHint && (
+        <p className="mt-1 text-[10px] text-neutral-600">{disabledHint}</p>
+      )}
     </div>
   );
 }
@@ -236,20 +289,31 @@ export default function MarketplacePricingModal({
     if (!open) carregouRef.current = null;
   }, [open]);
 
-  const custoBase = data.current_cost + data.freight;
+  const shopeeAtivo = isShopee(data.channel);
 
-  const precoFinal = useMemo(
-    () => calcularPrecoVenda(custoBase, data.commission_rate, data.profit_margin),
-    [custoBase, data.commission_rate, data.profit_margin]
+  // Para Shopee: frete/comissão são derivados da faixa (custo + margem).
+  const shopeeCalc = useMemo(
+    () => (shopeeAtivo ? calcularShopee(data.current_cost, data.profit_margin) : null),
+    [shopeeAtivo, data.current_cost, data.profit_margin]
   );
 
-  const percentualTotal = (data.commission_rate + data.profit_margin) / 100;
+  const freteEfetivo = shopeeAtivo ? shopeeCalc!.freight : data.freight;
+  const comissaoEfetiva = shopeeAtivo ? shopeeCalc!.commission : data.commission_rate;
+
+  const custoBase = data.current_cost + freteEfetivo;
+
+  const precoFinal = useMemo(
+    () => calcularPrecoVenda(custoBase, comissaoEfetiva, data.profit_margin),
+    [custoBase, comissaoEfetiva, data.profit_margin]
+  );
+
+  const percentualTotal = (comissaoEfetiva + data.profit_margin) / 100;
   const percentualInvalido = percentualTotal >= 1 || data.profit_margin < 0;
 
   const status = margemStatus(data.profit_margin, percentualInvalido);
   const statusColor = STATUS_COLORS[status];
 
-  const valorComissao = precoFinal * (data.commission_rate / 100);
+  const valorComissao = precoFinal * (comissaoEfetiva / 100);
   const valorMargem = precoFinal * (data.profit_margin / 100);
 
   const diferenca = precoFinal - precoAnterior;
@@ -261,7 +325,7 @@ export default function MarketplacePricingModal({
     percentualInvalido || data.profit_margin <= 0 ? "border-red-500/50" : "border-emerald-500/50";
 
   const handleSugerirMinimo = () => {
-    const margemMaxima = 99 - data.commission_rate;
+    const margemMaxima = 99 - comissaoEfetiva;
     const margemSugerida = Math.max(MARGEM_MINIMA_VIAVEL, Math.min(MARGEM_MINIMA_VIAVEL, margemMaxima));
     setData((prev) => ({ ...prev, profit_margin: margemSugerida }));
   };
@@ -281,16 +345,19 @@ export default function MarketplacePricingModal({
     if (!marketplaceId || percentualInvalido || saving || loading) return;
     setSaving(true);
 
+    // ⚠️ Usa RPC em vez de .update() direto: a função no banco seta
+    // a flag "newsystem.manual_price_override" na transação antes do UPDATE,
+    // impedindo que os triggers fn_marketplace_apply_rules e
+    // trg_enqueue_on_marketplace_change sobrescrevam o preço manual depois.
     const { error } = await supabase
       .schema("newsystem")
-      .from("marketplace")
-      .update({
-        freight: data.freight,
-        commission_rate: data.commission_rate,
-        profit_margin: data.profit_margin,
-        selling_price: precoFinal,
-      })
-      .eq("id", marketplaceId);
+      .rpc("update_marketplace_manual_price", {
+        p_id: marketplaceId,
+        p_freight: freteEfetivo,
+        p_commission_rate: comissaoEfetiva,
+        p_profit_margin: data.profit_margin,
+        p_selling_price: precoFinal,
+      });
 
     setSaving(false);
 
@@ -303,7 +370,18 @@ export default function MarketplacePricingModal({
     toast.success("Preço atualizado!");
     onSuccess?.({ id: marketplaceId, selling_price: precoFinal });
     onClose();
-  }, [marketplaceId, data, precoFinal, percentualInvalido, saving, loading, onSuccess, onClose]);
+  }, [
+    marketplaceId,
+    data.profit_margin,
+    freteEfetivo,
+    comissaoEfetiva,
+    precoFinal,
+    percentualInvalido,
+    saving,
+    loading,
+    onSuccess,
+    onClose,
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -382,22 +460,39 @@ export default function MarketplacePricingModal({
                 </div>
               </div>
 
+              {shopeeAtivo && (
+                <div
+                  className="flex items-start gap-2 border px-3 py-2"
+                  style={{ borderColor: `${AZUL}4D`, backgroundColor: `${AZUL}0D` }}
+                >
+                  <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: AZUL }} />
+                  <p className="text-[11px] text-neutral-400">
+                    Shopee usa faixas fixas de frete/comissão por preço final. Esses campos são calculados
+                    automaticamente conforme você ajusta a margem.
+                  </p>
+                </div>
+              )}
+
               {/* Inputs agrupados */}
               <div className="space-y-4 border border-neutral-800/60 bg-neutral-950/20 p-3">
                 <EditableNumberField
                   label="Frete"
-                  value={data.freight}
+                  value={freteEfetivo}
                   onChange={(n) => setData((prev) => ({ ...prev, freight: n }))}
                   prefix="R$"
                   icon={<Truck className="h-3 w-3 text-neutral-500" />}
+                  disabled={shopeeAtivo}
+                  disabledHint="Definido pela faixa de preço da Shopee."
                 />
 
                 <EditableNumberField
                   label="Comissão"
-                  value={data.commission_rate}
+                  value={comissaoEfetiva}
                   onChange={(n) => setData((prev) => ({ ...prev, commission_rate: n }))}
                   prefix="%"
                   icon={<Percent className="h-3 w-3 text-neutral-500" />}
+                  disabled={shopeeAtivo}
+                  disabledHint="Definido pela faixa de preço da Shopee."
                 />
 
                 <EditableNumberField
