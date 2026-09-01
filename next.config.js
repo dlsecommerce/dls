@@ -20,7 +20,7 @@ const nextConfig = {
   ],
 
   experimental: {
-    serverActions: { bodySizeLimit: "2mb" },
+    serverActions: { bodySizeLimit: "50mb" },
 
     // DESATIVA LightningCSS do Next completamente
     optimizeCss: false,

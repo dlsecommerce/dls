@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getPostgresClient } from "@/lib/postgres";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60; // ajuste se seu plano Vercel permitir mais
 
 type MarketplacePayload = {
   id: string;
@@ -18,7 +19,7 @@ type RequestBody = {
   registros?: unknown;
 };
 
-const MAX_REGISTROS = 60_000;
+const MAX_REGISTROS_POR_REQUEST = 20_000;
 
 function getBearerToken(request: NextRequest): string | null {
   const authorization = request.headers.get("authorization");
@@ -52,13 +53,17 @@ function validateRegistros(value: unknown): MarketplacePayload[] {
     throw new Error("Nenhum registro foi enviado.");
   }
 
-  if (value.length > MAX_REGISTROS) {
+  if (value.length > MAX_REGISTROS_POR_REQUEST) {
     throw new Error(
-      `A importação não pode ultrapassar ${MAX_REGISTROS} registros por vez.`
+      `Cada requisição não pode ultrapassar ${MAX_REGISTROS_POR_REQUEST} registros. Divida o envio em lotes menores.`
     );
   }
 
-  return value.map((item: unknown, index: number): MarketplacePayload => {
+  const result: MarketplacePayload[] = new Array(value.length);
+
+  for (let index = 0; index < value.length; index++) {
+    const item = value[index];
+
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       throw new Error(`Registro inválido na posição ${index + 1}.`);
     }
@@ -107,7 +112,7 @@ function validateRegistros(value: unknown): MarketplacePayload[] {
       );
     }
 
-    return {
+    result[index] = {
       id: row.id as string,
       freight: Number(freight.toFixed(2)),
       commission_rate: Number(commissionRate.toFixed(2)),
@@ -115,63 +120,83 @@ function validateRegistros(value: unknown): MarketplacePayload[] {
       current_cost: Number(currentCost.toFixed(2)),
       selling_price: Number(sellingPrice.toFixed(2)),
     };
-  });
+  }
+
+  return result;
 }
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
+export async function POST(request: NextRequest): Promise<Response> {
+  const accessToken = getBearerToken(request);
+
+  if (!accessToken) {
+    return new Response(
+      JSON.stringify({
+        error: "Usuário não autenticado. Entre novamente no sistema.",
+      }),
+      { status: 401, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return new Response(
+      JSON.stringify({
+        error: "As variáveis do Supabase não foram configuradas no servidor.",
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  const authClient = createClient(supabaseUrl, supabaseKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+
+  const { data: userData, error: userError } =
+    await authClient.auth.getUser(accessToken);
+
+  if (userError || !userData.user) {
+    return new Response(
+      JSON.stringify({
+        error:
+          "Sua sessão não é válida ou expirou. Entre novamente no sistema.",
+      }),
+      { status: 401, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  let body: RequestBody;
   try {
-    const accessToken = getBearerToken(request);
+    body = (await request.json()) as RequestBody;
+  } catch {
+    return new Response(
+      JSON.stringify({ error: "O corpo da requisição não contém um JSON válido." }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
+  }
 
-    if (!accessToken) {
-      return NextResponse.json(
-        { error: "Usuário não autenticado. Entre novamente no sistema." },
-        { status: 401 }
-      );
-    }
-
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey =
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error(
-        "As variáveis do Supabase não foram configuradas no servidor."
-      );
-    }
-
-    const authClient = createClient(supabaseUrl, supabaseKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
+  let registros: MarketplacePayload[];
+  try {
+    registros = validateRegistros(body.registros);
+  } catch (validationError: unknown) {
+    const message =
+      validationError instanceof Error
+        ? validationError.message
+        : "Erro de validação nos registros enviados.";
+    return new Response(JSON.stringify({ error: message }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
     });
+  }
 
-    const { data: userData, error: userError } =
-      await authClient.auth.getUser(accessToken);
-
-    if (userError || !userData.user) {
-      return NextResponse.json(
-        {
-          error:
-            "Sua sessão não é válida ou expirou. Entre novamente no sistema.",
-        },
-        { status: 401 }
-      );
-    }
-
-    let body: RequestBody;
-    try {
-      body = (await request.json()) as RequestBody;
-    } catch {
-      return NextResponse.json(
-        { error: "O corpo da requisição não contém um JSON válido." },
-        { status: 400 }
-      );
-    }
-
-    const registros = validateRegistros(body.registros);
+  try {
     const sql = getPostgresClient();
 
     const resultado = await sql.begin(async (transaction) => {
@@ -219,10 +244,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return rows[0]?.resultado ?? null;
     });
 
-    return NextResponse.json(
-      { success: true, resultado },
-      { status: 200 }
-    );
+    return new Response(JSON.stringify({ success: true, resultado }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (error: unknown) {
     const databaseError = error as {
       name?: string;
@@ -244,16 +269,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const status = databaseError?.code === "42501" ? 403 : 400;
 
-    return NextResponse.json(
-      {
+    return new Response(
+      JSON.stringify({
         error:
           databaseError?.message ?? "Não foi possível importar o marketplace.",
         code: databaseError?.code ?? null,
         detail: databaseError?.detail ?? null,
         hint: databaseError?.hint ?? null,
         where: databaseError?.where ?? null,
-      },
-      { status }
+      }),
+      { status, headers: { "Content-Type": "application/json" } }
     );
   }
 }

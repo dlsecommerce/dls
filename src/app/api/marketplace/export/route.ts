@@ -12,7 +12,7 @@ const COL = {
 };
 
 const COLOR_BLUE = "1A8CEB";
-const COLOR_GREEN = "C7F5C4";
+const COLOR_GREEN = "#5cff8d";
 const BLUE_COLS = [1, 2, 3, 4, 5, 6, 7];
 const GREEN_COLS = [9, 10, 11, 13, 14];
 
@@ -77,19 +77,6 @@ export async function POST(req: NextRequest) {
         }
 
         const total = data.length;
-        const ids = data.map((r: any) => r.id).filter(Boolean);
-
-        const { data: regrasData } = await supabase
-          .schema("newsystem")
-          .rpc("get_marketplace_pricing_rules_bulk", { p_marketplace_ids: ids });
-
-        const regrasMap = new Map<string, { tax: number; marketing: number }>();
-        (regrasData || []).forEach((r: any) => {
-          regrasMap.set(r.marketplace_id, {
-            tax: Number(r.out_imposto) || 0,
-            marketing: Number(r.out_marketing) || 0,
-          });
-        });
 
         sendProgress(5, 0, total);
 
@@ -107,6 +94,7 @@ export async function POST(req: NextRequest) {
           useStyles: true,
           useSharedStrings: true,
         });
+        workbook.calcProperties = { fullCalcOnLoad: true };
 
         const sheet = workbook.addWorksheet("MARKETPLACE");
 
@@ -142,7 +130,6 @@ export async function POST(req: NextRequest) {
 
         for (let i = 0; i < total; i++) {
           const row = data[i];
-          const regras = regrasMap.get(row.id) || { tax: 0, marketing: 0 };
 
           const excelRow = sheet.addRow([
             row.id || "", row.store || "", row.channel || "", row.id_bling || "",
@@ -152,9 +139,31 @@ export async function POST(req: NextRequest) {
           ]);
 
           const rn = excelRow.number;
+
+          // ============================================================
+          // ✅ SHOPEE: Frete (J) e Comissão (I) recalculam sozinhos
+          // se o usuário editar a Margem (K) na planilha — via faixa de PV
+          // ============================================================
+          if (row.channel === "Shopee") {
+            const margemSafe = `IF(K${rn}="",0,K${rn})`;
+
+            const PV1 = `((M${rn}+4)/(1-((20+${margemSafe})/100)))`;
+            const PV2 = `((M${rn}+16)/(1-((14+${margemSafe})/100)))`;
+            const PV3 = `((M${rn}+20)/(1-((14+${margemSafe})/100)))`;
+
+            excelRow.getCell(COL.FRETE).value = {
+              formula: `IF(${PV1}<=79.99,4,IF(${PV2}<=99.99,16,IF(${PV3}<=199.99,20,26)))`,
+            };
+            excelRow.getCell(COL.COMISSAO).value = {
+              formula: `IF(${PV1}<=79.99,20,14)`,
+            };
+          }
+
+          // ✅ Preço de Venda: fórmula pra todos os canais (reage a edição de Custo/Frete/Comissão/Margem)
           excelRow.getCell(COL.PRECO_VENDA).value = {
-            formula: `ROUND((M${rn}+J${rn})/(1-((I${rn}+K${rn}+${regras.tax}+${regras.marketing})/100)),2)`,
+            formula: `ROUND((M${rn}+J${rn})/(1-((I${rn}+K${rn})/100)),2)`,
           };
+
           excelRow.eachCell((cell) => {
             cell.alignment = { horizontal: "center", vertical: "middle" };
           });

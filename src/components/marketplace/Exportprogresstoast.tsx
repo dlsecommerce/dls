@@ -26,7 +26,7 @@ export default function ExportProgressToastMarketplace({
 
   const countLabel =
     typeof current === "number" && typeof total === "number" && total > 0
-      ? `${current.toLocaleString("pt-BR")} de ${total.toLocaleString("pt-BR")} marketplaces`
+      ? `${current.toLocaleString("pt-BR")} de ${total.toLocaleString("pt-BR")} anúncios`
       : undefined;
 
   return (
