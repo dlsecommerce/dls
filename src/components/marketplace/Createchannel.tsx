@@ -19,7 +19,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { fetchDistinctChannels } from "@/components/marketplace/hooks/usemarketplace";
 import ChannelPricingRulesModal from "@/components/marketplace/Channelpricingrulesmodal"; // ✅ novo import
 
-// Lojas base cujos anúncios serão duplicados para o novo canal.
+// Lojas base cujos anúncios serão duplica dos para o novo canal.
 const SOURCE_STORES = ["Pikot Shop", "Sóbaquetas"] as const;
 
 type CreateChannelModalProps = {

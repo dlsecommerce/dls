@@ -34,28 +34,32 @@ export type MarketplaceImportParseResult = {
   rowErrors: MarketplaceImportRowError[];
 };
 
+export type ExportProgressCallback = (progress: {
+  percent: number;
+  current: number;
+  total: number;
+}) => void;
+
 type ExportFiltros = Partial<MarketplaceFilters> & { brands?: string[] };
 
 // ---------------------------------------------------------------------------
-// Layout final da planilha (1-based)
+// Layout final da planilha (1-based) — usado no PARSE do import
 // A-G: identificação (azul) | H: vazio | I,J,K: regras editáveis (verde)
-// L: vazio | M: Custo | N: Preço de Venda (fórmula, recalcula em tempo real)
+// L: vazio | M: Custo | N: Preço de Venda (fórmula)
 // ---------------------------------------------------------------------------
 const COL = {
-  ID: 1,           // A
-  LOJA: 2,          // B
-  CANAL: 3,         // C
-  ID_BLING: 4,      // D
-  REFERENCIA: 5,    // E
-  PRODUTO: 6,       // F
-  MARCA: 7,         // G
-  // H (8) vazio
-  COMISSAO: 9,       // I
-  FRETE: 10,         // J
-  MARGEM: 11,        // K
-  // L (12) vazio
-  CUSTO: 13,          // M
-  PRECO_VENDA: 14,    // N
+  ID: 1,
+  LOJA: 2,
+  CANAL: 3,
+  ID_BLING: 4,
+  REFERENCIA: 5,
+  PRODUTO: 6,
+  MARCA: 7,
+  COMISSAO: 9,
+  FRETE: 10,
+  MARGEM: 11,
+  CUSTO: 13,
+  PRECO_VENDA: 14,
 };
 
 const UUID_REGEX =
@@ -67,57 +71,27 @@ function toNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-const COLOR_BLUE = "1A8CEB";
-const COLOR_GREEN = "C7F5C4";
-
 export function useMarketplaceImportExport(
   rows: Marketplace[],
   filtros?: ExportFiltros
 ) {
-  // -----------------------------
-  // EXPORT
-  // -----------------------------
+  // -----------------------------------------------------------------------
+  // EXPORT — geração 100% no servidor (streaming), ideal para grandes
+  // volumes (ex.: 70k+ linhas). O cliente apenas dispara a requisição,
+  // lê o stream de progresso/dados e salva o arquivo final.
+  // -----------------------------------------------------------------------
   const handleExport = useCallback(
-    async (dataToExport?: Marketplace[]) => {
+    async (onProgress?: ExportProgressCallback, signal?: AbortSignal) => {
       try {
-        // -------------------------------------------------------------
-        // Busca TODOS os registros que batem no filtro (sem paginação),
-        // via RPC dedicada — não depende da página atual da tela.
-        // -------------------------------------------------------------
-        let data: Marketplace[];
+        onProgress?.({ percent: 0, current: 0, total: 0 });
 
-        if (dataToExport && dataToExport.length > 0) {
-          data = dataToExport;
-        } else {
-          const f = filtros || {};
-          const storeParam = f.loja && f.loja !== "Todos" ? f.loja : null;
-          const channelParam = f.canal && f.canal !== "Todos" ? f.canal : null;
-          const tipoParam = f.tipo && f.tipo !== "Todos" ? f.tipo : null;
-          const condicaoParam = f.condicao && f.condicao !== "Todos" ? f.condicao : null;
-          const searchParam = f.produto || f.codigo || null;
-          const situacaoParam = f.situacao || "Ativos";
-          const brandsParam = f.brands && f.brands.length > 0 ? f.brands : null;
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData.session?.access_token;
 
-          const { data: fetched, error: fetchError } = await supabase
-            .schema("newsystem")
-            .rpc("fetch_all_marketplace_filtered", {
-              p_store: storeParam,
-              p_channel: channelParam,
-              p_tipo: tipoParam,
-              p_condicao: condicaoParam,
-              p_search: searchParam,
-              p_situacao: situacaoParam,
-              p_brands: brandsParam,
-            });
-
-          if (fetchError) throw fetchError;
-          data = (fetched ?? []) as Marketplace[];
-        }
-
-        if (!data || data.length === 0) {
-          toastCustom.warning(
-            "Nada para exportar",
-            "Nenhum dado disponível para gerar relatório."
+        if (!accessToken) {
+          toastCustom.error(
+            "Sessão expirada",
+            "Entre novamente no sistema para exportar."
           );
           return;
         }
@@ -129,151 +103,109 @@ export function useMarketplaceImportExport(
         if (filtros?.loja && filtros.loja !== "Todos") partes.push(filtros.loja);
         if (filtros?.canal && filtros.canal !== "Todos") partes.push(filtros.canal);
 
-        const middle = partes.join("-").toUpperCase();
+        const middle = partes
+          .join("-")
+          .toUpperCase()
+          .replace(/[\\/:*?"<>|]/g, "");
         const stamp = format(new Date(), "dd-MM-yyyy HH'h'mm", { locale: ptBR });
         const fileName =
           middle.length > 0
             ? `PRECIFICAÇÃO - MARKETPLACE - ${middle} - ${stamp}.xlsx`
             : `PRECIFICAÇÃO - MARKETPLACE - ${stamp}.xlsx`;
 
-        // -------------------------------------------------------------
-        // Busca imposto/marketing (não exibidos — embutidos na fórmula)
-        // por anúncio, via function bulk.
-        // -------------------------------------------------------------
-        const ids = data.map((r) => r.id).filter(Boolean);
+        // -----------------------------
+        // Requisição streaming ao backend
+        // -----------------------------
+        const response = await fetch("/api/marketplace/export", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ filtros: filtros || {} }),
+          signal,
+        });
 
-        const { data: regrasData, error: regrasError } = await supabase
-          .schema("newsystem")
-          .rpc("get_marketplace_pricing_rules_bulk", { p_marketplace_ids: ids });
-
-        if (regrasError) {
-          console.error("Erro ao buscar regras de precificação:", regrasError);
+        if (!response.ok || !response.body) {
+          const errJson = await response.json().catch(() => null);
+          throw new Error(errJson?.error || "Falha ao iniciar exportação.");
         }
 
-        const regrasMap = new Map<string, { tax: number; marketing: number }>();
-        (regrasData || []).forEach((r: any) => {
-          regrasMap.set(r.marketplace_id, {
-            tax: Number(r.out_imposto) || 0,
-            marketing: Number(r.out_marketing) || 0,
-          });
-        });
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        const base64Parts: string[] = [];
+        let total = 0;
+        let serverErrorMessage: string | null = null;
 
-        // -------------------------------------------------------------
-        // Monta a planilha
-        // -------------------------------------------------------------
-        const workbook = new ExcelJS.Workbook();
-        const sheet = workbook.addWorksheet("MARKETPLACE");
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        const headers = [
-          "ID",              // A
-          "Loja",            // B
-          "Canal",           // C
-          "ID Bling",        // D
-          "Referência",      // E
-          "Produto",         // F
-          "Marca",           // G
-          "",                // H (vazia)
-          "Comissão",        // I
-          "Frete",           // J
-          "Margem de Lucro", // K
-          "",                // L (vazia)
-          "Custo",           // M
-          "Preço de Venda",  // N
-        ];
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
 
-        sheet.addRow(headers);
-        sheet.columns = headers.map((h) => ({
-          header: h,
-          key: h || `col_${Math.random()}`,
-          width: h ? 18 : 4,
-        }));
-        sheet.views = [{ state: "frozen", ySplit: 1 }];
+          for (const line of lines) {
+            if (!line) continue;
 
-        const BLUE_COLS = [1, 2, 3, 4, 5, 6, 7]; // A-G
-        const GREEN_COLS = [9, 10, 11, 13, 14]; // I,J,K,M,N
-        // colunas 8 (H) e 12 (L) ficam sem cor
-
-        sheet.getRow(1).eachCell((cell, col) => {
-          let fillColor: string | null = null;
-          if (BLUE_COLS.includes(col)) fillColor = COLOR_BLUE;
-          if (GREEN_COLS.includes(col)) fillColor = COLOR_GREEN;
-
-          if (fillColor) {
-            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
+            if (line.startsWith("PROGRESS:")) {
+              const p = JSON.parse(line.slice(9));
+              onProgress?.(p);
+              total = p.total || total;
+            } else if (line.startsWith("CHUNK:")) {
+              base64Parts.push(line.slice(6));
+            } else if (line.startsWith("ERROR:")) {
+              const e = JSON.parse(line.slice(6));
+              serverErrorMessage = e.message || "Erro ao gerar planilha.";
+            } else if (line.startsWith("DONE:")) {
+              const d = JSON.parse(line.slice(5));
+              total = d.total || total;
+            }
           }
+        }
 
-          cell.font = { bold: true, color: { argb: BLUE_COLS.includes(col) ? "FFFFFF" : "000000" } };
-          cell.alignment = { horizontal: "center", vertical: "middle" };
-        });
+        if (serverErrorMessage) {
+          if (serverErrorMessage.includes("Nenhum dado")) {
+            toastCustom.warning("Nada para exportar", serverErrorMessage);
+            return;
+          }
+          throw new Error(serverErrorMessage);
+        }
 
-        data.forEach((row) => {
-          const regras = regrasMap.get(row.id) || { tax: 0, marketing: 0 };
+        if (base64Parts.length === 0) {
+          toastCustom.warning(
+            "Nada para exportar",
+            "Nenhum dado disponível para gerar relatório."
+          );
+          return;
+        }
 
-          const newRow = sheet.addRow([
-            row.id || "",              // A
-            row.store || "",           // B
-            row.channel || "",         // C
-            row.id_bling || "",        // D
-            row.reference || "",       // E
-            row.product || "",         // F
-            row.mark || "",            // G
-            "",                        // H (vazia)
-            row.commission_rate ?? 0,  // I
-            row.freight ?? 0,          // J
-            row.profit_margin ?? 0,    // K
-            "",                        // L (vazia)
-            row.current_cost ?? 0,     // M
-            null,                      // N (fórmula abaixo)
-          ]);
+        // -----------------------------
+        // Decodifica base64 -> bytes -> Blob -> download
+        // -----------------------------
+        const base64 = base64Parts.join("");
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
 
-          const rowNumber = newRow.number;
-
-          newRow.eachCell((cell, col) => {
-            if ([10, 13, 14].includes(col)) {
-              // Frete (J), Custo (M), Preço (N)
-              cell.numFmt = '_("R$"* #,##0.00_)';
-            }
-            if ([9, 11].includes(col)) {
-              // Comissão (I), Margem (K)
-              cell.numFmt = '0.00 " %"';
-            }
-            cell.alignment = { horizontal: "center", vertical: "middle" };
-          });
-
-          // -----------------------------------------------------------
-          // Fórmula Excel — recalcula em tempo real ao editar
-          // Comissão (I), Frete (J) ou Margem (K).
-          // Imposto e Marketing entram embutidos como constante da linha
-          // (já vêm calculados pela get_marketplace_pricing_rules_bulk).
-          // Reflete newsystem.fn_calc_marketplace_price (desconto já
-          // aplicado dentro de Custo/current_cost).
-          // -----------------------------------------------------------
-          const impostoConst = regras.tax;
-          const marketingConst = regras.marketing;
-
-          sheet.getCell(`N${rowNumber}`).value = {
-            formula: `ROUND((M${rowNumber}+J${rowNumber})/(1-((I${rowNumber}+K${rowNumber}+${impostoConst}+${marketingConst})/100)),2)`,
-          };
-          sheet.getCell(`N${rowNumber}`).numFmt = '_("R$"* #,##0.00_)';
-        });
-
-        sheet.getRow(1).height = 24;
-
-        const buffer = await workbook.xlsx.writeBuffer();
         saveAs(
-          new Blob([buffer], {
+          new Blob([bytes], {
             type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           }),
           fileName
         );
 
-        await createNotification({
+        // Notificação em paralelo — não bloqueia o fluxo de download
+        createNotification({
           title: "Relatório Marketplace exportado",
-          message: `O relatório "${fileName}" foi exportado com ${data.length} anúncio(s).`,
+          message: `O relatório "${fileName}" foi exportado com ${total} anúncio(s).`,
           action: "status",
           entityType: "marketplace_pricing_export",
           link: "/dashboard/marketplaces",
-        });
+        }).catch((err) => console.error("[export] notification error:", err));
 
         toastCustom.success(
           "Exportação concluída!",
@@ -281,17 +213,25 @@ export function useMarketplaceImportExport(
         );
         playImportSuccessSound(0.4);
       } catch (err: any) {
+        if (err?.name === "AbortError") {
+          toastCustom.warning(
+            "Exportação cancelada",
+            "O processo foi interrompido pelo usuário."
+          );
+          return;
+        }
         toastCustom.error(
           "Erro ao exportar",
           err?.message || "Falha ao gerar planilha."
         );
+        throw err;
       }
     },
-    [rows, filtros]
+    [filtros]
   );
 
   // -----------------------------
-  // IMPORT — ETAPA 1: leitura/validação
+  // IMPORT — ETAPA 1: leitura/validação (client-side, arquivo pequeno)
   // -----------------------------
   const parseImportFile = useCallback(
     async (file: File): Promise<MarketplaceImportParseResult> => {

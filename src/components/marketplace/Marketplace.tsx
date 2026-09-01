@@ -336,8 +336,9 @@ export default function Marketplace() {
   }, [totalCount]);
 
   // Hook de import/export (planilha Excel do marketplace).
-  // Passa o objeto completo de filtros aplicados + marcas selecionadas,
-  // pois o hook busca TODOS os registros filtrados via RPC (não só a página atual).
+  // O export agora roda 100% no servidor via streaming (suporta 70k+ linhas
+  // sem travar o browser). Passamos os filtros aplicados + marcas selecionadas;
+  // o backend busca todos os registros filtrados via RPC (não só a página atual).
   const {
     handleExport: exportXlsx,
     parseImportFile,
@@ -349,10 +350,30 @@ export default function Marketplace() {
 
   const handleExport = async () => {
     setExporting(true);
+    setExportProgressOpen(true);
+    setExportProgress(0);
+    setExportProgressCount(0);
+    cancelExportRef.current = false;
+
+    const controller = new AbortController();
+    exportAbortRef.current = controller;
+
     try {
-      await exportXlsx();
+      await exportXlsx(
+        ({ percent, current, total }) => {
+          if (cancelExportRef.current) return;
+          setExportProgress(percent);
+          setExportProgressCount(current);
+          if (total > 0) totalCountRef.current = total;
+        },
+        controller.signal
+      );
+    } catch {
+      // erro já tratado via toastCustom dentro do hook
     } finally {
       setExporting(false);
+      exportAbortRef.current = null;
+      setTimeout(() => setExportProgressOpen(false), 1200);
     }
   };
 
