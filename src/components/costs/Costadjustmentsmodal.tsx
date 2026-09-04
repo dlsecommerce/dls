@@ -226,7 +226,9 @@ function AdjustmentField({
   );
 }
 
-/** Dropdown genérico (loja/canal/marca) — com portal, sem scroll duplo */
+/** Dropdown genérico (loja/canal/marca) — com portal, sem scroll duplo.
+ *  data-cost-portal identifica o menu para o DialogContent ignorar
+ *  "clique fora" quando o clique acontece dentro dele (ver onPointerDownOutside). */
 function OptionDropdown({
   options,
   selected,
@@ -354,6 +356,7 @@ function OptionDropdown({
         createPortal(
           <div
             ref={menuRef}
+            data-cost-portal=""
             style={{
               position: "fixed",
               top: coords.top,
@@ -652,7 +655,21 @@ export default function CostAdjustmentsModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="bg-[#0a0a0a] border border-neutral-800 shadow-2xl w-[calc(100vw-16px)] max-w-[calc(100vw-16px)] max-h-[calc(100dvh-16px)] sm:max-w-md sm:w-[90%] flex flex-col overflow-hidden p-4 sm:p-6 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+      <DialogContent
+        onPointerDownOutside={(e) => {
+          const target = e.target as HTMLElement;
+          if (target.closest("[data-cost-portal]")) {
+            e.preventDefault();
+          }
+        }}
+        onInteractOutside={(e) => {
+          const target = e.target as HTMLElement;
+          if (target.closest("[data-cost-portal]")) {
+            e.preventDefault();
+          }
+        }}
+        className="bg-[#0a0a0a] border border-neutral-800 shadow-2xl w-[calc(100vw-16px)] max-w-[calc(100vw-16px)] max-h-[calc(100dvh-16px)] sm:max-w-md sm:w-[90%] flex flex-col overflow-hidden p-4 sm:p-6 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+      >
         {/* Cabeçalho */}
         <DialogHeader className="shrink-0 border-b border-neutral-900 pb-3">
           <div className="flex items-center gap-2">
