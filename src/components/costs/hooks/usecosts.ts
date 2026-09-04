@@ -1336,6 +1336,13 @@ export function useCosts() {
    *  - "global": aplica em todos os produtos ativos (costs.deleted_at is null).
    *  - "store": aplica em todos os produtos vinculados à loja selecionada
    *    (via announce.reference = costs.code).
+   *
+   * ✅ FIX (marca no desconto): quando um escopo global/store/channel é
+   * usado mas o usuário restringiu o campo Desconto a uma marca específica
+   * (values.brand), a regra de "desconto" é criada com scope="brand" e
+   * scope_value=values.brand — em vez de herdar o escopo principal.
+   * Isso é o que o backend (resolve_pricing_rule / fn_pricing_rules_recalc)
+   * já espera para aplicar o desconto apenas aos produtos daquela marca.
    */
   const applyAdjustmentsToSelected = useCallback(
     async (values: ApplyPayload): Promise<ApplyResult> => {
@@ -1382,7 +1389,7 @@ export function useCosts() {
       try {
         const rulesToCreate: {
           rule_type: string;
-          scope: "global" | "store" | "channel" | "product";
+          scope: "global" | "store" | "channel" | "product" | "brand";
           scope_value: string | null;
           rate: number;
           cost_id?: string | null;
@@ -1422,13 +1429,24 @@ export function useCosts() {
             });
           }
 
+          // ✅ FIX: desconto restrito por marca cria regra scope="brand",
+          // ignorando o escopo principal (global/store/channel).
           if (values.desconto.trim() !== "") {
-            rulesToCreate.push({
-              rule_type: "desconto",
-              scope: values.scope,
-              scope_value: scopeValue,
-              rate: parseDecimalToNumber(values.desconto)!,
-            });
+            if (values.brand) {
+              rulesToCreate.push({
+                rule_type: "desconto",
+                scope: "brand",
+                scope_value: values.brand,
+                rate: parseDecimalToNumber(values.desconto)!,
+              });
+            } else {
+              rulesToCreate.push({
+                rule_type: "desconto",
+                scope: values.scope,
+                scope_value: scopeValue,
+                rate: parseDecimalToNumber(values.desconto)!,
+              });
+            }
           }
         } else {
           // scope === "product"

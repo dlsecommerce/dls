@@ -65,7 +65,11 @@ export const DEFAULT_COST_ADJUSTMENTS: CostAdjustments = {
 
 export type EmbalagemMode = "fixed" | "percent";
 
-export type RuleScope = "global" | "store" | "channel" | "product";
+// ✅ FIX: incluído "brand" — alinhado com o RuleScope usado em
+// usepricingrules.ts e com o suporte real do backend (pricing_rules.scope),
+// que já trata "brand" como escopo válido (resolve_pricing_rule,
+// fn_pricing_rules_recalc, upsert_pricing_rule).
+export type RuleScope = "global" | "store" | "channel" | "product" | "brand";
 
 export type ApplyPayload = CostAdjustments & {
   embalagemMode: EmbalagemMode;
