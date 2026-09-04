@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -226,9 +225,7 @@ function AdjustmentField({
   );
 }
 
-/** Dropdown genérico (loja/canal/marca) — com portal, sem scroll duplo.
- *  data-cost-portal identifica o menu para o DialogContent ignorar
- *  "clique fora" quando o clique acontece dentro dele (ver onPointerDownOutside). */
+/** Dropdown genérico (loja/canal/marca) — estilo sistema (versão original, sem portal) */
 function OptionDropdown({
   options,
   selected,
@@ -254,52 +251,16 @@ function OptionDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
-  const [mounted, setMounted] = useState(false);
-
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => setMounted(true), []);
-
-  const updatePosition = useCallback(() => {
-    const el = buttonRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    setCoords({
-      top: rect.bottom + 4,
-      left: rect.left,
-      width: rect.width,
-    });
-  }, []);
-
-  useLayoutEffect(() => {
-    if (open) updatePosition();
-  }, [open, updatePosition]);
-
-  // Fecha o dropdown se qualquer container ancestral rolar (evita menu desalinhado)
   useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
-    return () => {
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
-    };
-  }, [open]);
-
-  // Fecha ao clicar fora (botão + menu, já que o menu está em portal)
-  useEffect(() => {
-    if (!open) return;
     const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node;
-      const clickedButton = buttonRef.current?.contains(target);
-      const clickedMenu = menuRef.current?.contains(target);
-      if (!clickedButton && !clickedMenu) setOpen(false);
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
     };
-    document.addEventListener("mousedown", handleClickOutside);
+    if (open) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
@@ -325,9 +286,8 @@ function OptionDropdown({
   const isDisabled = disabled || loading;
 
   return (
-    <>
+    <div ref={containerRef} className="relative">
       <button
-        ref={buttonRef}
         type="button"
         disabled={isDisabled}
         onClick={() => setOpen((v) => !v)}
@@ -349,60 +309,42 @@ function OptionDropdown({
         />
       </button>
 
-      {mounted &&
-        open &&
-        !isDisabled &&
-        coords &&
-        createPortal(
-          <div
-            ref={menuRef}
-            data-cost-portal=""
-            style={{
-              position: "fixed",
-              top: coords.top,
-              left: coords.left,
-              width: coords.width,
-              zIndex: 9999,
-            }}
-            className="border border-neutral-800 bg-[#0a0a0a] shadow-2xl"
-          >
-            <div className="relative border-b border-neutral-900 px-3 pt-2 pb-1">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-600" />
-              <input
-                ref={inputRef}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={searchPlaceholder}
-                className="h-9 w-full bg-transparent pl-9 pr-3 text-xs text-white outline-none placeholder:text-neutral-600"
-              />
-            </div>
-            <div className="max-h-36 overflow-y-auto py-1">
-              {filteredOptions.length === 0 && (
-                <div className="px-3 py-2 text-[11px] text-neutral-600">{emptyLabel}</div>
-              )}
-              {filteredOptions.map((s) => {
-                const selectedFlag = s === selected;
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => handleSelect(s)}
-                    className={`flex w-full items-center justify-between px-3 py-2 text-left text-[12.5px] transition-colors cursor-pointer ${
-                      selectedFlag
-                        ? "bg-neutral-900 text-white"
-                        : "text-neutral-400 hover:bg-neutral-900/70 hover:text-white"
-                    }`}
-                  >
-                    <span className="truncate">{s}</span>
-                    {selectedFlag && <Check className="h-3.5 w-3.5 shrink-0" style={{ color: ACCENT }} />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>,
-          document.body
-        )}
-    </>
+      {open && !isDisabled && (
+        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[100] border border-neutral-800 bg-[#0a0a0a] shadow-2xl">
+          <div className="relative border-b border-neutral-900 px-3 pt-2 pb-1">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-600" />
+            <input
+              ref={inputRef}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={searchPlaceholder}
+              className="h-9 w-full bg-transparent pl-9 pr-3 text-xs text-white outline-none placeholder:text-neutral-600"
+            />
+          </div>
+          <div className="max-h-36 overflow-y-auto py-1">
+            {filteredOptions.length === 0 && (
+              <div className="px-3 py-2 text-[11px] text-neutral-600">{emptyLabel}</div>
+            )}
+            {filteredOptions.map((s) => {
+              const selectedFlag = s === selected;
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => handleSelect(s)}
+                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-[12.5px] transition-colors cursor-pointer ${
+                    selectedFlag ? "bg-neutral-900 text-white" : "text-neutral-400 hover:bg-neutral-900/70 hover:text-white"
+                  }`}
+                >
+                  <span className="truncate">{s}</span>
+                  {selectedFlag && <Check className="h-3.5 w-3.5 shrink-0" style={{ color: ACCENT }} />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -655,21 +597,7 @@ export default function CostAdjustmentsModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent
-        onPointerDownOutside={(e) => {
-          const target = e.target as HTMLElement;
-          if (target.closest("[data-cost-portal]")) {
-            e.preventDefault();
-          }
-        }}
-        onInteractOutside={(e) => {
-          const target = e.target as HTMLElement;
-          if (target.closest("[data-cost-portal]")) {
-            e.preventDefault();
-          }
-        }}
-        className="bg-[#0a0a0a] border border-neutral-800 shadow-2xl w-[calc(100vw-16px)] max-w-[calc(100vw-16px)] max-h-[calc(100dvh-16px)] sm:max-w-md sm:w-[90%] flex flex-col overflow-hidden p-4 sm:p-6 pb-[calc(1rem+env(safe-area-inset-bottom))]"
-      >
+      <DialogContent className="bg-[#0a0a0a] border border-neutral-800 shadow-2xl w-[calc(100vw-16px)] max-w-[calc(100vw-16px)] max-h-[calc(100dvh-16px)] sm:max-w-md sm:w-[90%] flex flex-col overflow-hidden p-4 sm:p-6 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         {/* Cabeçalho */}
         <DialogHeader className="shrink-0 border-b border-neutral-900 pb-3">
           <div className="flex items-center gap-2">
@@ -731,6 +659,31 @@ export default function CostAdjustmentsModal({
               loadingLabel="Carregando canais..."
               searchPlaceholder="Buscar canal..."
               emptyLabel="Nenhum canal encontrado"
+            />
+          </div>
+        )}
+
+        {/* Dropdown Marca — movido para fora da área com scroll (mesma lógica de Loja/Canal),
+            evitando o "scroll duplo" e problemas de clique dentro do modal */}
+        {descontoFilled && (
+          <div className="mt-3">
+            <div className="mb-1.5 flex items-center gap-1.5">
+              <Tag className="h-3 w-3 text-neutral-500" />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500">
+                Restringir desconto por marca (opcional)
+              </span>
+            </div>
+            <OptionDropdown
+              options={brands}
+              selected={selectedBrand}
+              onSelect={setSelectedBrand}
+              loading={loadingBrands}
+              disabled={applying}
+              icon={<Tag className="h-3.5 w-3.5 shrink-0 text-neutral-500" />}
+              placeholder="Todas as marcas"
+              loadingLabel="Carregando marcas..."
+              searchPlaceholder="Buscar marca..."
+              emptyLabel="Nenhuma marca encontrada"
             />
           </div>
         )}
@@ -804,43 +757,18 @@ export default function CostAdjustmentsModal({
             />
             <div className="space-y-3">
               {RULE_FIELDS.map((f) => (
-                <React.Fragment key={f.key}>
-                  <AdjustmentField
-                    label={f.label}
-                    value={values[f.key]}
-                    onChange={(v) => update(f.key, v)}
-                    onBlur={() => handleBlur(f.key)}
-                    suffix={f.suffix}
-                    disabled={applying}
-                    error={errors[f.key]}
-                    existingRate={existingRules?.[f.key]}
-                    previewText={f.key === "desconto" ? descontoBrandPreview : getPreview(f.key, f.suffix)}
-                  />
-
-                  {/* Seletor de marca — exclusivo do campo Desconto */}
-                  {f.key === "desconto" && descontoFilled && (
-                    <div className="pl-1">
-                      <div className="mb-1.5 flex items-center gap-1.5">
-                        <Tag className="h-3 w-3 text-neutral-500" />
-                        <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500">
-                          Restringir por marca (opcional)
-                        </span>
-                      </div>
-                      <OptionDropdown
-                        options={brands}
-                        selected={selectedBrand}
-                        onSelect={setSelectedBrand}
-                        loading={loadingBrands}
-                        disabled={applying}
-                        icon={<Tag className="h-3.5 w-3.5 shrink-0 text-neutral-500" />}
-                        placeholder="Todas as marcas"
-                        loadingLabel="Carregando marcas..."
-                        searchPlaceholder="Buscar marca..."
-                        emptyLabel="Nenhuma marca encontrada"
-                      />
-                    </div>
-                  )}
-                </React.Fragment>
+                <AdjustmentField
+                  key={f.key}
+                  label={f.label}
+                  value={values[f.key]}
+                  onChange={(v) => update(f.key, v)}
+                  onBlur={() => handleBlur(f.key)}
+                  suffix={f.suffix}
+                  disabled={applying}
+                  error={errors[f.key]}
+                  existingRate={existingRules?.[f.key]}
+                  previewText={f.key === "desconto" ? descontoBrandPreview : getPreview(f.key, f.suffix)}
+                />
               ))}
             </div>
           </div>
