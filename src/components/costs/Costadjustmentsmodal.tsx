@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Dialog,
   DialogContent,
@@ -225,7 +226,7 @@ function AdjustmentField({
   );
 }
 
-/** Dropdown genérico (loja/canal/marca) — estilo sistema */
+/** Dropdown genérico (loja/canal/marca) — com portal, sem scroll duplo */
 function OptionDropdown({
   options,
   selected,
@@ -251,16 +252,52 @@ function OptionDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => setMounted(true), []);
+
+  const updatePosition = useCallback(() => {
+    const el = buttonRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setCoords({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (open) updatePosition();
+  }, [open, updatePosition]);
+
+  // Fecha o dropdown se qualquer container ancestral rolar (evita menu desalinhado)
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
     };
-    if (open) document.addEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  // Fecha ao clicar fora (botão + menu, já que o menu está em portal)
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const clickedButton = buttonRef.current?.contains(target);
+      const clickedMenu = menuRef.current?.contains(target);
+      if (!clickedButton && !clickedMenu) setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
@@ -286,8 +323,9 @@ function OptionDropdown({
   const isDisabled = disabled || loading;
 
   return (
-    <div ref={containerRef} className="relative">
+    <>
       <button
+        ref={buttonRef}
         type="button"
         disabled={isDisabled}
         onClick={() => setOpen((v) => !v)}
@@ -309,42 +347,59 @@ function OptionDropdown({
         />
       </button>
 
-      {open && !isDisabled && (
-        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-[100] border border-neutral-800 bg-[#0a0a0a] shadow-2xl">
-          <div className="relative border-b border-neutral-900 px-3 pt-2 pb-1">
-            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-600" />
-            <input
-              ref={inputRef}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={searchPlaceholder}
-              className="h-9 w-full bg-transparent pl-9 pr-3 text-xs text-white outline-none placeholder:text-neutral-600"
-            />
-          </div>
-          <div className="max-h-36 overflow-y-auto py-1">
-            {filteredOptions.length === 0 && (
-              <div className="px-3 py-2 text-[11px] text-neutral-600">{emptyLabel}</div>
-            )}
-            {filteredOptions.map((s) => {
-              const selectedFlag = s === selected;
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => handleSelect(s)}
-                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-[12.5px] transition-colors cursor-pointer ${
-                    selectedFlag ? "bg-neutral-900 text-white" : "text-neutral-400 hover:bg-neutral-900/70 hover:text-white"
-                  }`}
-                >
-                  <span className="truncate">{s}</span>
-                  {selectedFlag && <Check className="h-3.5 w-3.5 shrink-0" style={{ color: ACCENT }} />}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
+      {mounted &&
+        open &&
+        !isDisabled &&
+        coords &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{
+              position: "fixed",
+              top: coords.top,
+              left: coords.left,
+              width: coords.width,
+              zIndex: 9999,
+            }}
+            className="border border-neutral-800 bg-[#0a0a0a] shadow-2xl"
+          >
+            <div className="relative border-b border-neutral-900 px-3 pt-2 pb-1">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-600" />
+              <input
+                ref={inputRef}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={searchPlaceholder}
+                className="h-9 w-full bg-transparent pl-9 pr-3 text-xs text-white outline-none placeholder:text-neutral-600"
+              />
+            </div>
+            <div className="max-h-36 overflow-y-auto py-1">
+              {filteredOptions.length === 0 && (
+                <div className="px-3 py-2 text-[11px] text-neutral-600">{emptyLabel}</div>
+              )}
+              {filteredOptions.map((s) => {
+                const selectedFlag = s === selected;
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => handleSelect(s)}
+                    className={`flex w-full items-center justify-between px-3 py-2 text-left text-[12.5px] transition-colors cursor-pointer ${
+                      selectedFlag
+                        ? "bg-neutral-900 text-white"
+                        : "text-neutral-400 hover:bg-neutral-900/70 hover:text-white"
+                    }`}
+                  >
+                    <span className="truncate">{s}</span>
+                    {selectedFlag && <Check className="h-3.5 w-3.5 shrink-0" style={{ color: ACCENT }} />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>,
+          document.body
+        )}
+    </>
   );
 }
 
@@ -450,16 +505,6 @@ export default function CostAdjustmentsModal({
 
   const sampleProduct = selectedRows[0];
 
-  /**
-   * getPreview — CORRIGIDO
-   *
-   * 1. `desconto` agora reduz o valor (base * (1 - v/100)), nunca aumenta.
-   * 2. `margemMinima` não é mais tratado como acréscimo de preço — é exibido
-   *    apenas como informação de piso de validação, sem simular cálculo de preço.
-   * 3. Cada campo de regra (imposto, marketing, desconto) continua sendo
-   *    mostrado isoladamente no preview (por campo), mas com o sinal correto
-   *    de cada operação, evitando a impressão de que desconto "aumenta preço".
-   */
   const getPreview = useCallback(
     (k: keyof CostAdjustmentsType, s: "R$" | "%") => {
       if (!isProductScope || !sampleProduct) return null;
@@ -469,31 +514,25 @@ export default function CostAdjustmentsModal({
       const base = sampleProduct.current_cost ?? 0;
       if (base <= 0) return null;
 
-      // Embalagem em modo percentual — acréscimo de custo (correto, é custo direto)
       if (k === "embalagem" && embalagemMode === "percent") {
         const res = base * (1 + v / 100);
         return `Ex: ${sampleProduct.code} → ${formatCurrency(base)} (+${v}%) = ${formatCurrency(res)}`;
       }
 
-      // Embalagem em modo fixo — soma direta em R$ (correto, é custo direto)
       if (s === "R$") {
         const res = base + v;
         return `Ex: ${sampleProduct.code} → ${formatCurrency(base)} + ${formatCurrency(v)} = ${formatCurrency(res)}`;
       }
 
-      // Mínimo de margem NÃO é um componente de acréscimo de preço.
-      // É uma regra de piso/validação — não deve simular cálculo de preço final.
       if (k === "margemMinima") {
         return `Piso de margem: vendas com margem abaixo de ${v}% serão sinalizadas/bloqueadas`;
       }
 
-      // Desconto reduz o valor, nunca aumenta
       if (k === "desconto") {
         const res = base * (1 - v / 100);
         return `Ex: ${sampleProduct.code} → ${formatCurrency(base)} (-${v}%) = ${formatCurrency(res)}`;
       }
 
-      // Demais campos de regra (imposto, marketing) — acréscimo percentual isolado
       const res = base * (1 + v / 100);
       const sign = v >= 0 ? "+" : "";
       return `Ex: ${sampleProduct.code} → ${formatCurrency(base)} (${sign}${v}%) = ${formatCurrency(res)}`;
@@ -501,7 +540,6 @@ export default function CostAdjustmentsModal({
     [sampleProduct, values, errors, embalagemMode, isProductScope]
   );
 
-  /** Preview/descrição específico da embalagem. Não se aplica ao escopo Canal (custo direto do produto). */
   const embalagemPreview = useMemo(() => {
     if (isProductScope) {
       return getPreview("embalagem", "R$");
@@ -520,7 +558,6 @@ export default function CostAdjustmentsModal({
     return null;
   }, [isProductScope, isGlobalScope, isStoreScope, isChannelScope, selectedStore, getPreview]);
 
-  /** Preview específico do desconto por marca */
   const descontoBrandPreview = useMemo(() => {
     if (!descontoFilled) return null;
     return selectedBrand
@@ -535,12 +572,7 @@ export default function CostAdjustmentsModal({
 
     const rulesAffected = isProductScope ? rulesFilledCount * productCount : rulesFilledCount;
 
-    // embalagem afeta todos os produtos do escopo (exceto canal, onde não se aplica)
-    const costsAffected = embalagemFilled
-      ? isProductScope
-        ? productCount
-        : null // null = "todos os produtos" (sem contagem exata disponível no client)
-      : 0;
+    const costsAffected = embalagemFilled ? (isProductScope ? productCount : null) : 0;
 
     return { rulesAffected, costsAffected, productCount, embalagemFilled, rulesFilledCount };
   }, [values, isProductScope, isChannelScope, selectedRows.length]);
