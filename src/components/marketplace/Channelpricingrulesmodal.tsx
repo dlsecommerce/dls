@@ -48,6 +48,8 @@ interface BrandRule {
 interface ListingTypeRule {
   rate: string;
   fixedFee: string;
+  frete: string;
+  freteMode: "fixed" | "percent";
 }
 
 type Props = {
@@ -73,6 +75,10 @@ function emptyTier(): PriceTier {
 
 function emptyBrandRule(): BrandRule {
   return { brand: "", rate: "", fixedFee: "" };
+}
+
+function emptyListingTypeRule(): ListingTypeRule {
+  return { rate: "", fixedFee: "", frete: "", freteMode: "fixed" };
 }
 
 const modeTabClass = (active: boolean) => `
@@ -118,8 +124,8 @@ export default function ChannelPricingRulesModal({
 
   // Condição (Mercado Livre) — camada opcional sobre qualquer modo
   const [useCondition, setUseCondition] = useState(false);
-  const [classico, setClassico] = useState<ListingTypeRule>({ rate: "", fixedFee: "" });
-  const [premium, setPremium] = useState<ListingTypeRule>({ rate: "", fixedFee: "" });
+  const [classico, setClassico] = useState<ListingTypeRule>(emptyListingTypeRule());
+  const [premium, setPremium] = useState<ListingTypeRule>(emptyListingTypeRule());
 
   // Frete (independente da comissão)
   const [frete, setFrete] = useState("");
@@ -137,8 +143,8 @@ export default function ChannelPricingRulesModal({
     setDefaultFixedFee("");
     setBrandRules([emptyBrandRule()]);
     setUseCondition(false);
-    setClassico({ rate: "", fixedFee: "" });
-    setPremium({ rate: "", fixedFee: "" });
+    setClassico(emptyListingTypeRule());
+    setPremium(emptyListingTypeRule());
     setFrete("");
     setFreteMode("fixed");
     setMargemMinima(null);
@@ -191,13 +197,19 @@ export default function ChannelPricingRulesModal({
 
           if (marketplaceRule.listing_type_rules) {
             setUseCondition(true);
+            const lc = marketplaceRule.listing_type_rules.classico;
+            const lp = marketplaceRule.listing_type_rules.premium;
             setClassico({
-              rate: String(marketplaceRule.listing_type_rules.classico?.commission_rate * 100 ?? ""),
-              fixedFee: String(marketplaceRule.listing_type_rules.classico?.fixed_fee ?? ""),
+              rate: String(lc?.commission_rate != null ? lc.commission_rate * 100 : ""),
+              fixedFee: String(lc?.fixed_fee ?? ""),
+              frete: String(lc?.frete ?? ""),
+              freteMode: lc?.frete_mode ?? "fixed",
             });
             setPremium({
-              rate: String(marketplaceRule.listing_type_rules.premium?.commission_rate * 100 ?? ""),
-              fixedFee: String(marketplaceRule.listing_type_rules.premium?.fixed_fee ?? ""),
+              rate: String(lp?.commission_rate != null ? lp.commission_rate * 100 : ""),
+              fixedFee: String(lp?.fixed_fee ?? ""),
+              frete: String(lp?.frete ?? ""),
+              freteMode: lp?.frete_mode ?? "fixed",
             });
           }
         }
@@ -279,10 +291,14 @@ export default function ChannelPricingRulesModal({
           classico: {
             commission_rate: parseValue(classico.rate) / 100,
             fixed_fee: parseValue(classico.fixedFee),
+            frete: classico.frete !== "" ? parseValue(classico.frete) : null,
+            frete_mode: classico.freteMode,
           },
           premium: {
             commission_rate: parseValue(premium.rate) / 100,
             fixed_fee: parseValue(premium.fixedFee),
+            frete: premium.frete !== "" ? parseValue(premium.frete) : null,
+            frete_mode: premium.freteMode,
           },
         };
       }
@@ -617,10 +633,10 @@ export default function ChannelPricingRulesModal({
                   </label>
 
                   {useCondition && (
-                    <div className="mt-3 space-y-2">
+                    <div className="mt-3 space-y-3">
                       <div>
                         <span className="mb-1 block text-[10.5px] text-neutral-500">Clássico</span>
-                        <div className="grid grid-cols-2 gap-1.5">
+                        <div className="grid grid-cols-2 gap-1.5 mb-1.5">
                           <input
                             inputMode="decimal"
                             value={classico.rate}
@@ -642,10 +658,49 @@ export default function ChannelPricingRulesModal({
                             className={miniInputClass}
                           />
                         </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex overflow-hidden border border-neutral-800 text-[10px] shrink-0">
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() => setClassico((prev) => ({ ...prev, freteMode: "fixed" }))}
+                              className={`px-2 h-9 transition-colors cursor-pointer ${
+                                classico.freteMode === "fixed"
+                                  ? "bg-neutral-800 text-white"
+                                  : "text-neutral-500 hover:text-neutral-300"
+                              }`}
+                            >
+                              R$
+                            </button>
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() => setClassico((prev) => ({ ...prev, freteMode: "percent" }))}
+                              className={`px-2 h-9 transition-colors cursor-pointer ${
+                                classico.freteMode === "percent"
+                                  ? "bg-neutral-800 text-white"
+                                  : "text-neutral-500 hover:text-neutral-300"
+                              }`}
+                            >
+                              %
+                            </button>
+                          </div>
+                          <input
+                            inputMode="decimal"
+                            value={classico.frete}
+                            disabled={saving}
+                            onChange={(e) =>
+                              setClassico((prev) => ({ ...prev, frete: sanitizeDecimalInput(e.target.value) }))
+                            }
+                            placeholder="Frete Clássico"
+                            className={miniInputClass}
+                          />
+                        </div>
                       </div>
+
                       <div>
                         <span className="mb-1 block text-[10.5px] text-neutral-500">Premium</span>
-                        <div className="grid grid-cols-2 gap-1.5">
+                        <div className="grid grid-cols-2 gap-1.5 mb-1.5">
                           <input
                             inputMode="decimal"
                             value={premium.rate}
@@ -667,9 +722,49 @@ export default function ChannelPricingRulesModal({
                             className={miniInputClass}
                           />
                         </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex overflow-hidden border border-neutral-800 text-[10px] shrink-0">
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() => setPremium((prev) => ({ ...prev, freteMode: "fixed" }))}
+                              className={`px-2 h-9 transition-colors cursor-pointer ${
+                                premium.freteMode === "fixed"
+                                  ? "bg-neutral-800 text-white"
+                                  : "text-neutral-500 hover:text-neutral-300"
+                              }`}
+                            >
+                              R$
+                            </button>
+                            <button
+                              type="button"
+                              disabled={saving}
+                              onClick={() => setPremium((prev) => ({ ...prev, freteMode: "percent" }))}
+                              className={`px-2 h-9 transition-colors cursor-pointer ${
+                                premium.freteMode === "percent"
+                                  ? "bg-neutral-800 text-white"
+                                  : "text-neutral-500 hover:text-neutral-300"
+                              }`}
+                            >
+                              %
+                            </button>
+                          </div>
+                          <input
+                            inputMode="decimal"
+                            value={premium.frete}
+                            disabled={saving}
+                            onChange={(e) =>
+                              setPremium((prev) => ({ ...prev, frete: sanitizeDecimalInput(e.target.value) }))
+                            }
+                            placeholder="Frete Premium"
+                            className={miniInputClass}
+                          />
+                        </div>
                       </div>
+
                       <p className="text-[10px] text-neutral-600">
-                        Se preenchida, essa regra tem prioridade sobre o modo de comissão selecionado acima.
+                        Se preenchida, essa regra tem prioridade sobre o modo de comissão e o frete geral
+                        selecionados acima.
                       </p>
                     </div>
                   )}

@@ -20,6 +20,8 @@ export interface BrandRulePayload {
 export interface ListingTypeRulePayload {
   commission_rate: number;
   fixed_fee: number;
+  frete?: number | null;
+  frete_mode?: "fixed" | "percent";
 }
 
 export interface MarketplaceChannelRule {
@@ -302,7 +304,8 @@ export async function loadMarketplaceChannelRule(
  *  - "tiered": faixas de preço (commission_tiers), cada uma com % + taxa fixa
  *  - "brand": comissão por marca (brand_rules) + regra padrão (default_rule)
  * Além disso, canais do tipo Mercado Livre podem informar listing_type_rules
- * (Clássico/Premium), que tem prioridade sobre o pricing_mode selecionado.
+ * (Clássico/Premium), que tem prioridade sobre o pricing_mode selecionado
+ * E sobre o frete geral do canal (cada condição pode ter seu próprio frete).
  */
 export async function saveMarketplaceChannelRule(payload: {
   channel: string;
@@ -390,12 +393,29 @@ export function calcularComissaoCanal(
 
 /**
  * Calcula o valor do frete (fixo em R$ ou percentual) sobre o preço de venda.
+ * Respeita a precedência: Condição (ML) > frete geral do canal.
+ * Se a condição (Clássico/Premium) tiver um frete próprio preenchido
+ * (listing_type_rules[listingType].frete != null), ele sobrescreve o
+ * frete geral (rule.frete/rule.frete_mode) — igual à comissão.
  */
 export function calcularFreteCanal(
   rule: MarketplaceChannelRule | null,
-  precoVenda: number
+  precoVenda: number,
+  listingType?: "classico" | "premium"
 ): number {
   if (!rule) return 0;
+
+  // 1º: Condição (Mercado Livre) — se o frete da condição foi preenchido
+  if (rule.listing_type_rules && listingType) {
+    const lt = rule.listing_type_rules[listingType];
+    if (lt?.frete != null) {
+      return lt.frete_mode === "percent"
+        ? precoVenda * (lt.frete / 100)
+        : lt.frete;
+    }
+  }
+
+  // 2º: fallback — frete geral do canal
   return rule.frete_mode === "percent"
     ? precoVenda * (rule.frete / 100)
     : rule.frete;
