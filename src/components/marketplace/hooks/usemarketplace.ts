@@ -53,7 +53,6 @@ const DEFAULT_PAGE_SIZE = 50;
 const SEARCH_DEBOUNCE_MS = 350;
 const LIMITE_COMISSAO_CLASSICO = 14;
 const CANAL_MERCADO_LIVRE = "mercado livre";
-const RECENT_DAYS = 5; // mesma janela usada no badge "Novo" da UI (MarketplaceDataTable)
 
 // ===========================================================================
 // VALIDAÇÃO (ZOD) — Single Source of Truth
@@ -167,10 +166,12 @@ function applyFilters(query: any, params: UseMarketplaceParams, debouncedSearch:
   } else if (situacao === "Todos") {
     // sem filtro de deleted_at — traz tudo
   } else if (situacao === "Últimos incluídos") {
-    // só ativos + criados nos últimos N dias (mesma janela do badge "Novo")
+    // FIX: sem cutoff de tempo — traz sempre os mais recentes.
+    // Antes havia um gte(created_at, cutoff de N dias) que zerava
+    // a lista quando não havia inclusões dentro dessa janela.
+    // A ordenação por created_at desc (aplicada no fetch) já garante
+    // que os mais recentes aparecem primeiro, sem risco de lista vazia.
     query = query.is("deleted_at", null);
-    const threshold = new Date(Date.now() - RECENT_DAYS * 24 * 60 * 60 * 1000).toISOString();
-    query = query.gte("created_at", threshold);
   } else {
     // "Ativos" ou undefined (default)
     query = query.is("deleted_at", null);
@@ -220,8 +221,11 @@ async function fetchMarketplacePage(
 
   query = applyFilters(query, params, debouncedSearch);
 
-  const sortBy = params.sortBy ?? "created_at";
-  const sortDir = params.sortDir ?? "desc";
+  // "Últimos incluídos" força ordenação por created_at desc,
+  // independentemente do sortBy/sortDir vindo dos filtros da UI.
+  const isUltimosIncluidos = params.situacao === "Últimos incluídos";
+  const sortBy = isUltimosIncluidos ? "created_at" : params.sortBy ?? "created_at";
+  const sortDir = isUltimosIncluidos ? "desc" : params.sortDir ?? "desc";
   query = query.order(sortBy, { ascending: sortDir === "asc" });
 
   const from = page * pageSize;

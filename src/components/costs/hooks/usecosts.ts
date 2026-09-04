@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 import { exportFilteredToXlsx } from "@/components/costs/helpers/Exportcosts";
@@ -124,9 +125,146 @@ const parseDecimalToNumber = (value: string): number | null => {
 const isLiverpoolBrand = (mark: string) =>
   String(mark || "").trim().toLowerCase() === "liverpool";
 
+/* ─────────────────────────────────────────────
+ * QUERY BUILDER — puro, sem depender de closures do hook.
+ * Reaproveitado por: useQuery principal, fetchAllRows,
+ * fetchAllActiveCostCodes, exportações, etc.
+ * ───────────────────────────────────────────── */
+
+type CostsQueryParams = {
+  appliedFilters: CostFiltersType;
+  appliedSelectedBrands: string[];
+  sortColumn: string | null;
+  sortDirection: "asc" | "desc";
+};
+
+function buildCostsQuery(query: any, params: CostsQueryParams) {
+  const { appliedFilters, appliedSelectedBrands, sortColumn, sortDirection } = params;
+
+  if (appliedFilters.codigo.trim()) {
+    const tokens = splitByComma(appliedFilters.codigo);
+    const parts = tokens.map(
+      (t) => `code.ilike."%${t.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}%"`
+    );
+
+    if (parts.length === 1) {
+      query = query.ilike("code", `%${tokens[0]}%`);
+    } else if (parts.length > 1) {
+      query = query.or(parts.join(","));
+    }
+  }
+
+  if (appliedFilters.produto.trim()) {
+    const tokens = parseSearchTokens(appliedFilters.produto);
+    const parts = tokens.map(
+      (t) =>
+        `product.ilike."%${String(t).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}%"`
+    );
+
+    if (parts.length === 1) {
+      query = query.ilike("product", `%${tokens[0]}%`);
+    } else if (parts.length > 1) {
+      query = query.or(parts.join(","));
+    }
+  }
+
+  if (appliedSelectedBrands.length) {
+    query = query.in("mark", appliedSelectedBrands);
+  }
+
+  if (appliedFilters.marca.trim()) {
+    const marcaTerms = splitByComma(appliedFilters.marca);
+    const marcaParts = marcaTerms.map(
+      (t) => `mark.ilike."%${t.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}%"`
+    );
+
+    if (marcaParts.length === 1) {
+      query = query.ilike("mark", `%${marcaTerms[0]}%`);
+    } else if (marcaParts.length > 1) {
+      query = query.or(marcaParts.join(","));
+    }
+  }
+
+  if (appliedFilters.ncm === "Com NCM") {
+    query = query.not("ncm", "is", null).neq("ncm", "");
+  } else if (appliedFilters.ncm === "Sem NCM") {
+    query = query.or('ncm.is.null,ncm.eq.""');
+  }
+
+  if (sortColumn) {
+    const dbColumn = SORT_FIELD_MAP[sortColumn] || sortColumn;
+    query = query.order(dbColumn, { ascending: sortDirection === "asc" });
+  } else if (appliedFilters.situacao === "Últimos Incluídos") {
+    query = query.order("created_at", { ascending: false });
+  } else {
+    query = query.order("code", { ascending: true });
+  }
+
+  return query;
+}
+
+function baseCostsQuery(countOnly: boolean) {
+  return supabase
+    .schema(SCHEMA)
+    .from("costs")
+    .select("*", { count: "exact", head: countOnly })
+    .is("deleted_at", null);
+}
+
+/* ─────────────────────────────────────────────
+ * SERIALIZAÇÃO DE FILTROS — chave estável para o queryKey
+ * ───────────────────────────────────────────── */
+
+function buildFiltersKey(params: CostsQueryParams) {
+  return JSON.stringify({
+    codigo: params.appliedFilters.codigo.trim(),
+    marca: params.appliedFilters.marca.trim(),
+    produto: params.appliedFilters.produto.trim(),
+    ncm: params.appliedFilters.ncm,
+    situacao: params.appliedFilters.situacao,
+    brands: params.appliedSelectedBrands.slice().sort(),
+    sortColumn: params.sortColumn,
+    sortDirection: params.sortDirection,
+  });
+}
+
+/* ─────────────────────────────────────────────
+ * FETCH FUNCTION — usada pelo React Query
+ * ───────────────────────────────────────────── */
+
+type FetchResult = { rows: Custo[]; totalCount: number };
+
+async function fetchCostsPage(
+  params: CostsQueryParams,
+  page: number,
+  pageSize: number,
+  signal?: AbortSignal
+): Promise<FetchResult> {
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let countQuery = baseCostsQuery(true);
+  let dataQuery = baseCostsQuery(false);
+
+  if (signal) {
+    countQuery = countQuery.abortSignal(signal);
+    dataQuery = dataQuery.abortSignal(signal);
+  }
+
+  countQuery = buildCostsQuery(countQuery, params);
+  dataQuery = buildCostsQuery(dataQuery, params).range(from, to);
+
+  const [{ count }, { data, error }] = await Promise.all([countQuery, dataQuery]);
+
+  if (error) throw error;
+
+  return { rows: (data || []).map(mapRowToUI), totalCount: count || 0 };
+}
+
 export function useCosts() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
 
   const initialCodigo = searchParams.get("codigo") ?? "";
   const initialMarca = searchParams.get("marca") ?? "";
@@ -139,9 +277,6 @@ export function useCosts() {
     searchParams.get("sortDirection") === "desc" ? "desc" : "asc";
   const initialNcm = searchParams.get("ncm") ?? "";
 
-  const [rows, setRows] = useState<Custo[]>([]);
-  const [totalItems, setTotalItems] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [renamingCodes, setRenamingCodes] = useState(false);
   const [applyingAdjustments, setApplyingAdjustments] = useState(false);
@@ -220,7 +355,67 @@ export function useCosts() {
 
   const [selectingAll, setSelectingAll] = useState(false);
 
-  const loadRequestIdRef = useRef(0);
+  /* ── Chave de filtros estável (queryKey do React Query) ────── */
+  const queryParams: CostsQueryParams = useMemo(
+    () => ({ appliedFilters, appliedSelectedBrands, sortColumn, sortDirection }),
+    [appliedFilters, appliedSelectedBrands, sortColumn, sortDirection]
+  );
+
+  const filtersKey = useMemo(() => buildFiltersKey(queryParams), [queryParams]);
+
+  const queryKey = useMemo(
+    () => ["costs", filtersKey, currentPage, itemsPerPage] as const,
+    [filtersKey, currentPage, itemsPerPage]
+  );
+
+  /* ── QUERY principal — cache, dedupe, abort, retry ──────────── */
+  const {
+    data,
+    isLoading,
+    refetch: refetchQuery,
+  } = useQuery({
+    queryKey,
+    queryFn: ({ signal }) => fetchCostsPage(queryParams, currentPage, itemsPerPage, signal),
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+    retry: (failureCount, err: any) => {
+      const msg = String(err?.message || "");
+      const isNetworkError = msg.includes("Failed to fetch") || msg.includes("network");
+      return isNetworkError && failureCount < 2;
+    },
+  });
+
+  const rows = data?.rows ?? [];
+  const totalItems = data?.totalCount ?? 0;
+  const loading = isLoading;
+  const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+
+  /* ── Prefetch preditivo da próxima página ───────────────────── */
+  useEffect(() => {
+    if (currentPage >= totalPages) return;
+    const nextKey = ["costs", filtersKey, currentPage + 1, itemsPerPage] as const;
+    queryClient.prefetchQuery({
+      queryKey: nextKey,
+      queryFn: () => fetchCostsPage(queryParams, currentPage + 1, itemsPerPage),
+      staleTime: 30_000,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersKey, currentPage, itemsPerPage, totalPages]);
+
+  /* ── loadData — mantido por compatibilidade com todo o código
+   *    existente (import, delete, ajustes, rename chamam await loadData()).
+   *    Agora só dispara refetch do React Query em vez de fetch manual.
+   * ───────────────────────────────────────────── */
+  const loadData = useCallback(
+    async (page = currentPage, limit = itemsPerPage) => {
+      if (page !== currentPage) setCurrentPage(page);
+      if (limit !== itemsPerPage) setItemsPerPage(limit);
+      await refetchQuery();
+    },
+    [currentPage, itemsPerPage, refetchQuery]
+  );
+
+  const loadRequestIdRef = useRef(0); // mantido apenas por compatibilidade (não usado mais)
 
   const setSelectedRowsUnique = useCallback(
     (updater: React.SetStateAction<Custo[]>) => {
@@ -327,109 +522,20 @@ export function useCosts() {
     setAllBrands(brands);
   }, []);
 
+  /* ── buildQuery (legado) — mantido para as funções que ainda
+   *    precisam de query builder ad-hoc (bulk fetch, export).
+   *    Reaproveita buildCostsQuery internamente. ────────────── */
   const buildQuery = useCallback(
     (countOnly = false) => {
-      let q = supabase
-        .schema(SCHEMA)
-        .from("costs")
-        .select("*", { count: "exact", head: countOnly })
-        .is("deleted_at", null);
-
-      if (appliedFilters.codigo.trim()) {
-        const tokens = splitByComma(appliedFilters.codigo);
-        const parts = tokens.map(
-          (t) => `code.ilike."%${t.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}%"`
-        );
-
-        if (parts.length === 1) {
-          q = q.ilike("code", `%${tokens[0]}%`);
-        } else if (parts.length > 1) {
-          q = q.or(parts.join(","));
-        }
-      }
-
-      if (appliedFilters.produto.trim()) {
-        const tokens = parseSearchTokens(appliedFilters.produto);
-        const parts = tokens.map(
-          (t) =>
-            `product.ilike."%${String(t).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}%"`
-        );
-
-        if (parts.length === 1) {
-          q = q.ilike("product", `%${tokens[0]}%`);
-        } else if (parts.length > 1) {
-          q = q.or(parts.join(","));
-        }
-      }
-
-      if (appliedSelectedBrands.length) {
-        q = q.in("mark", appliedSelectedBrands);
-      }
-
-      if (appliedFilters.marca.trim()) {
-        const marcaTerms = splitByComma(appliedFilters.marca);
-        const marcaParts = marcaTerms.map(
-          (t) => `mark.ilike."%${t.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}%"`
-        );
-
-        if (marcaParts.length === 1) {
-          q = q.ilike("mark", `%${marcaTerms[0]}%`);
-        } else if (marcaParts.length > 1) {
-          q = q.or(marcaParts.join(","));
-        }
-      }
-
-      if (appliedFilters.ncm === "Com NCM") {
-        q = q.not("ncm", "is", null).neq("ncm", "");
-      } else if (appliedFilters.ncm === "Sem NCM") {
-        q = q.or('ncm.is.null,ncm.eq.""');
-      }
-
-      if (sortColumn) {
-        const dbColumn = SORT_FIELD_MAP[sortColumn] || sortColumn;
-        q = q.order(dbColumn, { ascending: sortDirection === "asc" });
-      } else if (appliedFilters.situacao === "Últimos Incluídos") {
-        q = q.order("created_at", { ascending: false });
-      } else {
-        q = q.order("code", { ascending: true });
-      }
-
-      return q;
+      const base = baseCostsQuery(countOnly);
+      return buildCostsQuery(base, {
+        appliedFilters,
+        appliedSelectedBrands,
+        sortColumn,
+        sortDirection,
+      });
     },
     [appliedSelectedBrands, appliedFilters, sortColumn, sortDirection]
-  );
-
-  const loadData = useCallback(
-    async (page = currentPage, limit = itemsPerPage) => {
-      const requestId = ++loadRequestIdRef.current;
-      setLoading(true);
-
-      const from = (page - 1) * limit;
-      const to = from + limit - 1;
-
-      const [{ count }, { data, error }] = await Promise.all([
-        buildQuery(true),
-        buildQuery(false).range(from, to),
-      ]);
-
-      if (requestId !== loadRequestIdRef.current) return;
-
-      if (error) {
-        console.error("Erro ao carregar dados:", error);
-        toastCustom.error(
-          "Erro ao carregar custos",
-          error.message || "Falha ao buscar os registros."
-        );
-        setRows([]);
-        setLoading(false);
-        return;
-      }
-
-      setTotalItems(count || 0);
-      setRows((data || []).map(mapRowToUI));
-      setLoading(false);
-    },
-    [buildQuery, currentPage, itemsPerPage]
   );
 
   const fetchAllRows = useCallback(async (): Promise<Custo[]> => {
@@ -554,17 +660,10 @@ export function useCosts() {
     loadAllBrands();
   }, [loadAllBrands]);
 
-  useEffect(() => {
-    loadData(currentPage, itemsPerPage);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    currentPage,
-    itemsPerPage,
-    sortColumn,
-    sortDirection,
-    appliedSelectedBrands,
-    appliedFilters,
-  ]);
+  // FIX: fetch automático agora é gerenciado pelo useQuery (cache/dedupe/abort
+  // nativos). Removido o useEffect manual que chamava loadData() a cada
+  // mudança de filtro/página — o React Query já refaz o fetch sozinho
+  // quando queryKey muda.
 
   const applyFilterState = useCallback(
     (next: {
@@ -1002,15 +1101,25 @@ export function useCosts() {
 
     const { codigo, field } = editing;
     const novoValor = editing.value.trim();
-    const prevRows = rows;
 
     const dbField = field === "Custo Atual" ? "current_cost" : "previous_cost";
 
-    const updatedRows = rows.map((r) =>
-      r["Código"] === codigo ? { ...r, [field]: novoValor } : r
+    // Optimistic update no cache do React Query (substitui setRows manual)
+    const previousData = queryClient.getQueriesData({ queryKey: ["costs"], exact: false });
+
+    queryClient.setQueriesData<FetchResult>(
+      { queryKey: ["costs"], exact: false },
+      (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          rows: old.rows.map((r) =>
+            r["Código"] === codigo ? { ...r, [field]: novoValor } : r
+          ),
+        };
+      }
     );
 
-    setRows(updatedRows);
     setEditing(null);
 
     try {
@@ -1025,15 +1134,20 @@ export function useCosts() {
 
       toastCustom.success("Custo atualizado!", "Alteração salva com sucesso.");
     } catch (err: any) {
-      setRows(prevRows);
+      // rollback
+      previousData.forEach(([key, value]) => {
+        queryClient.setQueryData(key, value);
+      });
+
       toastCustom.error(
         "Erro ao atualizar custo",
         err?.message || "Falha ao salvar alteração."
       );
     } finally {
       setSavingEdit(false);
+      queryClient.invalidateQueries({ queryKey: ["costs"], exact: false });
     }
-  }, [editing, savingEdit, rows]);
+  }, [editing, savingEdit, queryClient]);
 
   const cancelCostEdit = useCallback(() => {
     if (savingEdit) return;
@@ -1266,7 +1380,6 @@ export function useCosts() {
       setApplyingAdjustments(true);
 
       try {
-        // ✅ CORREÇÃO: adicionado cost_id?: string | null ao tipo do array
         const rulesToCreate: {
           rule_type: string;
           scope: "global" | "store" | "channel" | "product";
@@ -1319,10 +1432,9 @@ export function useCosts() {
           }
         } else {
           // scope === "product"
-          // ✅ CORREÇÃO: incluído cost_id: costId em todos os pushes deste bloco
           for (const row of selectedRows) {
             const code = row["Código"];
-            const costId = row.id; // <-- UUID real do custo (obrigatório para escopo product)
+            const costId = row.id; // UUID real do custo (obrigatório para escopo product)
 
             if (!costId) {
               throw new Error(

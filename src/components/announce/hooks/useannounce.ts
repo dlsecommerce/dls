@@ -1,7 +1,8 @@
+// announce/hooks/useAnnounce.ts
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { createNotification } from "@/lib/createNotification";
@@ -66,6 +67,15 @@ type UseAnnounceFilters = {
 };
 
 type ProdutoInput = Partial<AnnounceType> & Record<string, any>;
+
+type FetchResult = { rows: any[]; totalCount: number };
+
+/* ─────────────────────────────────────────────
+ * CONSTANTES
+ * ───────────────────────────────────────────── */
+
+const DEFAULT_PAGE_SIZE = 50;
+const SEARCH_DEBOUNCE_MS = 350;
 
 /* ─────────────────────────────────────────────
  * NORMALIZAÇÃO DE TIPO (aceita PT e EN)
@@ -303,12 +313,6 @@ const savingLocks = new Set<string>();
 const deletingLocks = new Set<string>();
 
 /* ─────────────────────────────────────────────
- * DEFAULTS DE PAGINAÇÃO
- * ───────────────────────────────────────────── */
-
-const DEFAULT_PAGE_SIZE = 50;
-
-/* ─────────────────────────────────────────────
  * QUERY BUILDER COMPARTILHADO
  * ───────────────────────────────────────────── */
 
@@ -330,10 +334,8 @@ function applySharedFilters(query: any, args: SharedFilterArgs) {
   } else if (situacao === "Excluídos") {
     query = query.not("deleted_at", "is", null);
   } else if (situacao === "Últimos incluídos") {
-    // FIX: sem cutoff de tempo — traz sempre os mais recentes
-    // (ordenação por created_at desc é aplicada no fetchAll).
-    // Antes havia um "gte(created_at, cutoff de 48h)" que zerava
-    // a lista quando não havia inclusões dentro dessa janela.
+    // Sem cutoff de tempo — traz sempre os mais recentes
+    // (ordenação por created_at desc é aplicada no fetch).
     query = query.is("deleted_at", null);
   }
 
@@ -387,101 +389,161 @@ export async function fetchDistinctBrands(): Promise<string[]> {
 }
 
 /* ─────────────────────────────────────────────
+ * SERIALIZAÇÃO DE FILTROS — chave estável para o queryKey
+ * ───────────────────────────────────────────── */
+
+function buildFiltersKey(
+  situacao: AnnounceSituacaoFilter,
+  store: string | null,
+  debouncedSearch: string,
+  type: Exclude<AnnounceTypeFilter, "Todos" | "Produtos" | "Variações">,
+  marksKey: string,
+  sortBy: AnnounceSortField,
+  sortDir: AnnounceSortDir
+) {
+  return JSON.stringify({
+    situacao,
+    store: store ?? null,
+    search: debouncedSearch.trim(),
+    type,
+    marks: marksKey,
+    sortBy,
+    sortDir,
+  });
+}
+
+/* ─────────────────────────────────────────────
+ * FETCH FUNCTION
+ * ───────────────────────────────────────────── */
+
+async function fetchAnnouncePage(
+  args: SharedFilterArgs & {
+    sortBy: AnnounceSortField;
+    sortDir: AnnounceSortDir;
+    page: number;
+    pageSize: number;
+  },
+  signal?: AbortSignal
+): Promise<FetchResult> {
+  const { situacao, store, search, type, marks, sortBy, sortDir, page, pageSize } = args;
+
+  const from = page * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabase
+    .schema("newsystem")
+    .from("announce")
+    .select(
+      "id, code_id, store, id_bling, reference, product, mark, active, deleted_at, created_at, updated_at",
+      { count: "exact" }
+    );
+
+  if (signal) query = query.abortSignal(signal);
+
+  query = applySharedFilters(query, { situacao, store, search, type, marks });
+  query = query.order(sortBy, { ascending: sortDir === "asc" }).range(from, to);
+
+  const { data, error, count } = await withRetry(() => query);
+  if (error) throw error;
+
+  return { rows: data ?? [], totalCount: count ?? 0 };
+}
+
+/* ─────────────────────────────────────────────
  * HOOK
  * ───────────────────────────────────────────── */
 
 export function useAnnounce(filters?: UseAnnounceFilters) {
-  const router = useRouter();
-
-  const [rawAnnounces, setRawAnnounces] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const savingRef = useRef(false);
-
-  const requestIdRef = useRef(0);
+  const queryClient = useQueryClient();
 
   const situacao = filters?.situacao ?? "Ativos";
-
-  // ── FIX: quando o filtro for "Últimos incluídos", força
-  // ordenação por created_at desc (mais recentes primeiro),
-  // independentemente do que vier em filters.sortBy/sortDir.
-  // Para os demais filtros, mantém o padrão code_id asc.
-  const isUltimosIncluidos = situacao === "Últimos incluídos";
-
-  const sortBy: AnnounceSortField = isUltimosIncluidos
-    ? "created_at"
-    : filters?.sortBy ?? "code_id";
-
-  const sortDir: AnnounceSortDir = isUltimosIncluidos
-    ? "desc"
-    : filters?.sortDir ?? "asc";
-
   const store = filters?.store ?? null;
-  const search = filters?.search ?? null;
   const type = normalizeTypeFilter(filters?.type);
   const marks = filters?.marks ?? [];
   const marksKey = marks.slice().sort().join("|");
 
-  /* ── PAGINAÇÃO (controlada pelo hook, server-side) ──────── */
+  // FIX: quando o filtro for "Últimos incluídos", força ordenação por
+  // created_at desc (mais recentes primeiro), independentemente do que
+  // vier em filters.sortBy/sortDir. Para os demais, mantém code_id asc.
+  const isUltimosIncluidos = situacao === "Últimos incluídos";
+  const sortBy: AnnounceSortField = isUltimosIncluidos
+    ? "created_at"
+    : filters?.sortBy ?? "code_id";
+  const sortDir: AnnounceSortDir = isUltimosIncluidos
+    ? "desc"
+    : filters?.sortDir ?? "asc";
+
   const [page, setPage] = useState(filters?.page ?? 0);
   const [pageSize, setPageSize] = useState(filters?.pageSize ?? DEFAULT_PAGE_SIZE);
-  const [totalCount, setTotalCount] = useState(0);
 
+  /* ── Debounce da busca ─────────────────────── */
+  const [debouncedSearch, setDebouncedSearch] = useState(filters?.search ?? "");
+  useEffect(() => {
+    const handle = setTimeout(
+      () => setDebouncedSearch(filters?.search ?? ""),
+      SEARCH_DEBOUNCE_MS
+    );
+    return () => clearTimeout(handle);
+  }, [filters?.search]);
+
+  /* ── Chave de filtros estável ──────────────── */
+  const filtersKey = useMemo(
+    () => buildFiltersKey(situacao, store, debouncedSearch, type, marksKey, sortBy, sortDir),
+    [situacao, store, debouncedSearch, type, marksKey, sortBy, sortDir]
+  );
+
+  // Reseta página ao mudar qualquer filtro
   useEffect(() => {
     setPage(0);
-  }, [store, search, situacao, sortBy, sortDir, type, marksKey]);
+  }, [filtersKey]);
 
-  /* ── LISTAGEM (server-side: filtro + paginação no banco) ──── */
-  const fetchAll = useCallback(async () => {
-    const myRequestId = ++requestIdRef.current;
+  const queryKey = useMemo(
+    () => ["announce", filtersKey, page, pageSize] as const,
+    [filtersKey, page, pageSize]
+  );
 
-    setLoading(true);
-    setError(null);
+  const sharedArgs: SharedFilterArgs = { situacao, store, search: debouncedSearch, type, marks };
 
-    try {
-      const from = page * pageSize;
-      const to = from + pageSize - 1;
+  /* ── QUERY principal ───────────────────────── */
+  const {
+    data,
+    isLoading,
+    isFetching,
+    error,
+    refetch: refetchQuery,
+  } = useQuery({
+    queryKey,
+    queryFn: ({ signal }) =>
+      fetchAnnouncePage({ ...sharedArgs, sortBy, sortDir, page, pageSize }, signal),
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+    retry: (failureCount, err: any) => {
+      const msg = String(err?.message || "");
+      const isNetworkError = msg.includes("Failed to fetch") || msg.includes("network");
+      return isNetworkError && failureCount < 2;
+    },
+  });
 
-      let query = supabase
-        .schema("newsystem")
-        .from("announce")
-        .select(
-          "id, code_id, store, id_bling, reference, product, mark, active, deleted_at, created_at, updated_at",
-          { count: "exact" }
-        )
-        .order(sortBy, { ascending: sortDir === "asc" })
-        .range(from, to);
+  const rawAnnounces = data?.rows ?? [];
+  const totalCount = data?.totalCount ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
-      query = applySharedFilters(query, { situacao, store, search, type, marks });
-
-      const { data, error, count } = await withRetry(() => query);
-
-      if (error) throw error;
-
-      if (myRequestId !== requestIdRef.current) return;
-
-      setRawAnnounces(data ?? []);
-      setTotalCount(count ?? 0);
-    } catch (err: any) {
-      if (myRequestId !== requestIdRef.current) return;
-      logError("fetchAll", err);
-      setError(mapErrorMessage(err));
-    } finally {
-      if (myRequestId === requestIdRef.current) {
-        setLoading(false);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store, search, situacao, sortBy, sortDir, type, marksKey, page, pageSize]);
-
+  /* ── Prefetch preditivo da próxima página ──── */
   useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
+    if (page + 1 >= totalPages) return;
+    const nextKey = ["announce", filtersKey, page + 1, pageSize] as const;
+    queryClient.prefetchQuery({
+      queryKey: nextKey,
+      queryFn: () =>
+        fetchAnnouncePage({ ...sharedArgs, sortBy, sortDir, page: page + 1, pageSize }),
+      staleTime: 30_000,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersKey, page, pageSize, totalPages]);
 
-  /* ── ENRIQUECIMENTO (code_id vem direto do banco) ── */
+  const refetch = useCallback(() => refetchQuery(), [refetchQuery]);
+
+  /* ── ENRIQUECIMENTO ─────────────────────────── */
   const announces: AnnounceRow[] = useMemo(() => {
     return rawAnnounces.map((item: any) => {
       const id = String(item.id);
@@ -497,73 +559,48 @@ export function useAnnounce(filters?: UseAnnounceFilters) {
     });
   }, [rawAnnounces]);
 
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-
   /* ── SELECIONAR TODOS OS REGISTROS QUE CASAM COM O FILTRO ───── */
   const fetchAllMatchingIds = useCallback(async (): Promise<
     { id: string; deleted_at: string | null }[]
   > => {
     let query = supabase.schema("newsystem").from("announce").select("id, deleted_at");
+    query = applySharedFilters(query, sharedArgs);
 
-    query = applySharedFilters(query, { situacao, store, search, type, marks });
+    const { data: rows, error: err } = await withRetry(() => query);
+    if (err) throw err;
 
-    const { data, error } = await withRetry(() => query);
-    if (error) throw error;
-
-    return (data ?? []).map((r: any) => ({
+    return (rows ?? []).map((r: any) => ({
       id: String(r.id),
       deleted_at: r.deleted_at ?? null,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store, search, situacao, type, marksKey]);
+  }, [filtersKey]);
 
-  /* ── ACTIONS: SAVE ─────────────────────────── */
+  /* ── MUTATION: SAVE ────────────────────────── */
 
-  const handleSave = useCallback(
-    async (produto: ProdutoInput, onAfterSave?: () => void) => {
+  const saveMutation = useMutation({
+    mutationFn: async (produto: ProdutoInput) => {
       const storeVal = anyToStoreName(produto?.store ?? produto?.loja ?? produto?.Loja);
-
-      if (!storeVal) {
-        toast.error("Selecione uma loja válida antes de salvar.");
-        return;
-      }
+      if (!storeVal) throw new Error("Selecione uma loja válida antes de salvar.");
 
       const reference = normalizeRequired(
         getField(produto, "reference", "referencia", "Referência", "Referencia", "sku")
       );
-
-      if (!reference) {
-        toast.error("Informe uma referência válida para o anúncio.");
-        return;
-      }
-
-      const lockKey = `${storeVal}:${reference}`;
-
-      if (savingLocks.has(lockKey) || savingRef.current) return;
-
-      savingLocks.add(lockKey);
-      savingRef.current = true;
-      setSaving(true);
+      if (!reference) throw new Error("Informe uma referência válida para o anúncio.");
 
       const idBling = normalizeIdBling(
         getField(produto, "id_bling", "ID Bling", "idBling", "ID_Bling")
       );
-
       const product = normalizeRequired(getField(produto, "product", "nome", "Nome"));
       const mark = normalizeNullable(getField(produto, "mark", "marca", "Marca"));
       const ativoRaw = getField(produto, "ativo");
       const ativo = ativoRaw === "" ? true : Boolean(ativoRaw);
 
-      if (!product) {
-        toast.error("Informe o nome do produto para salvar o anúncio.");
-        savingLocks.delete(lockKey);
-        savingRef.current = false;
-        setSaving(false);
-        return;
-      }
+      if (!product) throw new Error("Informe o nome do produto para salvar o anúncio.");
 
-      const isUpdate = Boolean(produto?.id);
-      let idFinal = "";
+      const lockKey = `${storeVal}:${reference}`;
+      if (savingLocks.has(lockKey)) throw new Error("__LOCKED__");
+      savingLocks.add(lockKey);
 
       try {
         const { data, error } = await withRetry(() =>
@@ -580,81 +617,110 @@ export function useAnnounce(filters?: UseAnnounceFilters) {
 
         if (error) throw error;
 
-        idFinal = String(data ?? "");
-
-        toast.success(isUpdate ? "Anúncio atualizado." : "Anúncio criado.");
-
-        if (onAfterSave) onAfterSave();
-        else await fetchAll();
-      } catch (err: any) {
-        logError("handleSave", err, { store: storeVal, reference });
-        toast.error("Erro ao salvar anúncio: " + mapErrorMessage(err));
-        return;
+        return { id: String(data ?? ""), storeVal, produto, isUpdate: Boolean(produto?.id) };
       } finally {
         savingLocks.delete(lockKey);
-        savingRef.current = false;
-        setSaving(false);
       }
+    },
 
-      // Notificação em background — não bloqueia a UI
+    onError: (err: any, produto) => {
+      if (err?.message === "__LOCKED__") return;
+      logError("handleSave", err, { produto });
+      toast.error("Erro ao salvar anúncio: " + mapErrorMessage(err));
+    },
+
+    onSuccess: ({ id, storeVal, produto, isUpdate }) => {
+      toast.success(isUpdate ? "Anúncio atualizado." : "Anúncio criado.");
+
       safeNotify("handleSave", {
         title: isUpdate ? "Anúncio atualizado" : "Anúncio criado",
-        message: `O anúncio "${getProdutoLabel(produto, idFinal)}" foi ${isUpdate ? "atualizado" : "criado"}.`,
+        message: `O anúncio "${getProdutoLabel(produto, id)}" foi ${
+          isUpdate ? "atualizado" : "criado"
+        }.`,
         action: isUpdate ? "update" : "create",
         entityType: "announcement",
-        entityId: idFinal,
-        link: buildAnnouncementLink(idFinal, storeVal),
+        entityId: id,
+        link: buildAnnouncementLink(id, storeVal),
       });
     },
-    [fetchAll]
+
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["announce"], exact: false });
+    },
+  });
+
+  const handleSave = useCallback(
+    async (produto: ProdutoInput, onAfterSave?: () => void) => {
+      try {
+        await saveMutation.mutateAsync(produto);
+        onAfterSave?.();
+      } catch (err: any) {
+        // erro já tratado em onError; aqui só evita unhandled rejection
+      }
+    },
+    [saveMutation]
   );
 
-  /* ── ACTIONS: DELETE (único) ─────────────────
-   * Se já está na lixeira -> hard delete (via RPC, 1 round-trip).
-   * Se está ativo -> soft delete.
-   * Update otimista: remove do estado local na hora,
+  /* ── MUTATION: DELETE (único) ─────────────────
+   * Optimistic update via queryClient — remove do cache
    * sem refazer a query paginada inteira.
    * ───────────────────────────────────────────── */
 
-  const handleDelete = useCallback(
-    async (produto: ProdutoInput, onAfterDelete?: () => void) => {
+  const deleteMutation = useMutation({
+    mutationFn: async (produto: ProdutoInput) => {
       const idProduto = String(produto?.id ?? "").trim();
-
-      if (!idProduto) {
-        toast.error("Anúncio inválido para exclusão.");
-        return;
-      }
+      if (!idProduto) throw new Error("Anúncio inválido para exclusão.");
 
       const jaExcluido = Boolean(produto?.deleted_at);
-
-      if (deletingLocks.has(idProduto)) return;
+      if (deletingLocks.has(idProduto)) throw new Error("__LOCKED__");
       deletingLocks.add(idProduto);
-      setDeleting(true);
 
       try {
         if (jaExcluido) {
           await hardDeleteByIds([idProduto]);
-          toast.success("Anúncio excluído permanentemente.");
         } else {
           await softDeleteByIds([idProduto]);
-          toast.success("Anúncio movido para a lixeira.");
         }
-
-        // Update otimista: remove do estado local sem refetch completo
-        setRawAnnounces((prev) => prev.filter((r) => String(r.id) !== idProduto));
-        setTotalCount((prev) => Math.max(0, prev - 1));
-
-        if (onAfterDelete) onAfterDelete();
-      } catch (err: any) {
-        logError("handleDelete", err, { idProduto, jaExcluido });
-        toast.error("Erro ao excluir anúncio: " + mapErrorMessage(err));
-        return;
+        return { idProduto, jaExcluido, produto };
       } finally {
         deletingLocks.delete(idProduto);
-        setDeleting(false);
       }
+    },
 
-      // Notificação em background — não bloqueia a UI
+    onMutate: async (produto) => {
+      const idProduto = String(produto?.id ?? "").trim();
+      await queryClient.cancelQueries({ queryKey: ["announce"], exact: false });
+
+      const previousData = queryClient.getQueriesData({ queryKey: ["announce"], exact: false });
+
+      queryClient.setQueriesData<FetchResult>(
+        { queryKey: ["announce"], exact: false },
+        (old) => {
+          if (!old) return old;
+          return {
+            rows: old.rows.filter((r: any) => String(r.id) !== idProduto),
+            totalCount: Math.max(0, old.totalCount - 1),
+          };
+        }
+      );
+
+      return { previousData };
+    },
+
+    onError: (err: any, _produto, context) => {
+      if (err?.message === "__LOCKED__") return;
+
+      context?.previousData?.forEach(([key, value]) => {
+        queryClient.setQueryData(key, value);
+      });
+
+      logError("handleDelete", err);
+      toast.error("Erro ao excluir anúncio: " + mapErrorMessage(err));
+    },
+
+    onSuccess: ({ idProduto, jaExcluido, produto }) => {
+      toast.success(jaExcluido ? "Anúncio excluído permanentemente." : "Anúncio movido para a lixeira.");
+
       safeNotify("handleDelete", {
         title: jaExcluido ? "Anúncio excluído permanentemente" : "Anúncio movido para a lixeira",
         message: `O anúncio "${getProdutoLabel(produto, idProduto)}" foi ${
@@ -666,23 +732,33 @@ export function useAnnounce(filters?: UseAnnounceFilters) {
         link: "/dashboard/anuncios",
       });
     },
-    []
+
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["announce"], exact: false });
+    },
+  });
+
+  const handleDelete = useCallback(
+    async (produto: ProdutoInput, onAfterDelete?: () => void) => {
+      try {
+        await deleteMutation.mutateAsync(produto);
+        onAfterDelete?.();
+      } catch (err: any) {
+        // erro já tratado em onError
+      }
+    },
+    [deleteMutation]
   );
 
-  /* ── ACTIONS: DELETE (lote) ──────────────────
+  /* ── MUTATION: DELETE (lote) ──────────────────
    * Separa a seleção em dois grupos:
    *   - ativos      -> soft delete
-   *   - já excluídos -> hard delete (via RPC, 1 round-trip cada grupo)
-   * Update otimista: remove todos os IDs processados do estado local.
+   *   - já excluídos -> hard delete
+   * Optimistic update via queryClient.
    * ───────────────────────────────────────────── */
 
-  const handleDeleteSelected = useCallback(
-    async (selectedRows: ProdutoInput[], onAfterDelete?: () => void) => {
-      if (!selectedRows?.length) {
-        toast.error("Nenhum anúncio selecionado para exclusão.");
-        return;
-      }
-
+  const deleteSelectedMutation = useMutation({
+    mutationFn: async (selectedRows: ProdutoInput[]) => {
       const snapshot = [...selectedRows];
 
       const idsAtivos = snapshot
@@ -696,55 +772,78 @@ export function useAnnounce(filters?: UseAnnounceFilters) {
         .filter(Boolean);
 
       if (!idsAtivos.length && !idsExcluidos.length) {
-        toast.error("Nenhum ID válido encontrado na seleção.");
-        return;
+        throw new Error("Nenhum ID válido encontrado na seleção.");
       }
 
       const lockKey = [...idsAtivos, ...idsExcluidos].sort().join(",");
-      if (deletingLocks.has(lockKey)) return;
+      if (deletingLocks.has(lockKey)) throw new Error("__LOCKED__");
       deletingLocks.add(lockKey);
-      setDeleting(true);
 
       try {
-        // As duas chamadas são independentes -> podem correr em paralelo
         await Promise.all([
           idsAtivos.length ? softDeleteByIds(idsAtivos) : Promise.resolve(),
           idsExcluidos.length ? hardDeleteByIds(idsExcluidos) : Promise.resolve(),
         ]);
 
-        const totalProcessados = idsAtivos.length + idsExcluidos.length;
-
-        if (idsAtivos.length && idsExcluidos.length) {
-          toast.success(
-            `${idsAtivos.length} movido(s) para a lixeira e ${idsExcluidos.length} excluído(s) permanentemente.`
-          );
-        } else if (idsExcluidos.length) {
-          toast.success(
-            totalProcessados === 1
-              ? "Anúncio excluído permanentemente."
-              : `${totalProcessados} anúncios excluídos permanentemente.`
-          );
-        } else {
-          toast.success(
-            totalProcessados === 1
-              ? "Anúncio movido para a lixeira."
-              : `${totalProcessados} anúncios movidos para a lixeira.`
-          );
-        }
-
-        // Update otimista: remove todos os IDs processados do estado local
-        const processedIds = new Set([...idsAtivos, ...idsExcluidos]);
-        setRawAnnounces((prev) => prev.filter((r) => !processedIds.has(String(r.id))));
-        setTotalCount((prev) => Math.max(0, prev - processedIds.size));
-
-        if (onAfterDelete) onAfterDelete();
-      } catch (err: any) {
-        logError("handleDeleteSelected", err, { idsAtivos, idsExcluidos });
-        toast.error("Erro ao excluir anúncios: " + mapErrorMessage(err));
-        return;
+        return { idsAtivos, idsExcluidos, snapshot };
       } finally {
         deletingLocks.delete(lockKey);
-        setDeleting(false);
+      }
+    },
+
+    onMutate: async (selectedRows) => {
+      await queryClient.cancelQueries({ queryKey: ["announce"], exact: false });
+
+      const previousData = queryClient.getQueriesData({ queryKey: ["announce"], exact: false });
+
+      const idsToRemove = new Set(
+        selectedRows.map((r) => String(r?.id ?? "").trim()).filter(Boolean)
+      );
+
+      queryClient.setQueriesData<FetchResult>(
+        { queryKey: ["announce"], exact: false },
+        (old) => {
+          if (!old) return old;
+          return {
+            rows: old.rows.filter((r: any) => !idsToRemove.has(String(r.id))),
+            totalCount: Math.max(0, old.totalCount - idsToRemove.size),
+          };
+        }
+      );
+
+      return { previousData };
+    },
+
+    onError: (err: any, _rows, context) => {
+      if (err?.message === "__LOCKED__") return;
+
+      context?.previousData?.forEach(([key, value]) => {
+        queryClient.setQueryData(key, value);
+      });
+
+      logError("handleDeleteSelected", err);
+      toast.error("Erro ao excluir anúncios: " + mapErrorMessage(err));
+    },
+
+    onSuccess: ({ idsAtivos, idsExcluidos, snapshot }) => {
+      const totalProcessados = idsAtivos.length + idsExcluidos.length;
+
+      if (idsAtivos.length && idsExcluidos.length) {
+        toast.success(
+          `${idsAtivos.length} movido(s) para a lixeira e ${idsExcluidos.length} excluído(s) permanentemente.`
+        );
+      } else if (idsExcluidos.length) {
+        toast.success(
+          totalProcessados === 1
+            ? "Anúncio excluído permanentemente."
+            : `${totalProcessados} anúncios excluídos permanentemente.`
+        );
+      } else {
+        toast.success(
+          totalProcessados === 1
+            ? "Anúncio movido para a lixeira."
+            : `${totalProcessados} anúncios movidos para a lixeira.`
+        );
       }
 
       const labels = snapshot
@@ -758,7 +857,6 @@ export function useAnnounce(filters?: UseAnnounceFilters) {
           ? `Os anúncios ${labels.join(", ")} foram processados.`
           : `Os anúncios ${labels.join(", ")} e mais ${snapshot.length - 3} foram processados.`;
 
-      // Notificação em background — não bloqueia a UI
       safeNotify("handleDeleteSelected", {
         title: snapshot.length === 1 ? "Anúncio excluído" : "Anúncios excluídos",
         message,
@@ -768,23 +866,35 @@ export function useAnnounce(filters?: UseAnnounceFilters) {
         link: "/dashboard/anuncios",
       });
     },
-    []
-  );
 
-  /* ── ACTIONS: RESTORE (lote) ─────────────────
-   * Só faz sentido para itens já excluídos
-   * (deleted_at != null). Update otimista: remove
-   * do estado local (já que deixa de pertencer ao
-   * filtro "Excluídos" ao ser restaurado).
-   * ───────────────────────────────────────────── */
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["announce"], exact: false });
+    },
+  });
 
-  const handleRestoreSelected = useCallback(
-    async (selectedRows: ProdutoInput[], onAfterRestore?: () => void) => {
+  const handleDeleteSelected = useCallback(
+    async (selectedRows: ProdutoInput[], onAfterDelete?: () => void) => {
       if (!selectedRows?.length) {
-        toast.error("Nenhum anúncio selecionado para restaurar.");
+        toast.error("Nenhum anúncio selecionado para exclusão.");
         return;
       }
+      try {
+        await deleteSelectedMutation.mutateAsync(selectedRows);
+        onAfterDelete?.();
+      } catch (err: any) {
+        // erro já tratado em onError
+      }
+    },
+    [deleteSelectedMutation]
+  );
 
+  /* ── MUTATION: RESTORE (lote) ─────────────────
+   * Só faz sentido para itens já excluídos.
+   * Optimistic update via queryClient.
+   * ───────────────────────────────────────────── */
+
+  const restoreSelectedMutation = useMutation({
+    mutationFn: async (selectedRows: ProdutoInput[]) => {
       const snapshot = [...selectedRows];
 
       const ids = snapshot
@@ -792,40 +902,59 @@ export function useAnnounce(filters?: UseAnnounceFilters) {
         .map((r) => String(r?.id ?? "").trim())
         .filter(Boolean);
 
-      if (!ids.length) {
-        toast.error("Nenhum item excluído encontrado na seleção.");
-        return;
-      }
+      if (!ids.length) throw new Error("Nenhum item excluído encontrado na seleção.");
 
       const lockKey = `restore:${ids.sort().join(",")}`;
-      if (deletingLocks.has(lockKey)) return;
+      if (deletingLocks.has(lockKey)) throw new Error("__LOCKED__");
       deletingLocks.add(lockKey);
-      setDeleting(true);
 
       try {
         await restoreByIds(ids);
-
-        toast.success(
-          ids.length === 1
-            ? "Anúncio restaurado."
-            : `${ids.length} anúncios restaurados.`
-        );
-
-        // Update otimista: remove do estado local (deixou de pertencer
-        // ao filtro atual, que é "Excluídos")
-        const processedIds = new Set(ids);
-        setRawAnnounces((prev) => prev.filter((r) => !processedIds.has(String(r.id))));
-        setTotalCount((prev) => Math.max(0, prev - processedIds.size));
-
-        if (onAfterRestore) onAfterRestore();
-      } catch (err: any) {
-        logError("handleRestoreSelected", err, { ids });
-        toast.error("Erro ao restaurar anúncios: " + mapErrorMessage(err));
-        return;
+        return { ids, snapshot };
       } finally {
         deletingLocks.delete(lockKey);
-        setDeleting(false);
       }
+    },
+
+    onMutate: async (selectedRows) => {
+      await queryClient.cancelQueries({ queryKey: ["announce"], exact: false });
+
+      const previousData = queryClient.getQueriesData({ queryKey: ["announce"], exact: false });
+
+      const idsToRemove = new Set(
+        selectedRows
+          .filter((r) => Boolean(r?.deleted_at))
+          .map((r) => String(r?.id ?? "").trim())
+          .filter(Boolean)
+      );
+
+      queryClient.setQueriesData<FetchResult>(
+        { queryKey: ["announce"], exact: false },
+        (old) => {
+          if (!old) return old;
+          return {
+            rows: old.rows.filter((r: any) => !idsToRemove.has(String(r.id))),
+            totalCount: Math.max(0, old.totalCount - idsToRemove.size),
+          };
+        }
+      );
+
+      return { previousData };
+    },
+
+    onError: (err: any, _rows, context) => {
+      if (err?.message === "__LOCKED__") return;
+
+      context?.previousData?.forEach(([key, value]) => {
+        queryClient.setQueryData(key, value);
+      });
+
+      logError("handleRestoreSelected", err);
+      toast.error("Erro ao restaurar anúncios: " + mapErrorMessage(err));
+    },
+
+    onSuccess: ({ ids, snapshot }) => {
+      toast.success(ids.length === 1 ? "Anúncio restaurado." : `${ids.length} anúncios restaurados.`);
 
       const labels = snapshot
         .slice(0, 3)
@@ -838,7 +967,6 @@ export function useAnnounce(filters?: UseAnnounceFilters) {
           ? `Os anúncios ${labels.join(", ")} foram restaurados.`
           : `Os anúncios ${labels.join(", ")} e mais ${snapshot.length - 3} foram restaurados.`;
 
-      // Notificação em background — não bloqueia a UI
       safeNotify("handleRestoreSelected", {
         title: snapshot.length === 1 ? "Anúncio restaurado" : "Anúncios restaurados",
         message,
@@ -848,14 +976,34 @@ export function useAnnounce(filters?: UseAnnounceFilters) {
         link: "/dashboard/anuncios",
       });
     },
-    []
+
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["announce"], exact: false });
+    },
+  });
+
+  const handleRestoreSelected = useCallback(
+    async (selectedRows: ProdutoInput[], onAfterRestore?: () => void) => {
+      if (!selectedRows?.length) {
+        toast.error("Nenhum anúncio selecionado para restaurar.");
+        return;
+      }
+      try {
+        await restoreSelectedMutation.mutateAsync(selectedRows);
+        onAfterRestore?.();
+      } catch (err: any) {
+        // erro já tratado em onError
+      }
+    },
+    [restoreSelectedMutation]
   );
 
   return {
     announces,
-    loading,
-    error,
-    refetch: fetchAll,
+    loading: isLoading,
+    isFetching,
+    error: error ? mapErrorMessage(error) : null,
+    refetch,
 
     page,
     setPage,
@@ -866,8 +1014,12 @@ export function useAnnounce(filters?: UseAnnounceFilters) {
 
     fetchAllMatchingIds,
 
-    saving,
-    deleting,
+    saving: saveMutation.isPending,
+    deleting:
+      deleteMutation.isPending ||
+      deleteSelectedMutation.isPending ||
+      restoreSelectedMutation.isPending,
+
     handleSave,
     handleDelete,
     handleDeleteSelected,
