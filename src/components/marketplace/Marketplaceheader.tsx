@@ -216,11 +216,11 @@ export default function MarketplaceHeaderBar({
           </div>
         </TableHead>
 
-        {/* Coluna 2: ID Bling (ordenável) — confirmar nome real da coluna no banco */}
+        {/* Coluna 2: ID Bling (ordenável) — coluna real no banco é "id_bling" */}
         <TableHead>
           <SortHeader
             label="ID Bling"
-            column="bling_id"
+            column="id_bling"
             sortColumn={sortColumn}
             sortDirection={sortDirection}
             onSort={onSort}
@@ -249,7 +249,7 @@ export default function MarketplaceHeaderBar({
           />
         </TableHead>
 
-        {/* Coluna 5: Referência (ordenável) — confirmar nome real da coluna no banco */}
+        {/* Coluna 5: Referência (ordenável) */}
         <TableHead>
           <SortHeader
             label="Referência"
@@ -271,11 +271,15 @@ export default function MarketplaceHeaderBar({
           />
         </TableHead>
 
-        {/* Coluna 7: Marca (não ordenável) */}
+        {/* Coluna 7: Marca (ordenável) — coluna real no banco é "mark" */}
         <TableHead>
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-            Marca
-          </div>
+          <SortHeader
+            label="Marca"
+            column="mark"
+            sortColumn={sortColumn}
+            sortDirection={sortDirection}
+            onSort={onSort}
+          />
         </TableHead>
 
         {/* Coluna 8: Ações (label estático) */}

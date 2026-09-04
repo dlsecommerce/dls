@@ -13,7 +13,7 @@ import { createNotification } from "@/lib/createNotification";
 // TIPOS
 // ===========================================================================
 
-export type MarketplaceSituacaoFilter = "Ativos" | "Inativos" | "Todos";
+export type MarketplaceSituacaoFilter = "Ativos" | "Inativos" | "Todos" | "Últimos incluídos";
 export type MarketplaceTipoFilter = "Todos" | "Produtos" | "Variações";
 export type MarketplaceCondicaoFilter = "Todos" | "Clássico" | "Premium";
 export type MarketplaceSortField =
@@ -53,6 +53,7 @@ const DEFAULT_PAGE_SIZE = 50;
 const SEARCH_DEBOUNCE_MS = 350;
 const LIMITE_COMISSAO_CLASSICO = 14;
 const CANAL_MERCADO_LIVRE = "mercado livre";
+const RECENT_DAYS = 5; // mesma janela usada no badge "Novo" da UI (MarketplaceDataTable)
 
 // ===========================================================================
 // VALIDAÇÃO (ZOD) — Single Source of Truth
@@ -160,8 +161,20 @@ function buildFiltersKey(params: UseMarketplaceParams, debouncedSearch: string) 
 function applyFilters(query: any, params: UseMarketplaceParams, debouncedSearch: string) {
   const { store, channel, tipo, condicao, situacao, brands } = params;
 
-  if (situacao === "Ativos" || !situacao) query = query.is("deleted_at", null);
-  else if (situacao === "Inativos") query = query.not("deleted_at", "is", null);
+  // ---- Situação: Ativos / Inativos / Todos / Últimos incluídos ----
+  if (situacao === "Inativos") {
+    query = query.not("deleted_at", "is", null);
+  } else if (situacao === "Todos") {
+    // sem filtro de deleted_at — traz tudo
+  } else if (situacao === "Últimos incluídos") {
+    // só ativos + criados nos últimos N dias (mesma janela do badge "Novo")
+    query = query.is("deleted_at", null);
+    const threshold = new Date(Date.now() - RECENT_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    query = query.gte("created_at", threshold);
+  } else {
+    // "Ativos" ou undefined (default)
+    query = query.is("deleted_at", null);
+  }
 
   if (store) query = query.eq("store", store);
   if (channel) query = query.eq("channel", channel);
