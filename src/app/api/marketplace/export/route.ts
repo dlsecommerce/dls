@@ -9,6 +9,7 @@ export const maxDuration = 300;
 const COL = {
   ID: 1, LOJA: 2, CANAL: 3, ID_BLING: 4, REFERENCIA: 5, PRODUTO: 6, MARCA: 7,
   COMISSAO: 9, FRETE: 10, MARGEM: 11, CUSTO: 13, PRECO_VENDA: 14,
+  MARGIN_MIN: 15, // ✅ NOVO — coluna oculta para conditional formatting em lote
 };
 
 const COLOR_BLUE = "FF1A8CEB";
@@ -36,7 +37,6 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const filtros = body?.filtros || {};
-  // ✅ NOVO: exportação por seleção de linhas (ids da tabela marketplace)
   const selectedIds: string[] = Array.isArray(body?.ids) ? body.ids.filter(Boolean) : [];
   const isSelectionMode = selectedIds.length > 0;
 
@@ -55,9 +55,6 @@ export async function POST(req: NextRequest) {
         let data: any[] = [];
 
         if (isSelectionMode) {
-          // ============================================================
-          // ✅ MODO SELEÇÃO: busca direto pelos IDs marcados na tabela
-          // ============================================================
           const { data: fetchedById, error: fetchByIdError } = await supabase
             .schema("newsystem")
             .from("marketplace")
@@ -69,9 +66,6 @@ export async function POST(req: NextRequest) {
           if (fetchByIdError) throw new Error(fetchByIdError.message);
           data = fetchedById ?? [];
         } else {
-          // ============================================================
-          // MODO FILTROS (comportamento original)
-          // ============================================================
           const storeParam = filtros.loja && filtros.loja !== "Todos" ? filtros.loja : null;
           const channelParam = filtros.canal && filtros.canal !== "Todos" ? filtros.canal : null;
           const tipoParam = filtros.tipo && filtros.tipo !== "Todos" ? filtros.tipo : null;
@@ -147,6 +141,7 @@ export async function POST(req: NextRequest) {
         const headers = [
           "ID", "Loja", "Canal", "ID Bling", "Referência", "Produto", "Marca",
           "", "Comissão", "Frete", "Margem de Lucro", "", "Custo", "Preço de Venda",
+          "MargemMin", // ✅ coluna oculta O
         ];
 
         sheet.columns = headers.map((h) => ({
@@ -154,6 +149,9 @@ export async function POST(req: NextRequest) {
           key: h || `col_${Math.random()}`,
           width: h ? 18 : 4,
         }));
+
+        // ✅ Oculta a coluna auxiliar (O) usada só para o conditional formatting
+        sheet.getColumn(COL.MARGIN_MIN).hidden = true;
 
         const headerRow = sheet.getRow(1);
         headerRow.values = headers;
@@ -173,6 +171,9 @@ export async function POST(req: NextRequest) {
         sheet.getColumn(COL.PRECO_VENDA).numFmt = '_("R$"* #,##0.00_)';
         sheet.getColumn(COL.COMISSAO).numFmt = '0.00 " %"';
         sheet.getColumn(COL.MARGEM).numFmt = '0.00 " %"';
+
+        // ✅ Intervalo de progresso ajustado para volumes maiores (menos overhead)
+        const progressStep = total > 20000 ? 5000 : 1000;
 
         for (let i = 0; i < total; i++) {
           const row = data[i];
@@ -197,11 +198,12 @@ export async function POST(req: NextRequest) {
           const freteInicial =
             freteFixed && freteFixed !== 0 ? freteFixed : row.freight ?? 0;
 
+          // ✅ Adiciona marginMin na coluna oculta O (15)
           const excelRow = sheet.addRow([
             row.id || "", row.store || "", row.channel || "", row.id_bling || "",
             row.reference || "", row.product || "", row.mark || "", "",
             commissionRate, freteInicial, marginInicial, "",
-            costLiquido, null,
+            costLiquido, null, marginMin,
           ]);
 
           const rn = excelRow.number;
@@ -232,27 +234,33 @@ export async function POST(req: NextRequest) {
             cell.alignment = { horizontal: "center", vertical: "middle" };
           });
 
-          sheet.addConditionalFormatting({
-            ref: `K${rn}`,
-            rules: [
-              {
-                type: "expression",
-                formulae: [`K${rn}>=${marginMin}`],
-                style: {
-                  fill: { type: "pattern", pattern: "solid", bgColor: { argb: COLOR_MARGIN_OK } },
-                  font: { color: { argb: COLOR_MARGIN_OK_FONT }, bold: true },
-                },
-              },
-            ],
-          });
+          // ❌ REMOVIDO: addConditionalFormatting por linha (era o bottleneck)
 
           excelRow.commit();
 
-          if (i % 1000 === 0 || i === total - 1) {
+          if (i % progressStep === 0 || i === total - 1) {
             sendProgress(8 + Math.round((i / total) * 82), i + 1, total);
             await new Promise((r) => setTimeout(r, 0));
           }
         }
+
+        // ============================================================
+        // ✅ ÚNICA regra de conditional formatting para toda a coluna K,
+        // comparando com a coluna oculta O (relativo, ajusta linha a linha)
+        // ============================================================
+        sheet.addConditionalFormatting({
+          ref: `K2:K${total + 1}`,
+          rules: [
+            {
+              type: "expression",
+              formulae: [`K2>=O2`],
+              style: {
+                fill: { type: "pattern", pattern: "solid", bgColor: { argb: COLOR_MARGIN_OK } },
+                font: { color: { argb: COLOR_MARGIN_OK_FONT }, bold: true },
+              },
+            },
+          ],
+        });
 
         sheet.commit();
         await workbook.commit();
