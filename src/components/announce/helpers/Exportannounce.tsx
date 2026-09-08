@@ -255,7 +255,14 @@ function mapRawToDisplayRow(row: RawAnnounceRow): AnnounceRow {
 
 type ExportStreamEvent =
   | { type: "progress"; percent: number; processed?: number }
-  | { type: "done"; percent: number; fileName: string; mimeType: string; fileBase64: string }
+  | { type: "chunk"; index: number; data: string }
+  | {
+      type: "done";
+      percent: number;
+      fileName: string;
+      mimeType: string;
+      totalChunks: number;
+    }
   | { type: "error"; error: string; code?: string | null };
 
 /**
@@ -276,8 +283,9 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
  * Busca os anúncios direto da API (respeitando RLS/sessão) e gera
  * o download. A API responde em streaming NDJSON (uma linha JSON
  * por evento), reportando progresso REAL conforme processa no
- * servidor (busca no banco + geração do arquivo), e entrega o
- * arquivo final (em base64) no último evento ("done").
+ * servidor (busca no banco + geração do arquivo). O arquivo final
+ * chega dividido em vários eventos "chunk" (base64 em pedaços), que
+ * são acumulados e remontados quando chega o evento "done".
  *
  * ✅ Suporta 2 modos, mutuamente exclusivos:
  *    - Seleção: se `ids` tiver itens, exporta SÓ essas linhas
@@ -329,6 +337,10 @@ export async function exportAnnounceFromApi(
   const decoder = new TextDecoder();
   let buffer = "";
 
+  // ✅ Acumula os pedaços base64 do arquivo, na posição correta,
+  // conforme os eventos "chunk" chegam do servidor.
+  const chunksReceived: string[] = [];
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -346,12 +358,15 @@ export async function exportAnnounceFromApi(
       if (event.type === "progress") {
         onProgress?.(event.percent);
         await yieldToUI();
+      } else if (event.type === "chunk") {
+        chunksReceived[event.index] = event.data;
       } else if (event.type === "error") {
         throw new Error(event.error);
       } else if (event.type === "done") {
         onProgress?.(100);
 
-        const blob = base64ToBlob(event.fileBase64, event.mimeType);
+        const fileBase64 = chunksReceived.join("");
+        const blob = base64ToBlob(fileBase64, event.mimeType);
         saveAs(blob, event.fileName);
 
         try {
