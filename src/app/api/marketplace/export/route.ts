@@ -6,10 +6,19 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+// ✅ Colunas auxiliares (16-20) adicionadas: Imposto, Marketing, FreteRate,
+// TaxaFixa e Desconto — ficam ocultas mas alimentam a fórmula de Preço de
+// Venda via referência de célula, tornando o recálculo 100% dinâmico e os
+// percentuais externos auditáveis dentro da própria planilha.
 const COL = {
   ID: 1, LOJA: 2, CANAL: 3, ID_BLING: 4, REFERENCIA: 5, PRODUTO: 6, MARCA: 7,
   COMISSAO: 9, FRETE: 10, MARGEM: 11, CUSTO: 13, PRECO_VENDA: 14,
-  MARGIN_MIN: 15, // ✅ NOVO — coluna oculta para conditional formatting em lote
+  MARGIN_MIN: 15,   // O — usada no conditional formatting
+  IMPOSTO: 16,      // P — % (decimal), ex: 0.08
+  MARKETING: 17,    // Q — % (decimal)
+  FRETE_RATE: 18,   // R — % de frete (decimal), quando o canal cobra frete por percentual
+  TAXA_FIXA: 19,    // S — R$ fixo cobrado pelo canal (fixed_fee)
+  DESCONTO: 20,     // T — % de desconto aplicado no custo (informativo/auditoria)
 };
 
 const COLOR_BLUE = "FF1A8CEB";
@@ -18,6 +27,7 @@ const COLOR_MARGIN_OK = "FFC6EFCE";
 const COLOR_MARGIN_OK_FONT = "FF006100";
 const BLUE_COLS = [1, 2, 3, 4, 5, 6, 7];
 const GREEN_COLS = [9, 10, 11, 13, 14];
+const HIDDEN_COLS = [15, 16, 17, 18, 19, 20];
 
 function getSupabaseServer(accessToken: string) {
   return createClient(
@@ -141,7 +151,7 @@ export async function POST(req: NextRequest) {
         const headers = [
           "ID", "Loja", "Canal", "ID Bling", "Referência", "Produto", "Marca",
           "", "Comissão", "Frete", "Margem de Lucro", "", "Custo", "Preço de Venda",
-          "MargemMin", // ✅ coluna oculta O
+          "MargemMin", "Imposto", "Marketing", "FreteRate", "TaxaFixa", "Desconto",
         ];
 
         sheet.columns = headers.map((h) => ({
@@ -150,8 +160,10 @@ export async function POST(req: NextRequest) {
           width: h ? 18 : 4,
         }));
 
-        // ✅ Oculta a coluna auxiliar (O) usada só para o conditional formatting
-        sheet.getColumn(COL.MARGIN_MIN).hidden = true;
+        // ✅ Oculta todas as colunas auxiliares usadas só para cálculo/CF
+        HIDDEN_COLS.forEach((c) => {
+          sheet.getColumn(c).hidden = true;
+        });
 
         const headerRow = sheet.getRow(1);
         headerRow.values = headers;
@@ -171,6 +183,7 @@ export async function POST(req: NextRequest) {
         sheet.getColumn(COL.PRECO_VENDA).numFmt = '_("R$"* #,##0.00_)';
         sheet.getColumn(COL.COMISSAO).numFmt = '0.00 " %"';
         sheet.getColumn(COL.MARGEM).numFmt = '0.00 " %"';
+        sheet.getColumn(COL.TAXA_FIXA).numFmt = '_("R$"* #,##0.00_)';
 
         // ✅ Intervalo de progresso ajustado para volumes maiores (menos overhead)
         const progressStep = total > 20000 ? 5000 : 1000;
@@ -182,6 +195,7 @@ export async function POST(req: NextRequest) {
           const costLiquido = res?.cost_liquido ?? row.current_cost ?? 0;
           const tax = res?.tax ?? 0;
           const marketing = res?.marketing ?? 0;
+          const discount = res?.discount ?? 0;
           const freteRate = res?.frete_rate ?? 0;
           const freteFixed = res?.frete_fixed ?? 0;
           const fixedFee = res?.fixed_fee ?? 0;
@@ -198,43 +212,32 @@ export async function POST(req: NextRequest) {
           const freteInicial =
             freteFixed && freteFixed !== 0 ? freteFixed : row.freight ?? 0;
 
-          // ✅ Adiciona marginMin na coluna oculta O (15)
+          // ✅ Colunas auxiliares (15-20) alimentam a fórmula de preço de
+          // venda por referência de célula — qualquer edição do usuário
+          // nas colunas visíveis (I, J, K, M) recalcula automaticamente.
           const excelRow = sheet.addRow([
             row.id || "", row.store || "", row.channel || "", row.id_bling || "",
             row.reference || "", row.product || "", row.mark || "", "",
             commissionRate, freteInicial, marginInicial, "",
-            costLiquido, null, marginMin,
+            costLiquido, null,
+            marginMin, tax, marketing, freteRate, fixedFee, discount,
           ]);
 
           const rn = excelRow.number;
 
-          const constPart = (tax + marketing + freteRate).toFixed(6);
-          const freteFixedStr = freteFixed.toFixed(2);
-          const fixedFeeStr = fixedFee.toFixed(2);
-
-          if (row.channel === "Shopee") {
-            const margemSafe = `IF(K${rn}="",0,K${rn})`;
-            const PV1 = `((M${rn}+4)/(1-((20+${margemSafe})/100)))`;
-            const PV2 = `((M${rn}+16)/(1-((14+${margemSafe})/100)))`;
-            const PV3 = `((M${rn}+20)/(1-((14+${margemSafe})/100)))`;
-
-            excelRow.getCell(COL.FRETE).value = {
-              formula: `IF(${PV1}<=79.99,4,IF(${PV2}<=99.99,16,IF(${PV3}<=199.99,20,26)))`,
-            };
-            excelRow.getCell(COL.COMISSAO).value = {
-              formula: `IF(${PV1}<=79.99,20,14)`,
-            };
-          }
-
+          // ✅ REMOVIDA a regra especial da Shopee — todos os canais agora
+          // usam a mesma fórmula unificada, alimentada pelas colunas
+          // auxiliares (P=Imposto, Q=Marketing, R=FreteRate, S=TaxaFixa).
+          // J (Frete R$) e S (Taxa Fixa) somam diretamente ao numerador;
+          // P, Q, R e I (comissão %) e K (margem %) entram no divisor —
+          // exatamente os percentuais "de fora" que compõem o preço.
           excelRow.getCell(COL.PRECO_VENDA).value = {
-            formula: `ROUND(M${rn}/(1-(${constPart}+I${rn}/100+K${rn}/100))+${freteFixedStr}+${fixedFeeStr},2)`,
+            formula: `ROUND(M${rn}/(1-(P${rn}+Q${rn}+R${rn}+I${rn}/100+K${rn}/100))+J${rn}+S${rn},2)`,
           };
 
           excelRow.eachCell((cell) => {
             cell.alignment = { horizontal: "center", vertical: "middle" };
           });
-
-          // ❌ REMOVIDO: addConditionalFormatting por linha (era o bottleneck)
 
           excelRow.commit();
 
@@ -245,7 +248,7 @@ export async function POST(req: NextRequest) {
         }
 
         // ============================================================
-        // ✅ ÚNICA regra de conditional formatting para toda a coluna K,
+        // Regra de conditional formatting para toda a coluna K,
         // comparando com a coluna oculta O (relativo, ajusta linha a linha)
         // ============================================================
         sheet.addConditionalFormatting({

@@ -20,6 +20,7 @@ type AnnounceRow = {
 const PAGE_SIZE = 20_000;
 const MAX_LINHAS = 300_000; // trava de segurança contra export descontrolado
 const MAX_IDS_SELECAO = 300_000; // mesma trava aplicada ao modo seleção
+const BASE64_CHUNK_SIZE = 200_000; // ✅ NOVO — tamanho de cada pedaço do arquivo
 
 // Cabeçalhos traduzidos para português, na ordem das colunas do banco.
 const HEADERS_PT = ["Loja", "ID Bling", "Referência", "Produto", "Marca", "Código ID"];
@@ -214,7 +215,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const store = searchParams.get("store")?.trim() || null;
   const format = (searchParams.get("format") ?? "xlsx").toLowerCase();
 
-  // ✅ NOVO: modo seleção — se vierem IDs, ignora completamente o filtro
+  // ✅ modo seleção — se vierem IDs, ignora completamente o filtro
   // de loja e exporta apenas os registros selecionados na tabela.
   const selectedIds = parseIdsParam(searchParams);
   const isSelectionMode = selectedIds !== null;
@@ -465,16 +466,50 @@ export async function GET(request: NextRequest): Promise<Response> {
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
       }
 
-      await sendLine(writer, encoder, { type: "progress", percent: 95 });
+      await sendLine(writer, encoder, { type: "progress", percent: 90 });
 
+      // ============================================================
+      // ✅ NOVO: envia o arquivo em pedaços (chunks) de base64, em vez
+      // de um único payload gigante. Evita travar o event loop e picos
+      // de memória em exports grandes (100k-300k linhas).
+      // ============================================================
       const fileBase64 = buffer.toString("base64");
+      const totalChunks = Math.ceil(fileBase64.length / BASE64_CHUNK_SIZE);
 
+      for (let i = 0; i < totalChunks; i++) {
+        checkDisconnected();
+
+        const start = i * BASE64_CHUNK_SIZE;
+        const chunk = fileBase64.slice(start, start + BASE64_CHUNK_SIZE);
+
+        await Promise.race([
+          sendLine(writer, encoder, {
+            type: "chunk",
+            index: i,
+            data: chunk,
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("CLIENT_DISCONNECTED")), 5000)
+          ),
+        ]);
+
+        // Progresso de 90% a 99% durante o envio dos chunks
+        const chunkPercent = 90 + Math.round(((i + 1) / totalChunks) * 9);
+        if (i % 10 === 0 || i === totalChunks - 1) {
+          await sendLine(writer, encoder, {
+            type: "progress",
+            percent: Math.min(chunkPercent, 99),
+          });
+        }
+      }
+
+      // Mensagem final SEM o arquivo — apenas metadados
       await sendLine(writer, encoder, {
         type: "done",
         percent: 100,
         fileName,
         mimeType,
-        fileBase64,
+        totalChunks,
       });
 
       await writer.close();
