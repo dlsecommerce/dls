@@ -206,18 +206,19 @@ export async function POST(req: NextRequest) {
 
           const rn = excelRow.number;
 
-          // ✅ CORRIGIDO: o frete agora referencia a célula J{rn} em vez do
-          // literal fixo freteFixedStr. Antes, editar a coluna Frete na
-          // planilha não tinha efeito no Preço de Venda porque a fórmula
-          // usava um número congelado no momento da exportação. Agora o
-          // recálculo em tempo real funciona para Comissão, Margem E Frete.
-          // TaxaFixa (fixedFee) continua embutida como literal, pois não é
-          // uma coluna editável pelo usuário.
+          // ✅ CORRIGIDO: Frete (J) e Taxa Fixa agora entram DENTRO do
+          // numerador, junto com o Custo (M), em vez de serem somados
+          // depois da divisão. Antes, o frete e a taxa fixa não recebiam
+          // o markup dos percentuais (imposto, marketing, comissão,
+          // margem), fazendo o vendedor "engolir" essa diferença. Agora
+          // (Custo+Frete+TaxaFixa) é dividido pelo fator, garantindo que
+          // o Preço de Venda recupere 100% dos custos + todos os
+          // percentuais cobrados sobre o valor total da venda.
           const constPart = (tax + marketing + freteRate).toFixed(6);
           const fixedFeeStr = fixedFee.toFixed(2);
 
           excelRow.getCell(COL.PRECO_VENDA).value = {
-            formula: `ROUND(M${rn}/(1-(${constPart}+I${rn}/100+K${rn}/100))+J${rn}+${fixedFeeStr},2)`,
+            formula: `ROUND((M${rn}+J${rn}+${fixedFeeStr})/(1-(${constPart}+I${rn}/100+K${rn}/100)),2)`,
           };
 
           excelRow.eachCell((cell) => {
