@@ -138,11 +138,6 @@ export async function POST(req: NextRequest) {
 
         const sheet = workbook.addWorksheet("MARKETPLACE");
 
-        // ✅ Removidas as colunas auxiliares Imposto/Marketing/FreteRate/
-        // TaxaFixa/Desconto — os valores agora são embutidos como número
-        // literal direto na fórmula (assim como fazia o código original
-        // com constPart/freteFixedStr). Mantém-se apenas "MargemMin" (O),
-        // necessária para o conditional formatting da coluna K.
         const headers = [
           "ID", "Loja", "Canal", "ID Bling", "Referência", "Produto", "Marca",
           "", "Comissão", "Frete", "Margem de Lucro", "", "Custo", "Preço de Venda",
@@ -211,19 +206,18 @@ export async function POST(req: NextRequest) {
 
           const rn = excelRow.number;
 
-          // ✅ Sem regra especial de canal (Shopee removida) — fórmula
-          // única para todos os canais. Imposto+Marketing+FreteRate ficam
-          // embutidos como número fixo (constPart), assim como Taxa Fixa
-          // e Frete Fixo (freteFixedStr/fixedFeeStr) — exatamente como no
-          // código original. Comissão (I) e Margem (K) continuam sendo
-          // referências de célula, então o recálculo em tempo real ao
-          // editar essas colunas continua funcionando normalmente.
+          // ✅ CORRIGIDO: o frete agora referencia a célula J{rn} em vez do
+          // literal fixo freteFixedStr. Antes, editar a coluna Frete na
+          // planilha não tinha efeito no Preço de Venda porque a fórmula
+          // usava um número congelado no momento da exportação. Agora o
+          // recálculo em tempo real funciona para Comissão, Margem E Frete.
+          // TaxaFixa (fixedFee) continua embutida como literal, pois não é
+          // uma coluna editável pelo usuário.
           const constPart = (tax + marketing + freteRate).toFixed(6);
-          const freteFixedStr = freteFixed.toFixed(2);
           const fixedFeeStr = fixedFee.toFixed(2);
 
           excelRow.getCell(COL.PRECO_VENDA).value = {
-            formula: `ROUND(M${rn}/(1-(${constPart}+I${rn}/100+K${rn}/100))+${freteFixedStr}+${fixedFeeStr},2)`,
+            formula: `ROUND(M${rn}/(1-(${constPart}+I${rn}/100+K${rn}/100))+J${rn}+${fixedFeeStr},2)`,
           };
 
           excelRow.eachCell((cell) => {
