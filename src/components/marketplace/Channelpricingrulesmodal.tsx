@@ -496,7 +496,7 @@ export default function ChannelPricingRulesModal({
                           value={tier.fixedFee}
                           disabled={saving}
                           onChange={(e) => updateTier(index, "fixedFee", sanitizeDecimalInput(e.target.value))}
-                          placeholder="Taxa R$"
+                          placeholder="Frete R$"
                           className={miniInputClass}
                         />
                         <button
@@ -510,6 +510,10 @@ export default function ChannelPricingRulesModal({
                       </div>
                     ))}
                   </div>
+
+                  <p className="mt-2 text-[10px] text-neutral-600">
+                    Nesse modo, cada faixa tem seu próprio frete. O campo geral de "Frete" abaixo não se aplica aqui.
+                  </p>
                 </div>
               )}
 
@@ -771,53 +775,68 @@ export default function ChannelPricingRulesModal({
                 </div>
               )}
 
-              {/* Frete */}
-              <div className="mb-4">
-                <div className="mb-1.5 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+              {/* Frete geral (não se aplica ao modo "Por Preço") */}
+              {pricingMode === "tiered" ? (
+                <div className="mb-4 border border-neutral-800 px-3 py-2">
+                  <div className="mb-1 flex items-center gap-2">
                     <Truck className="h-3.5 w-3.5 text-neutral-500" />
                     <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-500">
                       Frete
                     </span>
                   </div>
-                  <div className="flex overflow-hidden border border-neutral-800 text-[10px]">
-                    <button
-                      type="button"
+                  <p className="text-[10.5px] text-neutral-500">
+                    No modo "Por Preço", o frete é definido individualmente em cada faixa
+                    (campo "Frete R$" de cada linha acima).
+                  </p>
+                </div>
+              ) : (
+                <div className="mb-4">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Truck className="h-3.5 w-3.5 text-neutral-500" />
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-500">
+                        Frete
+                      </span>
+                    </div>
+                    <div className="flex overflow-hidden border border-neutral-800 text-[10px]">
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => setFreteMode("fixed")}
+                        className={`px-2 py-0.5 transition-colors cursor-pointer ${
+                          freteMode === "fixed" ? "bg-neutral-800 text-white" : "text-neutral-500 hover:text-neutral-300"
+                        }`}
+                      >
+                        R$
+                      </button>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => setFreteMode("percent")}
+                        className={`px-2 py-0.5 transition-colors cursor-pointer ${
+                          freteMode === "percent" ? "bg-neutral-800 text-white" : "text-neutral-500 hover:text-neutral-300"
+                        }`}
+                      >
+                        %
+                      </button>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-neutral-500">
+                      {freteMode === "percent" ? "%" : "R$"}
+                    </span>
+                    <input
+                      inputMode="decimal"
+                      value={frete}
                       disabled={saving}
-                      onClick={() => setFreteMode("fixed")}
-                      className={`px-2 py-0.5 transition-colors cursor-pointer ${
-                        freteMode === "fixed" ? "bg-neutral-800 text-white" : "text-neutral-500 hover:text-neutral-300"
-                      }`}
-                    >
-                      R$
-                    </button>
-                    <button
-                      type="button"
-                      disabled={saving}
-                      onClick={() => setFreteMode("percent")}
-                      className={`px-2 py-0.5 transition-colors cursor-pointer ${
-                        freteMode === "percent" ? "bg-neutral-800 text-white" : "text-neutral-500 hover:text-neutral-300"
-                      }`}
-                    >
-                      %
-                    </button>
+                      onChange={(e) => setFrete(sanitizeDecimalInput(e.target.value))}
+                      onBlur={() => setFrete(formatDecimalOnBlur(frete))}
+                      placeholder="0,00"
+                      className="h-10 w-full border border-neutral-800 bg-transparent pl-9 pr-3 text-sm text-white placeholder:text-neutral-600 outline-none transition-colors focus:border-[#1a8ceb]/60 focus-visible:ring-1 focus-visible:ring-[#1a8ceb] disabled:opacity-40"
+                    />
                   </div>
                 </div>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-neutral-500">
-                    {freteMode === "percent" ? "%" : "R$"}
-                  </span>
-                  <input
-                    inputMode="decimal"
-                    value={frete}
-                    disabled={saving}
-                    onChange={(e) => setFrete(sanitizeDecimalInput(e.target.value))}
-                    onBlur={() => setFrete(formatDecimalOnBlur(frete))}
-                    placeholder="0,00"
-                    className="h-10 w-full border border-neutral-800 bg-transparent pl-9 pr-3 text-sm text-white placeholder:text-neutral-600 outline-none transition-colors focus:border-[#1a8ceb]/60 focus-visible:ring-1 focus-visible:ring-[#1a8ceb] disabled:opacity-40"
-                  />
-                </div>
-              </div>
+              )}
 
               {/* Margem mínima — referência */}
               {margemMinima !== null && (
