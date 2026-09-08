@@ -13,6 +13,8 @@ const COL = {
 
 const COLOR_BLUE = "FF1A8CEB";
 const COLOR_GREEN = "FF5CFF8D";
+const COLOR_MARGIN_OK = "FFC6EFCE";
+const COLOR_MARGIN_OK_FONT = "FF006100";
 const BLUE_COLS = [1, 2, 3, 4, 5, 6, 7];
 const GREEN_COLS = [9, 10, 11, 13, 14];
 
@@ -34,6 +36,9 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const filtros = body?.filtros || {};
+  // ✅ NOVO: exportação por seleção de linhas (ids da tabela marketplace)
+  const selectedIds: string[] = Array.isArray(body?.ids) ? body.ids.filter(Boolean) : [];
+  const isSelectionMode = selectedIds.length > 0;
 
   const supabase = getSupabaseServer(accessToken);
   const encoder = new TextEncoder();
@@ -47,28 +52,49 @@ export async function POST(req: NextRequest) {
       try {
         sendProgress(0, 0, 0);
 
-        const storeParam = filtros.loja && filtros.loja !== "Todos" ? filtros.loja : null;
-        const channelParam = filtros.canal && filtros.canal !== "Todos" ? filtros.canal : null;
-        const tipoParam = filtros.tipo && filtros.tipo !== "Todos" ? filtros.tipo : null;
-        const condicaoParam = filtros.condicao && filtros.condicao !== "Todos" ? filtros.condicao : null;
-        const searchParam = filtros.produto || filtros.codigo || null;
-        const situacaoParam = filtros.situacao || "Ativos";
-        const brandsParam = filtros.brands?.length > 0 ? filtros.brands : null;
+        let data: any[] = [];
 
-        const { data: fetched, error: fetchError } = await supabase
-          .schema("newsystem")
-          .rpc("fetch_all_marketplace_filtered", {
-            p_store: storeParam,
-            p_channel: channelParam,
-            p_tipo: tipoParam,
-            p_condicao: condicaoParam,
-            p_search: searchParam,
-            p_situacao: situacaoParam,
-            p_brands: brandsParam,
-          });
+        if (isSelectionMode) {
+          // ============================================================
+          // ✅ MODO SELEÇÃO: busca direto pelos IDs marcados na tabela
+          // ============================================================
+          const { data: fetchedById, error: fetchByIdError } = await supabase
+            .schema("newsystem")
+            .from("marketplace")
+            .select(
+              "id, store, channel, announce_id, id_bling, reference, product, mark, commission_rate, profit_margin, freight, current_cost, selling_price, listing_type"
+            )
+            .in("id", selectedIds);
 
-        if (fetchError) throw new Error(fetchError.message);
-        const data = fetched ?? [];
+          if (fetchByIdError) throw new Error(fetchByIdError.message);
+          data = fetchedById ?? [];
+        } else {
+          // ============================================================
+          // MODO FILTROS (comportamento original)
+          // ============================================================
+          const storeParam = filtros.loja && filtros.loja !== "Todos" ? filtros.loja : null;
+          const channelParam = filtros.canal && filtros.canal !== "Todos" ? filtros.canal : null;
+          const tipoParam = filtros.tipo && filtros.tipo !== "Todos" ? filtros.tipo : null;
+          const condicaoParam = filtros.condicao && filtros.condicao !== "Todos" ? filtros.condicao : null;
+          const searchParam = filtros.produto || filtros.codigo || null;
+          const situacaoParam = filtros.situacao || "Ativos";
+          const brandsParam = filtros.brands?.length > 0 ? filtros.brands : null;
+
+          const { data: fetched, error: fetchError } = await supabase
+            .schema("newsystem")
+            .rpc("fetch_all_marketplace_filtered", {
+              p_store: storeParam,
+              p_channel: channelParam,
+              p_tipo: tipoParam,
+              p_condicao: condicaoParam,
+              p_search: searchParam,
+              p_situacao: situacaoParam,
+              p_brands: brandsParam,
+            });
+
+          if (fetchError) throw new Error(fetchError.message);
+          data = fetched ?? [];
+        }
 
         if (data.length === 0) {
           send(`ERROR:${JSON.stringify({ message: "Nenhum dado disponível para exportar." })}`);
@@ -77,10 +103,30 @@ export async function POST(req: NextRequest) {
         }
 
         const total = data.length;
+        sendProgress(3, 0, total);
 
-        sendProgress(5, 0, total);
+        // ============================================================
+        // Resolve em lote: imposto, marketing, desconto, margem mínima,
+        // comissão, taxa fixa, frete% e frete fixo por anúncio
+        // ============================================================
+        const { data: resolved, error: resolveError } = await supabase
+          .schema("newsystem")
+          .rpc("resolve_pricing_batch", {
+            p_announce_ids: data.map((r: any) => r.announce_id),
+            p_stores: data.map((r: any) => r.store),
+            p_channels: data.map((r: any) => r.channel),
+            p_listing_types: data.map((r: any) => r.listing_type),
+            p_profit_margins: data.map((r: any) => r.profit_margin ?? 0),
+          });
 
-        // Buffer coletor — alimenta o WorkbookWriter em modo streaming
+        if (resolveError) throw new Error(resolveError.message);
+
+        const resolvedMap = new Map(
+          (resolved ?? []).map((r: any) => [r.announce_id, r])
+        );
+
+        sendProgress(8, 0, total);
+
         const chunks: Buffer[] = [];
         const sink = new Writable({
           write(chunk, _enc, cb) {
@@ -130,23 +176,42 @@ export async function POST(req: NextRequest) {
 
         for (let i = 0; i < total; i++) {
           const row = data[i];
+          const res: any = resolvedMap.get(row.announce_id) || null;
+
+          const costLiquido = res?.cost_liquido ?? row.current_cost ?? 0;
+          const tax = res?.tax ?? 0;
+          const marketing = res?.marketing ?? 0;
+          const freteRate = res?.frete_rate ?? 0;
+          const freteFixed = res?.frete_fixed ?? 0;
+          const fixedFee = res?.fixed_fee ?? 0;
+          const marginMin = res?.margin_min ?? 0;
+          const commissionRate = res?.commission_rate
+            ? res.commission_rate * 100
+            : row.commission_rate ?? 0;
+
+          const marginInicial =
+            row.profit_margin && row.profit_margin !== 0
+              ? row.profit_margin
+              : marginMin;
+
+          const freteInicial =
+            freteFixed && freteFixed !== 0 ? freteFixed : row.freight ?? 0;
 
           const excelRow = sheet.addRow([
             row.id || "", row.store || "", row.channel || "", row.id_bling || "",
             row.reference || "", row.product || "", row.mark || "", "",
-            row.commission_rate ?? 0, row.freight ?? 0, row.profit_margin ?? 0, "",
-            row.current_cost ?? 0, null,
+            commissionRate, freteInicial, marginInicial, "",
+            costLiquido, null,
           ]);
 
           const rn = excelRow.number;
 
-          // ============================================================
-          // ✅ SHOPEE: Frete (J) e Comissão (I) recalculam sozinhos
-          // se o usuário editar a Margem (K) na planilha — via faixa de PV
-          // ============================================================
+          const constPart = (tax + marketing + freteRate).toFixed(6);
+          const freteFixedStr = freteFixed.toFixed(2);
+          const fixedFeeStr = fixedFee.toFixed(2);
+
           if (row.channel === "Shopee") {
             const margemSafe = `IF(K${rn}="",0,K${rn})`;
-
             const PV1 = `((M${rn}+4)/(1-((20+${margemSafe})/100)))`;
             const PV2 = `((M${rn}+16)/(1-((14+${margemSafe})/100)))`;
             const PV3 = `((M${rn}+20)/(1-((14+${margemSafe})/100)))`;
@@ -159,18 +224,32 @@ export async function POST(req: NextRequest) {
             };
           }
 
-          // ✅ Preço de Venda: fórmula pra todos os canais (reage a edição de Custo/Frete/Comissão/Margem)
           excelRow.getCell(COL.PRECO_VENDA).value = {
-            formula: `ROUND((M${rn}+J${rn})/(1-((I${rn}+K${rn})/100)),2)`,
+            formula: `ROUND(M${rn}/(1-(${constPart}+I${rn}/100+K${rn}/100))+${freteFixedStr}+${fixedFeeStr},2)`,
           };
 
           excelRow.eachCell((cell) => {
             cell.alignment = { horizontal: "center", vertical: "middle" };
           });
+
+          sheet.addConditionalFormatting({
+            ref: `K${rn}`,
+            rules: [
+              {
+                type: "expression",
+                formulae: [`K${rn}>=${marginMin}`],
+                style: {
+                  fill: { type: "pattern", pattern: "solid", bgColor: { argb: COLOR_MARGIN_OK } },
+                  font: { color: { argb: COLOR_MARGIN_OK_FONT }, bold: true },
+                },
+              },
+            ],
+          });
+
           excelRow.commit();
 
           if (i % 1000 === 0 || i === total - 1) {
-            sendProgress(5 + Math.round((i / total) * 85), i + 1, total);
+            sendProgress(8 + Math.round((i / total) * 82), i + 1, total);
             await new Promise((r) => setTimeout(r, 0));
           }
         }

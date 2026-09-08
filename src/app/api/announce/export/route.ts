@@ -19,6 +19,7 @@ type AnnounceRow = {
 
 const PAGE_SIZE = 20_000;
 const MAX_LINHAS = 300_000; // trava de segurança contra export descontrolado
+const MAX_IDS_SELECAO = 300_000; // mesma trava aplicada ao modo seleção
 
 // Cabeçalhos traduzidos para português, na ordem das colunas do banco.
 const HEADERS_PT = ["Loja", "ID Bling", "Referência", "Produto", "Marca", "Código ID"];
@@ -140,6 +141,23 @@ async function sendLine(
   await writer.write(encoder.encode(`${JSON.stringify(payload)}\n`));
 }
 
+/**
+ * Faz o parse do parâmetro "ids" da query string.
+ * Aceita formato "ids=uuid1,uuid2,uuid3" (separado por vírgula).
+ * Retorna null se o parâmetro não foi enviado ou está vazio.
+ */
+function parseIdsParam(searchParams: URLSearchParams): string[] | null {
+  const raw = searchParams.get("ids");
+  if (!raw) return null;
+
+  const ids = raw
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+
+  return ids.length > 0 ? ids : null;
+}
+
 export async function GET(request: NextRequest): Promise<Response> {
   /*
    * 1. Obtém e valida o token antes de abrir o stream — se falhar,
@@ -195,6 +213,20 @@ export async function GET(request: NextRequest): Promise<Response> {
   const { searchParams } = new URL(request.url);
   const store = searchParams.get("store")?.trim() || null;
   const format = (searchParams.get("format") ?? "xlsx").toLowerCase();
+
+  // ✅ NOVO: modo seleção — se vierem IDs, ignora completamente o filtro
+  // de loja e exporta apenas os registros selecionados na tabela.
+  const selectedIds = parseIdsParam(searchParams);
+  const isSelectionMode = selectedIds !== null;
+
+  if (isSelectionMode && selectedIds.length > MAX_IDS_SELECAO) {
+    return new Response(
+      JSON.stringify({
+        error: `Seleção excede o limite máximo de ${MAX_IDS_SELECAO} registros.`,
+      }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
+  }
 
   if (format !== "xlsx" && format !== "csv") {
     return new Response(
@@ -262,6 +294,55 @@ export async function GET(request: NextRequest): Promise<Response> {
         await transaction.unsafe(`set local statement_timeout = '30000'`);
 
         const collected: AnnounceRow[] = [];
+
+        // ============================================================
+        // ✅ MODO SELEÇÃO: busca direto pelos IDs marcados na tabela,
+        // paginando em blocos para não sobrecarregar o Postgres com
+        // um array gigante de uma vez só.
+        // ============================================================
+        if (isSelectionMode) {
+          const ids = selectedIds!;
+
+          for (let offset = 0; offset < ids.length; offset += PAGE_SIZE) {
+            checkDisconnected();
+
+            const idsChunk = ids.slice(offset, offset + PAGE_SIZE);
+
+            const rows = await transaction<AnnounceRow[]>`
+              select store, id_bling, reference, product, mark, code_id
+              from newsystem.announce
+              where deleted_at is null
+                and id = any(${idsChunk})
+              order by store, reference
+            `;
+
+            checkDisconnected();
+
+            collected.push(...rows);
+
+            const percent = Math.min(
+              70,
+              1 + Math.round((collected.length / Math.max(ids.length, 1)) * 69)
+            );
+
+            await Promise.race([
+              sendLine(writer, encoder, {
+                type: "progress",
+                percent,
+                processed: collected.length,
+              }),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("CLIENT_DISCONNECTED")), 5000)
+              ),
+            ]);
+          }
+
+          return collected;
+        }
+
+        // ============================================================
+        // MODO FILTRO/PAGINAÇÃO (comportamento original, sem alterações)
+        // ============================================================
         let lastStore: string | null = null;
         let lastReference: string | null = null;
 
@@ -368,14 +449,18 @@ export async function GET(request: NextRequest): Promise<Response> {
       let fileName: string;
       let mimeType: string;
 
+      const filePrefix = isSelectionMode
+        ? "ANÚNCIOS - SELECIONADOS"
+        : "ANÚNCIOS - PLANILHA";
+
       if (format === "csv") {
         const csv = rowsToCsv(allRows);
         buffer = Buffer.from(csv, "utf-8");
-        fileName = buildTimestampedFileName("ANÚNCIOS - PLANILHA", "csv");
+        fileName = buildTimestampedFileName(filePrefix, "csv");
         mimeType = "text/csv; charset=utf-8";
       } else {
         buffer = buildStyledXlsxBuffer(allRows);
-        fileName = buildTimestampedFileName("ANÚNCIOS - PLANILHA", "xlsx");
+        fileName = buildTimestampedFileName(filePrefix, "xlsx");
         mimeType =
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
       }

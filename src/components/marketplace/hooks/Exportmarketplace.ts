@@ -73,12 +73,18 @@ function toNumber(value: unknown): number | null {
 
 export function useMarketplaceImportExport(
   rows: Marketplace[],
-  filtros?: ExportFiltros
+  filtros?: ExportFiltros,
+  selectedIds?: string[] // ✅ NOVO — ids marcados na tabela (checkbox)
 ) {
   // -----------------------------------------------------------------------
   // EXPORT — geração 100% no servidor (streaming), ideal para grandes
   // volumes (ex.: 70k+ linhas). O cliente apenas dispara a requisição,
   // lê o stream de progresso/dados e salva o arquivo final.
+  //
+  // ✅ Suporta 2 modos, mutuamente exclusivos:
+  //    - Seleção: se `selectedIds` tiver itens, exporta SÓ essas linhas.
+  //    - Filtros: caso contrário, exporta pelo filtro aplicado na tela
+  //      (comportamento original, sem alterações).
   // -----------------------------------------------------------------------
   const handleExport = useCallback(
     async (onProgress?: ExportProgressCallback, signal?: AbortSignal) => {
@@ -96,21 +102,29 @@ export function useMarketplaceImportExport(
           return;
         }
 
+        // ✅ Modo seleção ativo?
+        const isSelectionMode = Array.isArray(selectedIds) && selectedIds.length > 0;
+
         // -----------------------------
         // Nome do arquivo
         // -----------------------------
         const partes: string[] = [];
-        if (filtros?.loja && filtros.loja !== "Todos") partes.push(filtros.loja);
-        if (filtros?.canal && filtros.canal !== "Todos") partes.push(filtros.canal);
+        if (!isSelectionMode) {
+          if (filtros?.loja && filtros.loja !== "Todos") partes.push(filtros.loja);
+          if (filtros?.canal && filtros.canal !== "Todos") partes.push(filtros.canal);
+        }
 
         const middle = partes
           .join("-")
           .toUpperCase()
           .replace(/[\\/:*?"<>|]/g, "");
         const stamp = format(new Date(), "dd-MM-yyyy HH'h'mm", { locale: ptBR });
+
+        const suffix = isSelectionMode ? "SELECIONADOS" : middle;
+
         const fileName =
-          middle.length > 0
-            ? `PRECIFICAÇÃO - MARKETPLACE - ${middle} - ${stamp}.xlsx`
+          suffix.length > 0
+            ? `PRECIFICAÇÃO - MARKETPLACE - ${suffix} - ${stamp}.xlsx`
             : `PRECIFICAÇÃO - MARKETPLACE - ${stamp}.xlsx`;
 
         // -----------------------------
@@ -122,7 +136,10 @@ export function useMarketplaceImportExport(
             "Content-Type": "application/json",
             Authorization: `Bearer ${accessToken}`,
           },
-          body: JSON.stringify({ filtros: filtros || {} }),
+          // ✅ Se houver seleção, manda "ids". Senão, manda "filtros" (original)
+          body: JSON.stringify(
+            isSelectionMode ? { ids: selectedIds } : { filtros: filtros || {} }
+          ),
           signal,
         });
 
@@ -227,7 +244,7 @@ export function useMarketplaceImportExport(
         throw err;
       }
     },
-    [filtros]
+    [filtros, selectedIds] // ✅ selectedIds nas deps
   );
 
   // -----------------------------

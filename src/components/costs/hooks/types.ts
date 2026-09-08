@@ -31,6 +31,7 @@ export type Custo = {
   current_cost: number | null;
   previous_cost?: number | null;
   packaging_cost?: number | null;
+  created_at?: string | null; // ← usado para badge "Novo"
 
   // Chaves de exibição (usadas na tabela/UI)
   ["Código"]: string;

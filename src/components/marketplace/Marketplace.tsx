@@ -336,17 +336,24 @@ export default function Marketplace() {
   }, [totalCount]);
 
   // Hook de import/export (planilha Excel do marketplace).
-  // O export agora roda 100% no servidor via streaming (suporta 70k+ linhas
-  // sem travar o browser). Passamos os filtros aplicados + marcas selecionadas;
-  // o backend busca todos os registros filtrados via RPC (não só a página atual).
+  // O export roda 100% no servidor via streaming (suporta 70k+ linhas sem
+  // travar o browser). Dois modos, mutuamente exclusivos:
+  //   - Se houver linhas selecionadas na tabela → exporta SÓ a seleção
+  //     (ignora filtros).
+  //   - Caso contrário → exporta pelo filtro aplicado na tela (comportamento
+  //     original).
   const {
     handleExport: exportXlsx,
     parseImportFile,
     sendImport,
-  } = useMarketplaceImportExport(marketplaces, {
-    ...appliedFilters,
-    brands: appliedBrands,
-  });
+  } = useMarketplaceImportExport(
+    marketplaces,
+    {
+      ...appliedFilters,
+      brands: appliedBrands,
+    },
+    selectedRows.map((r) => r.id) // ✅ ids selecionados na tabela
+  );
 
   const handleExport = async () => {
     setExporting(true);

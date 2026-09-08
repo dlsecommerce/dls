@@ -244,19 +244,38 @@ export default function Announce() {
     totalCountRef.current = totalCount;
   }, [totalCount]);
 
+  // ✅ Export com 2 modos, mutuamente exclusivos:
+  //   - Se houver linhas selecionadas na tabela → exporta SÓ a seleção
+  //     (ids), ignorando o filtro de loja.
+  //   - Caso contrário → exporta pelo filtro de loja aplicado na tela
+  //     (comportamento original).
   const handleExport = async () => {
     cancelExportRef.current = false;
     const controller = new AbortController();
     exportAbortRef.current = controller;
+
+    const hasSelection = selectedRows.length > 0;
+    const selectedIds = selectedRows.map((r) => r.id);
 
     setExporting(true);
     setExportProgressOpen(true);
     setExportProgress(0);
     setExportProgressCount(0);
 
+    // Quando é exportação por seleção, o total do progresso passa a ser
+    // a quantidade de itens selecionados (não o total geral filtrado).
+    if (hasSelection) {
+      totalCountRef.current = selectedIds.length;
+    }
+
     try {
       await exportAnnounceFromApi(
-        { store: storeValue, format: "xlsx", signal: controller.signal },
+        {
+          ids: hasSelection ? selectedIds : undefined,
+          store: hasSelection ? undefined : storeValue,
+          format: "xlsx",
+          signal: controller.signal,
+        },
         (percent) => {
           if (cancelExportRef.current) return;
           setExportProgress(percent);

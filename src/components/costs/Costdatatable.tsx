@@ -63,6 +63,29 @@ const getCostKey = (row: any) => {
   return String(row?.["Código"] ?? row?.codigo ?? row?.id ?? "").trim();
 };
 
+/* ─────────────────────────────────────────────
+ * HELPER — detecta itens recentes ("Novos")
+ * ───────────────────────────────────────────── */
+const NEW_THRESHOLD_HOURS = 24 * 5; // 5 dias
+
+function isRecent(createdAt?: string | null, hours = NEW_THRESHOLD_HOURS) {
+  if (!createdAt) return false;
+  const created = new Date(createdAt).getTime();
+  if (Number.isNaN(created)) return false;
+  return Date.now() - created <= hours * 60 * 60 * 1000;
+}
+
+function NewBadge() {
+  return (
+    <span
+      className="ml-1.5 inline-flex shrink-0 items-center rounded-none border border-[#1a8ceb]/40 bg-[#1a8ceb]/10 px-1.5 py-[1px] text-[9px] font-semibold uppercase tracking-wide text-[#1a8ceb]"
+      title="Adicionado recentemente"
+    >
+      Novo
+    </span>
+  );
+}
+
 function IconBtn({
   onClick,
   variant,
@@ -206,6 +229,8 @@ const CostTableRow = React.memo(
     ) => void;
     onToggle: (row: Custo, checked: boolean) => void;
   }) {
+    const showNewBadge = isRecent((row as any)?.created_at);
+
     return (
       <TableRow
         className={`group border-b border-neutral-900 transition-colors ${
@@ -242,6 +267,7 @@ const CostTableRow = React.memo(
         <TableCell className="text-left text-[13px] text-neutral-300">
           <div className="inline-flex max-w-full items-center gap-1.5">
             <span className="truncate">{row["Produto"]}</span>
+            {showNewBadge && <NewBadge />}
             <CopyBtn
               value={row["Produto"] || ""}
               copyKey={`produto-${index}`}
@@ -390,6 +416,7 @@ export default function CostDataTable({
         ) : (
           rows.map((c, i) => {
             const isSelected = selectedKeys.has(getCostKey(c));
+            const showNewBadge = isRecent((c as any)?.created_at);
 
             return (
               <div
@@ -405,6 +432,7 @@ export default function CostDataTable({
                     </div>
                     <div className="mt-1 flex min-w-0 items-center gap-1.5 text-sm font-medium text-white">
                       <span className="truncate">{c["Produto"] || "-"}</span>
+                      {showNewBadge && <NewBadge />}
                     </div>
                   </div>
 

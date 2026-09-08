@@ -151,9 +151,9 @@ export async function exportAnnounceToXlsx(
 }
 
 // ---------------------------------------------------------------------
-// ✅ NOVO — Planilha modelo (gerada 100% no client, mesmo padrão
-// visual do export normal). Usada pelo botão "Baixar planilha modelo".
-// Não depende de nenhum arquivo estático em /public.
+// ✅ Planilha modelo (gerada 100% no client, mesmo padrão visual do
+// export normal). Usada pelo botão "Baixar planilha modelo". Não
+// depende de nenhum arquivo estático em /public.
 // ---------------------------------------------------------------------
 export async function exportAnnounceModelo(): Promise<void> {
   const XLSX = await import("xlsx-js-style");
@@ -215,7 +215,8 @@ export async function exportAnnounceModelo(): Promise<void> {
 
 // ---------------------------------------------------------------------
 // Busca no servidor + export — usado quando os dados não vêm
-// já filtrados/prontos em memória (ex.: exportar tudo, ou por loja)
+// já filtrados/prontos em memória (ex.: exportar tudo, por loja,
+// ou por seleção de linhas na tabela)
 // ---------------------------------------------------------------------
 async function ensureValidSession(): Promise<string> {
   const { data, error } = await supabase.auth.getSession();
@@ -277,23 +278,38 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
  * por evento), reportando progresso REAL conforme processa no
  * servidor (busca no banco + geração do arquivo), e entrega o
  * arquivo final (em base64) no último evento ("done").
+ *
+ * ✅ Suporta 2 modos, mutuamente exclusivos:
+ *    - Seleção: se `ids` tiver itens, exporta SÓ essas linhas
+ *      (ignora `store`).
+ *    - Filtro: caso contrário, exporta pelo filtro de loja aplicado
+ *      na tela (comportamento original, sem alterações).
  */
 export async function exportAnnounceFromApi(
   options: {
     store?: string;
     format?: "xlsx" | "csv";
+    ids?: string[]; // ✅ NOVO — ids selecionados na tabela
     signal?: AbortSignal;
   } = {},
   onProgress?: ExportProgressCallback
 ): Promise<void> {
-  const { store, format = "xlsx", signal } = options;
+  const { store, format = "xlsx", ids, signal } = options;
+
+  const isSelectionMode = Array.isArray(ids) && ids.length > 0;
 
   onProgress?.(0);
 
   const accessToken = await ensureValidSession();
 
   const params = new URLSearchParams();
-  if (store) params.set("store", store);
+
+  if (isSelectionMode) {
+    params.set("ids", ids!.join(","));
+  } else if (store) {
+    params.set("store", store);
+  }
+
   params.set("format", format);
 
   const response = await fetch(`/api/announce/export?${params.toString()}`, {
@@ -341,7 +357,9 @@ export async function exportAnnounceFromApi(
         try {
           await createNotification({
             title: "Planilha de anúncios exportada",
-            message: store
+            message: isSelectionMode
+              ? `A planilha com ${ids!.length} anúncio(s) selecionado(s) foi exportada com sucesso.`
+              : store
               ? `A planilha da loja "${store}" foi exportada com sucesso.`
               : "A planilha de anúncios foi exportada com sucesso.",
             action: "status",
