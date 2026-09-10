@@ -27,6 +27,13 @@ function getSupabaseServer(accessToken: string) {
   );
 }
 
+// ✅ Helper para gerar a chave composta aid+store+channel,
+// evitando colisão quando o mesmo announce_id aparece em
+// múltiplas lojas/canais dentro do mesmo lote de exportação.
+function resolveKey(announceId: string, store: string, channel: string) {
+  return `${announceId}::${store}::${channel}`;
+}
+
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization") || "";
   const accessToken = authHeader.replace("Bearer ", "");
@@ -115,8 +122,17 @@ export async function POST(req: NextRequest) {
 
         if (resolveError) throw new Error(resolveError.message);
 
+        // ✅ FIX: chave composta (announce_id + store + channel) em vez de
+        // apenas announce_id. Antes, quando o mesmo produto (announce_id)
+        // estava anunciado em múltiplos canais/lojas, o Map sobrescrevia
+        // as entradas anteriores e todas as linhas passavam a usar a
+        // regra de precificação de UM canal só — misturando comissões
+        // entre Shopee, ML, Amazon etc. na exportação "Todos os dados".
         const resolvedMap = new Map(
-          (resolved ?? []).map((r: any) => [r.announce_id, r])
+          (resolved ?? []).map((r: any) => [
+            resolveKey(r.announce_id, r.store, r.channel),
+            r,
+          ])
         );
 
         sendProgress(8, 0, total);
@@ -176,7 +192,11 @@ export async function POST(req: NextRequest) {
 
         for (let i = 0; i < total; i++) {
           const row = data[i];
-          const res: any = resolvedMap.get(row.announce_id) || null;
+
+          // ✅ FIX: busca usando a chave composta, garantindo que a regra
+          // aplicada seja exatamente a do canal/loja daquela linha.
+          const res: any =
+            resolvedMap.get(resolveKey(row.announce_id, row.store, row.channel)) ?? null;
 
           const costLiquido = res?.cost_liquido ?? row.current_cost ?? 0;
           const tax = res?.tax ?? 0;

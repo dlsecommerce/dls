@@ -63,6 +63,10 @@ const mapRowToUI = (row: any): Custo => ({
   current_cost: typeof row.current_cost === "number" ? row.current_cost : null,
   previous_cost: typeof row.previous_cost === "number" ? row.previous_cost : null,
   packaging_cost: typeof row.packaging_cost === "number" ? row.packaging_cost : null,
+  // ✅ FIX: sem isso, o badge "Novo" nunca aparece — o componente
+  // CostDataTable lê row.created_at, mas esse campo era descartado
+  // aqui no mapeamento (mesmo vindo no select("*") do Supabase).
+  created_at: row.created_at ?? null,
 });
 
 // Formata um número (ou null) em string BR para exibir no input de custo do modal
