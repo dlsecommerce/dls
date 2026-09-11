@@ -1,7 +1,21 @@
 "use client";
 
-import React, { useCallback, useRef, useState } from "react";
-import { X, Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  X,
+  Upload,
+  FileSpreadsheet,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+} from "lucide-react";
 import { useValidateAds } from "@/components/announce/hooks/useValidateAds";
 
 type Props = {
@@ -9,15 +23,35 @@ type Props = {
   onClose: () => void;
 };
 
+const ACCENT = "#1a8ceb";
+const ACCENT_HOVER = "#1579d1";
+
 export default function ValidateAds({ open, onClose }: Props) {
   const { file, setFile, validating, error, success, validar, reset } = useValidateAds();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const confirmBtnRef = useRef<HTMLButtonElement>(null);
   const [dragActive, setDragActive] = useState(false);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
+    if (validating) return;
     reset();
     onClose();
-  };
+  }, [validating, reset, onClose]);
+
+  const handleOpenChange = useCallback(
+    (v: boolean) => {
+      if (v && validating) return;
+      if (!v) handleClose();
+    },
+    [validating, handleClose]
+  );
+
+  useEffect(() => {
+    if (open && !validating) {
+      const t = setTimeout(() => confirmBtnRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [open, validating]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
@@ -35,33 +69,30 @@ export default function ValidateAds({ open, onClose }: Props) {
     e.target.value = "";
   };
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-      <div className="w-full max-w-md border border-neutral-800 bg-neutral-950">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-neutral-900 px-5 py-4">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        onClick={(e) => e.stopPropagation()}
+        onEscapeKeyDown={(e) => validating && e.preventDefault()}
+        onInteractOutside={(e) => validating && e.preventDefault()}
+        className="bg-[#0a0a0a] border border-neutral-800 shadow-2xl w-[calc(100vw-16px)] max-w-[calc(100vw-16px)] max-h-[calc(100dvh-16px)] sm:max-w-md sm:w-[90%] flex flex-col overflow-hidden p-4 sm:p-6 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+      >
+        {/* Cabeçalho */}
+        <DialogHeader className="shrink-0 border-b border-neutral-900 pb-3">
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="h-5 w-5 text-[#1a8ceb]" />
-            <h2 className="text-sm font-semibold text-white">Validar Composição de Custo</h2>
+            <CheckCircle2 className="h-4 w-4" style={{ color: ACCENT }} />
+            <DialogTitle className="text-base font-semibold text-white sm:text-lg">
+              Validar Composição de Custo
+            </DialogTitle>
           </div>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="text-neutral-500 hover:text-white"
-            aria-label="Fechar"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        </DialogHeader>
 
-        {/* Body */}
-        <div className="px-5 py-5">
+        {/* Conteúdo */}
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1 mt-4">
           <p className="mb-4 text-[13px] text-neutral-400">
             Envie uma planilha (.xlsx ou .csv) com as colunas{" "}
-            <span className="text-neutral-200">store</span> e{" "}
-            <span className="text-neutral-200">reference</span> para validar a composição de
+            <span className="text-neutral-200">Loja</span> e{" "}
+            <span className="text-neutral-200">Referência</span> para validar a composição de
             custo dos anúncios.
           </p>
 
@@ -89,7 +120,7 @@ export default function ValidateAds({ open, onClose }: Props) {
           >
             {file ? (
               <>
-                <FileSpreadsheet className="h-8 w-8 text-[#1a8ceb]" />
+                <FileSpreadsheet className="h-8 w-8" style={{ color: ACCENT }} />
                 <span className="text-sm text-white">{file.name}</span>
                 <span className="text-xs text-neutral-500">
                   {(file.size / 1024).toFixed(1)} KB
@@ -120,38 +151,46 @@ export default function ValidateAds({ open, onClose }: Props) {
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex justify-end gap-2 border-t border-neutral-900 px-5 py-4">
+        {/* Botões */}
+        <DialogFooter className="mt-5 flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
           <button
             type="button"
-            onClick={handleClose}
-            className="h-10 px-4 text-sm text-neutral-400 hover:text-white"
+            disabled={validating}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleClose();
+            }}
+            className="flex h-11 w-full items-center justify-center border border-neutral-800 text-sm text-white transition-colors hover:bg-neutral-900 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 sm:h-10 sm:w-auto sm:px-6"
           >
             Cancelar
           </button>
           <button
+            ref={confirmBtnRef}
             type="button"
-            onClick={validar}
+            onClick={(e) => {
+              e.stopPropagation();
+              void validar();
+            }}
             disabled={!file || validating}
-            className="
-              flex h-10 items-center gap-2 border border-[#1a8ceb] bg-[#1a8ceb]
-              px-4 text-sm font-medium text-white transition-colors
-              hover:bg-[#1579d1] hover:border-[#1579d1]
-              disabled:opacity-40 disabled:cursor-not-allowed
-              enabled:cursor-pointer
-            "
+            className="flex h-11 w-full items-center justify-center gap-2 border text-sm font-medium transition-colors sm:h-10 sm:w-auto sm:px-6 disabled:cursor-not-allowed disabled:opacity-40 enabled:cursor-pointer"
+            style={{ backgroundColor: ACCENT, borderColor: ACCENT }}
+            onMouseEnter={(e) => {
+              if (!validating && file) (e.currentTarget as HTMLButtonElement).style.backgroundColor = ACCENT_HOVER;
+            }}
+            onMouseLeave={(e) => {
+              if (!validating && file) (e.currentTarget as HTMLButtonElement).style.backgroundColor = ACCENT;
+            }}
           >
             {validating ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Validando...
               </>
             ) : (
               "Validar Composição"
             )}
           </button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

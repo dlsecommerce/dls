@@ -36,11 +36,18 @@ export function useValidateAds() {
         throw new Error(data?.error ?? "Erro ao validar a planilha.");
       }
 
+      // Extrai o nome do arquivo enviado pelo servidor (se disponível)
+      const disposition = res.headers.get("Content-Disposition");
+      const match = disposition?.match(/filename="?([^"]+)"?/);
+      const filename = match?.[1]
+        ? decodeURIComponent(match[1])
+        : "validacao_composicao.xlsx";
+
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "validacao_composicao.xlsx";
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
