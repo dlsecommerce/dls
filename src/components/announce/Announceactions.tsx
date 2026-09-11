@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronUp,
   Upload,
+  CheckCircle2,
 } from "lucide-react";
 import { unlockAudio } from "@/utils/sound";
 import TableInfoCard from "@/components/ui/Tableinfocard";
@@ -20,6 +21,7 @@ type Props = {
   onExportModelo: () => void | Promise<void>;
   onImportInclusao: (file: File) => void | Promise<void>;
   onImportAlteracao: (file: File) => void | Promise<void>;
+  onValidarComposicao: () => void | Promise<void>;
   totalCount: number;
 };
 
@@ -99,6 +101,7 @@ export default function AnnounceActions({
   onExportModelo,
   onImportInclusao,
   onImportAlteracao,
+  onValidarComposicao,
   totalCount,
 }: Props) {
   const inputInclusaoRef = useRef<HTMLInputElement | null>(null);
@@ -220,6 +223,18 @@ export default function AnnounceActions({
                 icon={<FileSpreadsheet className="h-4 w-4" />}
                 label="Importar dados de alteração"
                 onClick={() => triggerFileInput(inputAlteracaoRef)}
+              />
+
+              <div className="my-1 border-t border-neutral-900" />
+
+              <div className="mb-1 px-2.5 pt-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-neutral-500">
+                Gerar
+              </div>
+
+              <ActionTextButton
+                icon={<CheckCircle2 className="h-4 w-4" />}
+                label="Validar Composição"
+                onClick={onValidarComposicao}
               />
             </div>
           )}

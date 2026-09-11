@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import PlanilhaModelo from "@/components/automacao/modelo/PlanilhaModelo";
+import PlanilhaModelo from "@/components/automacao/modelo/Templatespreadsheet";
 import { LoadingBar } from "@/components/ui/loading-bar";
 
 export default function PlanilhaModeloPage() {

@@ -25,6 +25,18 @@ type Props = {
   onConfirm: (file: File) => void;
 };
 
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
+const PREVIEW_LIMIT = 8;
+const FORMULA_ERROR_PATTERNS = [
+  "#DIV/0!",
+  "#REF!",
+  "#VALUE!",
+  "#NAME?",
+  "#NULL!",
+  "#NUM!",
+  "#N/A",
+];
+
 const formatFileSize = (size: number) => {
   if (!size) return "0 KB";
 
@@ -37,6 +49,11 @@ const formatFileSize = (size: number) => {
   return `${(kb / 1024).toFixed(1)} MB`;
 };
 
+const isFormulaError = (value: any) => {
+  const str = String(value ?? "").trim();
+  return FORMULA_ERROR_PATTERNS.some((pattern) => str === pattern);
+};
+
 export default function PreviewPlanilhaModal({
   open,
   onOpenChange,
@@ -44,9 +61,11 @@ export default function PreviewPlanilhaModal({
   onConfirm,
 }: Props) {
   const [data, setData] = useState<any[][]>([]);
+  const [totalRows, setTotalRows] = useState(0);
   const [loading, setLoading] = useState(false);
   const [sheetName, setSheetName] = useState<string>("");
   const [error, setError] = useState<string>("");
+  const [hasFormulaErrors, setHasFormulaErrors] = useState(false);
 
   const totalColumns = useMemo(() => {
     if (!data.length) return 0;
@@ -54,31 +73,59 @@ export default function PreviewPlanilhaModal({
     return Math.max(...data.map((row) => row.length));
   }, [data]);
 
+  const previewRows = data.slice(1, PREVIEW_LIMIT + 1);
+  const headerRow = data[0];
+
   useEffect(() => {
     if (!file) {
       setData([]);
+      setTotalRows(0);
       setSheetName("");
       setError("");
+      setHasFormulaErrors(false);
       setLoading(false);
       return;
     }
 
+    let cancelled = false;
+
     setLoading(true);
     setError("");
     setData([]);
+    setTotalRows(0);
     setSheetName("");
+    setHasFormulaErrors(false);
+
+    if (file.size > MAX_FILE_SIZE) {
+      setLoading(false);
+      setError(
+        `Este arquivo tem ${formatFileSize(
+          file.size
+        )}, acima do limite de ${formatFileSize(
+          MAX_FILE_SIZE
+        )}. Reduza o tamanho da planilha antes de continuar.`
+      );
+      return;
+    }
 
     const reader = new FileReader();
 
     reader.onload = (e) => {
+      if (cancelled) return;
+
       try {
         const arrayBuffer = e.target?.result;
-        const workbook = XLSX.read(arrayBuffer, { type: "array" });
+        const workbook = XLSX.read(arrayBuffer, {
+          type: "array",
+          cellDates: true,
+        });
         const firstSheet = workbook.SheetNames[0];
 
         if (!firstSheet) {
-          setData([]);
-          setError("Nenhuma aba foi encontrada nesta planilha.");
+          if (!cancelled) {
+            setData([]);
+            setError("Nenhuma aba foi encontrada nesta planilha.");
+          }
           return;
         }
 
@@ -87,36 +134,50 @@ export default function PreviewPlanilhaModal({
         const json = XLSX.utils.sheet_to_json(sheet, {
           header: 1,
           defval: "",
+          raw: false,
+          dateNF: "dd/mm/yyyy",
         }) as any[][];
 
-        const rows = json
-          .filter((row) =>
-            row.some((cell) => String(cell ?? "").trim() !== "")
-          )
-          .slice(0, 8);
+        const rows = json.filter((row) =>
+          row.some((cell) => String(cell ?? "").trim() !== "")
+        );
 
-        setData(rows);
+        if (cancelled) return;
+
+        const foundFormulaError = rows
+          .slice(1)
+          .some((row) => row.some((cell) => isFormulaError(cell)));
+
+        setData(rows.slice(0, PREVIEW_LIMIT + 1));
+        setTotalRows(Math.max(rows.length - 1, 0));
         setSheetName(firstSheet);
+        setHasFormulaErrors(foundFormulaError);
 
         if (!rows.length) {
           setError("Nenhum dado foi encontrado nesta planilha.");
         }
       } catch (err) {
+        if (cancelled) return;
         console.error("Erro ao ler planilha:", err);
         setData([]);
         setError("Não foi possível ler esta planilha. Verifique o arquivo.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     reader.onerror = () => {
+      if (cancelled) return;
       setLoading(false);
       setError("Erro ao carregar o arquivo selecionado.");
       setData([]);
     };
 
     reader.readAsArrayBuffer(file);
+
+    return () => {
+      cancelled = true;
+    };
   }, [file]);
 
   return (
@@ -124,7 +185,7 @@ export default function PreviewPlanilhaModal({
       <DialogContent
         className="
           flex max-h-[calc(100dvh-32px)] w-[calc(100vw-24px)] max-w-4xl
-          flex-col overflow-hidden rounded-2xl border border-white/10
+          flex-col overflow-hidden border border-white/10
           bg-[#0f0f0f]/95 p-0 text-white shadow-2xl backdrop-blur-xl
         "
       >
@@ -132,7 +193,7 @@ export default function PreviewPlanilhaModal({
           <DialogHeader>
             <div className="min-w-0">
               <DialogTitle className="flex items-center gap-2 text-base font-semibold text-white md:text-lg">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-500/25 bg-emerald-500/10 text-emerald-400">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-emerald-500/25 bg-emerald-500/10 text-emerald-400">
                   <FileSpreadsheet className="h-5 w-5" />
                 </span>
 
@@ -148,7 +209,7 @@ export default function PreviewPlanilhaModal({
           </DialogHeader>
 
           {file && (
-            <div className="mt-4 grid gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-3 md:grid-cols-[1fr_auto_auto] md:items-center">
+            <div className="mt-4 grid gap-2 rounded border border-white/10 bg-black/20 px-3 py-3 md:grid-cols-[1fr_auto_auto] md:items-center">
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-white">
                   {file.name}
@@ -160,24 +221,35 @@ export default function PreviewPlanilhaModal({
               </div>
 
               {sheetName && (
-                <span className="w-fit rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400">
+                <span className="w-fit rounded border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-400">
                   Aba: {sheetName}
                 </span>
               )}
 
-              {data.length > 0 && (
-                <span className="w-fit rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-white/45">
-                  Prévia: {data.length} linhas
+              {totalRows > 0 && (
+                <span className="w-fit rounded border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-white/45">
+                  {totalRows} linha{totalRows !== 1 ? "s" : ""} no total
                   {totalColumns ? ` • ${totalColumns} colunas` : ""}
                 </span>
               )}
+            </div>
+          )}
+
+          {!loading && hasFormulaErrors && (
+            <div className="mt-3 flex items-start gap-2 rounded border border-amber-500/25 bg-amber-500/10 px-3 py-2">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+              <p className="text-xs leading-relaxed text-amber-200">
+                Foram encontradas células com erro de fórmula (ex: #REF!,
+                #DIV/0!) na planilha. Corrija o arquivo original antes de
+                confirmar o envio.
+              </p>
             </div>
           )}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6">
           {loading ? (
-            <div className="flex h-56 flex-col items-center justify-center rounded-xl border border-white/10 bg-white/[0.02]">
+            <div className="flex h-56 flex-col items-center justify-center rounded border border-white/10 bg-white/[0.02]">
               <Loader className="h-7 w-7 animate-spin text-emerald-400" />
 
               <p className="mt-3 text-sm font-semibold text-white/70">
@@ -189,7 +261,7 @@ export default function PreviewPlanilhaModal({
               </p>
             </div>
           ) : error ? (
-            <div className="flex h-48 flex-col items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 px-4 text-center">
+            <div className="flex h-48 flex-col items-center justify-center rounded border border-red-500/20 bg-red-500/10 px-4 text-center">
               <AlertCircle className="h-7 w-7 text-red-400" />
 
               <p className="mt-3 text-sm font-semibold text-red-300">
@@ -201,7 +273,7 @@ export default function PreviewPlanilhaModal({
               </p>
             </div>
           ) : data.length === 0 ? (
-            <div className="flex h-48 flex-col items-center justify-center rounded-xl border border-white/10 bg-white/[0.02] px-4 text-center">
+            <div className="flex h-48 flex-col items-center justify-center rounded border border-white/10 bg-white/[0.02] px-4 text-center">
               <FileSpreadsheet className="h-7 w-7 text-white/35" />
 
               <p className="mt-3 text-sm font-semibold text-white/65">
@@ -216,39 +288,74 @@ export default function PreviewPlanilhaModal({
             <motion.div
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
-              className="overflow-hidden rounded-xl border border-white/10 bg-black/20"
+              className="overflow-hidden rounded border border-white/10 bg-black/20"
             >
               <div className="max-h-[320px] overflow-auto md:max-h-[360px]">
                 <table className="min-w-full border-collapse">
+                  <thead>
+                    <tr className="sticky top-0 z-10 border-b border-white/10 bg-emerald-500/15 text-emerald-300">
+                      <th
+                        scope="col"
+                        className="w-10 border-r border-white/10 px-2 py-2 text-center text-xs font-bold"
+                      >
+                        #
+                      </th>
+
+                      {Array.from({ length: totalColumns }).map((_, j) => (
+                        <th
+                          key={j}
+                          scope="col"
+                          className="max-w-[240px] whitespace-nowrap border-r border-white/10 px-3 py-2 text-left text-xs font-bold last:border-r-0 md:text-sm"
+                          title={String(headerRow?.[j] ?? "")}
+                        >
+                          <span className="block truncate">
+                            {headerRow?.[j] ?? ""}
+                          </span>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+
                   <tbody>
-                    {data.map((row, i) => (
+                    {previewRows.map((row, i) => (
                       <tr
                         key={i}
-                        className={`border-b border-white/10 last:border-b-0 ${
-                          i === 0
-                            ? "sticky top-0 z-10 bg-emerald-500/15 text-emerald-300"
-                            : "bg-[#111111] text-neutral-300 even:bg-white/[0.02]"
-                        }`}
+                        className="border-b border-white/10 bg-[#111111] text-neutral-300 last:border-b-0 even:bg-white/[0.02]"
                       >
-                        {Array.from({ length: totalColumns }).map((_, j) => (
-                          <td
-                            key={j}
-                            className={`
-                              max-w-[240px] whitespace-nowrap border-r border-white/10 px-3 py-2
-                              text-xs last:border-r-0 md:text-sm
-                              ${
-                                i === 0
-                                  ? "font-bold"
-                                  : "font-medium text-white/70"
-                              }
-                            `}
-                            title={String(row[j] ?? "")}
-                          >
-                            <span className="block truncate">
-                              {row[j] ?? ""}
-                            </span>
-                          </td>
-                        ))}
+                        <td className="w-10 border-r border-white/10 px-2 py-2 text-center text-xs font-semibold text-white/30">
+                          {i + 1}
+                        </td>
+
+                        {Array.from({ length: totalColumns }).map((_, j) => {
+                          const cellValue = row[j];
+                          const isEmpty =
+                            cellValue === "" ||
+                            cellValue === null ||
+                            cellValue === undefined;
+                          const isError = isFormulaError(cellValue);
+
+                          return (
+                            <td
+                              key={j}
+                              className={`
+                                max-w-[240px] whitespace-nowrap border-r border-white/10 px-3 py-2
+                                text-xs last:border-r-0 md:text-sm font-medium
+                                ${
+                                  isError
+                                    ? "bg-red-500/15 text-red-300"
+                                    : isEmpty
+                                    ? "text-white/25"
+                                    : "text-white/70"
+                                }
+                              `}
+                              title={String(cellValue ?? "")}
+                            >
+                              <span className="block truncate">
+                                {isEmpty ? "—" : cellValue}
+                              </span>
+                            </td>
+                          );
+                        })}
                       </tr>
                     ))}
                   </tbody>
@@ -258,11 +365,14 @@ export default function PreviewPlanilhaModal({
           )}
 
           {!loading && data.length > 0 && (
-            <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+            <div className="mt-3 rounded border border-white/10 bg-white/[0.03] px-3 py-2">
               <p className="text-xs leading-relaxed text-white/40">
-                Esta é apenas uma prévia das primeiras linhas da primeira aba da
-                planilha. Confirme somente se o arquivo selecionado estiver
-                correto.
+                Esta é apenas uma prévia das primeiras {previewRows.length}{" "}
+                linha(s) de dados da primeira aba da planilha
+                {totalRows > previewRows.length
+                  ? ` (${totalRows} no total)`
+                  : ""}
+                . Confirme somente se o arquivo selecionado estiver correto.
               </p>
             </div>
           )}
@@ -300,7 +410,9 @@ export default function PreviewPlanilhaModal({
                   md:h-10 md:w-auto
                 "
                 onClick={() => onConfirm(file)}
-                disabled={loading || !!error || data.length === 0}
+                disabled={
+                  loading || !!error || data.length === 0 || hasFormulaErrors
+                }
               >
                 <CheckCircle2 className="h-4 w-4" />
                 Confirmar arquivo

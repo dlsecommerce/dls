@@ -14,6 +14,7 @@ import { Controls } from "@/components/announce/Controls";
 import ExportProgressToast from "@/components/announce/Exportprogresstoast";
 import ImportProgressToast from "@/components/announce/Importprogresstoast";
 import ProductEditModal from "@/components/announce/Producteditmodal";
+import ValidateAds from "@/components/announce/ValidateAds";
 
 import {
   Announce as AnnounceRow,
@@ -436,6 +437,7 @@ export default function Announce() {
 
   const [openFiltersMobile, setOpenFiltersMobile] = React.useState(false);
   const [openActionsMobile, setOpenActionsMobile] = React.useState(false);
+  const [openValidateAds, setOpenValidateAds] = React.useState(false);
 
   /* ── MODAL DE EDIÇÃO/CRIAÇÃO (controlado via query params) ──
    * `id` → edição de um anúncio existente.
@@ -608,6 +610,7 @@ export default function Announce() {
               onExportModelo={handleExportModelo}
               onImportInclusao={handleImportInclusao}
               onImportAlteracao={handleImportAlteracao}
+              onValidarComposicao={() => setOpenValidateAds(true)}
               totalCount={totalCount}
             />
           </div>
@@ -720,6 +723,10 @@ export default function Announce() {
                   setOpenActionsMobile(false);
                   handleImportAlteracao(file);
                 }}
+                onValidarComposicao={() => {
+                  setOpenActionsMobile(false);
+                  setOpenValidateAds(true);
+                }}
                 totalCount={totalCount}
               />
             </div>
@@ -773,6 +780,11 @@ export default function Announce() {
           importProgressCount > 0 ? `${importProgressCount} anúncio(s)` : undefined
         }
         onClose={() => setImportProgressOpen(false)}
+      />
+
+      <ValidateAds
+        open={openValidateAds}
+        onClose={() => setOpenValidateAds(false)}
       />
 
       {isEditOpen && (
