@@ -67,10 +67,19 @@ const COLORS = {
 type Category = 'erro' | 'sucesso' | 'atencao';
 
 function getCategory(row: ResultRow): Category {
-  const status = (row.status ?? '').toString().toLowerCase();
-  if (status.includes('erro')) return 'erro';
-  if (status.includes('atenç') || status.includes('atenc')) return 'atencao';
-  return 'sucesso';
+  const status = (row.status ?? '').trim();
+
+  switch (status) {
+    case 'Anúncio não encontrado':
+    case 'Sem composição':
+      return 'erro';
+    case 'Custo inválido':
+      return 'atencao';
+    case 'OK':
+      return 'sucesso';
+    default:
+      return 'erro'; // fallback de segurança para status inesperado
+  }
 }
 
 function fill(color: string): ExcelJS.Fill {
@@ -147,24 +156,14 @@ export async function POST(req: NextRequest) {
     const outWorkbook = new ExcelJS.Workbook();
     const outSheet = outWorkbook.addWorksheet('Validação');
 
-    const headers = [
-      'Loja',
-      'Referência',
-      'Já está ativo?',
-      'Status',
-      'Total de itens',
-      'Itens sem custo',
-      'Observação',
-    ];
-
     outSheet.columns = [
-      { header: headers[0], key: 'store', width: 15 },
-      { header: headers[1], key: 'reference', width: 20 },
-      { header: headers[2], key: 'ja_esta_ativo', width: 14 },
-      { header: headers[3], key: 'status', width: 18 },
-      { header: headers[4], key: 'total_itens', width: 12 },
-      { header: headers[5], key: 'itens_sem_custo', width: 14 },
-      { header: headers[6], key: 'observacao', width: 60 },
+      { header: 'Loja', key: 'store', width: 15 },
+      { header: 'Referência', key: 'reference', width: 20 },
+      { header: 'Já está ativo?', key: 'ja_esta_ativo', width: 14 },
+      { header: 'Status', key: 'status', width: 18 },
+      { header: 'Total de itens', key: 'total_itens', width: 12 },
+      { header: 'Itens sem custo', key: 'itens_sem_custo', width: 14 },
+      { header: 'Observação', key: 'observacao', width: 60 },
     ];
 
     // Estilo do cabeçalho
@@ -180,7 +179,7 @@ export async function POST(req: NextRequest) {
         // Observação -> sempre laranja
         cell.fill = fill(COLORS.headerOrange);
       } else {
-        // Demais colunas do cabeçalho -> cor neutra padrão
+        // Demais colunas do cabeçalho -> azul padrão
         cell.fill = fill(COLORS.headerBlue);
       }
     });
