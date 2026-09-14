@@ -52,6 +52,10 @@ function keyOfInclusao(store: string, reference: string): string {
   return `${store}::ref::${reference}`;
 }
 
+function keyOfIdBling(store: string, idBling: string | null): string {
+  return `${store}::bling::${idBling ?? ""}`;
+}
+
 function keyOfAlteracao(store: string, idBling: string | null): string {
   return `${store}::bling::${idBling ?? ""}`;
 }
@@ -88,7 +92,45 @@ async function findExistingReferences(
 }
 
 // -----------------------------------------------------------------------
-// INCLUSÃO (apenas registros já filtrados como "novos")
+// ✅ NOVA PRÉ-CHECAGEM: verifica quais (store, id_bling) já existem e
+// estão ativos vinculados a uma referência DIFERENTE da que está sendo
+// enviada. Isso evita que o insert em massa quebre a constraint
+// unq_announce_id_bling_active e caia no fallback linha a linha.
+// -----------------------------------------------------------------------
+async function findConflictingIdBling(
+  transaction: any,
+  registros: RegistroInput[]
+): Promise<Map<string, string>> {
+  const conflitos = new Map<string, string>();
+  const comIdBling = registros.filter((r) => r.id_bling);
+
+  if (comIdBling.length === 0) return conflitos;
+
+  const totalBatches = Math.ceil(comIdBling.length / CHECK_BATCH_SIZE);
+
+  for (let i = 0; i < totalBatches; i++) {
+    const batch = comIdBling.slice(i * CHECK_BATCH_SIZE, (i + 1) * CHECK_BATCH_SIZE);
+    const stores = batch.map((r) => r.store);
+    const idBlings = batch.map((r) => r.id_bling);
+
+    const rows = await transaction`
+      select a.store, a.id_bling, a.reference
+      from newsystem.announce a
+      join unnest(${stores}::text[], ${idBlings}::text[]) as s(store, id_bling)
+        on a.store = s.store and a.id_bling = s.id_bling
+      where a.deleted_at is null
+    `;
+
+    for (const r of rows) {
+      conflitos.set(keyOfIdBling(r.store, r.id_bling), r.reference);
+    }
+  }
+
+  return conflitos;
+}
+
+// -----------------------------------------------------------------------
+// INCLUSÃO (apenas registros já filtrados como "novos" e sem conflito de id_bling)
 // -----------------------------------------------------------------------
 async function insertBatchOnlyNew(
   transaction: any,
@@ -244,7 +286,20 @@ async function processRowByRow(
 
       processados++;
     } catch (error: unknown) {
-      const dbError = error as { message?: string };
+      const dbError = error as { message?: string; code?: string; constraint?: string };
+
+      // ✅ Trata especificamente violação de id_bling duplicado ativo,
+      // que escapa da pré-checagem em massa por concorrência ou edge case.
+      if (dbError?.code === "23505" && dbError?.constraint === "unq_announce_id_bling_active") {
+        erros.push({
+          store: registro.store,
+          reference: registro.reference,
+          status: "erro",
+          message: `O ID Bling "${registro.id_bling}" já está em uso por outro anúncio ativo na loja "${registro.store}".`,
+        });
+        continue;
+      }
+
       erros.push({
         store: registro.store,
         reference: registro.reference,
@@ -406,7 +461,6 @@ export async function POST(request: NextRequest): Promise<Response> {
   try {
     const sql = getPostgresClient();
     let importados = 0;
-    let rejeitadosPreCheck = 0;
 
     await sql.begin(async (transaction) => {
       const jwtClaims = JSON.stringify({
@@ -429,16 +483,18 @@ export async function POST(request: NextRequest): Promise<Response> {
         { prepare: false }
       );
 
-      // -----------------------------------------------------------------
-      // PRÉ-CHECAGEM (somente no modo inclusão):
-      // separa quem já existe (rejeitado) de quem é realmente novo (aceito)
-      // -----------------------------------------------------------------
       let registrosFinais = registrosParaProcessar;
 
+      // -----------------------------------------------------------------
+      // PRÉ-CHECAGEM (somente no modo inclusão):
+      // 1) Rejeita quem já existe por (store, reference)
+      // 2) ✅ Rejeita quem tem id_bling já vinculado a OUTRA referência ativa
+      // Só o que sobrar (realmente novo e sem conflito) segue para insert.
+      // -----------------------------------------------------------------
       if (modo === "inclusao") {
         const existentes = await findExistingReferences(transaction, registrosParaProcessar);
 
-        const novos: RegistroInput[] = [];
+        const semConflitoReferencia: RegistroInput[] = [];
 
         for (const r of registrosParaProcessar) {
           const key = keyOfInclusao(r.store, r.reference);
@@ -449,7 +505,31 @@ export async function POST(request: NextRequest): Promise<Response> {
               status: "erro",
               message: "Referência já existe. Use o modo 'Alteração' para atualizá-la.",
             });
-            rejeitadosPreCheck++;
+          } else {
+            semConflitoReferencia.push(r);
+          }
+        }
+
+        // ✅ Segunda camada: entre os que sobraram, verifica conflito de id_bling
+        const conflitosIdBling = await findConflictingIdBling(transaction, semConflitoReferencia);
+
+        const novos: RegistroInput[] = [];
+
+        for (const r of semConflitoReferencia) {
+          if (!r.id_bling) {
+            novos.push(r);
+            continue;
+          }
+
+          const referenciaExistente = conflitosIdBling.get(keyOfIdBling(r.store, r.id_bling));
+
+          if (referenciaExistente && referenciaExistente !== r.reference) {
+            erros.push({
+              store: r.store,
+              reference: r.reference,
+              status: "erro",
+              message: `O ID Bling "${r.id_bling}" já está em uso pela referência "${referenciaExistente}" na loja "${r.store}".`,
+            });
           } else {
             novos.push(r);
           }
