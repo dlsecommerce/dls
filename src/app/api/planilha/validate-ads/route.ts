@@ -121,6 +121,7 @@ function formatBRL(value: number | null): string {
   if (value === null || value === undefined) return '-';
   return `R$ ${value.toFixed(2).replace('.', ',')}`;
 }
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -139,20 +140,39 @@ export async function POST(req: NextRequest) {
     }
 
     const sheet = workbook.Sheets[sheetName];
-    const rawRows: RawRow[] = XLSX.utils.sheet_to_json(sheet);
+
+    // ---------- Lê e normaliza as linhas ----------
+    const rawRows: RawRow[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
     if (!rawRows.length) {
       return NextResponse.json({ error: 'Planilha vazia ou formato inválido.' }, { status: 400 });
     }
 
-    const rows: InputRow[] = rawRows.map(mapRow);
+    // Remove linhas "fantasmas" totalmente vazias (comuns no final de exportações Excel)
+    const nonEmptyRawRows = rawRows.filter((raw) =>
+      Object.values(raw).some((v) => String(v ?? '').trim() !== '')
+    );
 
-    const invalid = rows.some((r) => !r.store || !r.reference);
-    if (invalid) {
+    if (!nonEmptyRawRows.length) {
+      return NextResponse.json({ error: 'Planilha vazia ou formato inválido.' }, { status: 400 });
+    }
+
+    const rows: InputRow[] = nonEmptyRawRows.map(mapRow);
+
+    // ---------- Validação com identificação das linhas problemáticas ----------
+    const invalidRows: number[] = [];
+    rows.forEach((r, index) => {
+      if (!r.store || !r.reference) {
+        invalidRows.push(index + 2); // +2 = compensar header (linha 1) e index 0-based
+      }
+    });
+
+    if (invalidRows.length > 0) {
       return NextResponse.json(
         {
-          error:
-            'A planilha deve conter as colunas "Loja/Store" e "Referência/Reference" preenchidas em todas as linhas.',
+          error: `A planilha deve conter as colunas "Loja/Store" e "Referência/Reference" preenchidas em todas as linhas. Linhas com problema: ${invalidRows
+            .slice(0, 15)
+            .join(', ')}${invalidRows.length > 15 ? '...' : ''}`,
         },
         { status: 400 }
       );
