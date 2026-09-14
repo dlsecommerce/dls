@@ -353,22 +353,37 @@ export default function Announce() {
   };
 
   const [importingComposicao, setImportingComposicao] = React.useState(false);
+  const [composicaoProgressOpen, setComposicaoProgressOpen] = React.useState(false);
+  const [composicaoProgress, setComposicaoProgress] = React.useState(0);
+  const [composicaoProgressCount, setComposicaoProgressCount] = React.useState(0);
 
   const handleImportComposicao = async (file: File) => {
     setImportingComposicao(true);
+    setComposicaoProgressOpen(true);
+    setComposicaoProgress(0);
+    setComposicaoProgressCount(0);
+
     try {
       const formData = new FormData();
       formData.append("file", file);
+
+      // Progresso simulado: não há streaming real de linhas processadas
+      // no endpoint atual (upload único + processamento no servidor).
+      setComposicaoProgress(30);
 
       const res = await fetch("/api/composicao/import", {
         method: "POST",
         body: formData,
       });
 
+      setComposicaoProgress(80);
+
       const result = await res.json();
 
       if (!res.ok || !result.success) {
         const totalErros = result?.errors?.length ?? 0;
+        setComposicaoProgress(0);
+
         toastCustom.error(
           totalErros > 0
             ? `${totalErros} linha(s) com erro na importação de composição.`
@@ -380,6 +395,9 @@ export default function Announce() {
         }
         return;
       }
+
+      setComposicaoProgress(100);
+      setComposicaoProgressCount(result.processed ?? 0);
 
       if (result.processed > 0) {
         playImportSuccessSound();
@@ -398,11 +416,13 @@ export default function Announce() {
       refetch();
     } catch (err: any) {
       console.error("Erro ao importar composição:", err);
+      setComposicaoProgress(0);
       toastCustom.error(
         err?.message ?? "Não foi possível importar a composição."
       );
     } finally {
       setImportingComposicao(false);
+      setTimeout(() => setComposicaoProgressOpen(false), 1500);
     }
   };
 
@@ -910,6 +930,17 @@ export default function Announce() {
           importProgressCount > 0 ? `${importProgressCount} anúncio(s)` : undefined
         }
         onClose={() => setImportProgressOpen(false)}
+      />
+
+      <ImportProgressToast
+        open={composicaoProgressOpen}
+        percent={composicaoProgress}
+        message={
+          composicaoProgressCount > 0
+            ? `${composicaoProgressCount} composição(ões)`
+            : "Importando composição..."
+        }
+        onClose={() => setComposicaoProgressOpen(false)}
       />
 
       <ValidateAds
