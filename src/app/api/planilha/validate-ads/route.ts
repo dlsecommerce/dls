@@ -36,6 +36,15 @@ interface ItemRow {
   custo_atual: number | null;
 }
 
+interface ExistenceRow {
+  store: string;
+  reference: string;
+  id_bling: string;
+  existe: string;
+  ativo: string | null;
+  observacao: string;
+}
+
 type RawRow = Record<string, any>;
 
 function normalizeKey(key: string) {
@@ -85,13 +94,14 @@ const COLORS = {
   white: 'FFFFFFFF',
 };
 
-type Category = 'erro' | 'sucesso' | 'atencao';
+type Category = 'erro' | 'sucesso' | 'atencao' | 'neutro';
 
 function getCategory(row: ResultRow): Category {
   const status = (row.status ?? '').trim();
 
   switch (status) {
-    case 'Anúncio não encontrado':
+    case 'Anúncio não validado':
+      return 'neutro';
     case 'Sem composição':
       return 'erro';
     case 'Custo inválido':
@@ -111,7 +121,6 @@ function formatBRL(value: number | null): string {
   if (value === null || value === undefined) return '-';
   return `R$ ${value.toFixed(2).replace('.', ',')}`;
 }
-
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -159,10 +168,17 @@ export async function POST(req: NextRequest) {
       reference: r.reference,
     }));
 
-    // ---------- Chama as duas RPCs em paralelo ----------
-    const [mainResult, itemsResult] = await Promise.all([
+    const registrosComBling = rows.map((r) => ({
+      store: r.store,
+      reference: r.reference,
+      id_bling: r.id_bling,
+    }));
+
+    // ---------- Chama as três RPCs em paralelo ----------
+    const [mainResult, itemsResult, existenceResult] = await Promise.all([
       supabase.rpc('validate_cost_composition', { p_registros: registros }),
       supabase.rpc('validate_cost_composition_items', { p_registros: registros }),
+      supabase.rpc('validate_ad_existence', { p_registros: registrosComBling }),
     ]);
 
     if (mainResult.error) {
@@ -181,8 +197,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (existenceResult.error) {
+      console.error('Erro RPC Supabase (existence):', existenceResult.error);
+      return NextResponse.json(
+        { error: 'Erro ao verificar existência dos anúncios.', details: existenceResult.error.message },
+        { status: 500 }
+      );
+    }
+
     const result = (mainResult.data ?? []) as ResultRow[];
     const items = (itemsResult.data ?? []) as ItemRow[];
+    const existence = (existenceResult.data ?? []) as ExistenceRow[];
 
     if (!Array.isArray(result) || result.length === 0) {
       return NextResponse.json(
@@ -198,16 +223,16 @@ export async function POST(req: NextRequest) {
     const totalAnuncios = result.length;
     const totalOk = result.filter((r) => getCategory(r) === 'sucesso').length;
     const totalAtencao = result.filter((r) => getCategory(r) === 'atencao').length;
-    const totalErro = result.filter((r) => getCategory(r) === 'erro').length;
-    const totalNaoEncontrado = result.filter((r) => r.status === 'Anúncio não encontrado').length;
     const totalSemComposicao = result.filter((r) => r.status === 'Sem composição').length;
+    const totalNaoValidado = result.filter((r) => r.status === 'Anúncio não validado').length;
     const totalItensProblema = items.length;
+    const totalExistentes = existence.filter((e) => e.existe === 'Sim').length;
+    const totalNaoExistentes = existence.filter((e) => e.existe === 'Não').length;
 
     // ---------- Workbook ----------
     const outWorkbook = new ExcelJS.Workbook();
     outWorkbook.creator = 'Validação de Composição';
     outWorkbook.created = new Date();
-
     // =====================================================
     // ABA 1: RESUMO
     // =====================================================
@@ -217,26 +242,43 @@ export async function POST(req: NextRequest) {
       { key: 'value', width: 20 },
     ];
 
-    const titleRow = resumoSheet.addRow(['Relatório de Validação de Composição de Custos', '']);
+    const titleRow = resumoSheet.addRow(['Relatório de Validação de Anúncios e Composição', '']);
     resumoSheet.mergeCells(`A${titleRow.number}:B${titleRow.number}`);
     titleRow.font = { bold: true, size: 14, color: { argb: COLORS.white } };
     titleRow.getCell(1).fill = fill(COLORS.headerBlue);
     titleRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
     titleRow.height = 28;
 
-    const dataGeracaoRow = resumoSheet.addRow([
-      'Data de geração',
-      new Date().toLocaleString('pt-BR'),
-    ]);
+    const dataGeracaoRow = resumoSheet.addRow(['Data de geração', new Date().toLocaleString('pt-BR')]);
     dataGeracaoRow.getCell(1).font = { italic: true, color: { argb: 'FF666666' } };
     resumoSheet.addRow([]);
+
+    const existenciaHeaderRow = resumoSheet.addRow(['Existência do Anúncio (via ID Bling)', '']);
+    existenciaHeaderRow.font = { bold: true, italic: true };
+
+    const existenciaData: [string, number, string][] = [
+      ['✔ Anúncio encontrado no sistema', totalExistentes, COLORS.headerGreen],
+      ['✖ Anúncio não encontrado no sistema', totalNaoExistentes, COLORS.headerRed],
+    ];
+    existenciaData.forEach(([label, value, color]) => {
+      const row = resumoSheet.addRow([label, value]);
+      row.getCell(1).font = { bold: true };
+      row.getCell(2).font = { bold: true, color: { argb: COLORS.white } };
+      row.getCell(2).fill = fill(color);
+      row.getCell(2).alignment = { horizontal: 'center' };
+      row.height = 20;
+    });
+
+    resumoSheet.addRow([]);
+    const composicaoHeaderRow = resumoSheet.addRow(['Composição de Custos', '']);
+    composicaoHeaderRow.font = { bold: true, italic: true };
 
     const summaryData: [string, number, string][] = [
       ['Total de anúncios analisados', totalAnuncios, COLORS.headerBlue],
       ['✔ Composição OK', totalOk, COLORS.headerGreen],
       ['⚠ Custo inválido', totalAtencao, COLORS.headerOrange],
-      ['✖ Anúncio não encontrado', totalNaoEncontrado, COLORS.headerRed],
       ['✖ Sem composição cadastrada', totalSemComposicao, COLORS.headerRed],
+      ['◻ Não validado (loja/referência não localizada)', totalNaoValidado, COLORS.headerGray],
       ['Total de itens com problema (detalhado)', totalItensProblema, COLORS.headerGray],
     ];
 
@@ -257,7 +299,10 @@ export async function POST(req: NextRequest) {
       ['OK', 'Composição completa e custos válidos'],
       ['Custo inválido', 'Existem itens com custo zerado, não informado ou excluído'],
       ['Sem composição', 'Anúncio existe, mas não tem nenhum item cadastrado'],
-      ['Anúncio não encontrado', 'Loja/referência não localizada ou anúncio excluído'],
+      [
+        'Anúncio não validado',
+        'Não foi possível localizar loja/referência para validar a composição. Consulte a aba "Existência do Anúncio".',
+      ],
     ];
     legendas.forEach(([status, desc]) => {
       const row = resumoSheet.addRow([status, desc]);
@@ -266,7 +311,64 @@ export async function POST(req: NextRequest) {
     resumoSheet.getColumn(2).width = 60;
 
     // =====================================================
-    // ABA 2: VALIDAÇÃO (principal)
+    // ABA 2: EXISTÊNCIA DO ANÚNCIO (via ID Bling)
+    // =====================================================
+    const existenceSheet = outWorkbook.addWorksheet('Existência do Anúncio');
+
+    existenceSheet.columns = [
+      { header: 'Loja', key: 'store', width: 15 },
+      { header: 'ID Bling', key: 'id_bling', width: 14 },
+      { header: 'Referência', key: 'reference', width: 20 },
+      { header: 'Existe no sistema?', key: 'existe', width: 16 },
+      { header: 'Ativo?', key: 'ativo', width: 10 },
+      { header: 'Observação', key: 'observacao', width: 70 },
+    ];
+
+    const existenceHeaderRow = existenceSheet.getRow(1);
+    existenceHeaderRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: COLORS.white } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.fill = fill(COLORS.headerBlue);
+    });
+    existenceHeaderRow.height = 22;
+
+    existence.forEach((row) => {
+      const isFound = row.existe === 'Sim';
+      const strongColor = isFound ? COLORS.headerGreen : COLORS.headerRed;
+      const lightColor = isFound ? COLORS.lightGreen : COLORS.lightRed;
+
+      const excelRow = existenceSheet.addRow({
+        store: row.store,
+        id_bling: row.id_bling,
+        reference: row.reference,
+        existe: row.existe,
+        ativo: row.ativo ?? '-',
+        observacao: row.observacao,
+      });
+
+      excelRow.eachCell((cell, colNumber) => {
+        if (colNumber === 4) {
+          cell.fill = fill(strongColor);
+          cell.font = { bold: true, color: { argb: COLORS.white } };
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        } else if (colNumber === 6) {
+          cell.fill = fill(lightColor);
+          cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+        } else {
+          cell.fill = fill(lightColor);
+          cell.alignment = { vertical: 'middle', horizontal: colNumber === 5 ? 'center' : 'left' };
+        }
+      });
+    });
+
+    existenceSheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: existenceSheet.columns.length },
+    };
+    existenceSheet.views = [{ state: 'frozen', xSplit: 3, ySplit: 1 }];
+
+    // =====================================================
+    // ABA 3: VALIDAÇÃO (composição de custos)
     // =====================================================
     const outSheet = outWorkbook.addWorksheet('Validação');
 
@@ -297,6 +399,8 @@ export async function POST(req: NextRequest) {
           ? COLORS.headerRed
           : category === 'atencao'
           ? COLORS.headerOrange
+          : category === 'neutro'
+          ? COLORS.headerGray
           : COLORS.headerGreen;
 
       const lightColor =
@@ -304,6 +408,8 @@ export async function POST(req: NextRequest) {
           ? COLORS.lightRed
           : category === 'atencao'
           ? COLORS.lightOrange
+          : category === 'neutro'
+          ? COLORS.lightGray
           : COLORS.lightGreen;
 
       const idBling = idBlingMap.get(matchKey(row.store, row.reference)) ?? '';
@@ -347,7 +453,7 @@ export async function POST(req: NextRequest) {
     outSheet.views = [{ state: 'frozen', xSplit: 3, ySplit: 1 }];
 
     // =====================================================
-    // ABA 3: ITENS COM PROBLEMA (detalhado)
+    // ABA 4: ITENS COM PROBLEMA (detalhado)
     // =====================================================
     const itemsSheet = outWorkbook.addWorksheet('Itens com Problema');
 
