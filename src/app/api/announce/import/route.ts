@@ -26,6 +26,7 @@ type RegistroResultado = {
 
 const MAX_REGISTROS = 100_000;
 const BATCH_SIZE = 10_000;
+const CHECK_BATCH_SIZE = 20_000;
 
 async function getAuthenticatedUser(request: NextRequest) {
   const token = extractBearerToken(request.headers.get("authorization"));
@@ -56,7 +57,38 @@ function keyOfAlteracao(store: string, idBling: string | null): string {
 }
 
 // -----------------------------------------------------------------------
-// INCLUSÃO
+// PRÉ-CHECAGEM: verifica quais (store, reference) já existem e estão ativos
+// -----------------------------------------------------------------------
+async function findExistingReferences(
+  transaction: any,
+  registros: RegistroInput[]
+): Promise<Set<string>> {
+  const existentes = new Set<string>();
+  const totalBatches = Math.ceil(registros.length / CHECK_BATCH_SIZE);
+
+  for (let i = 0; i < totalBatches; i++) {
+    const batch = registros.slice(i * CHECK_BATCH_SIZE, (i + 1) * CHECK_BATCH_SIZE);
+    const stores = batch.map((r) => r.store);
+    const references = batch.map((r) => r.reference);
+
+    const rows = await transaction`
+      select a.store, a.reference
+      from newsystem.announce a
+      join unnest(${stores}::text[], ${references}::text[]) as s(store, reference)
+        on a.store = s.store and a.reference = s.reference
+      where a.deleted_at is null
+    `;
+
+    for (const r of rows) {
+      existentes.add(keyOfInclusao(r.store, r.reference));
+    }
+  }
+
+  return existentes;
+}
+
+// -----------------------------------------------------------------------
+// INCLUSÃO (apenas registros já filtrados como "novos")
 // -----------------------------------------------------------------------
 async function insertBatchOnlyNew(
   transaction: any,
@@ -374,6 +406,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   try {
     const sql = getPostgresClient();
     let importados = 0;
+    let rejeitadosPreCheck = 0;
 
     await sql.begin(async (transaction) => {
       const jwtClaims = JSON.stringify({
@@ -396,12 +429,47 @@ export async function POST(request: NextRequest): Promise<Response> {
         { prepare: false }
       );
 
-      importados = await processAllBatches(transaction, registrosParaProcessar, modo, erros);
+      // -----------------------------------------------------------------
+      // PRÉ-CHECAGEM (somente no modo inclusão):
+      // separa quem já existe (rejeitado) de quem é realmente novo (aceito)
+      // -----------------------------------------------------------------
+      let registrosFinais = registrosParaProcessar;
+
+      if (modo === "inclusao") {
+        const existentes = await findExistingReferences(transaction, registrosParaProcessar);
+
+        const novos: RegistroInput[] = [];
+
+        for (const r of registrosParaProcessar) {
+          const key = keyOfInclusao(r.store, r.reference);
+          if (existentes.has(key)) {
+            erros.push({
+              store: r.store,
+              reference: r.reference,
+              status: "erro",
+              message: "Referência já existe. Use o modo 'Alteração' para atualizá-la.",
+            });
+            rejeitadosPreCheck++;
+          } else {
+            novos.push(r);
+          }
+        }
+
+        registrosFinais = novos;
+      }
+
+      if (registrosFinais.length > 0) {
+        importados = await processAllBatches(transaction, registrosFinais, modo, erros);
+      }
     });
 
+    const total = registrosRaw.length;
+    const rejeitados = total - importados;
+
     return NextResponse.json({
-      total: registrosRaw.length,
+      total,
       importados,
+      rejeitados,
       errosCount: erros.length,
       erros: erros.slice(0, 50),
     });

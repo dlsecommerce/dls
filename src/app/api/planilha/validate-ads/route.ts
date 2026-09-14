@@ -13,6 +13,7 @@ const supabase = createClient(
 interface InputRow {
   store: string;
   reference: string;
+  id_bling: string;
 }
 
 interface ResultRow {
@@ -23,6 +24,16 @@ interface ResultRow {
   total_itens: number | null;
   itens_sem_custo: number | null;
   observacao: string;
+}
+
+interface ItemRow {
+  store: string;
+  reference: string;
+  item_code: string;
+  item_product: string;
+  quantidade: number;
+  motivo: string;
+  custo_atual: number | null;
 }
 
 type RawRow = Record<string, any>;
@@ -38,6 +49,7 @@ function normalizeKey(key: string) {
 
 const STORE_ALIASES = ['store', 'loja'];
 const REFERENCE_ALIASES = ['reference', 'referencia'];
+const ID_BLING_ALIASES = ['id_bling', 'idbling', 'id bling'];
 
 function mapRow(raw: RawRow): InputRow {
   const normalized: Record<string, any> = {};
@@ -46,10 +58,17 @@ function mapRow(raw: RawRow): InputRow {
   }
   const storeKey = STORE_ALIASES.find((k) => normalized[k] !== undefined);
   const referenceKey = REFERENCE_ALIASES.find((k) => normalized[k] !== undefined);
+  const idBlingKey = ID_BLING_ALIASES.find((k) => normalized[k] !== undefined);
+
   return {
     store: storeKey ? String(normalized[storeKey] ?? '').trim() : '',
     reference: referenceKey ? String(normalized[referenceKey] ?? '').trim() : '',
+    id_bling: idBlingKey ? String(normalized[idBlingKey] ?? '').trim() : '',
   };
+}
+
+function matchKey(store: string, reference: string): string {
+  return `${store}::${reference}`;
 }
 
 // ---------- Paleta de cores ----------
@@ -61,6 +80,8 @@ const COLORS = {
   lightGreen: 'FFABEBC6',
   headerOrange: 'FFE67E22',
   lightOrange: 'FFFAD7A0',
+  headerGray: 'FF4A4A4A',
+  lightGray: 'FFEAEAEA',
   white: 'FFFFFFFF',
 };
 
@@ -78,12 +99,17 @@ function getCategory(row: ResultRow): Category {
     case 'OK':
       return 'sucesso';
     default:
-      return 'erro'; // fallback de segurança para status inesperado
+      return 'erro';
   }
 }
 
 function fill(color: string): ExcelJS.Fill {
   return { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+}
+
+function formatBRL(value: number | null): string {
+  if (value === null || value === undefined) return '-';
+  return `R$ ${value.toFixed(2).replace('.', ',')}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -123,24 +149,40 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const idBlingMap = new Map<string, string>();
+    for (const r of rows) {
+      idBlingMap.set(matchKey(r.store, r.reference), r.id_bling);
+    }
+
     const registros = rows.map((r) => ({
       store: r.store,
       reference: r.reference,
     }));
 
-    const { data, error } = await supabase.rpc('validate_cost_composition', {
-      p_registros: registros,
-    });
+    // ---------- Chama as duas RPCs em paralelo ----------
+    const [mainResult, itemsResult] = await Promise.all([
+      supabase.rpc('validate_cost_composition', { p_registros: registros }),
+      supabase.rpc('validate_cost_composition_items', { p_registros: registros }),
+    ]);
 
-    if (error) {
-      console.error('Erro RPC Supabase:', error);
+    if (mainResult.error) {
+      console.error('Erro RPC Supabase (main):', mainResult.error);
       return NextResponse.json(
-        { error: 'Erro ao validar dados no banco.', details: error.message },
+        { error: 'Erro ao validar dados no banco.', details: mainResult.error.message },
         { status: 500 }
       );
     }
 
-    const result = (data ?? []) as ResultRow[];
+    if (itemsResult.error) {
+      console.error('Erro RPC Supabase (items):', itemsResult.error);
+      return NextResponse.json(
+        { error: 'Erro ao buscar itens detalhados.', details: itemsResult.error.message },
+        { status: 500 }
+      );
+    }
+
+    const result = (mainResult.data ?? []) as ResultRow[];
+    const items = (itemsResult.data ?? []) as ItemRow[];
 
     if (!Array.isArray(result) || result.length === 0) {
       return NextResponse.json(
@@ -152,39 +194,101 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ---------- Montagem do Excel com exceljs ----------
+    // ---------- Totais para a aba Resumo ----------
+    const totalAnuncios = result.length;
+    const totalOk = result.filter((r) => getCategory(r) === 'sucesso').length;
+    const totalAtencao = result.filter((r) => getCategory(r) === 'atencao').length;
+    const totalErro = result.filter((r) => getCategory(r) === 'erro').length;
+    const totalNaoEncontrado = result.filter((r) => r.status === 'Anúncio não encontrado').length;
+    const totalSemComposicao = result.filter((r) => r.status === 'Sem composição').length;
+    const totalItensProblema = items.length;
+
+    // ---------- Workbook ----------
     const outWorkbook = new ExcelJS.Workbook();
+    outWorkbook.creator = 'Validação de Composição';
+    outWorkbook.created = new Date();
+
+    // =====================================================
+    // ABA 1: RESUMO
+    // =====================================================
+    const resumoSheet = outWorkbook.addWorksheet('Resumo');
+    resumoSheet.columns = [
+      { key: 'label', width: 40 },
+      { key: 'value', width: 20 },
+    ];
+
+    const titleRow = resumoSheet.addRow(['Relatório de Validação de Composição de Custos', '']);
+    resumoSheet.mergeCells(`A${titleRow.number}:B${titleRow.number}`);
+    titleRow.font = { bold: true, size: 14, color: { argb: COLORS.white } };
+    titleRow.getCell(1).fill = fill(COLORS.headerBlue);
+    titleRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+    titleRow.height = 28;
+
+    const dataGeracaoRow = resumoSheet.addRow([
+      'Data de geração',
+      new Date().toLocaleString('pt-BR'),
+    ]);
+    dataGeracaoRow.getCell(1).font = { italic: true, color: { argb: 'FF666666' } };
+    resumoSheet.addRow([]);
+
+    const summaryData: [string, number, string][] = [
+      ['Total de anúncios analisados', totalAnuncios, COLORS.headerBlue],
+      ['✔ Composição OK', totalOk, COLORS.headerGreen],
+      ['⚠ Custo inválido', totalAtencao, COLORS.headerOrange],
+      ['✖ Anúncio não encontrado', totalNaoEncontrado, COLORS.headerRed],
+      ['✖ Sem composição cadastrada', totalSemComposicao, COLORS.headerRed],
+      ['Total de itens com problema (detalhado)', totalItensProblema, COLORS.headerGray],
+    ];
+
+    summaryData.forEach(([label, value, color]) => {
+      const row = resumoSheet.addRow([label, value]);
+      row.getCell(1).font = { bold: true };
+      row.getCell(2).font = { bold: true, color: { argb: COLORS.white } };
+      row.getCell(2).fill = fill(color);
+      row.getCell(2).alignment = { horizontal: 'center' };
+      row.height = 20;
+    });
+
+    resumoSheet.addRow([]);
+    const legendaHeaderRow = resumoSheet.addRow(['Legenda de Status', '']);
+    legendaHeaderRow.font = { bold: true, italic: true };
+
+    const legendas: [string, string][] = [
+      ['OK', 'Composição completa e custos válidos'],
+      ['Custo inválido', 'Existem itens com custo zerado, não informado ou excluído'],
+      ['Sem composição', 'Anúncio existe, mas não tem nenhum item cadastrado'],
+      ['Anúncio não encontrado', 'Loja/referência não localizada ou anúncio excluído'],
+    ];
+    legendas.forEach(([status, desc]) => {
+      const row = resumoSheet.addRow([status, desc]);
+      row.getCell(2).alignment = { wrapText: true };
+    });
+    resumoSheet.getColumn(2).width = 60;
+
+    // =====================================================
+    // ABA 2: VALIDAÇÃO (principal)
+    // =====================================================
     const outSheet = outWorkbook.addWorksheet('Validação');
 
     outSheet.columns = [
       { header: 'Loja', key: 'store', width: 15 },
+      { header: 'ID Bling', key: 'id_bling', width: 14 },
       { header: 'Referência', key: 'reference', width: 20 },
       { header: 'Já está ativo?', key: 'ja_esta_ativo', width: 14 },
       { header: 'Status', key: 'status', width: 18 },
       { header: 'Total de itens', key: 'total_itens', width: 12 },
       { header: 'Itens sem custo', key: 'itens_sem_custo', width: 14 },
-      { header: 'Observação', key: 'observacao', width: 60 },
+      { header: 'Observação', key: 'observacao', width: 100 },
     ];
 
-    // Estilo do cabeçalho
     const headerRow = outSheet.getRow(1);
-    headerRow.eachCell((cell, colNumber) => {
+    headerRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: COLORS.white } };
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
-
-      if (colNumber === 1 || colNumber === 2) {
-        // Loja / Referência -> sempre azul
-        cell.fill = fill(COLORS.headerBlue);
-      } else if (colNumber === 7) {
-        // Observação -> sempre laranja
-        cell.fill = fill(COLORS.headerOrange);
-      } else {
-        // Demais colunas do cabeçalho -> azul padrão
-        cell.fill = fill(COLORS.headerBlue);
-      }
+      cell.fill = fill(COLORS.headerBlue);
     });
+    headerRow.height = 22;
 
-    // Adiciona as linhas de dados
     result.forEach((row) => {
       const category = getCategory(row);
 
@@ -202,8 +306,11 @@ export async function POST(req: NextRequest) {
           ? COLORS.lightOrange
           : COLORS.lightGreen;
 
+      const idBling = idBlingMap.get(matchKey(row.store, row.reference)) ?? '';
+
       const excelRow = outSheet.addRow({
         store: row.store,
+        id_bling: idBling,
         reference: row.reference,
         ja_esta_ativo: row.ja_esta_ativo,
         status: row.status,
@@ -212,30 +319,98 @@ export async function POST(req: NextRequest) {
         observacao: row.observacao,
       });
 
+      const linhasObservacao = (row.observacao ?? '').split('\n').length;
+      excelRow.height = Math.max(20, linhasObservacao * 15);
+
       excelRow.eachCell((cell, colNumber) => {
-        if (colNumber === 4) {
-          // Coluna "Status" -> cor forte (destaque da categoria)
+        if (colNumber === 5) {
           cell.fill = fill(strongColor);
           cell.font = { bold: true, color: { argb: COLORS.white } };
-        } else if (colNumber === 7) {
-          // Coluna "Observação" -> sempre laranja claro
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        } else if (colNumber === 8) {
           cell.fill = fill(COLORS.lightOrange);
-        } else if (colNumber === 1 || colNumber === 2) {
-          // Loja / Referência -> sem preenchimento (mantém identidade da coluna)
+          cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
+        } else if (colNumber === 1 || colNumber === 2 || colNumber === 3) {
+          cell.alignment = { vertical: 'middle', horizontal: 'left' };
         } else {
-          // Demais colunas -> cor clara conforme categoria da linha
           cell.fill = fill(lightColor);
+          cell.alignment = { vertical: 'middle', horizontal: 'left' };
         }
-        cell.alignment = { vertical: 'middle', horizontal: 'left' };
       });
     });
 
-    // Congela o cabeçalho ao rolar
-    outSheet.views = [{ state: 'frozen', ySplit: 1 }];
+    outSheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: outSheet.columns.length },
+    };
 
+    outSheet.views = [{ state: 'frozen', xSplit: 3, ySplit: 1 }];
+
+    // =====================================================
+    // ABA 3: ITENS COM PROBLEMA (detalhado)
+    // =====================================================
+    const itemsSheet = outWorkbook.addWorksheet('Itens com Problema');
+
+    itemsSheet.columns = [
+      { header: 'Loja', key: 'store', width: 15 },
+      { header: 'Referência', key: 'reference', width: 20 },
+      { header: 'Código do Item', key: 'item_code', width: 18 },
+      { header: 'Produto', key: 'item_product', width: 35 },
+      { header: 'Quantidade na Composição', key: 'quantidade', width: 20 },
+      { header: 'Motivo', key: 'motivo', width: 22 },
+      { header: 'Custo Atual', key: 'custo_atual', width: 15 },
+    ];
+
+    const itemsHeaderRow = itemsSheet.getRow(1);
+    itemsHeaderRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: COLORS.white } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      cell.fill = fill(COLORS.headerGray);
+    });
+    itemsHeaderRow.height = 22;
+
+    if (items.length === 0) {
+      const emptyRow = itemsSheet.addRow(['Nenhum item com problema encontrado 🎉', '', '', '', '', '', '']);
+      itemsSheet.mergeCells(`A${emptyRow.number}:G${emptyRow.number}`);
+      emptyRow.getCell(1).font = { italic: true, color: { argb: COLORS.headerGreen } };
+      emptyRow.getCell(1).alignment = { horizontal: 'center' };
+    } else {
+      items.forEach((item) => {
+        const motivoColor =
+          item.motivo === 'Sem custo vinculado' || item.motivo === 'Custo excluído'
+            ? COLORS.lightRed
+            : COLORS.lightOrange;
+
+        const excelRow = itemsSheet.addRow({
+          store: item.store,
+          reference: item.reference,
+          item_code: item.item_code,
+          item_product: item.item_product,
+          quantidade: item.quantidade,
+          motivo: item.motivo,
+          custo_atual: formatBRL(item.custo_atual),
+        });
+
+        excelRow.eachCell((cell, colNumber) => {
+          if (colNumber === 6) {
+            cell.fill = fill(motivoColor);
+            cell.font = { bold: true };
+          }
+          cell.alignment = { vertical: 'middle', horizontal: colNumber === 4 ? 'left' : 'center' };
+        });
+      });
+
+      itemsSheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: itemsSheet.columns.length },
+      };
+    }
+
+    itemsSheet.views = [{ state: 'frozen', xSplit: 2, ySplit: 1 }];
+
+    // ---------- Gera buffer ----------
     const outBuffer = await outWorkbook.xlsx.writeBuffer();
 
-    // ---------- Nome do arquivo ----------
     const now = new Date();
     const dataHora = now
       .toLocaleString('pt-BR', { hour12: false })

@@ -9,7 +9,7 @@ import AnnounceDataTable from "@/components/announce/Announcedatatable";
 import AnnounceFilters from "@/components/announce/Announcefilters";
 import AnnounceLocation from "@/components/announce/Announcelocation";
 import ConfirmDelete from "@/components/announce/Confirmdelete";
-import ConfirmImportModal, { RowError } from "@/components/announce/Confirmimport";
+import ConfirmImportModal, { RowError, ImportResult } from "@/components/announce/Confirmimport";
 import { Controls } from "@/components/announce/Controls";
 import ExportProgressToast from "@/components/announce/Exportprogresstoast";
 import ImportProgressToast from "@/components/announce/Importprogresstoast";
@@ -325,6 +325,11 @@ export default function Announce() {
   const [importProgress, setImportProgress] = React.useState(0);
   const [importProgressCount, setImportProgressCount] = React.useState(0);
   const [pendingFile, setPendingFile] = React.useState<File | null>(null);
+  // ✅ Resultado final retornado pela API (importados / rejeitados),
+  // exibido no resumo dentro do ConfirmImportModal.
+  const [importResult, setImportResult] = React.useState<ImportResult | null>(
+    null
+  );
 
   const runImportPreview = async (
     file: File,
@@ -337,6 +342,7 @@ export default function Announce() {
     setImportRowErrors([]);
     setPreviewRows([]);
     setImportCount(0);
+    setImportResult(null);
 
     try {
       const result: any = await importAnnounceFromXlsxOrCsv(file, true);
@@ -378,6 +384,7 @@ export default function Announce() {
     setImportProgressOpen(true);
     setImportProgress(0);
     setImportProgressCount(0);
+    setImportResult(null);
 
     try {
       const result: any = await importAnnounceFromXlsxOrCsv(
@@ -399,6 +406,15 @@ export default function Announce() {
 
       const hasErrors = (result.errosCount ?? 0) > 0 || (result.errors?.length ?? 0) > 0;
       const importedCount = result.importados ?? 0;
+      const rejeitadosCount =
+        result.rejeitados ?? Math.max((result.total ?? 0) - importedCount, 0);
+
+      // Alimenta o resumo final exibido no ConfirmImportModal
+      setImportResult({
+        total: result.total ?? result.data.length,
+        importados: importedCount,
+        rejeitados: rejeitadosCount,
+      });
 
       if (hasErrors) {
         const totalErros = result.errosCount ?? result.errors?.length ?? 0;
@@ -749,7 +765,10 @@ export default function Announce() {
         open={openImport}
         onOpenChange={(open) => {
           setOpenImport(open);
-          if (!open) setPendingFile(null);
+          if (!open) {
+            setPendingFile(null);
+            setImportResult(null);
+          }
         }}
         count={importCount}
         preview={previewRows}
@@ -759,6 +778,7 @@ export default function Announce() {
         onConfirm={confirmImport}
         loading={importing}
         tipo={importMode}
+        result={importResult}
       />
 
       <ExportProgressToast

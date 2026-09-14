@@ -30,6 +30,13 @@ export type RowError = {
   message: string;
 };
 
+/** Resultado final da importação, retornado pela API */
+export type ImportResult = {
+  total: number;
+  importados: number;
+  rejeitados: number;
+};
+
 type InlineMessage = {
   type: "success" | "error" | "warning" | "info";
   title: string;
@@ -50,6 +57,10 @@ type Props = {
   tipo: Tipo;
   customTitle?: string;
   customText?: string;
+  /** Quantidade de registros que já existem e serão ignorados (não bloqueia a importação) */
+  duplicatesCount?: number;
+  /** Resultado final retornado pela API após a importação ser concluída */
+  result?: ImportResult | null;
 };
 
 /** Cores e ícones */
@@ -181,6 +192,36 @@ function AlertBox({
               {footer}
             </p>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Caixa informativa não bloqueante (ex: duplicatas que serão ignoradas) */
+function InfoBox({ title, description }: { title: string; description: string }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="border border-neutral-800 p-3"
+      style={{ borderLeft: `2px solid ${ORANGE}` }}
+    >
+      <div className="flex gap-2">
+        <div
+          className="flex h-6 w-6 shrink-0 items-center justify-center border border-neutral-800"
+          style={{ color: ORANGE }}
+        >
+          <AlertTriangle className="h-3.5 w-3.5" />
+        </div>
+        <div>
+          <strong
+            className="text-[11px] font-semibold uppercase tracking-[0.1em]"
+            style={{ color: ORANGE }}
+          >
+            {title}
+          </strong>
+          <p className="mt-1 text-[11px] text-neutral-400">{description}</p>
         </div>
       </div>
     </div>
@@ -350,9 +391,12 @@ export default function ConfirmImportModal({
   tipo,
   customTitle,
   customText,
+  duplicatesCount = 0,
+  result = null,
 }: Props) {
   const hasErrors = errors.length > 0 || rowErrors.length > 0;
   const hasWarnings = warnings.length > 0 && !hasErrors;
+  const hasDuplicates = duplicatesCount > 0;
   const isInclusao = tipo === "inclusao";
 
   const confirmClickLock = useRef(false);
@@ -378,6 +422,8 @@ export default function ConfirmImportModal({
 
   const targetLabel = `${count} ${count === 1 ? "registro" : "registros"} detectado(s)`;
 
+  const willInsertCount = isInclusao ? Math.max(count - duplicatesCount, 0) : count;
+
   // Botão de confirmação: sempre VERDE, exceto quando há erros bloqueantes (VERMELHO/desabilitado)
   const ACCENT = hasErrors ? RED : GREEN;
   const ACCENT_HOVER = GREEN_HOVER;
@@ -396,6 +442,20 @@ export default function ConfirmImportModal({
   useEffect(() => {
     if (!open) setInlineMessage(null);
   }, [open]);
+
+  // Exibe o resumo final quando a API retorna o resultado da importação
+  useEffect(() => {
+    if (result) {
+      setInlineMessage({
+        type: result.rejeitados > 0 ? "warning" : "success",
+        title: "Importação concluída",
+        description:
+          result.rejeitados > 0
+            ? `${result.importados} incluído(s) com sucesso. ${result.rejeitados} ignorado(s) (já existente(s) ou inválido(s)).`
+            : `${result.importados} registro(s) incluído(s) com sucesso.`,
+      });
+    }
+  }, [result]);
 
   const resetState = useCallback(() => {
     setInlineMessage(null);
@@ -476,7 +536,7 @@ export default function ConfirmImportModal({
               title="Resumo da importação"
               description={texto}
             />
-            <div className="flex items-center gap-2 border border-neutral-800 px-3 py-2">
+            <div className="flex flex-wrap items-center gap-2 border border-neutral-800 px-3 py-2">
               <span className="text-[11px] text-neutral-500">O arquivo contém</span>
               <span
                 className="border px-2 py-0.5 text-[11px] font-semibold"
@@ -484,11 +544,45 @@ export default function ConfirmImportModal({
               >
                 {count} {count === 1 ? "registro" : "registros"}
               </span>
+
+              {isInclusao && hasDuplicates && (
+                <>
+                  <span
+                    className="border px-2 py-0.5 text-[11px] font-semibold"
+                    style={{ borderColor: `${GREEN}40`, color: GREEN, backgroundColor: `${GREEN}14` }}
+                  >
+                    {willInsertCount} {willInsertCount === 1 ? "será incluído" : "serão incluídos"}
+                  </span>
+                  <span
+                    className="border px-2 py-0.5 text-[11px] font-semibold"
+                    style={{ borderColor: `${ORANGE}40`, color: ORANGE, backgroundColor: `${ORANGE}14` }}
+                  >
+                    {duplicatesCount} já {duplicatesCount === 1 ? "existe" : "existem"} (será
+                    {duplicatesCount === 1 ? "" : "ão"} ignorado{duplicatesCount === 1 ? "" : "s"})
+                  </span>
+                </>
+              )}
+
               {preview.length > 0 && preview.length < count && (
                 <span className="text-[10px] text-neutral-600">(amostra de {preview.length})</span>
               )}
             </div>
           </div>
+
+          {/* Aviso de duplicatas (não bloqueante) */}
+          {isInclusao && hasDuplicates && !hasErrors && (
+            <>
+              <div className="my-5 h-px bg-neutral-900" />
+              <InfoBox
+                title="Registros já existentes"
+                description={`${duplicatesCount} ${
+                  duplicatesCount === 1 ? "registro já existe" : "registros já existem"
+                } no sistema e ${
+                  duplicatesCount === 1 ? "será ignorado" : "serão ignorados"
+                } durante a inclusão. Use o modo "Alteração" se desejar atualizá-los.`}
+              />
+            </>
+          )}
 
           {/* Alertas */}
           {(errors.length > 0 || hasWarnings) && (
