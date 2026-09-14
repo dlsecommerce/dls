@@ -22,6 +22,10 @@ type Props = {
   onImportInclusao: (file: File) => void | Promise<void>;
   onImportAlteracao: (file: File) => void | Promise<void>;
   onValidarComposicao: () => void | Promise<void>;
+  // Novos handlers - fluxo de Composição
+  onExportModeloComposicao: () => void | Promise<void>;
+  onExportComposicao: () => void | Promise<void>;
+  onImportComposicao: (file: File) => void | Promise<void>;
   totalCount: number;
 };
 
@@ -102,10 +106,14 @@ export default function AnnounceActions({
   onImportInclusao,
   onImportAlteracao,
   onValidarComposicao,
+  onExportModeloComposicao,
+  onExportComposicao,
+  onImportComposicao,
   totalCount,
 }: Props) {
   const inputInclusaoRef = useRef<HTMLInputElement | null>(null);
   const inputAlteracaoRef = useRef<HTMLInputElement | null>(null);
+  const inputComposicaoRef = useRef<HTMLInputElement | null>(null);
 
   const [hydrated, setHydrated] = useState(false);
   const [showMoreOptions, setShowMoreOptions] = useState(true);
@@ -160,6 +168,14 @@ export default function AnnounceActions({
         accept=".xlsx,.csv"
         aria-label="Importar dados de alteração"
         onChange={handleFileChange(onImportAlteracao)}
+      />
+      <input
+        type="file"
+        ref={inputComposicaoRef}
+        className="hidden"
+        accept=".xlsx,.csv"
+        aria-label="Importar composição"
+        onChange={handleFileChange(onImportComposicao)}
       />
 
       <div className="space-y-1.5">
@@ -231,6 +247,21 @@ export default function AnnounceActions({
                 Gerar
               </div>
 
+              <ActionTextButton
+                icon={<FileDownIcon className="h-4 w-4" />}
+                label="Baixar modelo de composição"
+                onClick={onExportModeloComposicao}
+              />
+              <ActionTextButton
+                icon={<Download className="h-4 w-4" />}
+                label="Exportar composições"
+                onClick={onExportComposicao}
+              />
+              <ActionTextButton
+                icon={<Upload className="h-4 w-4" />}
+                label="Importar composição"
+                onClick={() => triggerFileInput(inputComposicaoRef)}
+              />
               <ActionTextButton
                 icon={<CheckCircle2 className="h-4 w-4" />}
                 label="Validar Composição"

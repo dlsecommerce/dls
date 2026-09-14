@@ -311,6 +311,101 @@ export default function Announce() {
     }
   };
 
+  // ────────────────────────────────────────────────────────────
+  // ✅ NOVOS HANDLERS — Composição (Gerar: Modelo / Exportar / Importar)
+  // ────────────────────────────────────────────────────────────
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportModeloComposicao = async () => {
+    try {
+      const res = await fetch("/api/composicao/export-modelo");
+      if (!res.ok) throw new Error("Falha ao gerar planilha modelo de composição.");
+      const blob = await res.blob();
+      downloadBlob(blob, "modelo-composicao.xlsx");
+    } catch (err: any) {
+      console.error("Erro ao gerar modelo de composição:", err);
+      toastCustom.error(
+        err?.message ?? "Não foi possível gerar a planilha modelo de composição."
+      );
+    }
+  };
+
+  const handleExportComposicao = async () => {
+    try {
+      const res = await fetch("/api/composicao/export");
+      if (!res.ok) throw new Error("Falha ao exportar composições.");
+      const blob = await res.blob();
+      downloadBlob(blob, "composicoes.xlsx");
+    } catch (err: any) {
+      console.error("Erro ao exportar composições:", err);
+      toastCustom.error(
+        err?.message ?? "Não foi possível exportar as composições."
+      );
+    }
+  };
+
+  const [importingComposicao, setImportingComposicao] = React.useState(false);
+
+  const handleImportComposicao = async (file: File) => {
+    setImportingComposicao(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/composicao/import", {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        const totalErros = result?.errors?.length ?? 0;
+        toastCustom.error(
+          totalErros > 0
+            ? `${totalErros} linha(s) com erro na importação de composição.`
+            : "Não foi possível importar a composição."
+        );
+
+        if (result?.errors?.length) {
+          console.error("Erros na importação de composição:", result.errors);
+        }
+        return;
+      }
+
+      if (result.processed > 0) {
+        playImportSuccessSound();
+        toastCustom.success(
+          `${result.processed} composição(ões) atualizada(s) com sucesso.`
+        );
+      }
+
+      if (result.errors?.length) {
+        toastCustom.error(
+          `${result.errors.length} linha(s) não foram processadas.`
+        );
+        console.error("Erros na importação de composição:", result.errors);
+      }
+
+      refetch();
+    } catch (err: any) {
+      console.error("Erro ao importar composição:", err);
+      toastCustom.error(
+        err?.message ?? "Não foi possível importar a composição."
+      );
+    } finally {
+      setImportingComposicao(false);
+    }
+  };
+
   const [openImport, setOpenImport] = React.useState(false);
   const [importCount, setImportCount] = React.useState(0);
   const [previewRows, setPreviewRows] = React.useState<any[]>([]);
@@ -627,6 +722,9 @@ export default function Announce() {
               onImportInclusao={handleImportInclusao}
               onImportAlteracao={handleImportAlteracao}
               onValidarComposicao={() => setOpenValidateAds(true)}
+              onExportModeloComposicao={handleExportModeloComposicao}
+              onExportComposicao={handleExportComposicao}
+              onImportComposicao={handleImportComposicao}
               totalCount={totalCount}
             />
           </div>
@@ -742,6 +840,18 @@ export default function Announce() {
                 onValidarComposicao={() => {
                   setOpenActionsMobile(false);
                   setOpenValidateAds(true);
+                }}
+                onExportModeloComposicao={() => {
+                  setOpenActionsMobile(false);
+                  handleExportModeloComposicao();
+                }}
+                onExportComposicao={() => {
+                  setOpenActionsMobile(false);
+                  handleExportComposicao();
+                }}
+                onImportComposicao={(file) => {
+                  setOpenActionsMobile(false);
+                  handleImportComposicao(file);
                 }}
                 totalCount={totalCount}
               />
