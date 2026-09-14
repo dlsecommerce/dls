@@ -52,8 +52,11 @@ function keyOfInclusao(store: string, reference: string): string {
   return `${store}::ref::${reference}`;
 }
 
-function keyOfIdBling(store: string, idBling: string | null): string {
-  return `${store}::bling::${idBling ?? ""}`;
+// ✅ CORRIGIDO: a constraint unq_announce_id_bling_active é sobre
+// id_bling GLOBAL (sem considerar store) — WHERE deleted_at IS NULL.
+// A chave não pode mais incluir "store".
+function keyOfIdBling(idBling: string | null): string {
+  return `bling::${idBling ?? ""}`;
 }
 
 function keyOfAlteracao(store: string, idBling: string | null): string {
@@ -92,16 +95,15 @@ async function findExistingReferences(
 }
 
 // -----------------------------------------------------------------------
-// ✅ NOVA PRÉ-CHECAGEM: verifica quais (store, id_bling) já existem e
-// estão ativos vinculados a uma referência DIFERENTE da que está sendo
-// enviada. Isso evita que o insert em massa quebre a constraint
-// unq_announce_id_bling_active e caia no fallback linha a linha.
+// PRÉ-CHECAGEM: verifica quais id_bling já existem ATIVOS no banco,
+// em QUALQUER loja, vinculados a uma referência diferente da enviada.
+// A constraint unq_announce_id_bling_active é global (sem store).
 // -----------------------------------------------------------------------
 async function findConflictingIdBling(
   transaction: any,
   registros: RegistroInput[]
-): Promise<Map<string, string>> {
-  const conflitos = new Map<string, string>();
+): Promise<Map<string, { store: string; reference: string }>> {
+  const conflitos = new Map<string, { store: string; reference: string }>();
   const comIdBling = registros.filter((r) => r.id_bling);
 
   if (comIdBling.length === 0) return conflitos;
@@ -110,23 +112,63 @@ async function findConflictingIdBling(
 
   for (let i = 0; i < totalBatches; i++) {
     const batch = comIdBling.slice(i * CHECK_BATCH_SIZE, (i + 1) * CHECK_BATCH_SIZE);
-    const stores = batch.map((r) => r.store);
     const idBlings = batch.map((r) => r.id_bling);
 
     const rows = await transaction`
       select a.store, a.id_bling, a.reference
       from newsystem.announce a
-      join unnest(${stores}::text[], ${idBlings}::text[]) as s(store, id_bling)
-        on a.store = s.store and a.id_bling = s.id_bling
+      join unnest(${idBlings}::text[]) as s(id_bling)
+        on a.id_bling = s.id_bling
       where a.deleted_at is null
     `;
 
     for (const r of rows) {
-      conflitos.set(keyOfIdBling(r.store, r.id_bling), r.reference);
+      conflitos.set(keyOfIdBling(r.id_bling), { store: r.store, reference: r.reference });
     }
   }
 
   return conflitos;
+}
+
+// -----------------------------------------------------------------------
+// ✅ Detecta id_bling duplicado DENTRO do próprio payload, vinculado a
+// referências diferentes. A constraint é global, então isso vale mesmo
+// entre linhas de lojas diferentes no mesmo arquivo.
+// -----------------------------------------------------------------------
+function filterIntraBatchIdBlingDuplicates(
+  registros: RegistroInput[],
+  erros: RegistroResultado[]
+): RegistroInput[] {
+  const primeiraOcorrencia = new Map<string, RegistroInput>();
+  const validos: RegistroInput[] = [];
+
+  for (const r of registros) {
+    if (!r.id_bling) {
+      validos.push(r);
+      continue;
+    }
+
+    const key = keyOfIdBling(r.id_bling);
+    const existente = primeiraOcorrencia.get(key);
+
+    if (existente && existente.reference !== r.reference) {
+      erros.push({
+        store: r.store,
+        reference: r.reference,
+        status: "erro",
+        message: `O ID Bling "${r.id_bling}" está duplicado no arquivo importado (já usado pela referência "${existente.reference}" na loja "${existente.store}").`,
+      });
+      continue;
+    }
+
+    if (!existente) {
+      primeiraOcorrencia.set(key, r);
+    }
+
+    validos.push(r);
+  }
+
+  return validos;
 }
 
 // -----------------------------------------------------------------------
@@ -288,14 +330,14 @@ async function processRowByRow(
     } catch (error: unknown) {
       const dbError = error as { message?: string; code?: string; constraint?: string };
 
-      // ✅ Trata especificamente violação de id_bling duplicado ativo,
-      // que escapa da pré-checagem em massa por concorrência ou edge case.
+      // ✅ Trata especificamente violação de id_bling duplicado ativo
+      // (constraint global, sem considerar store).
       if (dbError?.code === "23505" && dbError?.constraint === "unq_announce_id_bling_active") {
         erros.push({
           store: registro.store,
           reference: registro.reference,
           status: "erro",
-          message: `O ID Bling "${registro.id_bling}" já está em uso por outro anúncio ativo na loja "${registro.store}".`,
+          message: `O ID Bling "${registro.id_bling}" já está em uso por outro anúncio ativo (em qualquer loja).`,
         });
         continue;
       }
@@ -451,6 +493,10 @@ export async function POST(request: NextRequest): Promise<Response> {
     registrosParaProcessar = registros.filter((r) => Boolean(r.id_bling));
   }
 
+  // ✅ NOVO: remove duplicidade de id_bling dentro do próprio arquivo
+  // (constraint é global, então aplica-se independente do modo)
+  registrosParaProcessar = filterIntraBatchIdBlingDuplicates(registrosParaProcessar, erros);
+
   if (registrosParaProcessar.length === 0) {
     return NextResponse.json(
       { error: "Nenhum registro válido foi encontrado no payload." },
@@ -489,6 +535,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       // PRÉ-CHECAGEM (somente no modo inclusão):
       // 1) Rejeita quem já existe por (store, reference)
       // 2) ✅ Rejeita quem tem id_bling já vinculado a OUTRA referência ativa
+      //    em QUALQUER loja (constraint global)
       // Só o que sobrar (realmente novo e sem conflito) segue para insert.
       // -----------------------------------------------------------------
       if (modo === "inclusao") {
@@ -521,14 +568,14 @@ export async function POST(request: NextRequest): Promise<Response> {
             continue;
           }
 
-          const referenciaExistente = conflitosIdBling.get(keyOfIdBling(r.store, r.id_bling));
+          const conflito = conflitosIdBling.get(keyOfIdBling(r.id_bling));
 
-          if (referenciaExistente && referenciaExistente !== r.reference) {
+          if (conflito && conflito.reference !== r.reference) {
             erros.push({
               store: r.store,
               reference: r.reference,
               status: "erro",
-              message: `O ID Bling "${r.id_bling}" já está em uso pela referência "${referenciaExistente}" na loja "${r.store}".`,
+              message: `O ID Bling "${r.id_bling}" já está em uso pela referência "${conflito.reference}" na loja "${conflito.store}".`,
             });
           } else {
             novos.push(r);
