@@ -710,14 +710,26 @@ export function useCosts() {
   // mudança de filtro/página — o React Query já refaz o fetch sozinho
   // quando queryKey muda.
 
+  /**
+   * ✅ FIX (persistência de seleção): agora aceita um parâmetro
+   * `resetSelection` (default false) para controlar se a seleção
+   * deve ser zerada. Como a seleção é indexada por `id`/`Código`
+   * (via getCostKey), ela permanece válida mesmo trocando o filtro —
+   * então ao aplicar filtros (handleApplyFilters) NÃO resetamos mais
+   * a seleção. Apenas ao limpar filtros (handleClearFilters) o reset
+   * é acionado explicitamente, já que sinaliza início de nova busca.
+   */
   const applyFilterState = useCallback(
-    (next: {
-      codigo: string;
-      marca: string;
-      produto: string;
-      brands: string[];
-      ncm?: string;
-    }) => {
+    (
+      next: {
+        codigo: string;
+        marca: string;
+        produto: string;
+        brands: string[];
+        ncm?: string;
+      },
+      resetSelection: boolean = false
+    ) => {
       setAppliedSelectedBrands(next.brands);
       setAppliedFilters((prev) => ({
         ...prev,
@@ -727,7 +739,10 @@ export function useCosts() {
         ncm: next.ncm ?? prev.ncm,
       }));
 
-      setSelectedRows([]);
+      if (resetSelection) {
+        setSelectedRows([]);
+      }
+
       setCurrentPage(1);
 
       syncUrl({
@@ -751,13 +766,16 @@ export function useCosts() {
     setApplyingFilters(true);
 
     try {
-      applyFilterState({
-        codigo: filters.codigo,
-        marca: filters.marca,
-        produto: filters.produto,
-        brands: selectedBrands,
-        ncm: filters.ncm,
-      });
+      applyFilterState(
+        {
+          codigo: filters.codigo,
+          marca: filters.marca,
+          produto: filters.produto,
+          brands: selectedBrands,
+          ncm: filters.ncm,
+        }
+        // resetSelection = false (default) — mantém a seleção ao filtrar
+      );
 
       setOpenFiltersMobile(false);
     } finally {
@@ -769,13 +787,16 @@ export function useCosts() {
     setSelectedBrands([]);
     setFilters({ ...DEFAULT_COST_FILTERS });
 
-    applyFilterState({
-      codigo: "",
-      marca: "",
-      produto: "",
-      brands: [],
-      ncm: DEFAULT_COST_FILTERS.ncm,
-    });
+    applyFilterState(
+      {
+        codigo: "",
+        marca: "",
+        produto: "",
+        brands: [],
+        ncm: DEFAULT_COST_FILTERS.ncm,
+      },
+      true // ✅ FIX: reseta a seleção ao limpar filtros
+    );
 
     setOpenFiltersMobile(false);
   }, [applyFilterState]);

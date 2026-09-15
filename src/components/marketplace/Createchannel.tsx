@@ -28,13 +28,17 @@ type CreateChannelModalProps = {
   onSuccess?: () => void; // chamado após criar/excluir o canal com sucesso (ex.: refetch da tabela)
 };
 
+// ✅ FIX: agora a origem dos dados é a tabela `announce` (fonte de verdade
+// dos anúncios), não mais `marketplace`. A coluna "code_id" nunca existiu
+// em `marketplace` — o campo correto exigido pela FK é `announce_id`
+// (announce.id), que é obrigatório na tabela marketplace.
 type BaseRow = {
+  announce_id: string;
   store: string;
   id_bling: string | null;
   reference: string;
   product: string;
   mark: string | null;
-  code_id: string | null;
 };
 
 function normalizeChannelName(v: string): string {
@@ -178,16 +182,31 @@ export default function CreateChannelModal({
         return;
       }
 
+      // ✅ FIX: busca direto na tabela `announce` (fonte de verdade dos
+      // anúncios), usando announce.id como announce_id — a FK obrigatória
+      // em marketplace. Antes buscava de `marketplace` uma coluna
+      // "code_id" que nunca existiu nessa tabela (causava o erro
+      // "column marketplace.code_id does not exist").
+      // Filtra também deleted_at e active para não duplicar anúncios
+      // excluídos ou inativos para o novo canal.
       const { data: baseRows, error: erroBase } = await supabase
         .schema("newsystem")
-        .from("marketplace")
-        .select("store, id_bling, reference, product, mark, code_id")
+        .from("announce")
+        .select("id, store, id_bling, reference, product, mark")
         .in("store", SOURCE_STORES as unknown as string[])
-        .is("deleted_at", null);
+        .is("deleted_at", null)
+        .eq("active", true);
 
       if (erroBase) throw erroBase;
 
-      const rows = (baseRows ?? []) as BaseRow[];
+      const rows: BaseRow[] = (baseRows ?? []).map((r: any) => ({
+        announce_id: r.id,
+        store: r.store,
+        id_bling: r.id_bling,
+        reference: r.reference,
+        product: r.product,
+        mark: r.mark,
+      }));
 
       if (rows.length === 0) {
         setErro("Nenhum anúncio encontrado nas lojas Pikot Shop e Sóbaquetas.");
@@ -212,7 +231,7 @@ export default function CreateChannelModal({
             p_reference: row.reference,
             p_product: row.product,
             p_mark: row.mark,
-            p_code_id: row.code_id,
+            p_announce_id: row.announce_id, // ✅ FIX: era p_code_id
             p_ativo: true,
             p_id: null,
           });

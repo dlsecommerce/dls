@@ -107,6 +107,24 @@ const SHOPEE_TIERS: ShopeeTier[] = [
   { min: 200, max: Infinity, frete: "26", comissao: "14" },
 ];
 
+// =====================
+// Faixas oficiais da regra TikTok Shop
+// Produtos < R$50: comissão 10% + taxa fixa R$4
+// Produtos >= R$50: comissão 6% + taxa fixa R$6
+// (o campo "frete" é reaproveitado como taxa fixa em R$)
+// =====================
+type TiktokTier = {
+  min: number;
+  max: number;
+  frete: string;
+  comissao: string;
+};
+
+const TIKTOK_TIERS: TiktokTier[] = [
+  { min: 0, max: 49.99, frete: "4", comissao: "10" },
+  { min: 50, max: Infinity, frete: "6", comissao: "6" },
+];
+
 export default function PricingCalculatorModern() {
   const {
     composicao,
@@ -189,6 +207,17 @@ export default function PricingCalculatorModern() {
       embalagem: EMBALAGEM_PADRAO,
     });
 
+  // ✅ NOVO: TikTok Shop
+  const [calculoTiktok, setCalculoTiktok] = useState<Calculo>({
+    desconto: "",
+    imposto: "14",
+    margem: "15",
+    frete: "4",
+    comissao: "10",
+    marketing: "3",
+    embalagem: EMBALAGEM_PADRAO,
+  });
+
   // =====================
   // FLAGS PARA EDIÇÃO MANUAL SHOPEE
   // =====================
@@ -208,11 +237,19 @@ export default function PricingCalculatorModern() {
   const [userEditedShopeeEmbalagem, setUserEditedShopeeEmbalagem] =
     useState(false);
 
+  // =====================
+  // ✅ NOVO: FLAGS PARA EDIÇÃO MANUAL TIKTOK (comissão/taxa fixa)
+  // =====================
+  const [userEditedTiktokComissao, setUserEditedTiktokComissao] =
+    useState(false);
+
+  const [userEditedTiktokFrete, setUserEditedTiktokFrete] = useState(false);
+
   /*
    * IMPORTANTE:
    *
-   * A trava manual de comissão/frete da Shopee só é válida até a
-   * PRÓXIMA alteração na composição (adicionar, remover, editar
+   * A trava manual de comissão/frete da Shopee e do TikTok só é válida
+   * até a PRÓXIMA alteração na composição (adicionar, remover, editar
    * código/custo/quantidade). Qualquer alteração reseta a trava
    * automaticamente (ver useEffect de reset abaixo), e a regra
    * automática reaplica os valores corretos da faixa vigente.
@@ -233,6 +270,7 @@ export default function PricingCalculatorModern() {
   const calcMagaluRefs = useRef<HTMLInputElement[]>([]);
   const calcMLClassicoRefs = useRef<HTMLInputElement[]>([]);
   const calcMLPremiumRefs = useRef<HTMLInputElement[]>([]);
+  const calcTiktokRefs = useRef<HTMLInputElement[]>([]); // ✅ NOVO
   const acrescimosRefs = useRef<HTMLInputElement[]>([]);
 
   // =====================
@@ -853,6 +891,12 @@ export default function PricingCalculatorModern() {
       ...prev,
       desconto: descontoInternal,
     }));
+
+    // ✅ NOVO: TikTok também sincroniza o desconto
+    setCalculoTiktok((prev) => ({
+      ...prev,
+      desconto: descontoInternal,
+    }));
   };
 
   const handleEmbalagemChangeShared = (raw: string) => {
@@ -874,6 +918,12 @@ export default function PricingCalculatorModern() {
     }));
 
     setCalculoMarketplacePremium((prev) => ({
+      ...prev,
+      embalagem: value,
+    }));
+
+    // ✅ NOVO: TikTok compartilha a mesma embalagem
+    setCalculoTiktok((prev) => ({
       ...prev,
       embalagem: value,
     }));
@@ -900,6 +950,12 @@ export default function PricingCalculatorModern() {
     }));
 
     setCalculoMarketplacePremium((prev) => ({
+      ...prev,
+      embalagem: value,
+    }));
+
+    // ✅ NOVO
+    setCalculoTiktok((prev) => ({
       ...prev,
       embalagem: value,
     }));
@@ -1002,8 +1058,10 @@ export default function PricingCalculatorModern() {
 
   const precoMLPremium = calcularPreco(calculoMarketplacePremium);
 
+  const precoTiktok = calcularPreco(calculoTiktok); // ✅ NOVO
+
   // =====================
-  // Reset da trava manual Shopee a cada alteração na composição
+  // Reset da trava manual Shopee/TikTok a cada alteração na composição
   // =====================
   const isFirstRenderComposicaoRef = useRef(true);
   const lastComposicaoSnapshotRef = useRef<string>("");
@@ -1032,6 +1090,15 @@ export default function PricingCalculatorModern() {
 
       if (userEditedShopeeFrete) {
         setUserEditedShopeeFrete(false);
+      }
+
+      // ✅ NOVO: reset da trava manual do TikTok
+      if (userEditedTiktokComissao) {
+        setUserEditedTiktokComissao(false);
+      }
+
+      if (userEditedTiktokFrete) {
+        setUserEditedTiktokFrete(false);
       }
     }
   }, [composicao]);
@@ -1105,6 +1172,60 @@ export default function PricingCalculatorModern() {
     userEditedShopeeEmbalagem,
   ]);
 
+  // =====================
+  // ✅ NOVO: Regra automática TikTok Shop
+  // (comissão + taxa fixa detectadas pela faixa de preço,
+  // imposto/margem/marketing/embalagem seguem os valores atuais
+  // do próprio canal, que já são sincronizados pelos grupos
+  // compartilhados de empresa/embalagem/desconto)
+  // =====================
+  useEffect(() => {
+    let tierDetectado: TiktokTier = TIKTOK_TIERS[0];
+
+    for (const tier of TIKTOK_TIERS) {
+      const precoTeste = calcularPreco({
+        desconto: calculoTiktok.desconto,
+        embalagem: calculoTiktok.embalagem || EMBALAGEM_PADRAO,
+        imposto: calculoTiktok.imposto,
+        margem: calculoTiktok.margem,
+        marketing: calculoTiktok.marketing,
+        comissao: tier.comissao,
+        frete: tier.frete,
+      });
+
+      if (precoTeste >= tier.min && precoTeste <= tier.max) {
+        tierDetectado = tier;
+        break;
+      }
+    }
+
+    setCalculoTiktok((prev) => {
+      const next: Calculo = {
+        ...prev,
+
+        comissao: userEditedTiktokComissao
+          ? prev.comissao
+          : tierDetectado.comissao,
+
+        frete: userEditedTiktokFrete ? prev.frete : tierDetectado.frete,
+      };
+
+      const semAlteracoes =
+        next.comissao === prev.comissao && next.frete === prev.frete;
+
+      return semAlteracoes ? prev : next;
+    });
+  }, [
+    custoTotal,
+    calculoTiktok.desconto,
+    calculoTiktok.embalagem,
+    calculoTiktok.imposto,
+    calculoTiktok.margem,
+    calculoTiktok.marketing,
+    userEditedTiktokComissao,
+    userEditedTiktokFrete,
+  ]);
+
   useEffect(() => {
     setAcrescimos((prev) => ({
       ...prev,
@@ -1119,6 +1240,8 @@ export default function PricingCalculatorModern() {
 
       precoMercadoLivrePremium: precoMLPremium.toFixed(2),
 
+      precoTiktok: precoTiktok.toFixed(2), // ✅ NOVO
+
       freteMercadoLivreClassico: calculoMarketplaceClassico.frete || "0",
 
       freteMercadoLivrePremium: calculoMarketplacePremium.frete || "0",
@@ -1129,6 +1252,7 @@ export default function PricingCalculatorModern() {
     precoMagalu,
     precoMLClassico,
     precoMLPremium,
+    precoTiktok,
     calculoMarketplaceClassico.frete,
     calculoMarketplacePremium.frete,
     setAcrescimos,
@@ -1203,12 +1327,24 @@ export default function PricingCalculatorModern() {
           embalagem: EMBALAGEM_PADRAO,
         });
 
+        // ✅ NOVO: reset TikTok
+        setCalculoTiktok({
+          desconto: "",
+          imposto: "14",
+          margem: "15",
+          frete: "4",
+          comissao: "10",
+          marketing: "3",
+          embalagem: EMBALAGEM_PADRAO,
+        });
+
         setAcrescimos({
           precoLoja: "",
           precoShopee: "",
           precoMagalu: "",
           precoMercadoLivreClassico: "",
           precoMercadoLivrePremium: "",
+          precoTiktok: "", // ✅ NOVO
           freteMercadoLivreClassico: "",
           freteMercadoLivrePremium: "",
           acrescimoClassico: 0,
@@ -1226,6 +1362,10 @@ export default function PricingCalculatorModern() {
         setUserEditedShopeeMarketing(false);
 
         setUserEditedShopeeEmbalagem(false);
+
+        // ✅ NOVO
+        setUserEditedTiktokComissao(false);
+        setUserEditedTiktokFrete(false);
 
         isFirstRenderComposicaoRef.current = true;
         lastComposicaoSnapshotRef.current = "";
@@ -1457,11 +1597,14 @@ export default function PricingCalculatorModern() {
               setCalculoMLClassico={setCalculoMarketplaceClassico}
               calculoMLPremium={calculoMarketplacePremium}
               setCalculoMLPremium={setCalculoMarketplacePremium}
+              calculoTiktok={calculoTiktok}
+              setCalculoTiktok={setCalculoTiktok}
               precoLoja={precoLoja}
               precoShopee={precoShopee}
               precoMagalu={precoMagalu}
               precoMLClassico={precoMLClassico}
               precoMLPremium={precoMLPremium}
+              precoTiktok={precoTiktok}
               acrescimos={acrescimos}
               setAcrescimos={setAcrescimos}
               isEditing={isEditing}
@@ -1474,6 +1617,7 @@ export default function PricingCalculatorModern() {
               calcMagaluRefs={calcMagaluRefs}
               calcMLClassicoRefs={calcMLClassicoRefs}
               calcMLPremiumRefs={calcMLPremiumRefs}
+              calcTiktokRefs={calcTiktokRefs}
               acrescimosRefs={acrescimosRefs}
               handleEmbalagemBlurShared={handleEmbalagemBlurShared}
               handleEmbalagemChangeShared={handleEmbalagemChangeShared}
@@ -1497,6 +1641,10 @@ export default function PricingCalculatorModern() {
               setUserEditedShopeeMarketing={setUserEditedShopeeMarketing}
               userEditedShopeeEmbalagem={userEditedShopeeEmbalagem}
               setUserEditedShopeeEmbalagem={setUserEditedShopeeEmbalagem}
+              userEditedTiktokComissao={userEditedTiktokComissao}
+              setUserEditedTiktokComissao={setUserEditedTiktokComissao}
+              userEditedTiktokFrete={userEditedTiktokFrete}
+              setUserEditedTiktokFrete={setUserEditedTiktokFrete}
             />
           </div>
         </div>

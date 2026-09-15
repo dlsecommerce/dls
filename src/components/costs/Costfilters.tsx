@@ -50,13 +50,6 @@ const inputClass = `
 
 const norm = (v: string) => v.trim().toLocaleLowerCase("pt-BR");
 
-/**
- * Dropdown de marcas com múltipla seleção:
- * - Chips inteiros clicáveis para remover (sem botão "x" separado)
- * - Botão para limpar todas as marcas selecionadas de uma vez
- * - Enter só confirma quando há exatamente uma marca existente correspondente à busca
- * - Não permite criar marcas "fantasmas" (que não existem em allBrands)
- */
 function BrandMultiSelect({
   allBrands,
   selectedBrands,
@@ -87,7 +80,6 @@ function BrandMultiSelect({
       const trimmed = brand.trim();
       if (!trimmed) return;
 
-      // ✅ Só adiciona se a marca existir de fato em allBrands
       const official = allBrands.find((b) => norm(b) === norm(trimmed));
       if (!official) return;
 
@@ -132,7 +124,6 @@ function BrandMultiSelect({
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      // ✅ Só confirma se houver exatamente uma marca correspondente à busca
       if (visibleBrands.length === 1) {
         addBrand(visibleBrands[0]);
         setSearchTerm("");

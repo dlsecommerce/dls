@@ -33,11 +33,16 @@ type PriceCalculationSectionProps = {
   calculoMLPremium: Calculo;
   setCalculoMLPremium: CalculoSetter;
 
+  // ✅ NOVO: TikTok Shop
+  calculoTiktok: Calculo;
+  setCalculoTiktok: CalculoSetter;
+
   precoLoja: number;
   precoShopee: number;
   precoMagalu: number;
   precoMLClassico: number;
   precoMLPremium: number;
+  precoTiktok: number; // ✅ NOVO
 
   acrescimos: any;
   setAcrescimos: (value: any) => void;
@@ -59,6 +64,7 @@ type PriceCalculationSectionProps = {
   calcMagaluRefs: React.MutableRefObject<HTMLInputElement[]>;
   calcMLClassicoRefs: React.MutableRefObject<HTMLInputElement[]>;
   calcMLPremiumRefs: React.MutableRefObject<HTMLInputElement[]>;
+  calcTiktokRefs: React.MutableRefObject<HTMLInputElement[]>; // ✅ NOVO
   acrescimosRefs: React.MutableRefObject<HTMLInputElement[]>;
 
   handleEmbalagemBlurShared: (raw: string) => void;
@@ -92,6 +98,13 @@ type PriceCalculationSectionProps = {
 
   userEditedShopeeEmbalagem: boolean;
   setUserEditedShopeeEmbalagem: (v: boolean) => void;
+
+  // ✅ NOVO: trava manual TikTok (comissão / taxa fixa)
+  userEditedTiktokComissao: boolean;
+  setUserEditedTiktokComissao: (v: boolean) => void;
+
+  userEditedTiktokFrete: boolean;
+  setUserEditedTiktokFrete: (v: boolean) => void;
 };
 
 type ChannelKey =
@@ -99,7 +112,8 @@ type ChannelKey =
   | "shopee"
   | "magalu"
   | "mlClassico"
-  | "mlPremium";
+  | "mlPremium"
+  | "tiktok"; // ✅ NOVO
 
 type Empresa = "pikot" | "sobaquetas";
 
@@ -121,9 +135,10 @@ const BLOCKS: Array<{ key: ChannelKey; nome: string; dotClassName: string }> = [
   { key: "magalu", nome: "Magalu", dotClassName: "bg-[#1a8ceb]" },
   { key: "mlClassico", nome: "Mercado Livre", dotClassName: "bg-yellow-500" },
   { key: "mlPremium", nome: "Mercado Livre", dotClassName: "bg-yellow-500" },
+  { key: "tiktok", nome: "TikTok Shop", dotClassName: "bg-white" }, // ✅ NOVO
 ];
 
-const STORAGE_KEY = "pricing.visibleBlocks.v4";
+const STORAGE_KEY = "pricing.visibleBlocks.v5"; // ✅ versão bump (novo bloco)
 const EMPRESA_STORAGE_KEY = "pricing.empresaSelecionada.v1";
 
 const fields: Array<{
@@ -188,6 +203,8 @@ const shortLabel = (key: ChannelKey) => {
   if (key === "shopee") return "Shopee";
   if (key === "magalu") return "Magalu";
   if (key === "mlClassico") return "Clássico";
+  if (key === "mlPremium") return "Premium";
+  if (key === "tiktok") return "TikTok"; // ✅ NOVO
 
   return "Premium";
 };
@@ -223,6 +240,23 @@ const MagaluLogo = () => {
     <span className="select-none text-[10px] font-black leading-none tracking-tight text-white">
       Magalu
     </span>
+  );
+};
+
+// ✅ NOVO: ícone do TikTok (lucide-react não possui o logo, então usamos um SVG próprio)
+const TiktokLogo = ({ className }: { className?: string }) => {
+  return (
+    <svg
+      viewBox="0 0 48 48"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+    >
+      <path
+        fill="currentColor"
+        d="M33.5 6.5c1.4 3.6 4.4 6.4 8.1 7.2v6.4c-2.9 0-5.7-.8-8.1-2.2v13.4c0 6.9-5.6 12.6-12.5 12.6S8.5 37.2 8.5 30.3c0-6.5 5.1-11.9 11.5-12.5v6.5c-2.9.6-5 3.1-5 6.1 0 3.4 2.7 6.1 6.1 6.1s6.1-2.7 6.1-6.1V4h6.3c0 .9.1 1.7.3 2.5Z"
+      />
+    </svg>
   );
 };
 
@@ -327,11 +361,15 @@ export const PriceCalculationSection: React.FC<
   calculoMLPremium,
   setCalculoMLPremium,
 
+  calculoTiktok, // ✅ NOVO
+  setCalculoTiktok, // ✅ NOVO
+
   precoLoja,
   precoShopee,
   precoMagalu,
   precoMLClassico,
   precoMLPremium,
+  precoTiktok, // ✅ NOVO
 
   acrescimos,
   setAcrescimos,
@@ -348,6 +386,7 @@ export const PriceCalculationSection: React.FC<
   calcMagaluRefs,
   calcMLClassicoRefs,
   calcMLPremiumRefs,
+  calcTiktokRefs, // ✅ NOVO
   acrescimosRefs,
 
   handleEmbalagemBlurShared,
@@ -369,6 +408,9 @@ export const PriceCalculationSection: React.FC<
   setUserEditedShopeeImposto,
   setUserEditedShopeeMargem,
   setUserEditedShopeeMarketing,
+
+  setUserEditedTiktokComissao, // ✅ NOVO
+  setUserEditedTiktokFrete, // ✅ NOVO
 }) => {
   const defaultVisible: Record<ChannelKey, boolean> = React.useMemo(
     () => ({
@@ -377,6 +419,7 @@ export const PriceCalculationSection: React.FC<
       magalu: true,
       mlClassico: true,
       mlPremium: true,
+      tiktok: true, // ✅ NOVO
     }),
     []
   );
@@ -399,6 +442,7 @@ export const PriceCalculationSection: React.FC<
     magalu: Calculo;
     mlClassico: Calculo;
     mlPremium: Calculo;
+    tiktok: Calculo; // ✅ NOVO
   } | null>(null);
 
   React.useEffect(() => {
@@ -434,6 +478,7 @@ export const PriceCalculationSection: React.FC<
         magalu: calculoMagalu,
         mlClassico: calculoMLClassico,
         mlPremium: calculoMLPremium,
+        tiktok: calculoTiktok, // ✅ NOVO
       };
 
       setCalculoLoja((previous) => ({
@@ -461,6 +506,12 @@ export const PriceCalculationSection: React.FC<
         ...previous,
         imposto: "10",
       }));
+
+      // ✅ NOVO: TikTok Shop -> 10% imposto (Sóbaquetas)
+      setCalculoTiktok((previous) => ({
+        ...previous,
+        imposto: "10",
+      }));
     } else {
       const snapshot = pikotSnapshotRef.current;
 
@@ -470,6 +521,7 @@ export const PriceCalculationSection: React.FC<
         setCalculoMagalu(snapshot.magalu);
         setCalculoMLClassico(snapshot.mlClassico);
         setCalculoMLPremium(snapshot.mlPremium);
+        setCalculoTiktok(snapshot.tiktok); // ✅ NOVO
       }
     }
 
@@ -685,6 +737,18 @@ export const PriceCalculationSection: React.FC<
       preco: precoMLPremium,
       refs: calcMLPremiumRefs,
     },
+    // ✅ NOVO: TikTok Shop — bloco preto com ícone do TikTok
+    {
+      key: "tiktok",
+      title: "TikTok Shop",
+      subtitle: "Marketplace",
+      icon: <TiktokLogo className="h-5 w-5 text-white" />,
+      iconClassName: "border-white/20 bg-black",
+      dotClassName: "bg-white",
+      state: calculoTiktok,
+      preco: precoTiktok,
+      refs: calcTiktokRefs,
+    },
   ];
 
   const visibleRows = rows.filter(
@@ -768,7 +832,25 @@ export const PriceCalculationSection: React.FC<
       return;
     }
 
-    setCalculoMLPremium((previous) => ({
+    if (row.key === "mlPremium") {
+      setCalculoMLPremium((previous) => ({
+        ...previous,
+        [field]: internalValue,
+      }));
+
+      return;
+    }
+
+    // ✅ NOVO: TikTok Shop — trava manual de comissão/frete (taxa fixa)
+    if (field === "comissao") {
+      setUserEditedTiktokComissao(true);
+    }
+
+    if (field === "frete") {
+      setUserEditedTiktokFrete(true);
+    }
+
+    setCalculoTiktok((previous) => ({
       ...previous,
       [field]: internalValue,
     }));
@@ -864,7 +946,31 @@ export const PriceCalculationSection: React.FC<
       return;
     }
 
-    setCalculoMLPremium((previous) => ({
+    if (row.key === "mlPremium") {
+      setCalculoMLPremium((previous) => ({
+        ...previous,
+        [field]: internalValue,
+      }));
+
+      return;
+    }
+
+    // ✅ NOVO: TikTok Shop — reset da trava manual quando o campo é limpo/zerado
+    if (
+      field === "comissao" &&
+      isEmptyOrZero(internalValue)
+    ) {
+      setUserEditedTiktokComissao(false);
+    }
+
+    if (
+      field === "frete" &&
+      isEmptyOrZero(internalValue)
+    ) {
+      setUserEditedTiktokFrete(false);
+    }
+
+    setCalculoTiktok((previous) => ({
       ...previous,
       [field]: internalValue,
     }));
@@ -889,6 +995,10 @@ export const PriceCalculationSection: React.FC<
 
     if (row.key === "mlPremium") {
       return "text-yellow-400";
+    }
+
+    if (row.key === "tiktok") {
+      return "text-white"; // ✅ NOVO
     }
 
     return "text-white";

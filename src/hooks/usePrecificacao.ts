@@ -28,6 +28,7 @@ export function usePrecificacao() {
     precoMagalu: "",
     precoMercadoLivreClassico: "",
     precoMercadoLivrePremium: "",
+    precoTiktok: "", // ✅ NOVO
     freteMercadoLivreClassico: "",
     freteMercadoLivrePremium: "",
     acrescimoClassico: 0,
