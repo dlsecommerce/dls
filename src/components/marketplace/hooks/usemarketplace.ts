@@ -501,7 +501,10 @@ export function useMarketplaceStores() {
     queryKey: ["marketplace-lookup", "stores"],
     queryFn: async () => {
       const { data, error } = await supabase.schema("newsystem").rpc("distinct_marketplace_stores");
-      if (error) throw error;
+      if (error) {
+        console.error("[useMarketplaceStores] RPC error:", error);
+        throw error;
+      }
       return (data ?? []).map((r: any) => r.store).filter(Boolean) as string[];
     },
     staleTime: LOOKUP_STALE_TIME,
@@ -513,7 +516,10 @@ export function useMarketplaceChannels() {
     queryKey: ["marketplace-lookup", "channels"],
     queryFn: async () => {
       const { data, error } = await supabase.schema("newsystem").rpc("distinct_marketplace_channels");
-      if (error) throw error;
+      if (error) {
+        console.error("[useMarketplaceChannels] RPC error:", error);
+        throw error;
+      }
       return (data ?? []).map((r: any) => r.channel).filter(Boolean) as string[];
     },
     staleTime: LOOKUP_STALE_TIME,
@@ -525,7 +531,10 @@ export function useMarketplaceBrands() {
     queryKey: ["marketplace-lookup", "brands"],
     queryFn: async () => {
       const { data, error } = await supabase.schema("newsystem").rpc("distinct_marketplace_brands");
-      if (error) throw error;
+      if (error) {
+        console.error("[useMarketplaceBrands] RPC error:", error);
+        throw error;
+      }
       return (data ?? []).map((r: any) => r.mark).filter(Boolean) as string[];
     },
     staleTime: LOOKUP_STALE_TIME,
@@ -540,18 +549,27 @@ export function useMarketplaceBrands() {
 
 export async function fetchDistinctStores(): Promise<string[]> {
   const { data, error } = await supabase.schema("newsystem").rpc("distinct_marketplace_stores");
-  if (error) return [];
+  if (error) {
+    console.error("[fetchDistinctStores] RPC error:", error);
+    throw error;
+  }
   return (data ?? []).map((r: any) => r.store).filter(Boolean);
 }
 
 export async function fetchDistinctChannels(): Promise<string[]> {
   const { data, error } = await supabase.schema("newsystem").rpc("distinct_marketplace_channels");
-  if (error) return [];
+  if (error) {
+    console.error("[fetchDistinctChannels] RPC error:", error);
+    throw error;
+  }
   return (data ?? []).map((r: any) => r.channel).filter(Boolean);
 }
 
 export async function fetchDistinctBrands(): Promise<string[]> {
   const { data, error } = await supabase.schema("newsystem").rpc("distinct_marketplace_brands");
-  if (error) return [];
+  if (error) {
+    console.error("[fetchDistinctBrands] RPC error:", error);
+    throw error;
+  }
   return (data ?? []).map((r: any) => r.mark).filter(Boolean);
 }

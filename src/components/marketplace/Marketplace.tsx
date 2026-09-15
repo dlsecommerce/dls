@@ -100,8 +100,6 @@ export default function Marketplace() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // Inicializa filtros a partir da URL (sobrevive a refresh e é compartilhável).
-  // Só roda na primeira renderização — deps vazio propositalmente.
   const initialFromUrl = React.useMemo(
     () => searchParamsToFilters(searchParams),
     [] // eslint-disable-line react-hooks/exhaustive-deps
@@ -114,7 +112,6 @@ export default function Marketplace() {
     initialFromUrl.filters
   );
 
-  // MARCA (múltipla seleção)
   const [selectedBrands, setSelectedBrands] = React.useState<string[]>(
     initialFromUrl.brands
   );
@@ -135,9 +132,6 @@ export default function Marketplace() {
       ? (appliedFilters.tipo as MarketplaceTipoFilter)
       : undefined;
 
-  // Condição (Clássico/Premium) — só faz sentido quando o canal é Mercado Livre;
-  // o hook já ignora esse parâmetro para os demais canais, mas evitamos
-  // mandar "Todos" desnecessariamente.
   const condicaoValue =
     appliedFilters.condicao && appliedFilters.condicao !== "Todos"
       ? (appliedFilters.condicao as MarketplaceCondicaoFilter)
@@ -191,7 +185,9 @@ export default function Marketplace() {
       .then((channels) => {
         if (active) setAllChannels(channels);
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.error("Erro ao buscar canais (fetchDistinctChannels):", err);
+      })
       .finally(() => {
         if (active) setChannelsLoading(false);
       });
@@ -209,7 +205,9 @@ export default function Marketplace() {
       .then((brands) => {
         if (active) setAllBrands(brands);
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.error("Erro ao buscar marcas (fetchDistinctBrands):", err);
+      })
       .finally(() => {
         if (active) setBrandsLoading(false);
       });
@@ -221,8 +219,6 @@ export default function Marketplace() {
 
   const currentPage = page + 1;
 
-  // Sincroniza os filtros aplicados com a URL, preservando outros params
-  // (como id/loja/new usados pelo modal de edição).
   const syncFiltersToUrl = React.useCallback(
     (nextFilters: MarketplaceFiltersType, nextBrands: string[]) => {
       const current = new URLSearchParams(searchParams.toString());
@@ -335,13 +331,6 @@ export default function Marketplace() {
     totalCountRef.current = totalCount;
   }, [totalCount]);
 
-  // Hook de import/export (planilha Excel do marketplace).
-  // O export roda 100% no servidor via streaming (suporta 70k+ linhas sem
-  // travar o browser). Dois modos, mutuamente exclusivos:
-  //   - Se houver linhas selecionadas na tabela → exporta SÓ a seleção
-  //     (ignora filtros).
-  //   - Caso contrário → exporta pelo filtro aplicado na tela (comportamento
-  //     original).
   const {
     handleExport: exportXlsx,
     parseImportFile,
@@ -352,7 +341,7 @@ export default function Marketplace() {
       ...appliedFilters,
       brands: appliedBrands,
     },
-    selectedRows.map((r) => r.id) // ✅ ids selecionados na tabela
+    selectedRows.map((r) => r.id)
   );
 
   const handleExport = async () => {
@@ -457,7 +446,6 @@ export default function Marketplace() {
   const [openFiltersMobile, setOpenFiltersMobile] = React.useState(false);
   const [openActionsMobile, setOpenActionsMobile] = React.useState(false);
 
-  // Modal de criação de canal (substitui o antigo fluxo de criação de item único)
   const [openCreateChannel, setOpenCreateChannel] = React.useState(false);
 
   const editId = searchParams.get("id");
@@ -476,8 +464,6 @@ export default function Marketplace() {
     [router, pathname, searchParams]
   );
 
-  // "+ Novo Marketplace" agora abre o modal de criação de canal
-  // (duplica todos os anúncios de Pikot Shop e Sóbaquetas para o novo canal).
   const openCreateModal = React.useCallback(() => {
     setOpenCreateChannel(true);
   }, []);
