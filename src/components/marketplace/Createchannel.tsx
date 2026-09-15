@@ -10,35 +10,22 @@ import {
   CheckCircle2,
   Search,
   Trash2,
-  Settings2, // ✅ novo ícone
+  Settings2,
   X,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchDistinctChannels } from "@/components/marketplace/hooks/usemarketplace";
-import ChannelPricingRulesModal from "@/components/marketplace/Channelpricingrulesmodal"; // ✅ novo import
+import ChannelPricingRulesModal from "@/components/marketplace/Channelpricingrulesmodal";
 
-// Lojas base cujos anúncios serão duplica dos para o novo canal.
+// Lojas base cujos anúncios serão duplicados para o novo canal.
 const SOURCE_STORES = ["Pikot Shop", "Sóbaquetas"] as const;
 
 type CreateChannelModalProps = {
   open: boolean;
   onClose: () => void;
-  onSuccess?: () => void; // chamado após criar/excluir o canal com sucesso (ex.: refetch da tabela)
-};
-
-// ✅ FIX: agora a origem dos dados é a tabela `announce` (fonte de verdade
-// dos anúncios), não mais `marketplace`. A coluna "code_id" nunca existiu
-// em `marketplace` — o campo correto exigido pela FK é `announce_id`
-// (announce.id), que é obrigatório na tabela marketplace.
-type BaseRow = {
-  announce_id: string;
-  store: string;
-  id_bling: string | null;
-  reference: string;
-  product: string;
-  mark: string | null;
+  onSuccess?: () => void;
 };
 
 function normalizeChannelName(v: string): string {
@@ -56,8 +43,9 @@ export default function CreateChannelModal({
   const [channelName, setChannelName] = useState("");
   const [creating, setCreating] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [progressCount, setProgressCount] = useState(0);
-  const [progressTotal, setProgressTotal] = useState(0);
+
+  // ✅ NOVO: opção de criar canal sem duplicar anúncios
+  const [createEmpty, setCreateEmpty] = useState(false);
 
   // ---------------------------------------------------------------------
   // Excluir canal (HARD DELETE — remove permanentemente do banco)
@@ -79,7 +67,7 @@ export default function CreateChannelModal({
   const deleteDropdownRef = useRef<HTMLDivElement>(null);
 
   // ---------------------------------------------------------------------
-  // ✅ Configurar regras de precificação de um canal existente
+  // Configurar regras de precificação de um canal existente
   // ---------------------------------------------------------------------
   const [rulesQuery, setRulesQuery] = useState("");
   const [rulesSugestoes, setRulesSugestoes] = useState<string[]>([]);
@@ -91,7 +79,6 @@ export default function CreateChannelModal({
 
   const rulesDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Carrega a lista de canais existentes ao abrir o modal
   useEffect(() => {
     if (!open) return;
 
@@ -102,7 +89,6 @@ export default function CreateChannelModal({
       .finally(() => setChannelsLoading(false));
   }, [open]);
 
-  // Fecha o dropdown de exclusão ao clicar fora
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (deleteDropdownRef.current?.contains(e.target as Node)) return;
@@ -112,7 +98,6 @@ export default function CreateChannelModal({
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  // ✅ Fecha o dropdown de regras ao clicar fora
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (rulesDropdownRef.current?.contains(e.target as Node)) return;
@@ -125,8 +110,7 @@ export default function CreateChannelModal({
   const resetState = () => {
     setChannelName("");
     setErro(null);
-    setProgressCount(0);
-    setProgressTotal(0);
+    setCreateEmpty(false);
 
     setDeleteQuery("");
     setDeleteSugestoes([]);
@@ -136,7 +120,6 @@ export default function CreateChannelModal({
     setConfirmandoExclusao(false);
     setAnunciosParaExcluir(null);
 
-    // ✅ reset da seção de regras
     setRulesQuery("");
     setRulesSugestoes([]);
     setRulesDropdownOpen(false);
@@ -144,13 +127,14 @@ export default function CreateChannelModal({
   };
 
   const handleClose = () => {
-    if (creating || deleting) return; // impede fechar durante operações em curso
+    if (creating || deleting) return;
     resetState();
     onClose();
   };
 
   // ---------------------------------------------------------------------
-  // Criar canal
+  // ✅ Criar canal — agora com UMA ÚNICA chamada RPC (super rápido)
+  // Se createEmpty=true, apenas registra o canal, sem duplicar anúncios.
   // ---------------------------------------------------------------------
   const handleCreateChannel = async () => {
     const nome = normalizeChannelName(channelName);
@@ -162,102 +146,53 @@ export default function CreateChannelModal({
 
     setErro(null);
     setCreating(true);
-    setProgressCount(0);
-    setProgressTotal(0);
 
     try {
-      const { data: existente, error: erroExistente } = await supabase
-        .schema("newsystem")
-        .from("marketplace")
-        .select("id")
-        .eq("channel", nome)
-        .is("deleted_at", null)
-        .limit(1);
+      const jaExiste = allChannels.some(
+        (c) => c.toLowerCase() === nome.toLowerCase()
+      );
 
-      if (erroExistente) throw erroExistente;
-
-      if (existente && existente.length > 0) {
+      if (jaExiste) {
         setErro(`Já existe um canal chamado "${nome}".`);
         setCreating(false);
         return;
       }
 
-      // ✅ FIX: busca direto na tabela `announce` (fonte de verdade dos
-      // anúncios), usando announce.id como announce_id — a FK obrigatória
-      // em marketplace. Antes buscava de `marketplace` uma coluna
-      // "code_id" que nunca existiu nessa tabela (causava o erro
-      // "column marketplace.code_id does not exist").
-      // Filtra também deleted_at e active para não duplicar anúncios
-      // excluídos ou inativos para o novo canal.
-      const { data: baseRows, error: erroBase } = await supabase
+      if (createEmpty) {
+        // ✅ Canal vazio — apenas registra o nome, sem tocar em `marketplace`
+        const { error: erroEmpty } = await supabase
+          .schema("newsystem")
+          .rpc("create_channel_empty", { p_channel: nome });
+
+        if (erroEmpty) throw erroEmpty;
+
+        toast.success(`Canal "${nome}" criado sem anúncios.`);
+        onSuccess?.();
+        resetState();
+        onClose();
+        return;
+      }
+
+      // ✅ Canal com duplicação de anúncios — 1 chamada, insert em lote no banco
+      const { data: totalCriados, error: erroBulk } = await supabase
         .schema("newsystem")
-        .from("announce")
-        .select("id, store, id_bling, reference, product, mark")
-        .in("store", SOURCE_STORES as unknown as string[])
-        .is("deleted_at", null)
-        .eq("active", true);
+        .rpc("create_channel_bulk", {
+          p_channel: nome,
+          p_stores: SOURCE_STORES as unknown as string[],
+        });
 
-      if (erroBase) throw erroBase;
+      if (erroBulk) throw erroBulk;
 
-      const rows: BaseRow[] = (baseRows ?? []).map((r: any) => ({
-        announce_id: r.id,
-        store: r.store,
-        id_bling: r.id_bling,
-        reference: r.reference,
-        product: r.product,
-        mark: r.mark,
-      }));
-
-      if (rows.length === 0) {
+      if (!totalCriados || totalCriados === 0) {
         setErro("Nenhum anúncio encontrado nas lojas Pikot Shop e Sóbaquetas.");
         setCreating(false);
         return;
       }
 
-      setProgressTotal(rows.length);
-
-      let sucesso = 0;
-      let falhas = 0;
-
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-
-        const { error: erroUpsert } = await supabase
-          .schema("newsystem")
-          .rpc("upsert_marketplace", {
-            p_store: row.store,
-            p_channel: nome,
-            p_id_bling: row.id_bling,
-            p_reference: row.reference,
-            p_product: row.product,
-            p_mark: row.mark,
-            p_announce_id: row.announce_id, // ✅ FIX: era p_code_id
-            p_ativo: true,
-            p_id: null,
-          });
-
-        if (erroUpsert) {
-          console.error("Erro ao duplicar anúncio para novo canal:", erroUpsert, row);
-          falhas++;
-        } else {
-          sucesso++;
-        }
-
-        setProgressCount(i + 1);
-      }
-
-      if (sucesso > 0) {
-        toast.success(
-          `Canal "${nome}" criado com ${sucesso} anúncio(s)${
-            falhas > 0 ? ` (${falhas} falharam)` : ""
-          }.`
-        );
-        onSuccess?.();
-        resetState();
-        onClose();
-      } else {
-        setErro("Nenhum anúncio pôde ser criado no novo canal.");
-      }
+      toast.success(`Canal "${nome}" criado com ${totalCriados} anúncio(s).`);
+      onSuccess?.();
+      resetState();
+      onClose();
     } catch (err: any) {
       console.error("[CreateChannelModal] handleCreateChannel:", err);
       setErro(err?.message ?? "Erro ao criar o novo canal.");
@@ -265,9 +200,6 @@ export default function CreateChannelModal({
       setCreating(false);
     }
   };
-
-  const progressPercent =
-    progressTotal > 0 ? Math.round((progressCount / progressTotal) * 100) : 0;
 
   // ---------------------------------------------------------------------
   // Excluir canal
@@ -333,6 +265,7 @@ export default function CreateChannelModal({
     setConfirmandoExclusao(true);
   };
 
+  // ✅ Ao excluir, remove também o registro em `channels` (caso exista canal vazio)
   const handleConfirmDeleteChannel = async () => {
     if (!selectedChannelToDelete) return;
 
@@ -347,6 +280,12 @@ export default function CreateChannelModal({
         .eq("channel", selectedChannelToDelete);
 
       if (error) throw error;
+
+      await supabase
+        .schema("newsystem")
+        .from("channels")
+        .delete()
+        .eq("name", selectedChannelToDelete);
 
       toast.success(
         `Canal "${selectedChannelToDelete}" excluído permanentemente (${
@@ -367,7 +306,7 @@ export default function CreateChannelModal({
   };
 
   // ---------------------------------------------------------------------
-  // ✅ Configurar regras de precificação
+  // Configurar regras de precificação
   // ---------------------------------------------------------------------
   const handleRulesQueryChange = (value: string) => {
     setRulesQuery(value);
@@ -453,29 +392,49 @@ export default function CreateChannelModal({
                 />
               </div>
 
-              <div className="border border-neutral-900 bg-neutral-950/50 px-3 py-2.5">
-                <p className="text-[11.5px] leading-relaxed text-neutral-500">
-                  Todos os anúncios ativos das lojas{" "}
-                  <span className="font-medium text-neutral-300">Pikot Shop</span> e{" "}
-                  <span className="font-medium text-neutral-300">Sóbaquetas</span> serão
-                  duplicados automaticamente para este novo canal.
-                </p>
-              </div>
-
-              {creating && progressTotal > 0 && (
+              {/* ✅ NOVO: toggle "criar sem anúncios" */}
+              <button
+                type="button"
+                onClick={() => setCreateEmpty((v) => !v)}
+                disabled={creating || deleting}
+                className="
+                  flex w-full items-center justify-between border border-neutral-800
+                  bg-neutral-950/50 px-3 py-2.5 text-left
+                  transition-colors hover:bg-neutral-900/60
+                  disabled:cursor-not-allowed disabled:opacity-40
+                "
+              >
                 <div>
-                  <div className="mb-1.5 flex items-center justify-between text-[11px] text-neutral-500">
-                    <span>Criando anúncios...</span>
-                    <span>
-                      {progressCount}/{progressTotal} ({progressPercent}%)
-                    </span>
-                  </div>
-                  <div className="h-1.5 w-full overflow-hidden bg-neutral-900">
-                    <div
-                      className="h-full bg-[#1a8ceb] transition-all"
-                      style={{ width: `${progressPercent}%` }}
-                    />
-                  </div>
+                  <p className="text-[12px] font-medium text-neutral-200">
+                    Criar canal sem anúncios
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-neutral-500">
+                    Cria apenas o canal vazio, sem duplicar anúncios de Pikot Shop / Sóbaquetas.
+                  </p>
+                </div>
+                <div
+                  className={`
+                    flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors
+                    ${createEmpty ? "border-[#1a8ceb] bg-[#1a8ceb]/20" : "border-neutral-700 bg-neutral-900"}
+                  `}
+                >
+                  <div
+                    className={`
+                      h-3.5 w-3.5 rounded-full transition-transform
+                      ${createEmpty ? "translate-x-4 bg-[#1a8ceb]" : "translate-x-1 bg-neutral-600"}
+                    `}
+                  />
+                </div>
+              </button>
+
+              {!createEmpty && (
+                <div className="border border-neutral-900 bg-neutral-950/50 px-3 py-2.5">
+                  <p className="text-[11.5px] leading-relaxed text-neutral-500">
+                    Todos os anúncios ativos das lojas{" "}
+                    <span className="font-medium text-neutral-300">Pikot Shop</span> e{" "}
+                    <span className="font-medium text-neutral-300">Sóbaquetas</span> serão
+                    duplicados automaticamente para este novo canal.
+                  </p>
                 </div>
               )}
 
@@ -505,13 +464,13 @@ export default function CreateChannelModal({
                 ) : (
                   <>
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                    Criar canal
+                    {createEmpty ? "Criar canal vazio" : "Criar canal"}
                   </>
                 )}
               </button>
             </div>
 
-            {/* ─────────────────── ✅ Configurar regras de precificação ─────────────────── */}
+            {/* ─────────────────── Configurar regras de precificação ─────────────────── */}
             <div className="mt-6 border-t border-neutral-900 pt-5">
               <div className="mb-3 flex items-center gap-2">
                 <Settings2 className="h-3.5 w-3.5" style={{ color: "#1a8ceb" }} />
@@ -847,7 +806,6 @@ export default function CreateChannelModal({
         </DialogContent>
       </Dialog>
 
-      {/* ✅ Modal de regras de precificação do canal selecionado */}
       <ChannelPricingRulesModal
         open={openPricingRulesModal}
         onOpenChange={setOpenPricingRulesModal}
