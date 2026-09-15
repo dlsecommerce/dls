@@ -208,9 +208,10 @@ async function ensureValidSession(): Promise<string> {
 // Chamada à API de importação (upsert consolidado no servidor)
 // ---------------------------------------------------------------------
 type ImportCustosApiResultado = {
-  total_recebido: number;
-  total_processado: number;
-  ignorados_existentes: number;
+  total: number;
+  sucesso: number;
+  falhas: number;
+  resultado: Array<{ code: string; status: string; message: string }>;
 };
 
 async function callImportarCustosApi(
@@ -233,7 +234,12 @@ async function callImportarCustosApi(
     throw new Error(responseBody?.error ?? responseBody?.message ?? "Não foi possível importar os custos.");
   }
 
-  return responseBody?.resultado ?? { total_recebido: 0, total_processado: 0, ignorados_existentes: 0 };
+  return {
+    total: responseBody?.total ?? 0,
+    sucesso: responseBody?.sucesso ?? 0,
+    falhas: responseBody?.falhas ?? 0,
+    resultado: responseBody?.resultado ?? [],
+  };
 }
 
 // ---------------------------------------------------------------------
@@ -247,7 +253,7 @@ async function notifyCostImportResult(params: { tipo: "inclusao" | "alteracao"; 
     title: tipo === "inclusao" ? "Importação de custos concluída" : "Atualização de custos concluída",
     message:
       tipo === "inclusao"
-        ? `${total} custo(s) foram processados. Códigos existentes foram ignorados.`
+        ? `${total} custo(s) foram incluídos com sucesso.`
         : `${total} custo(s) foram atualizados por código.`,
     action: tipo === "inclusao" ? "create" : "update",
     entityType: "cost_import",
@@ -397,20 +403,28 @@ export async function importFromXlsxOrCsv(
 
   const resultado = await callImportarCustosApi(deduped, tipo, accessToken);
 
-  onProgress?.({ processed: resultado.total_processado, total: deduped.length, batchSize: deduped.length });
+  onProgress?.({ processed: resultado.sucesso, total: deduped.length, batchSize: deduped.length });
 
-  if (tipo === "inclusao" && resultado.ignorados_existentes > 0) {
-    warnings.push(`${resultado.ignorados_existentes} código(s) já existiam e foram ignorados na inclusão.`);
+  if (resultado.falhas > 0) {
+    const falhas = resultado.resultado.filter((r) => r.status !== "ok");
+    const shown = falhas.slice(0, MAX_ERRORS_SHOWN);
+    const remaining = falhas.length - shown.length;
+
+    warnings.push(
+      `${resultado.falhas} registro(s) apresentaram falha durante a importação:\n${shown
+        .map((f) => `Código "${f.code}": ${f.message}`)
+        .join("\n")}${remaining > 0 ? `\n... e mais ${remaining} falha(s).` : ""}`
+    );
   }
 
   warnings.push(
     tipo === "inclusao"
-      ? `Inclusão concluída. ${resultado.total_processado} código(s) novo(s) inserido(s).`
-      : `Alteração concluída. ${resultado.total_processado} registro(s) atualizado(s) por Código.`
+      ? `Inclusão concluída. ${resultado.sucesso} código(s) novo(s) inserido(s).`
+      : `Alteração concluída. ${resultado.sucesso} registro(s) atualizado(s) por Código.`
   );
 
   try {
-    await notifyCostImportResult({ tipo, total: resultado.total_processado });
+    await notifyCostImportResult({ tipo, total: resultado.sucesso });
   } catch (error) {
     console.error("Erro ao criar a notificação da importação:", error);
     warnings.push("Os custos foram processados, mas não foi possível criar a notificação.");
@@ -428,7 +442,7 @@ export async function importFromXlsxOrCsv(
     warnings,
     errors: rowErrors.length > 0 ? rowErrors : undefined,
     fileName,
-    skippedExistingCount: tipo === "inclusao" ? resultado.ignorados_existentes : undefined,
+    skippedExistingCount: undefined,
   };
 }
 

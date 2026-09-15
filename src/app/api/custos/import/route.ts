@@ -22,6 +22,17 @@ type RequestBody = {
   registros?: unknown;
 };
 
+type ResultadoLinha = {
+  code: string;
+  status: string;
+  message: string;
+};
+
+type ResultadoValidacao = {
+  validos: CustoPayload[];
+  erros: ResultadoLinha[];
+};
+
 const MAX_REGISTROS = 60_000;
 
 function getBearerToken(request: NextRequest): string | null {
@@ -63,7 +74,13 @@ function validateTipo(value: unknown): "inclusao" | "alteracao" {
   return value;
 }
 
-function validateRegistros(value: unknown): CustoPayload[] {
+/**
+ * Valida e normaliza os registros recebidos, SEM abortar a operação inteira
+ * quando encontra uma linha inválida. Cada erro de linha é reportado
+ * individualmente em `erros`, e apenas os registros válidos seguem
+ * para o processamento no banco (`validos`).
+ */
+function validateRegistros(value: unknown): ResultadoValidacao {
   if (!Array.isArray(value)) {
     throw new Error("O campo registros precisa ser uma lista.");
   }
@@ -79,46 +96,70 @@ function validateRegistros(value: unknown): CustoPayload[] {
   }
 
   const codigosVistos = new Set<string>();
+  const validos: CustoPayload[] = [];
+  const erros: ResultadoLinha[] = [];
 
-  return value.map((item: unknown, index: number): CustoPayload => {
+  value.forEach((item: unknown, index: number) => {
+    const linha = index + 1;
+
     if (!item || typeof item !== "object" || Array.isArray(item)) {
-      throw new Error(`Registro inválido na posição ${index + 1}.`);
+      erros.push({
+        code: `(linha ${linha})`,
+        status: "erro",
+        message: "Registro inválido: formato incorreto.",
+      });
+      return;
     }
 
     const row = item as Record<string, unknown>;
     const code = normalizeCodigo(row.code);
 
     if (!code) {
-      throw new Error(`Código ausente ou inválido na posição ${index + 1}.`);
+      erros.push({
+        code: `(linha ${linha})`,
+        status: "erro",
+        message: "Código ausente ou inválido.",
+      });
+      return;
     }
 
     if (codigosVistos.has(code)) {
-      throw new Error(
-        `Código duplicado na posição ${index + 1}: "${code}". Remova a duplicidade antes de enviar.`
-      );
+      erros.push({
+        code,
+        status: "erro",
+        message: `Código duplicado na planilha (linha ${linha}). Remova a duplicidade e reenvie essa linha.`,
+      });
+      return;
     }
-    codigosVistos.add(code);
 
     const product = normalizeText(row.product);
 
     if (!product) {
-      throw new Error(
-        `Campo "product" ausente ou inválido na posição ${index + 1} (código "${code}"). Essa coluna é obrigatória.`
-      );
+      erros.push({
+        code,
+        status: "erro",
+        message: `Campo "product" ausente ou inválido (linha ${linha}). Essa coluna é obrigatória.`,
+      });
+      return;
     }
 
     const currentCost = parseNumero(row.current_cost);
     const previousCost = parseNumero(row.previous_cost);
 
     if (currentCost === null || previousCost === null) {
-      throw new Error(
-        `Custo atual ou custo antigo inválido na posição ${index + 1} (código "${code}").`
-      );
+      erros.push({
+        code,
+        status: "erro",
+        message: `Custo atual ou custo antigo inválido (linha ${linha}).`,
+      });
+      return;
     }
+
+    codigosVistos.add(code);
 
     const packagingCost = parseNumero(row.packaging_cost) ?? 0;
 
-    return {
+    validos.push({
       code,
       mark: normalizeText(row.mark),
       product,
@@ -126,8 +167,10 @@ function validateRegistros(value: unknown): CustoPayload[] {
       previous_cost: Number(previousCost.toFixed(2)),
       packaging_cost: Number(packagingCost.toFixed(2)),
       ncm: normalizeText(row.ncm),
-    };
+    });
   });
+
+  return { validos, erros };
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -200,9 +243,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     /*
      * 4. Valida e normaliza tipo + registros.
+     *
+     * validateRegistros NÃO lança erro por linha inválida:
+     * ela separa registros válidos (`validos`) dos inválidos (`erros`),
+     * permitindo que o restante do lote seja processado normalmente.
      */
     const tipo = validateTipo(body.tipo);
-    const registros = validateRegistros(body.registros);
+    const { validos: registros, erros: errosValidacao } = validateRegistros(
+      body.registros
+    );
+
+    /*
+     * 4.1. Se nenhum registro passou da validação básica,
+     * não há motivo para acionar o banco.
+     */
+    if (registros.length === 0) {
+      return NextResponse.json(
+        {
+          success: true,
+          total: errosValidacao.length,
+          sucesso: 0,
+          falhas: errosValidacao.length,
+          resultado: errosValidacao,
+        },
+        { status: 200 }
+      );
+    }
 
     const sql = getPostgresClient();
 
@@ -210,7 +276,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
      * 5. Executa diretamente no PostgreSQL, sem PostgREST,
      * sem /rest/v1/rpc e sem schema cache.
      */
-    const resultado = await sql.begin(async (transaction) => {
+    const resultadoBanco = await sql.begin(async (transaction) => {
       /*
        * Reproduz o contexto do usuário autenticado
        * para auth.uid() e RLS.
@@ -256,6 +322,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
        *
        * A CTE garante que a função receba exatamente
        * o mesmo valor testado pelo jsonb_typeof().
+       *
+       * A função newsystem.upsert_cost_lote(p_tipo, p_registros)
+       * retorna uma TABLE(code, status, message) e NÃO aborta
+       * a transação em caso de erro por linha — cada registro é
+       * validado e processado isoladamente.
+       *
+       * Atenção à ordem dos parâmetros: (tipo, registros).
        */
       const rows = await transaction`
         with payload as (
@@ -264,16 +337,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         )
         select
           jsonb_typeof(payload.valor) as tipo_payload,
-          case
-            when jsonb_typeof(payload.valor) = 'array'
-            then
-              public.upsert_custos_lote(
-                payload.valor,
-                ${tipo}
-              )
-            else null
-          end as resultado
+          resultado.code,
+          resultado.status,
+          resultado.message
         from payload
+        left join lateral (
+          select *
+          from newsystem.upsert_cost_lote(${tipo}, payload.valor)
+          where jsonb_typeof(payload.valor) = 'array'
+        ) as resultado on true
       `;
 
       const tipoPayload = rows[0]?.tipo_payload;
@@ -286,12 +358,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         );
       }
 
-      return rows[0]?.resultado ?? null;
+      return rows
+        .filter((row) => row.code !== null)
+        .map((row): ResultadoLinha => ({
+          code: row.code as string,
+          status: row.status as string,
+          message: row.message as string,
+        }));
     });
+
+    /*
+     * 6. Junta os erros de validação (detectados antes de acionar o banco)
+     * com o resultado do banco (linhas processadas com sucesso ou falha).
+     */
+    const resultado: ResultadoLinha[] = [...errosValidacao, ...resultadoBanco];
+
+    const total = resultado.length;
+    const sucesso = resultado.filter((item) => item.status === "ok").length;
+    const falhas = total - sucesso;
 
     return NextResponse.json(
       {
         success: true,
+        total,
+        sucesso,
+        falhas,
         resultado,
       },
       { status: 200 }
