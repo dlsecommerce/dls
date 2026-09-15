@@ -135,7 +135,7 @@ const BLOCKS: Array<{ key: ChannelKey; nome: string; dotClassName: string }> = [
   { key: "magalu", nome: "Magalu", dotClassName: "bg-[#1a8ceb]" },
   { key: "mlClassico", nome: "Mercado Livre", dotClassName: "bg-yellow-500" },
   { key: "mlPremium", nome: "Mercado Livre", dotClassName: "bg-yellow-500" },
-  { key: "tiktok", nome: "TikTok Shop", dotClassName: "bg-white" }, // ✅ NOVO
+  { key: "tiktok", nome: "TikTok Shop", dotClassName: "bg-black" }, // ✅ NOVO
 ];
 
 const STORAGE_KEY = "pricing.visibleBlocks.v5"; // ✅ versão bump (novo bloco)
