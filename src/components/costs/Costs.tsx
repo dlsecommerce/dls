@@ -399,7 +399,7 @@ export default function Costs() {
             setRenameRows([]);
             setRenameWarnings([]);
             setRenameErrors([]);
-            setRenameFileName(null);
+            setRenameFileName("");
           }
         }}
         count={renameRows.length}

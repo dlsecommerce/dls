@@ -40,8 +40,22 @@ export type RenameCodePreviewItem = {
   codigo_novo: string;
 };
 
-export const getCostKey = (row: any) => {
-  return String(row?.["Código"] ?? row?.codigo ?? row?.id ?? "").trim();
+/**
+ * ✅ FIX (chave de seleção): antes esta função retornava "" quando o
+ * produto não tinha `Código`/`id`, o que fazia TODOS os produtos sem
+ * código colidirem na mesma chave dentro do Set/Map de seleção — um
+ * item de outra página podia aparecer "selecionado" sem o usuário ter
+ * clicado nele, e um clique podia afetar a linha errada visualmente.
+ *
+ * Agora:
+ *  - Prioriza `id` (UUID do banco, sempre único e estável).
+ *  - Retorna `null` explicitamente quando não há identificador válido,
+ *    para que nenhuma linha "vazia" jamais seja tratada como igual a
+ *    outra.
+ */
+export const getCostKey = (row: any): string | null => {
+  const key = String(row?.id ?? row?.["Código"] ?? row?.codigo ?? "").trim();
+  return key.length > 0 ? key : null;
 };
 
 const splitByComma = (value: string): string[] =>
@@ -421,6 +435,11 @@ export function useCosts() {
 
   const loadRequestIdRef = useRef(0); // mantido apenas por compatibilidade (não usado mais)
 
+  /**
+   * ✅ FIX: agora usa `getCostKey` com tipo `string | null` e ignora
+   * explicitamente linhas sem chave válida — nunca mais duas linhas
+   * "sem identificador" serão tratadas como a mesma seleção.
+   */
   const setSelectedRowsUnique = useCallback(
     (updater: React.SetStateAction<Custo[]>) => {
       setSelectedRows((prev) => {
@@ -433,7 +452,7 @@ export function useCosts() {
 
         next.forEach((row) => {
           const key = getCostKey(row);
-          if (key) map.set(key, row);
+          if (key !== null) map.set(key, row);
         });
 
         const result = Array.from(map.values());
@@ -451,14 +470,33 @@ export function useCosts() {
     []
   );
 
-  const selectedKeys = new Set(
-    selectedRows.map((row) => getCostKey(row)).filter(Boolean)
+  /**
+   * ✅ FIX: type guard explícito remove `null` do Set — antes o
+   * `.filter(Boolean)` deixava passar strings vazias e causava
+   * colisão de chave entre produtos sem `Código`/`id`.
+   */
+  const selectedKeys = useMemo(
+    () =>
+      new Set(
+        selectedRows
+          .map((row) => getCostKey(row))
+          .filter((key): key is string => key !== null)
+      ),
+    [selectedRows]
   );
 
-  const currentPageKeys = rows.map((row) => getCostKey(row)).filter(Boolean);
+  const currentPageKeys = useMemo(
+    () =>
+      rows
+        .map((row) => getCostKey(row))
+        .filter((key): key is string => key !== null),
+    [rows]
+  );
 
   const allSelected =
-    rows.length > 0 && currentPageKeys.every((key) => selectedKeys.has(key));
+    rows.length > 0 &&
+    currentPageKeys.length > 0 &&
+    currentPageKeys.every((key) => selectedKeys.has(key));
 
   const handleToggleSelectAll = useCallback(
     (checked: boolean) => {
@@ -469,7 +507,10 @@ export function useCosts() {
 
       setSelectedRows((prev) => {
         const pageKeys = new Set(currentPageKeys);
-        return prev.filter((row) => !pageKeys.has(getCostKey(row)));
+        return prev.filter((row) => {
+          const key = getCostKey(row);
+          return key === null ? true : !pageKeys.has(key);
+        });
       });
     },
     [rows, currentPageKeys, setSelectedRowsUnique]
@@ -1162,24 +1203,53 @@ export function useCosts() {
     await Promise.all([loadData(), loadAllBrands()]);
   }, [loadData, loadAllBrands]);
 
+  /**
+   * ✅ ALTERADO: exclusão agora é HARD DELETE (remoção física), não
+   * mais soft-delete. Antes de excluir o custo em si, removemos as
+   * pricing_rules vinculadas (via cost_id) para evitar erro de FK,
+   * já que o registro em "costs" deixará de existir de fato.
+   *
+   * Atenção: isso não trata `announce.reference` (que aponta pro
+   * `code` apenas como texto, sem FK) — anúncios que referenciam um
+   * código excluído passam a ficar "órfãos" silenciosamente.
+   */
   const deleteSelected = useCallback(async () => {
     if (!selectedRows.length) return;
 
     setDeleting(true);
 
     try {
+      const costIds = selectedRows
+        .map((r) => r.id)
+        .filter((id): id is string => Boolean(id));
+
+      const codes = selectedRows.map((r) => r["Código"]);
+
+      if (costIds.length > 0) {
+        const { error: rulesError } = await supabase
+          .schema(SCHEMA)
+          .from("pricing_rules")
+          .delete()
+          .in("cost_id", costIds);
+
+        if (rulesError) throw rulesError;
+      }
+
       const { error } = await supabase
         .schema(SCHEMA)
         .from("costs")
-        .update({ deleted_at: new Date().toISOString() })
-        .in("code", selectedRows.map((r) => r["Código"]));
+        .delete()
+        .in("code", codes);
 
       if (error) throw error;
 
       setSelectedRows([]);
       setOpenDelete(false);
 
-      toastCustom.success("Exclusão concluída!", "Registros removidos com sucesso.");
+      toastCustom.success(
+        "Exclusão concluída!",
+        "Registros removidos permanentemente."
+      );
 
       loadData();
     } catch (err: any) {

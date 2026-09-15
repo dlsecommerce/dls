@@ -16,8 +16,12 @@ import {
 import { Custo } from "@/components/costs/helpers/types";
 import { formatBR } from "@/components/costs/hooks/utils";
 import CostHeader from "@/components/costs/Costheader";
+// ✅ FIX: importa a mesma implementação usada no hook `useCosts`,
+// eliminando a duplicação que existia aqui (fonte única de verdade
+// para identificar uma linha de forma estável e sem colisões).
+import { getCostKey } from "@/components/costs/hooks/useCosts";
 
-const COL_WIDTHS = [48, 140, 160, 0, 150, 150, 140, 180]; 
+const COL_WIDTHS = [48, 140, 160, 0, 150, 150, 140, 180];
 
 function ColGroup() {
   return (
@@ -57,10 +61,6 @@ type Props = {
   onClearSelection: () => void;
   onSelectAllTable: () => void;
   selectingAll?: boolean;
-};
-
-const getCostKey = (row: any) => {
-  return String(row?.["Código"] ?? row?.codigo ?? row?.id ?? "").trim();
 };
 
 /* ─────────────────────────────────────────────
@@ -376,15 +376,27 @@ export default function CostDataTable({
   onSelectAllTable,
   selectingAll,
 }: Props) {
+  /**
+   * ✅ FIX: `getCostKey` agora retorna `string | null`. O filtro com
+   * type guard garante que nenhuma linha "sem identificador" (código
+   * vazio, id vazio) entre no Set — antes essas linhas colidiam todas
+   * na chave "" e podiam aparecer marcadas indevidamente ao trocar de
+   * página ou filtro.
+   */
   const selectedKeys = React.useMemo(
-    () => new Set(selectedRows.map((r) => getCostKey(r))),
+    () =>
+      new Set(
+        selectedRows
+          .map((r) => getCostKey(r))
+          .filter((k): k is string => k !== null)
+      ),
     [selectedRows]
   );
 
   const toggleSelectedRow = useCallback(
     (row: Custo, checked: boolean) => {
       const rowKey = getCostKey(row);
-      if (!rowKey) return;
+      if (rowKey === null) return;
 
       setSelectedRows((prev) => {
         if (checked) {
@@ -415,12 +427,16 @@ export default function CostDataTable({
           </div>
         ) : (
           rows.map((c, i) => {
-            const isSelected = selectedKeys.has(getCostKey(c));
+            const rowKey = getCostKey(c);
+            const isSelected = rowKey !== null && selectedKeys.has(rowKey);
             const showNewBadge = isRecent((c as any)?.created_at);
 
             return (
               <div
-                key={`${c["Código"]}-${i}`}
+                // ✅ FIX: key estável por identidade real da linha (id/código),
+                // em vez de depender do índice `i` — que muda ao filtrar/ordenar
+                // e causava remontagem/seleção incorreta de componentes.
+                key={rowKey ?? `row-${i}`}
                 className={`border p-3 transition-colors ${
                   isSelected ? "border-[#1a8ceb]/40 bg-[#1a8ceb]/[0.05]" : "border-neutral-800 bg-[#0a0a0a]"
                 }`}
@@ -525,20 +541,28 @@ export default function CostDataTable({
               ) : rows.length === 0 ? (
                 <EmptyState />
               ) : (
-                rows.map((c, i) => (
-                  <CostTableRow
-                    key={`${c["Código"]}-${i}`}
-                    row={c}
-                    index={i}
-                    isSelected={selectedKeys.has(getCostKey(c))}
-                    copiedId={copiedId}
-                    handleCopy={handleCopy}
-                    openEdit={openEdit}
-                    openDeleteOne={openDeleteOne}
-                    openCostEditor={openCostEditor}
-                    onToggle={toggleSelectedRow}
-                  />
-                ))
+                rows.map((c, i) => {
+                  const rowKey = getCostKey(c);
+                  const isSelected = rowKey !== null && selectedKeys.has(rowKey);
+
+                  return (
+                    <CostTableRow
+                      // ✅ FIX: key estável — resolve o bug de "item some ao
+                      // selecionar com filtro aplicado" (colisão de índice
+                      // após reordenação/filtragem do array `rows`).
+                      key={rowKey ?? `row-${i}`}
+                      row={c}
+                      index={i}
+                      isSelected={isSelected}
+                      copiedId={copiedId}
+                      handleCopy={handleCopy}
+                      openEdit={openEdit}
+                      openDeleteOne={openDeleteOne}
+                      openCostEditor={openCostEditor}
+                      onToggle={toggleSelectedRow}
+                    />
+                  );
+                })
               )}
             </TableBody>
           </Table>
