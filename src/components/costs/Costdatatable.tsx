@@ -16,16 +16,13 @@ import {
 import { Custo } from "@/components/costs/helpers/types";
 import { formatBR } from "@/components/costs/hooks/utils";
 import CostHeader from "@/components/costs/Costheader";
-// ✅ FIX: importa a mesma implementação usada no hook `useCosts`,
-// eliminando a duplicação que existia aqui (fonte única de verdade
-// para identificar uma linha de forma estável e sem colisões).
-import { getCostKey } from "@/components/costs/hooks/useCosts";
+import { getCostKey } from "@/components/costs/hooks/usecosts";
 
 const COL_WIDTHS = [48, 140, 160, 0, 150, 150, 140, 180];
 
 function ColGroup() {
   return (
-    <colgroup>
+    <colgroup>  
       {COL_WIDTHS.map((w, i) =>
         w === 0 ? <col key={i} /> : <col key={i} style={{ width: `${w}px` }} />
       )}
