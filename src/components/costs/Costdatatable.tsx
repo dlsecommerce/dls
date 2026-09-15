@@ -377,7 +377,7 @@ export default function CostDataTable({
    * ✅ FIX: `getCostKey` agora retorna `string | null`. O filtro com
    * type guard garante que nenhuma linha "sem identificador" (código
    * vazio, id vazio) entre no Set — antes essas linhas colidiam todas
-   * na chave "" e podiam aparecer marcadas indevidamente ao trocar de
+   * na chave e podiam aparecer marcadas indevidamente ao trocar de
    * página ou filtro.
    */
   const selectedKeys = React.useMemo(
