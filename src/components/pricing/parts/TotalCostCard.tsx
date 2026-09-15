@@ -6,7 +6,7 @@ type TotalCostCardProps = {
 };
 
 export const TotalCostCard: React.FC<TotalCostCardProps> = ({ custoTotal }) => (
-  <div className="mt-3 rounded-xl border border-white/10 bg-[#1a8ceb] p-4 shadow-sm sm:p-3">
+  <div className="mt-3 rounded border border-white/10 bg-[#1a8ceb] p-4 shadow-sm sm:p-3">
     <div className="flex flex-col items-center justify-center">
       <span className="mb-1 text-sm text-white sm:text-xs">
         Custo Total

@@ -29,7 +29,7 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
       className="
         absolute left-0 top-full z-[999] mt-1
         max-h-60 w-full overflow-y-auto overscroll-contain
-        rounded-lg border border-white/10 bg-[#0f0f0f]
+        rounded border border-white/10 bg-[#0f0f0f]
         shadow-[0_18px_40px_rgba(0,0,0,0.45)]
       "
     >

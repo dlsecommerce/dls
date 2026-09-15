@@ -3,7 +3,6 @@
 import React from "react";
 import { Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { SuggestionDropdown } from "@/components/pricing/parts/SuggestionDropdown";
 
 type SugestaoProduto = {
@@ -111,10 +110,20 @@ export const DecompositionProductSection: React.FC<
     );
   };
 
+  const handleAdicionarClick = (
+    event: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    event.preventDefault();
+
+    if (!canAdd) return;
+
+    onAdicionarProduto?.();
+  };
+
   return (
-    <section className="rounded-2xl border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
+    <section className="rounded border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
       <div className="mb-4 flex items-center gap-2.5">
-        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#1a8ceb] text-xs font-bold text-white">
+        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#1a8ceb] text-xs font-bold text-white">
           1.
         </span>
 
@@ -127,7 +136,7 @@ export const DecompositionProductSection: React.FC<
             Código / SKU
           </label>
 
-          <div className="flex overflow-hidden rounded-lg border border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+          <div className="flex h-10 items-stretch overflow-hidden rounded border border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
             <Input
               value={codigo}
               onChange={(e) => handleCodigoChange(e.target.value)}
@@ -135,29 +144,29 @@ export const DecompositionProductSection: React.FC<
               onKeyDown={handleProdutoSugestoesKeys}
               placeholder="Ex: TN 5AM"
               className="
-                h-10 flex-1 rounded-none border-0 bg-transparent px-3
+                h-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-3
                 text-sm font-semibold text-white shadow-none outline-none
                 placeholder:text-white/20
                 focus-visible:ring-0 focus-visible:ring-offset-0
               "
             />
 
-            <Button
+            <button
               type="button"
-              onClick={onAdicionarProduto}
+              onClick={handleAdicionarClick}
               disabled={!canAdd}
-              variant="ghost"
+              title="Adicionar na composição"
               className="
-                h-10 w-10 cursor-pointer rounded-none border-l border-white/10
-                bg-transparent p-0 text-[#1a8ceb]
+                flex h-full w-10 shrink-0 cursor-pointer items-center justify-center
+                border-l border-white/10 bg-transparent text-[#1a8ceb] transition
                 hover:bg-[#1a8ceb]/10 hover:text-[#4da7f0]
                 active:scale-[0.96]
                 disabled:cursor-not-allowed disabled:opacity-35
+                disabled:hover:bg-transparent disabled:active:scale-100
               "
-              title="Adicionar na composição"
             >
               <Plus className="h-4 w-4" />
-            </Button>
+            </button>
           </div>
 
           <SuggestionDropdown
@@ -182,7 +191,7 @@ export const DecompositionProductSection: React.FC<
             onKeyDown={handleProdutoSugestoesKeys}
             placeholder="Ex: TENNESSEE 5A MARFIM MADEIRA"
             className="
-              h-10 w-full min-w-0 truncate rounded-lg border-white/10 bg-[#070707] px-3
+              h-10 w-full min-w-0 truncate rounded border-white/10 bg-[#070707] px-3
               text-sm font-semibold text-white shadow-none outline-none
               overflow-hidden text-ellipsis whitespace-nowrap
               placeholder:text-white/20

@@ -111,7 +111,7 @@ const ResultadoMiniValue = ({
   onCopy: () => void;
 }) => {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-white/10 bg-black/30 px-2 py-1.5">
+    <div className="flex min-w-0 items-center justify-between gap-2 rounded border border-white/10 bg-black/30 px-2 py-1.5">
       <div className="min-w-0">
         <div className="text-[8px] font-semibold uppercase leading-none tracking-wide text-white/35">
           {label}
@@ -156,7 +156,7 @@ const ResultadoCard = ({
   return (
     <div
       className={`
-        rounded-lg border px-2 py-1.5 transition
+        rounded border px-2 py-1.5 transition
         ${
           hasCost
             ? "border-[#1a8ceb]/30 bg-[#1a8ceb]/10 hover:border-[#1a8ceb]/55 hover:bg-[#1a8ceb]/15"
@@ -250,10 +250,10 @@ export default function Resultados({
   };
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
+    <section className="rounded border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#1a8ceb] text-xs font-bold text-white">
+          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#1a8ceb] text-xs font-bold text-white">
             4.
           </span>
 
@@ -262,7 +262,7 @@ export default function Resultados({
           </h2>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2 rounded-lg border border-[#1a8ceb]/25 bg-[#1a8ceb]/10 px-3 py-1.5">
+        <div className="flex shrink-0 items-center gap-2 rounded border border-[#1a8ceb]/25 bg-[#1a8ceb]/10 px-3 py-1.5">
           <PackageCheck className="h-4 w-4 text-[#1a8ceb]" />
 
           <span className="text-xs font-semibold text-white/65">
@@ -290,7 +290,7 @@ export default function Resultados({
           </div>
         </div>
       ) : (
-        <div className="rounded-xl border border-dashed border-white/10 bg-[#181818] px-4 py-7 text-center">
+        <div className="rounded border border-dashed border-white/10 bg-[#181818] px-4 py-7 text-center">
           <p className="text-sm font-semibold text-white/75">
             Nenhum resultado calculado
           </p>
@@ -301,7 +301,7 @@ export default function Resultados({
         </div>
       )}
 
-      <div className="mt-3 rounded-xl border border-white/10 bg-[#181818] px-4 py-3">
+      <div className="mt-3 rounded border border-white/10 bg-[#181818] px-4 py-3">
         <div className="flex gap-2">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-white/35" />
 

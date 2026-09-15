@@ -84,9 +84,9 @@ export const CostComposition: React.FC<CostCompositionProps> = ({
     : "overflow-visible";
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
+    <section className="rounded border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
       <div className="mb-4 flex items-center gap-2.5">
-        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#1a8ceb] text-xs font-bold text-white">
+        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#1a8ceb] text-xs font-bold text-white">
           2.
         </span>
 
@@ -121,7 +121,7 @@ export const CostComposition: React.FC<CostCompositionProps> = ({
             />
           ))
         ) : (
-          <div className="rounded-xl border border-dashed border-white/10 bg-[#181818] px-4 py-5 text-center">
+          <div className="rounded border border-dashed border-white/10 bg-[#181818] px-4 py-5 text-center">
             <p className="text-sm font-medium text-white/75">
               Nenhum custo adicionado
             </p>
@@ -137,7 +137,7 @@ export const CostComposition: React.FC<CostCompositionProps> = ({
 
       <TotalCostCard custoTotal={custoTotal} />
 
-      <div className="mt-4 rounded-xl border border-white/10 bg-[#181818] px-4 py-3">
+      <div className="mt-4 rounded border border-white/10 bg-[#181818] px-4 py-3">
         <div className="flex gap-2">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-white/40" />
 

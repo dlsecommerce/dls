@@ -103,14 +103,14 @@ const AcrescimoCard: React.FC<AcrescimoCardProps> = ({
 
   return (
     <div
-      className={`group relative rounded-xl border px-3 py-2 transition-all duration-200 ${styles.card}`}
+      className={`group relative rounded border px-3 py-2 transition-all duration-200 ${styles.card}`}
     >
       <button
         type="button"
         onClick={onCopy}
         className="
           absolute right-3 top-3 flex h-7 w-7 cursor-pointer items-center
-          justify-center rounded-lg border border-white/10 bg-white/[0.03]
+          justify-center rounded border border-white/10 bg-white/[0.03]
           text-white/45 opacity-0 transition
           hover:bg-white/[0.08] hover:text-white
           group-hover:opacity-100
@@ -206,9 +206,9 @@ export const AcrescimosSection: React.FC<AcrescimosSectionProps> = ({
   };
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
+    <section className="rounded border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
       <div className="mb-4 flex items-center gap-2.5">
-        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#1a8ceb] text-xs font-bold text-white">
+        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#1a8ceb] text-xs font-bold text-white">
           4.
         </span>
 

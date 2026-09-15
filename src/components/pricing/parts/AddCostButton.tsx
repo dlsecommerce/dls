@@ -12,7 +12,7 @@ export const AddCostButton: React.FC<AddCostButtonProps> = ({ onClick }) => (
     onClick={onClick}
     variant="outline"
     className="
-      mt-3 flex h-10 w-full items-center justify-center rounded-xl
+      mt-3 flex h-10 w-full items-center justify-center rounded
       border border-white/10 bg-transparent
       px-4 text-xs font-semibold text-white/85
       shadow-none transition-all duration-200

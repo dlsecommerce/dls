@@ -253,10 +253,10 @@ export default function PrecoVenda({
   }, [clicks]);
 
   return (
-    <section className="flex h-full min-h-[216px] flex-col rounded-2xl border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
+    <section className="flex h-full min-h-[216px] flex-col rounded border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#1a8ceb] text-xs font-bold text-white">
+          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#1a8ceb] text-xs font-bold text-white">
             3.
           </span>
 
@@ -273,7 +273,7 @@ export default function PrecoVenda({
             }}
             title="Baixar planilha Excel"
             className="
-              flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg
+              flex h-8 w-8 cursor-pointer items-center justify-center rounded-full
               text-white/55 transition
               hover:bg-white/10 hover:text-white
               active:scale-[0.96]
@@ -292,7 +292,7 @@ export default function PrecoVenda({
                 : "Limpar todos os dados"
             }
             className={`
-              flex h-8 w-8 items-center justify-center rounded-lg transition
+              flex h-8 w-8 items-center justify-center rounded-full transition
               active:scale-[0.96]
               ${
                 isClearing
@@ -311,7 +311,7 @@ export default function PrecoVenda({
       </div>
 
       <div className="flex flex-1 flex-col justify-between gap-1.5">
-        <div className="flex h-[56px] overflow-hidden rounded-xl border border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+        <div className="flex h-[56px] overflow-hidden rounded border border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
           <div className="flex h-full items-center border-r border-white/10 px-4 text-sm font-black text-white/45">
             R$
           </div>
@@ -344,7 +344,7 @@ export default function PrecoVenda({
                 type="button"
                 onClick={() => aplicarPrecoRapido(valor)}
                 className="
-                  h-7 cursor-pointer rounded-lg border border-white/10 bg-white/[0.03]
+                  h-7 cursor-pointer rounded border border-white/10 bg-white/[0.03]
                   text-[11px] font-bold text-white/60 transition
                   hover:border-[#1a8ceb]/50 hover:bg-[#1a8ceb]/10 hover:text-[#1a8ceb]
                   active:scale-[0.97]
@@ -366,7 +366,7 @@ export default function PrecoVenda({
               type="button"
               onClick={() => ajustarPreco(-1)}
               className="
-                flex h-7 cursor-pointer items-center justify-center gap-1 rounded-lg
+                flex h-7 cursor-pointer items-center justify-center gap-1 rounded
                 border border-white/10 bg-white/[0.03]
                 text-[11px] font-semibold text-white/55 transition
                 hover:bg-white/[0.07] hover:text-white
@@ -381,7 +381,7 @@ export default function PrecoVenda({
               type="button"
               onClick={() => ajustarPreco(1)}
               className="
-                flex h-7 cursor-pointer items-center justify-center gap-1 rounded-lg
+                flex h-7 cursor-pointer items-center justify-center gap-1 rounded
                 border border-white/10 bg-white/[0.03]
                 text-[11px] font-semibold text-white/55 transition
                 hover:bg-white/[0.07] hover:text-white
@@ -396,7 +396,7 @@ export default function PrecoVenda({
               type="button"
               onClick={() => ajustarPreco(5)}
               className="
-                flex h-7 cursor-pointer items-center justify-center gap-1 rounded-lg
+                flex h-7 cursor-pointer items-center justify-center gap-1 rounded
                 border border-white/10 bg-white/[0.03]
                 text-[11px] font-semibold text-white/55 transition
                 hover:bg-white/[0.07] hover:text-white

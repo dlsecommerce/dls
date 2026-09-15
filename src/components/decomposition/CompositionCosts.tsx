@@ -30,7 +30,7 @@ type Props = {
 };
 
 const inputClass = `
-  h-10 min-w-0 rounded-lg border-white/10 bg-[#070707] px-3
+  h-10 min-w-0 rounded border-white/10 bg-[#070707] px-3
   text-sm font-semibold text-white shadow-none outline-none
   placeholder:text-white/20
   focus:border-[#1a8ceb]/70 focus:ring-1 focus:ring-[#1a8ceb]/30
@@ -173,10 +173,10 @@ export default function ComposicaoCustos({
   };
 
   return (
-    <section className="flex h-full min-w-0 flex-col rounded-2xl border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
+    <section className="flex h-full min-w-0 flex-col rounded border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#1a8ceb] text-xs font-bold text-white">
+          <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#1a8ceb] text-xs font-bold text-white">
             2.
           </span>
 
@@ -190,7 +190,7 @@ export default function ComposicaoCustos({
           onClick={handleAdicionarItem}
           variant="outline"
           className="
-            h-9 shrink-0 cursor-pointer rounded-lg border border-[#1a8ceb]/50
+            h-9 shrink-0 cursor-pointer rounded border border-[#1a8ceb]/50
             bg-transparent px-4 text-xs font-semibold text-[#1a8ceb]
             shadow-none
             hover:bg-[#1a8ceb]/10 hover:text-[#4da7f0]
@@ -204,7 +204,7 @@ export default function ComposicaoCustos({
 
       <div className="flex min-w-0 flex-1 flex-col">
         {deveMostrarTabela ? (
-          <div className="min-w-0 overflow-hidden rounded-xl border border-white/10">
+          <div className="min-w-0 overflow-hidden rounded border border-white/10">
             <div
               className="
                 hidden border-b border-white/10 bg-[#181818] lg:grid
@@ -282,7 +282,7 @@ export default function ComposicaoCustos({
                         Descrição
                       </label>
 
-                      <div className="flex h-10 min-w-0 max-w-full items-center overflow-hidden rounded-lg border border-white/10 bg-[#070707] px-3">
+                      <div className="flex h-10 min-w-0 max-w-full items-center overflow-hidden rounded border border-white/10 bg-[#070707] px-3">
                         <span
                           title={descricao}
                           className={`block w-full min-w-0 overflow-hidden truncate whitespace-nowrap text-center text-sm font-semibold ${
@@ -350,7 +350,7 @@ export default function ComposicaoCustos({
                         onClick={() => removerItem(idx)}
                         variant="ghost"
                         className="
-                          h-9 w-9 cursor-pointer rounded-lg border border-red-500/20
+                          h-9 w-9 cursor-pointer rounded border border-red-500/20
                           bg-red-500/10 p-0 text-red-400 transition
                           hover:bg-red-500/20 hover:text-red-300
                           active:scale-[0.96]
@@ -366,7 +366,7 @@ export default function ComposicaoCustos({
             </div>
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-white/10 bg-[#181818] px-4 py-8 text-center">
+          <div className="rounded border border-dashed border-white/10 bg-[#181818] px-4 py-8 text-center">
             <p className="text-sm font-semibold text-white/75">
               Nenhum custo adicionado
             </p>

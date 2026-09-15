@@ -101,26 +101,30 @@ type ChannelKey =
   | "mlClassico"
   | "mlPremium";
 
+type Empresa = "pikot" | "sobaquetas";
+
 type ChannelRow = {
   key: ChannelKey;
   title: string;
   subtitle: string;
   icon: React.ReactNode;
   iconClassName: string;
+  dotClassName: string;
   state: Calculo;
   preco: number;
   refs: React.MutableRefObject<HTMLInputElement[]>;
 };
 
-const BLOCKS: Array<{ key: ChannelKey; nome: string }> = [
-  { key: "loja", nome: "Loja Própria" },
-  { key: "shopee", nome: "Shopee" },
-  { key: "magalu", nome: "Magalu" },
-  { key: "mlClassico", nome: "Mercado Livre" },
-  { key: "mlPremium", nome: "Mercado Livre" },
+const BLOCKS: Array<{ key: ChannelKey; nome: string; dotClassName: string }> = [
+  { key: "loja", nome: "Loja Própria", dotClassName: "bg-[#1a8ceb]" },
+  { key: "shopee", nome: "Shopee", dotClassName: "bg-orange-500" },
+  { key: "magalu", nome: "Magalu", dotClassName: "bg-[#1a8ceb]" },
+  { key: "mlClassico", nome: "Mercado Livre", dotClassName: "bg-yellow-500" },
+  { key: "mlPremium", nome: "Mercado Livre", dotClassName: "bg-yellow-500" },
 ];
 
 const STORAGE_KEY = "pricing.visibleBlocks.v4";
+const EMPRESA_STORAGE_KEY = "pricing.empresaSelecionada.v1";
 
 const fields: Array<{
   key: keyof Calculo;
@@ -267,7 +271,7 @@ const FieldInput = ({
     : toDisplay(rawValue);
 
   return (
-    <div className="mx-auto flex h-10 w-full max-w-[96px] items-center rounded-lg border border-white/10 bg-[#070707] px-2 transition focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+    <div className="mx-auto flex h-10 w-full max-w-[96px] items-center rounded border border-white/10 bg-[#070707] px-2 transition focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
       <input
         ref={inputRef}
         value={displayValue}
@@ -384,6 +388,123 @@ export const PriceCalculationSection: React.FC<
 
   const [copiedKey, setCopiedKey] =
     React.useState<ChannelKey | null>(null);
+
+  // ---- Seletor de empresa (Pikot Shop / Sóbaquetas) ----
+  const [empresa, setEmpresa] = React.useState<Empresa>("pikot");
+  const [isEmpresaOpen, setIsEmpresaOpen] = React.useState(false);
+
+  const pikotSnapshotRef = React.useRef<{
+    loja: Calculo;
+    shopee: Calculo;
+    magalu: Calculo;
+    mlClassico: Calculo;
+    mlPremium: Calculo;
+  } | null>(null);
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem(EMPRESA_STORAGE_KEY);
+
+      if (raw === "pikot" || raw === "sobaquetas") {
+        setEmpresa(raw);
+      }
+    } catch {
+      // Ignora erros de acesso ao localStorage.
+    }
+  }, []);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(EMPRESA_STORAGE_KEY, empresa);
+    } catch {
+      // Ignora erros de acesso ao localStorage.
+    }
+  }, [empresa]);
+
+  const handleSelectEmpresa = (next: Empresa) => {
+    if (next === empresa) {
+      setIsEmpresaOpen(false);
+      return;
+    }
+
+    if (next === "sobaquetas") {
+      pikotSnapshotRef.current = {
+        loja: calculoLoja,
+        shopee: calculoShopee,
+        magalu: calculoMagalu,
+        mlClassico: calculoMLClassico,
+        mlPremium: calculoMLPremium,
+      };
+
+      setCalculoLoja((previous) => ({
+        ...previous,
+        imposto: "10",
+        comissao: "0",
+      }));
+
+      setCalculoShopee((previous) => ({
+        ...previous,
+        imposto: "10",
+      }));
+
+      setCalculoMagalu((previous) => ({
+        ...previous,
+        imposto: "10",
+      }));
+
+      setCalculoMLClassico((previous) => ({
+        ...previous,
+        imposto: "10",
+      }));
+
+      setCalculoMLPremium((previous) => ({
+        ...previous,
+        imposto: "10",
+      }));
+    } else {
+      const snapshot = pikotSnapshotRef.current;
+
+      if (snapshot) {
+        setCalculoLoja(snapshot.loja);
+        setCalculoShopee(snapshot.shopee);
+        setCalculoMagalu(snapshot.magalu);
+        setCalculoMLClassico(snapshot.mlClassico);
+        setCalculoMLPremium(snapshot.mlPremium);
+      }
+    }
+
+    setEmpresa(next);
+    setIsEmpresaOpen(false);
+  };
+
+  const closeEmpresaOnOutside = React.useCallback(
+    (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+
+      if (!target) return;
+
+      if (target.closest?.("[data-empresa-dropdown]")) {
+        return;
+      }
+
+      setIsEmpresaOpen(false);
+    },
+    []
+  );
+
+  React.useEffect(() => {
+    if (!isEmpresaOpen) return;
+
+    window.addEventListener("mousedown", closeEmpresaOnOutside);
+
+    return () => {
+      window.removeEventListener("mousedown", closeEmpresaOnOutside);
+    };
+  }, [isEmpresaOpen, closeEmpresaOnOutside]);
+
+  const empresaColorClass =
+    empresa === "sobaquetas" ? "text-orange-400" : "text-[#1a8ceb]";
+  // ---- Fim seletor de empresa ----
 
   React.useEffect(() => {
     try {
@@ -511,6 +632,7 @@ export const PriceCalculationSection: React.FC<
       icon: <Store className="h-5 w-5 text-[#1a8ceb]" />,
       iconClassName:
         "border-[#1a8ceb]/35 bg-[#1a8ceb]/15",
+      dotClassName: "bg-[#1a8ceb]",
       state: calculoLoja,
       preco: precoLoja,
       refs: calcLojaRefs,
@@ -522,6 +644,7 @@ export const PriceCalculationSection: React.FC<
       icon: <ShoppingBag className="h-5 w-5 text-white" />,
       iconClassName:
         "border-orange-500/30 bg-orange-500",
+      dotClassName: "bg-orange-500",
       state: calculoShopee,
       preco: precoShopee,
       refs: calcShopeeRefs,
@@ -533,6 +656,7 @@ export const PriceCalculationSection: React.FC<
       icon: <MagaluLogo />,
       iconClassName:
         "border-[#1a8ceb]/40 bg-[#1a8ceb]",
+      dotClassName: "bg-[#1a8ceb]",
       state: calculoMagalu,
       preco: precoMagalu,
       refs: calcMagaluRefs,
@@ -544,6 +668,7 @@ export const PriceCalculationSection: React.FC<
       icon: <Handshake className="h-5 w-5 text-white" />,
       iconClassName:
         "border-yellow-500/30 bg-yellow-500/80",
+      dotClassName: "bg-yellow-500",
       state: calculoMLClassico,
       preco: precoMLClassico,
       refs: calcMLClassicoRefs,
@@ -555,6 +680,7 @@ export const PriceCalculationSection: React.FC<
       icon: <Handshake className="h-5 w-5 text-white" />,
       iconClassName:
         "border-yellow-500/30 bg-yellow-500/80",
+      dotClassName: "bg-yellow-500",
       state: calculoMLPremium,
       preco: precoMLPremium,
       refs: calcMLPremiumRefs,
@@ -813,11 +939,12 @@ export const PriceCalculationSection: React.FC<
     <div className="flex min-w-0 flex-col gap-4">
       <section
         data-layout-dropdown
-        className="relative rounded-2xl border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]"
+        data-empresa-dropdown
+        className="relative rounded border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]"
       >
-        <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="relative mb-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#1a8ceb] text-xs font-bold text-white">
+            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#1a8ceb] text-xs font-bold text-white">
               3.
             </span>
 
@@ -826,15 +953,143 @@ export const PriceCalculationSection: React.FC<
             </h2>
           </div>
 
-          <ClearAndDownloadActions
-            handleDownload={handleDownload}
-            handleClearAll={handleClearAll}
-            isClearing={isClearing}
-            clicks={clicks}
-            onToggleLayout={() =>
-              setIsLayoutOpen((current) => !current)
-            }
-          />
+          {/* Badge centralizado da empresa selecionada */}
+          <div
+            className={[
+              "pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border bg-white/[0.03] px-3 py-1 sm:flex",
+              empresa === "sobaquetas"
+                ? "border-orange-400/20"
+                : "border-[#1a8ceb]/20",
+            ].join(" ")}
+          >
+            <span
+              className={[
+                "h-1.5 w-1.5 rounded-full",
+                empresa === "sobaquetas" ? "bg-orange-400" : "bg-[#1a8ceb]",
+              ].join(" ")}
+            />
+
+            <span
+              className={[
+                "text-[11px] font-semibold uppercase tracking-[0.14em]",
+                empresa === "sobaquetas" ? "text-orange-400" : "text-[#1a8ceb]",
+              ].join(" ")}
+            >
+              {empresa === "pikot" ? "Pikot Shop" : "Sóbaquetas"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            {/* Ícone: seletor de empresa (loja) */}
+            <div className="relative mr-1" data-empresa-dropdown>
+              <button
+                type="button"
+                onClick={() =>
+                  setIsEmpresaOpen((current) => !current)
+                }
+                className={[
+                  "flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/10",
+                  empresaColorClass,
+                ].join(" ")}
+                title={
+                  empresa === "pikot"
+                    ? "Pikot Shop"
+                    : "Sóbaquetas"
+                }
+                aria-label="Selecionar loja / regras de taxas"
+              >
+                <Store className="h-4 w-4" />
+              </button>
+
+              <AnimatePresence>
+                {isEmpresaOpen && (
+                  <motion.div
+                    initial={{
+                      opacity: 0,
+                      y: 6,
+                      scale: 0.98,
+                    }}
+                    animate={{
+                      opacity: 1,
+                      y: 0,
+                      scale: 1,
+                    }}
+                    exit={{
+                      opacity: 0,
+                      y: 6,
+                      scale: 0.98,
+                    }}
+                    transition={{
+                      duration: 0.14,
+                    }}
+                    className="absolute right-0 top-10 z-50 w-52 rounded border border-white/10 bg-[#1c1c1c] p-1 shadow-xl"
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSelectEmpresa("pikot")
+                      }
+                      className={[
+                        "relative flex w-full cursor-pointer items-center justify-between rounded px-3 py-2 text-xs transition hover:bg-white/[0.06]",
+                        empresa === "pikot"
+                          ? "text-[#1a8ceb]"
+                          : "text-white/60",
+                      ].join(" ")}
+                    >
+                      <span className="flex items-center gap-2">
+                        {empresa === "pikot" && (
+                          <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-[#1a8ceb]" />
+                        )}
+                        Pikot Shop
+                      </span>
+
+                      {empresa === "pikot" && (
+                        <Check className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSelectEmpresa("sobaquetas")
+                      }
+                      className={[
+                        "relative flex w-full cursor-pointer items-center justify-between rounded px-3 py-2 text-xs transition hover:bg-white/[0.06]",
+                        empresa === "sobaquetas"
+                          ? "text-orange-400"
+                          : "text-white/60",
+                      ].join(" ")}
+                    >
+                      <span className="flex items-center gap-2">
+                        {empresa === "sobaquetas" && (
+                          <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-orange-400" />
+                        )}
+                        Sóbaquetas
+                      </span>
+
+                      {empresa === "sobaquetas" && (
+                        <Check className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+
+                    <div className="mt-1 border-t border-white/10 px-3 py-2 text-[10px] leading-snug text-white/40">
+                      Os impostos e comissões variam de acordo com a loja selecionada.
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <ClearAndDownloadActions
+              handleDownload={handleDownload}
+              handleClearAll={handleClearAll}
+              isClearing={isClearing}
+              clicks={clicks}
+              onToggleLayout={() =>
+                setIsLayoutOpen((current) => !current)
+              }
+            />
+          </div>
         </div>
 
         <AnimatePresence>
@@ -858,9 +1113,9 @@ export const PriceCalculationSection: React.FC<
               transition={{
                 duration: 0.14,
               }}
-              className="absolute right-4 top-14 z-50 w-full max-w-[280px] rounded-xl border border-white/10 bg-black/80 p-2 shadow-xl backdrop-blur-xl"
+              className="absolute right-4 top-14 z-50 w-full max-w-[280px] rounded border border-white/10 bg-[#1c1c1c] p-1.5 shadow-xl"
             >
-              <div className="mb-2 flex items-center justify-between">
+              <div className="mb-2 flex items-center justify-between px-0.5">
                 <div className="text-xs font-semibold text-white/80">
                   Ajustar layout
                 </div>
@@ -868,7 +1123,7 @@ export const PriceCalculationSection: React.FC<
                 <button
                   type="button"
                   onClick={() => setIsLayoutOpen(false)}
-                  className="cursor-pointer rounded-md p-1 transition hover:bg-white/10"
+                  className="cursor-pointer rounded p-1 transition hover:bg-white/10"
                   title="Fechar ajuste de layout"
                 >
                   <X className="h-4 w-4 text-white/70" />
@@ -887,14 +1142,18 @@ export const PriceCalculationSection: React.FC<
                         toggleBlock(block.key)
                       }
                       className={[
-                        "flex h-10 cursor-pointer items-center justify-between rounded-lg border border-white/10 px-2 transition",
+                        "flex h-10 cursor-pointer items-center justify-between rounded border border-white/10 px-2 transition",
                         checked
-                          ? "bg-white/10"
-                          : "bg-white/5",
-                        "hover:bg-white/10",
+                          ? "bg-white/[0.06]"
+                          : "bg-white/[0.02]",
+                        "hover:bg-white/[0.09]",
                       ].join(" ")}
                     >
                       <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${block.dotClassName}`}
+                        />
+
                         <span className="truncate text-xs text-white/85">
                           {block.nome}
                         </span>
@@ -906,7 +1165,7 @@ export const PriceCalculationSection: React.FC<
 
                       <div
                         className={[
-                          "flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/10",
+                          "flex h-6 w-6 shrink-0 items-center justify-center rounded border border-white/10",
                           checked
                             ? "bg-white/10"
                             : "bg-transparent",
@@ -926,19 +1185,19 @@ export const PriceCalculationSection: React.FC<
                 onClick={() =>
                   setVisible(defaultVisible)
                 }
-                className="mt-2 h-9 w-full cursor-pointer rounded-lg border border-white/10 bg-white/5 text-xs text-white/80 transition hover:bg-white/10"
+                className="mt-2 h-9 w-full cursor-pointer rounded border border-white/10 bg-white/[0.02] text-xs text-white/60 transition hover:bg-white/[0.08] hover:text-white/80"
               >
                 Mostrar todos
               </button>
 
-              <div className="mt-2 text-[10px] text-white/40">
+              <div className="mt-2 px-0.5 text-[10px] text-white/40">
                 Suas escolhas ficam salvas automaticamente.
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        <div className="overflow-hidden rounded-xl border border-white/10">
+        <div className="overflow-hidden rounded border border-white/10">
           <div className="hidden grid-cols-[220px_repeat(7,minmax(92px,1fr))_170px] border-b border-white/10 bg-[#181818] lg:grid">
             <div className="px-4 py-4 text-sm font-semibold text-white">
               Canal
@@ -994,7 +1253,7 @@ export const PriceCalculationSection: React.FC<
                   <button
                     type="button"
                     onClick={() => hideBlock(row.key)}
-                    className="flex h-7 w-7 cursor-pointer shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-white/40 opacity-0 transition hover:bg-white/[0.08] hover:text-white group-hover/row:opacity-100"
+                    className="flex h-7 w-7 cursor-pointer shrink-0 items-center justify-center rounded border border-white/10 bg-white/[0.03] text-white/40 opacity-0 transition hover:bg-white/[0.08] hover:text-white group-hover/row:opacity-100"
                     title={`Ocultar ${row.title}`}
                   >
                     <X className="h-3.5 w-3.5" />
@@ -1060,7 +1319,7 @@ export const PriceCalculationSection: React.FC<
                       onClick={() =>
                         handleCopyPrice(row)
                       }
-                      className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-white/10 bg-white/[0.03] text-white/50 opacity-0 transition hover:bg-white/[0.08] hover:text-white group-hover/price:opacity-100"
+                      className="flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-white/10 bg-white/[0.03] text-white/50 opacity-0 transition hover:bg-white/[0.08] hover:text-white group-hover/price:opacity-100"
                       title="Copiar preço"
                     >
                       {copiedKey === row.key ? (
@@ -1095,7 +1354,7 @@ export const PriceCalculationSection: React.FC<
               transition={{
                 duration: 0.18,
               }}
-              className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#181818] px-3 py-2"
+              className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded border border-white/10 bg-[#181818] px-3 py-2"
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[11px] text-white/50">
@@ -1109,7 +1368,7 @@ export const PriceCalculationSection: React.FC<
                     onClick={() =>
                       restore(block.key)
                     }
-                    className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 text-xs text-white/70 transition hover:bg-white/[0.08] hover:text-white"
+                    className="inline-flex h-8 cursor-pointer items-center gap-2 rounded border border-white/10 bg-white/[0.03] px-3 text-xs text-white/70 transition hover:bg-white/[0.08] hover:text-white"
                     title={`Restaurar ${block.nome}`}
                   >
                     <ArrowUpCircle className="h-4 w-4" />
@@ -1124,7 +1383,7 @@ export const PriceCalculationSection: React.FC<
                 onClick={() =>
                   setVisible(defaultVisible)
                 }
-                className="h-8 cursor-pointer rounded-lg border border-white/10 px-3 text-xs text-white/60 transition hover:bg-white/[0.05] hover:text-white"
+                className="h-8 cursor-pointer rounded border border-white/10 px-3 text-xs text-white/60 transition hover:bg-white/[0.05] hover:text-white"
               >
                 Restaurar todos
               </button>

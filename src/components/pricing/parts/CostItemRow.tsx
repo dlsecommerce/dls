@@ -54,7 +54,7 @@ type CostItemRowProps = {
 };
 
 const codeInputClass = `
-  !h-10 !rounded-lg !border !border-white/10 !bg-[#070707] !px-3
+  !h-10 !rounded !border !border-white/10 !bg-[#070707] !px-3
   !text-sm !font-semibold !text-white !shadow-none !outline-none
   placeholder:!text-white/30
   focus:!border-[#1a8ceb]/70 focus:!ring-1 focus:!ring-[#1a8ceb]/30
@@ -221,7 +221,7 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
           Quantidade
         </label>
 
-        <div className="flex h-10 items-center rounded-lg border border-white/10 bg-[#070707] px-3 focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+        <div className="flex h-10 items-center rounded border border-white/10 bg-[#070707] px-3 focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
           <Input
             ref={(el) => {
               if (!inputRefs.current[idx]) inputRefs.current[idx] = [];
@@ -252,7 +252,7 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
           Custo Unitário
         </label>
 
-        <div className="flex h-10 items-center rounded-lg border border-white/10 bg-[#070707] px-3 focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+        <div className="flex h-10 items-center rounded border border-white/10 bg-[#070707] px-3 focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
           {prefix && (
             <span className="mr-1.5 text-sm font-semibold text-white/80">
               {prefix}
@@ -309,7 +309,7 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
         size="sm"
         variant="ghost"
         className="
-          h-9 w-full cursor-pointer rounded-lg border border-red-500/20
+          h-9 w-full cursor-pointer rounded border border-red-500/20
           bg-red-500/10 p-0 text-red-400 transition-all
           hover:bg-red-500/20 hover:text-red-300
           active:scale-[0.96]

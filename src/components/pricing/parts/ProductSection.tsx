@@ -110,9 +110,9 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
   };
 
   return (
-    <section className="rounded-2xl border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
+    <section className="rounded border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
       <div className="mb-4 flex items-center gap-2.5">
-        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#1a8ceb] text-xs font-bold text-white">
+        <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#1a8ceb] text-xs font-bold text-white">
           1.
         </span>
 
@@ -125,7 +125,7 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
             Código / SKU
           </label>
 
-          <div className="flex overflow-hidden rounded-lg border border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+          <div className="flex overflow-hidden rounded border border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
             <Input
               value={codigo}
               onChange={(e) => handleCodigoChange(e.target.value)}
@@ -179,7 +179,7 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
             onKeyDown={handleProdutoSugestoesKeys}
             placeholder="Ex: TENNESSEE 5A MARFIM MADEIRA"
             className="
-              h-10 rounded-lg border-white/10 bg-[#070707] px-3
+              h-10 rounded border-white/10 bg-[#070707] px-3
               text-sm font-semibold text-white shadow-none outline-none
               placeholder:text-white/20
               focus:border-[#1a8ceb]/70 focus:ring-1 focus:ring-[#1a8ceb]/30
