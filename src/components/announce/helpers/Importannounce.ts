@@ -1,5 +1,3 @@
-// ImportAnnounce.ts
-
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import { createNotification } from "@/lib/createNotification";
@@ -187,7 +185,8 @@ type ImportAnnounceApiResultado = {
 async function callImportarAnnounceApi(
   registros: any[],
   accessToken: string,
-  modo: ModoImportacao
+  modo: ModoImportacao,
+  channels: string[]
 ): Promise<ImportAnnounceApiResultado> {
   const response = await fetch("/api/announce/import", {
     method: "POST",
@@ -195,7 +194,7 @@ async function callImportarAnnounceApi(
       "Content-Type": "application/json",
       Authorization: `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({ registros, modo }),
+    body: JSON.stringify({ registros, modo, channels }),
   });
 
   const responseBody = await response.json().catch(() => null);
@@ -219,14 +218,16 @@ async function callImportarAnnounceApi(
  * chunks — ganho real de tempo total, não apenas teórico.
  *
  * O progresso é reportado de forma cumulativa (cada worker soma sua
- * própria contagem processada ao total acumulado). O `modo` é
- * repassado em todos os lotes, garantindo que a regra de
- * inclusão/alteração seja aplicada de forma consistente no arquivo inteiro.
+ * própria contagem processada ao total acumulado). O `modo` e os
+ * `channels` são repassados em todos os lotes, garantindo que a regra
+ * de inclusão/alteração e os canais selecionados sejam aplicados de
+ * forma consistente no arquivo inteiro.
  */
 async function callImportarAnnounceApiEmLotes(
   registros: any[],
   accessToken: string,
   modo: ModoImportacao,
+  channels: string[],
   onProgress?: (progress: ImportProgress) => void
 ): Promise<ImportAnnounceApiResultado> {
   const acumulado: ImportAnnounceApiResultado = {
@@ -249,7 +250,7 @@ async function callImportarAnnounceApiEmLotes(
       const index = cursor++;
       const chunk = chunks[index];
 
-      const resultadoChunk = await callImportarAnnounceApi(chunk, accessToken, modo);
+      const resultadoChunk = await callImportarAnnounceApi(chunk, accessToken, modo, channels);
 
       acumulado.importados += resultadoChunk.importados;
       acumulado.errosCount += resultadoChunk.errosCount;
@@ -304,6 +305,14 @@ function buildTimestampedFileName(prefix: string): string {
 //    modo. "ID Bling" que não existir é REJEITADO. "id_bling" NUNCA é
 //    sobrescrito: é a chave de busca, não um campo editável.
 //
+// `channels`: canais de marketplace selecionados na UI (seleção
+// global, igual nos dois modos). No modo "inclusao", o servidor cria
+// o vínculo em `marketplace` apenas nesses canais (via trigger de
+// INSERT em `announce`, que lê essa seleção). No modo "alteracao",
+// além de sincronizar os campos dos vínculos já existentes (trigger
+// de UPDATE), o servidor GARANTE o vínculo nesses canais para os
+// anúncios que ainda não os possuíam.
+//
 // A composição/kit do anúncio NÃO vem da planilha: é resolvida
 // automaticamente pelo banco.
 // ---------------------------------------------------------------------
@@ -311,7 +320,8 @@ export async function importAnnounceFromXlsxOrCsv(
   input: File | any[],
   previewOnly = false,
   onProgress?: (progress: ImportProgress) => void,
-  modo: ModoImportacao = "inclusao"
+  modo: ModoImportacao = "inclusao",
+  channels: string[] = []
 ): Promise<ImportResult> {
   const startedAt = performance.now();
   const warnings: string[] = [];
@@ -444,7 +454,7 @@ export async function importAnnounceFromXlsxOrCsv(
 
   onProgress?.({ processed: 0, total: deduped.length, batchSize: CHUNK_SIZE });
 
-  const resultado = await callImportarAnnounceApiEmLotes(deduped, accessToken, modo, onProgress);
+  const resultado = await callImportarAnnounceApiEmLotes(deduped, accessToken, modo, channels, onProgress);
 
   if (resultado.errosCount > 0) {
     const shown = resultado.erros.slice(0, MAX_ERRORS_SHOWN);

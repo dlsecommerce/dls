@@ -13,6 +13,7 @@ import ConfirmImportModal, { RowError, ImportResult } from "@/components/announc
 import { Controls } from "@/components/announce/Controls";
 import ExportProgressToast from "@/components/announce/Exportprogresstoast";
 import ImportProgressToast from "@/components/announce/Importprogresstoast";
+import ExportComposicaoProgressToast from "@/components/announce/ExportComposicaoProgressToast";
 import ProductEditModal from "@/components/announce/Producteditmodal";
 import ValidateAds from "@/components/announce/ValidateAds";
 
@@ -32,6 +33,8 @@ import {
   AnnounceSortField,
   AnnounceSortDir,
 } from "@/components/announce/hooks/useannounce";
+
+import { useChannels } from "@/components/announce/hooks/useChannels";
 
 import {
   importAnnounceFromXlsxOrCsv,
@@ -154,6 +157,11 @@ export default function Announce() {
 
   const [allBrands, setAllBrands] = React.useState<string[]>([]);
   const [brandsLoading, setBrandsLoading] = React.useState(false);
+
+  // ✅ Canais de marketplace disponíveis (mesma fonte usada em
+  // ProductDetails, via ChannelSelector) — reaproveitados aqui para
+  // permitir vincular canais também na importação em massa.
+  const { channels: availableChannels, loading: loadingChannels } = useChannels();
 
   React.useEffect(() => {
     let active = true;
@@ -419,12 +427,18 @@ export default function Announce() {
   };
 
   const [exportingComposicao, setExportingComposicao] = React.useState(false);
+  const [exportComposicaoProgressOpen, setExportComposicaoProgressOpen] = React.useState(false);
+  const [exportComposicaoProgress, setExportComposicaoProgress] = React.useState(0);
 
   const handleExportComposicao = async () => {
     if (exportingComposicao) return;
     setExportingComposicao(true);
+    setExportComposicaoProgressOpen(true);
+    setExportComposicaoProgress(0);
 
     try {
+      setExportComposicaoProgress(30);
+
       const token = await getAccessToken();
 
       const res = await fetch("/api/composicao/export", {
@@ -433,6 +447,8 @@ export default function Announce() {
           Authorization: `Bearer ${token}`,
         },
       });
+
+      setExportComposicaoProgress(70);
 
       if (!res.ok) {
         throw new Error(await extractErrorMessage(res, "Falha ao exportar composições."));
@@ -447,11 +463,14 @@ export default function Announce() {
         "composicoes.xlsx";
 
       downloadBlob(blob, filename);
+      setExportComposicaoProgress(100);
     } catch (err: any) {
       console.error("Erro ao exportar composições:", err);
       toastCustom.error(err?.message ?? "Não foi possível exportar as composições.");
+      setExportComposicaoProgress(0);
     } finally {
       setExportingComposicao(false);
+      setTimeout(() => setExportComposicaoProgressOpen(false), 1500);
     }
   };
 
@@ -553,6 +572,10 @@ export default function Announce() {
   const [importResult, setImportResult] = React.useState<ImportResult | null>(
     null
   );
+  // ✅ Canais de marketplace selecionados na importação (inclusão e
+  // alteração). Reaproveita a mesma lista/estilo do ChannelSelector
+  // usado em ProductDetails.
+  const [importChannels, setImportChannels] = React.useState<string[]>([]);
 
   const runImportPreview = async (
     file: File,
@@ -621,7 +644,8 @@ export default function Announce() {
           setImportProgress(percent);
           setImportProgressCount(progress.processed);
         },
-        importMode
+        importMode,
+        importChannels
       );
 
       setImportProgress(100);
@@ -1017,6 +1041,9 @@ export default function Announce() {
         loading={importing}
         tipo={importMode}
         result={importResult}
+        availableChannels={availableChannels}
+        selectedChannels={importChannels}
+        onChannelsChange={setImportChannels}
       />
 
       <ExportProgressToast
@@ -1050,6 +1077,12 @@ export default function Announce() {
             : undefined
         }
         onClose={() => setComposicaoProgressOpen(false)}
+      />
+
+      <ExportComposicaoProgressToast
+        open={exportComposicaoProgressOpen}
+        percent={exportComposicaoProgress}
+        onClose={() => setExportComposicaoProgressOpen(false)}
       />
 
       <ValidateAds

@@ -17,9 +17,16 @@ import {
   X,
 } from "lucide-react";
 
+import { ChannelSelector } from "@/components/announce/edit/ChannelSelector";
+
 export type Tipo = "inclusao" | "alteracao";
 
 type PreviewRow = Record<string, unknown>;
+
+type Channel = {
+  id: string;
+  name: string;
+};
 
 /** Erro estruturado: associado a uma linha (e opcionalmente a uma coluna específica) */
 export type RowError = {
@@ -61,6 +68,12 @@ type Props = {
   duplicatesCount?: number;
   /** Resultado final retornado pela API após a importação ser concluída */
   result?: ImportResult | null;
+  /** Canais de marketplace disponíveis para vincular a importação (inclusão e alteração) */
+  availableChannels?: Channel[];
+  /** Canais selecionados atualmente */
+  selectedChannels?: string[];
+  /** Callback disparado ao alterar a seleção de canais */
+  onChannelsChange?: (channels: string[]) => void;
 };
 
 /** Cores e ícones */
@@ -393,6 +406,9 @@ export default function ConfirmImportModal({
   customText,
   duplicatesCount = 0,
   result = null,
+  availableChannels = [],
+  selectedChannels = [],
+  onChannelsChange,
 }: Props) {
   const hasErrors = errors.length > 0 || rowErrors.length > 0;
   const hasWarnings = warnings.length > 0 && !hasErrors;
@@ -427,6 +443,8 @@ export default function ConfirmImportModal({
   // Botão de confirmação: sempre VERDE, exceto quando há erros bloqueantes (VERMELHO/desabilitado)
   const ACCENT = hasErrors ? RED : GREEN;
   const ACCENT_HOVER = GREEN_HOVER;
+
+  const showChannelSelector = Boolean(onChannelsChange) && availableChannels.length > 0;
 
   useEffect(() => {
     if (open && !loading) {
@@ -568,6 +586,32 @@ export default function ConfirmImportModal({
               )}
             </div>
           </div>
+
+          {/* Seletor de canais de marketplace */}
+          {showChannelSelector && (
+            <>
+              <div className="my-5 h-px bg-neutral-900" />
+              <div>
+                <SectionHeader
+                  icon={<ClipboardList className="h-3.5 w-3.5" />}
+                  title="Canais de marketplace"
+                  description={
+                    isInclusao
+                      ? "Os anúncios incluídos serão vinculados a estes canais."
+                      : "Garante o vínculo destes canais para os anúncios alterados."
+                  }
+                />
+                <div className="border border-neutral-800 p-3">
+                  <ChannelSelector
+                    availableChannels={availableChannels}
+                    selectedChannels={selectedChannels}
+                    onChange={onChannelsChange!}
+                    disabled={loading}
+                  />
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Aviso de duplicatas (não bloqueante) */}
           {isInclusao && hasDuplicates && !hasErrors && (

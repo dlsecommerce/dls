@@ -19,6 +19,7 @@ export interface Announce {
 
   total_variacoes?: number;
   variacoes?: any[];
+  channels?: string[];
 
   [key: string]: any;
 }
@@ -191,6 +192,7 @@ const montarAnuncioFromRow = (row: any): Announce => {
 
     total_variacoes: 0,
     variacoes: [],
+    channels: [],
   };
 };
 
@@ -264,6 +266,25 @@ async function fetchComposicao(announceId: string): Promise<ComposicaoItem[]> {
 }
 
 // ===========================================================
+// Buscar canais (marketplaces) ativos vinculados ao anúncio
+// ===========================================================
+async function fetchCanaisDoAnuncio(announceId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .schema("newsystem")
+    .from("marketplace")
+    .select("channel")
+    .eq("announce_id", announceId)
+    .is("deleted_at", null);
+
+  if (error) {
+    console.error("Erro ao buscar canais do anúncio:", error);
+    return [];
+  }
+
+  return (Array.isArray(data) ? data : []).map((r: any) => r.channel).filter(Boolean);
+}
+
+// ===========================================================
 // Cache em memória (stale-while-revalidate) — dura a sessão da aba
 // Inclui deduplicação de requests concorrentes por id
 // ===========================================================
@@ -271,6 +292,7 @@ type CacheEntry = {
   produto: Announce;
   variacoes: Announce[];
   composicao: ComposicaoItem[];
+  channels: string[];
   timestamp: number;
 };
 
@@ -279,8 +301,8 @@ const inflightRequests = new Map<string, Promise<CacheEntry | null>>();
 const CACHE_TTL_MS = 60_000; // 60s
 
 /**
- * Busca completa (announce + variações + composição) com dedupe de
- * requisições concorrentes para o mesmo id.
+ * Busca completa (announce + variações + composição + canais) com
+ * dedupe de requisições concorrentes para o mesmo id.
  */
 async function fetchAnuncioCompleto(
   idLimpo: string,
@@ -313,15 +335,17 @@ async function fetchAnuncioCompleto(
 
     const produtoBase = montarAnuncioFromRow(row);
 
-    const [listaVariacoes, compMapeada] = await Promise.all([
+    const [listaVariacoes, compMapeada, canais] = await Promise.all([
       fetchVariacoesDoPai(row.store, row.reference, signal),
       fetchComposicao(idLimpo),
+      fetchCanaisDoAnuncio(idLimpo),
     ]);
 
     const produtoFinal: Announce = {
       ...produtoBase,
       total_variacoes: listaVariacoes.length,
       variacoes: listaVariacoes,
+      channels: canais,
       tipo_anuncio: listaVariacoes.length > 0 ? "variacoes" : produtoBase?.tipo_anuncio,
     };
 
@@ -329,6 +353,7 @@ async function fetchAnuncioCompleto(
       produto: produtoFinal,
       variacoes: listaVariacoes,
       composicao: compMapeada,
+      channels: canais,
       timestamp: Date.now(),
     };
 
@@ -384,6 +409,9 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
   const [variacoes, setVariacoes] = useState<Announce[]>([]);
   const [loadingVariacoes, setLoadingVariacoes] = useState(false);
 
+  // ✅ Canais (marketplaces) selecionados para este anúncio
+  const [channels, setChannels] = useState<string[]>([]);
+
   const storeInicial = useMemo(() => toStoreName(lojaParam), [lojaParam]);
 
   const loadingKeyRef = useRef<string>("");
@@ -394,6 +422,7 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
   const preSaveSnapshotRef = useRef<{
     produto: Announce | null;
     composicao: ComposicaoItem[];
+    channels: string[];
   } | null>(null);
 
   const custoTotal = useMemo(() => calcCustoTotal(composicao), [composicao]);
@@ -449,7 +478,7 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
   );
 
   // ---------------------------------------------------------
-  // Carregar anúncio + composição + variações (cache SWR + dedupe)
+  // Carregar anúncio + composição + variações + canais (cache SWR + dedupe)
   // ---------------------------------------------------------
   const carregarAnuncio = useCallback(async () => {
     if (!id) return;
@@ -470,6 +499,7 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
       setProduto(cached.produto);
       setVariacoes(cached.variacoes);
       setComposicao(cached.composicao);
+      setChannels(cached.channels);
       setLoading(false);
 
       if (isFresh) {
@@ -491,6 +521,7 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
           setProduto(null);
           setVariacoes([]);
           setComposicao([]);
+          setChannels([]);
         }
         return;
       }
@@ -498,6 +529,7 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
       setProduto(entry.produto);
       setVariacoes(entry.variacoes);
       setComposicao(entry.composicao);
+      setChannels(entry.channels);
     } finally {
       if (mountedRef.current) setLoading(false);
       loadingKeyRef.current = "";
@@ -511,14 +543,21 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
   // ---------------------------------------------------------
   // ✅ Salvar anúncio (pai + variações) via RPC combinada
   // upsert_announce_with_variations — 1 única chamada de rede.
-  // Composição continua sendo uma RPC separada (regra própria).
+  // Composição e canais continuam sendo RPCs separadas (regras próprias).
   //
   // ✅ Envia p_id quando o produto já tiver um id (ex.: rascunho
   // criado via create_draft_announce), garantindo UPDATE direto
   // por id no banco em vez de gerar um registro novo por engano.
+  //
+  // ✅ channelsAtual: lista de canais (marketplaces) selecionados na
+  // UI. Se omitido, usa o `channels` atual do estado do hook.
   // ---------------------------------------------------------
   const salvarAnuncio = useCallback(
-    async (produtoAtual: Announce, composicaoAtual: ComposicaoItem[]) => {
+    async (
+      produtoAtual: Announce,
+      composicaoAtual: ComposicaoItem[],
+      channelsAtual?: string[]
+    ) => {
       const storeVal = toStoreName(produtoAtual?.store);
 
       if (!storeVal) {
@@ -536,6 +575,12 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
         return { success: false, error: "nome do produto ausente" };
       }
 
+      const canaisFinal = Array.isArray(channelsAtual) ? channelsAtual : channels;
+
+      if (!canaisFinal || canaisFinal.length === 0) {
+        return { success: false, error: "selecione ao menos um canal" };
+      }
+
       const idAtual =
         produtoAtual?.id && String(produtoAtual.id).trim() !== ""
           ? String(produtoAtual.id).trim()
@@ -544,9 +589,10 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
       // -------------------------------------------------
       // OPTIMISTIC UI — assume sucesso e atualiza a tela já
       // -------------------------------------------------
-      preSaveSnapshotRef.current = { produto, composicao };
+      preSaveSnapshotRef.current = { produto, composicao, channels };
       setProduto({ ...produtoAtual, active: produtoAtual?.active ?? produtoAtual?.ativo ?? true });
       setComposicao(composicaoAtual);
+      setChannels(canaisFinal);
       setSaving(true);
 
       try {
@@ -589,6 +635,7 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
           if (preSaveSnapshotRef.current) {
             setProduto(preSaveSnapshotRef.current.produto);
             setComposicao(preSaveSnapshotRef.current.composicao);
+            setChannels(preSaveSnapshotRef.current.channels);
           }
           return { success: false, error: error.message };
         }
@@ -616,8 +663,29 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
             if (preSaveSnapshotRef.current) {
               setProduto(preSaveSnapshotRef.current.produto);
               setComposicao(preSaveSnapshotRef.current.composicao);
+              setChannels(preSaveSnapshotRef.current.channels);
             }
             return { success: false, error: compError.message };
+          }
+        }
+
+        // ✅ Canais (marketplaces) — reconcilia via RPC própria
+        if (announceId) {
+          const { error: channelsError } = await supabase
+            .schema("newsystem")
+            .rpc("set_announce_channels", {
+              p_announce_id: announceId,
+              p_channels: canaisFinal,
+            });
+
+          if (channelsError) {
+            console.error("Erro ao salvar canais:", channelsError);
+            if (preSaveSnapshotRef.current) {
+              setProduto(preSaveSnapshotRef.current.produto);
+              setComposicao(preSaveSnapshotRef.current.composicao);
+              setChannels(preSaveSnapshotRef.current.channels);
+            }
+            return { success: false, error: channelsError.message };
           }
         }
 
@@ -629,13 +697,14 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
         if (preSaveSnapshotRef.current) {
           setProduto(preSaveSnapshotRef.current.produto);
           setComposicao(preSaveSnapshotRef.current.composicao);
+          setChannels(preSaveSnapshotRef.current.channels);
         }
         return { success: false, error: e?.message ?? "erro inesperado" };
       } finally {
         setSaving(false);
       }
     },
-    [produto, composicao]
+    [produto, composicao, channels]
   );
 
   // ---------------------------------------------------------
@@ -730,6 +799,9 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
     composicao,
     setComposicao,
     custoTotal,
+
+    channels,
+    setChannels,
 
     loading,
     saving,

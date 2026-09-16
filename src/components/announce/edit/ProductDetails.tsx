@@ -10,8 +10,10 @@ import { LoadingBar } from "@/components/ui/loading-bar";
 import CompositionModal from "@/components/announce/edit/Compositionmodal";
 import ActionsMenu from "@/components/announce/edit/Actionsmenu";
 import ProductInfoSection from "@/components/announce/edit/ProductInfoSection";
+import { ChannelSelector } from "@/components/announce/edit/ChannelSelector";
 
 import { useKeyboardShortcuts } from "@/components/announce/hooks/useKeyboardShortcuts";
+import { useChannels } from "@/components/announce/hooks/useChannels";
 import {
   useAnnounceEdit,
   toStoreName,
@@ -63,6 +65,8 @@ export default function ProductDetails({
     composicao,
     setComposicao,
     custoTotal,
+    channels,
+    setChannels,
     loading,
     saving,
     carregarAnuncio,
@@ -71,6 +75,14 @@ export default function ProductDetails({
     carregarVariacoes,
     loadingVariacoes,
   } = useAnnounceEdit(id, loja);
+
+  // ✅ Lista de canais (marketplaces) disponíveis para seleção
+  const { channels: availableChannels, loading: loadingChannels } = useChannels();
+
+  // -----------------------------------------------------------------
+  // Erro de validação (usado para bloquear salvar sem canal selecionado)
+  // -----------------------------------------------------------------
+  const [channelsError, setChannelsError] = useState<string | null>(null);
 
   // ---------------------------------------------------------
   // Inicializa produto novo (quando não está editando).
@@ -209,15 +221,24 @@ export default function ProductDetails({
   );
 
   // -----------------------------------------------------------------
-  // Salvar (pai + variações + composição) — 1 única RPC combinada
-  // no hook (upsert_announce_with_variations), sem loop de rede aqui.
+  // Salvar (pai + variações + composição + canais) — 1 única RPC
+  // combinada no hook (upsert_announce_with_variations), sem loop
+  // de rede aqui. Canais são reconciliados via RPC própria dentro
+  // de `salvarAnuncio`.
   // ✅ Ao concluir com sucesso, fecha o modal via onCloseModal.
   // -----------------------------------------------------------------
   const handleSaveAtual = useCallback(async () => {
     if (!nomeValido) return;
     if (!produto) return;
 
-    const resultado = await salvarAnuncio(produto, composicao);
+    if (!channels || channels.length === 0) {
+      setChannelsError("Selecione ao menos um canal.");
+      toast.error("Selecione ao menos um canal para o anúncio.");
+      return;
+    }
+    setChannelsError(null);
+
+    const resultado = await salvarAnuncio(produto, composicao, channels);
 
     if (!resultado?.success) {
       console.error("Falha ao salvar anúncio:", resultado?.error);
@@ -239,6 +260,7 @@ export default function ProductDetails({
     nomeValido,
     produto,
     composicao,
+    channels,
     salvarAnuncio,
     setProduto,
     onSaved,
@@ -350,6 +372,27 @@ export default function ProductDetails({
                 draftKeyMeta={`produto-meta-draft-${id ?? "novo"}-${lojaCodigo}`}
                 loading={loading}
               />
+
+              {/* ✅ Seleção de canais (marketplaces) para publicação do anúncio */}
+              <div className="mt-5 border border-white/10 bg-white/[0.02] p-4">
+                <h3 className="mb-3 text-sm font-semibold text-white/80">
+                  Canais de venda
+                </h3>
+
+                <ChannelSelector
+                  availableChannels={availableChannels}
+                  selectedChannels={channels}
+                  onChange={(next) => {
+                    setChannels(next);
+                    if (next.length > 0) setChannelsError(null);
+                  }}
+                  disabled={loading || loadingChannels}
+                />
+
+                {channelsError && (
+                  <p className="mt-2 text-xs text-red-400">{channelsError}</p>
+                )}
+              </div>
             </main>
           </div>
         </div>
