@@ -17,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 
-import { ChannelSelector } from "@/components/announce/edit/ChannelSelector";
+import { ChannelSelector } from "@/components/announce/edit/Channelselector";
 
 export type Tipo = "inclusao" | "alteracao";
 
