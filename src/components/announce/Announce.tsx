@@ -45,6 +45,31 @@ import {
 
 import { playImportSuccessSound } from "@/utils/sound";
 import { toastCustom } from "@/utils/toastCustom";
+import { supabase } from "@/integrations/supabase/client";
+
+/* ─────────────────────────────────────────────
+ * HELPERS — Autenticação para chamadas fetch manuais
+ * ───────────────────────────────────────────── */
+
+async function getAccessToken(): Promise<string> {
+  const { data, error } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+
+  if (error || !token) {
+    throw new Error("Sua sessão expirou. Entre novamente no sistema.");
+  }
+
+  return token;
+}
+
+async function extractErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json();
+    return body?.error || fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 export default function Announce() {
   const router = useRouter();
@@ -312,7 +337,10 @@ export default function Announce() {
   };
 
   // ────────────────────────────────────────────────────────────
-  // ✅ NOVOS HANDLERS — Composição (Gerar: Modelo / Exportar / Importar)
+  // ✅ HANDLERS — Composição (Gerar: Modelo / Exportar / Importar)
+  // Todas as chamadas usam fetch manual com Authorization: Bearer,
+  // pois os endpoints /api/composicao/* exigem o token do Supabase
+  // explicitamente no header (não usam cookies de sessão).
   // ────────────────────────────────────────────────────────────
 
   const downloadBlob = (blob: Blob, filename: string) => {
@@ -324,10 +352,28 @@ export default function Announce() {
     URL.revokeObjectURL(url);
   };
 
+  const [exportingModeloComposicao, setExportingModeloComposicao] = React.useState(false);
+
   const handleExportModeloComposicao = async () => {
+    if (exportingModeloComposicao) return;
+    setExportingModeloComposicao(true);
+
     try {
-      const res = await fetch("/api/composicao/export-modelo");
-      if (!res.ok) throw new Error("Falha ao gerar planilha modelo de composição.");
+      const token = await getAccessToken();
+
+      const res = await fetch("/api/composicao/export-modelo", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        throw new Error(
+          await extractErrorMessage(res, "Falha ao gerar planilha modelo de composição.")
+        );
+      }
+
       const blob = await res.blob();
       downloadBlob(blob, "modelo-composicao.xlsx");
     } catch (err: any) {
@@ -335,20 +381,38 @@ export default function Announce() {
       toastCustom.error(
         err?.message ?? "Não foi possível gerar a planilha modelo de composição."
       );
+    } finally {
+      setExportingModeloComposicao(false);
     }
   };
 
+  const [exportingComposicao, setExportingComposicao] = React.useState(false);
+
   const handleExportComposicao = async () => {
+    if (exportingComposicao) return;
+    setExportingComposicao(true);
+
     try {
-      const res = await fetch("/api/composicao/export");
-      if (!res.ok) throw new Error("Falha ao exportar composições.");
+      const token = await getAccessToken();
+
+      const res = await fetch("/api/composicao/export", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        throw new Error(await extractErrorMessage(res, "Falha ao exportar composições."));
+      }
+
       const blob = await res.blob();
       downloadBlob(blob, "composicoes.xlsx");
     } catch (err: any) {
       console.error("Erro ao exportar composições:", err);
-      toastCustom.error(
-        err?.message ?? "Não foi possível exportar as composições."
-      );
+      toastCustom.error(err?.message ?? "Não foi possível exportar as composições.");
+    } finally {
+      setExportingComposicao(false);
     }
   };
 
@@ -364,6 +428,8 @@ export default function Announce() {
     setComposicaoProgressCount(0);
 
     try {
+      const token = await getAccessToken();
+
       const formData = new FormData();
       formData.append("file", file);
 
@@ -373,6 +439,9 @@ export default function Announce() {
 
       const res = await fetch("/api/composicao/import", {
         method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
         body: formData,
       });
 
@@ -387,7 +456,7 @@ export default function Announce() {
         toastCustom.error(
           totalErros > 0
             ? `${totalErros} linha(s) com erro na importação de composição.`
-            : "Não foi possível importar a composição."
+            : result?.error ?? "Não foi possível importar a composição."
         );
 
         if (result?.errors?.length) {
