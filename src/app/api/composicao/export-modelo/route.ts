@@ -54,15 +54,12 @@ function buildFilename(): string {
 /**
  * Monta o header Content-Disposition de forma segura para nomes
  * de arquivo com acentuação (ex: "COMPOSIÇÃO"), seguindo RFC 5987.
- *
- * - filename="..." → fallback ASCII (navegadores antigos)
- * - filename*=UTF-8''... → nome real com acentos (navegadores atuais)
  */
 function buildContentDisposition(filename: string): string {
   const asciiFallback = filename
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // remove acentos
-    .replace(/[^\x20-\x7E]/g, "_"); // troca qualquer não-ASCII por "_"
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, "_");
 
   const encoded = encodeURIComponent(filename);
 
@@ -126,9 +123,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     /*
      * 3. Executa diretamente no PostgreSQL, com o contexto do usuário
      * autenticado para respeitar RLS (auth.uid()).
-     *
-     * left join em composition/costs preserva anúncios sem
-     * composição cadastrada (linha em branco para preencher).
      */
     const rows = await sql.begin(async (transaction) => {
       const jwtClaims = JSON.stringify({
@@ -187,11 +181,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
 
     /*
-     * 4. Monta a planilha com ExcelJS (permite estilizar o cabeçalho).
-     * Quando não há composição (code é null), a linha fica em
-     * branco nas colunas de item, para o usuário preencher.
+     * 4. Monta a planilha com ExcelJS.
+     *
+     * Otimização de performance: monta o array de linhas primeiro
+     * e usa addRows() em lote, em vez de addRow() individual.
      */
     const workbook = new ExcelJS.Workbook();
+    workbook.calcProperties.fullCalcOnLoad = false;
+
     const worksheet = workbook.addWorksheet("Modelo Composição");
 
     worksheet.columns = [
@@ -203,19 +200,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       { header: "Quantidade", key: "quantidade", width: 12 },
     ];
 
-    rows.forEach((r) => {
-      worksheet.addRow({
-        id_bling: r.id_bling ?? "",
-        loja: r.store ?? "",
-        referencia: r.reference ?? "",
-        produto: r.product ?? "",
-        codigo_item: r.code ?? "",
-        quantidade: r.amount ?? "",
-      });
-    });
+    const rowsData = rows.map((r) => ({
+      id_bling: r.id_bling ?? "",
+      loja: r.store ?? "",
+      referencia: r.reference ?? "",
+      produto: r.product ?? "",
+      codigo_item: r.code ?? "",
+      quantidade: r.amount ?? "",
+    }));
+
+    worksheet.addRows(rowsData);
 
     /*
-     * 5. Estiliza o cabeçalho: fundo azul #1a8ceb, fonte branca em negrito.
+     * 5. Estiliza apenas o cabeçalho.
      */
     const headerRow = worksheet.getRow(1);
 

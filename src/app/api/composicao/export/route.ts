@@ -14,7 +14,6 @@ type ComposicaoRow = {
   reference: string | null;
   product: string | null;
   code: string | null;
-  item_product: string | null;
   amount: number | null;
 };
 
@@ -55,15 +54,12 @@ function buildFilename(): string {
 /**
  * Monta o header Content-Disposition de forma segura para nomes
  * de arquivo com acentuação (ex: "COMPOSIÇÃO"), seguindo RFC 5987.
- *
- * - filename="..." → fallback ASCII (navegadores antigos)
- * - filename*=UTF-8''... → nome real com acentos (navegadores atuais)
  */
 function buildContentDisposition(filename: string): string {
   const asciiFallback = filename
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // remove acentos
-    .replace(/[^\x20-\x7E]/g, "_"); // troca qualquer não-ASCII por "_"
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, "_");
 
   const encoded = encodeURIComponent(filename);
 
@@ -170,7 +166,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           a.reference,
           a.product,
           c.code,
-          c.product as item_product,
           comp.amount
         from newsystem.composition comp
         left join newsystem.announce a
@@ -185,9 +180,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
 
     /*
-     * 4. Monta a planilha com ExcelJS (permite estilizar o cabeçalho).
+     * 4. Monta a planilha com ExcelJS.
+     *
+     * Otimização de performance: monta o array de linhas primeiro
+     * e usa addRows() em lote, em vez de addRow() individual dentro
+     * de um forEach. addRows() é significativamente mais rápido
+     * (menos overhead interno por chamada) especialmente com
+     * milhares de linhas.
      */
     const workbook = new ExcelJS.Workbook();
+    workbook.calcProperties.fullCalcOnLoad = false;
+
     const worksheet = workbook.addWorksheet("Composições");
 
     worksheet.columns = [
@@ -196,24 +199,23 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       { header: "Referência", key: "referencia", width: 22 },
       { header: "Produto", key: "produto", width: 35 },
       { header: "Código do Item", key: "codigo_item", width: 16 },
-      { header: "Produto do Item", key: "produto_item", width: 35 },
       { header: "Quantidade", key: "quantidade", width: 12 },
     ];
 
-    composicoes.forEach((c) => {
-      worksheet.addRow({
-        id_bling: c.id_bling ?? "",
-        loja: c.store ?? "",
-        referencia: c.reference ?? "",
-        produto: c.product ?? "",
-        codigo_item: c.code ?? "",
-        produto_item: c.item_product ?? "",
-        quantidade: c.amount ?? 0,
-      });
-    });
+    const rowsData = composicoes.map((c) => ({
+      id_bling: c.id_bling ?? "",
+      loja: c.store ?? "",
+      referencia: c.reference ?? "",
+      produto: c.product ?? "",
+      codigo_item: c.code ?? "",
+      quantidade: c.amount ?? 0,
+    }));
+
+    worksheet.addRows(rowsData);
 
     /*
-     * 5. Estiliza o cabeçalho: fundo azul #1a8ceb, fonte branca em negrito.
+     * 5. Estiliza apenas o cabeçalho (única linha estilizada,
+     * custo de estilização mínimo).
      */
     const headerRow = worksheet.getRow(1);
 

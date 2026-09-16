@@ -96,6 +96,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     /*
      * 3. Lê o arquivo enviado.
+     *
+     * Otimização: dense:true reduz uso de memória em planilhas
+     * grandes, e raw:true evita que a biblioteca formate/parseie
+     * valores antes da hora (ex: datas), que não usamos aqui.
      */
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
@@ -108,9 +112,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const workbook = XLSX.read(buffer, {
+      type: "buffer",
+      dense: true,
+      cellDates: false,
+      cellText: false,
+    });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const raw = XLSX.utils.sheet_to_json<ImportRow>(sheet);
+    const raw = XLSX.utils.sheet_to_json<ImportRow>(sheet, { raw: true });
 
     if (raw.length === 0) {
       return NextResponse.json(
@@ -142,7 +151,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const skipped: number[] = [];
     const registros: Record<string, unknown>[] = [];
 
-    raw.forEach((row, index) => {
+    for (let index = 0; index < raw.length; index++) {
+      const row = raw[index];
       const excelLine = index + 2; // +1 header, +1 índice base 1
 
       const idBling = String(row["ID Bling"] ?? "").trim();
@@ -153,7 +163,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
       if (!idBling || !code || !amountRaw) {
         skipped.push(excelLine);
-        return;
+        continue;
       }
 
       registros.push({
@@ -164,7 +174,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         code,
         amount: amountRaw,
       });
-    });
+    }
 
     if (registros.length === 0) {
       return NextResponse.json({
@@ -178,8 +188,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const sql = getPostgresClient();
 
     /*
-     * 5. Executa a função SQL dentro de uma transação, com o
-     * contexto do usuário autenticado para respeitar RLS.
+     * 5. Executa a função SQL (agora set-based, sem loop linha a
+     * linha) dentro de uma transação, com o contexto do usuário
+     * autenticado para respeitar RLS.
      */
     const resultados = await sql.begin(async (transaction) => {
       const jwtClaims = JSON.stringify({

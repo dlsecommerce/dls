@@ -71,6 +71,31 @@ async function extractErrorMessage(response: Response, fallback: string): Promis
   }
 }
 
+/**
+ * Extrai o nome real do arquivo a partir do header Content-Disposition
+ * enviado pelo servidor (ex: "COMPOSIÇÃO - 16-09-2026 10h41min.xlsx").
+ *
+ * Prioriza o formato filename*=UTF-8''... (nome com acentos, RFC 5987).
+ * Cai para filename="..." como fallback caso o primeiro não exista.
+ */
+function extractFilenameFromHeader(
+  contentDisposition: string | null
+): string | null {
+  if (!contentDisposition) return null;
+
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      // segue para o fallback abaixo
+    }
+  }
+
+  const asciiMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
+  return asciiMatch?.[1] ?? null;
+}
+
 export default function Announce() {
   const router = useRouter();
   const pathname = usePathname();
@@ -375,7 +400,14 @@ export default function Announce() {
       }
 
       const blob = await res.blob();
-      downloadBlob(blob, "modelo-composicao.xlsx");
+
+      // ✅ Usa o nome real gerado pelo servidor (com data/hora),
+      // caindo para um nome fixo apenas se o header não vier.
+      const filename =
+        extractFilenameFromHeader(res.headers.get("Content-Disposition")) ??
+        "modelo-composicao.xlsx";
+
+      downloadBlob(blob, filename);
     } catch (err: any) {
       console.error("Erro ao gerar modelo de composição:", err);
       toastCustom.error(
@@ -407,7 +439,14 @@ export default function Announce() {
       }
 
       const blob = await res.blob();
-      downloadBlob(blob, "composicoes.xlsx");
+
+      // ✅ Usa o nome real gerado pelo servidor (com data/hora),
+      // caindo para um nome fixo apenas se o header não vier.
+      const filename =
+        extractFilenameFromHeader(res.headers.get("Content-Disposition")) ??
+        "composicoes.xlsx";
+
+      downloadBlob(blob, filename);
     } catch (err: any) {
       console.error("Erro ao exportar composições:", err);
       toastCustom.error(err?.message ?? "Não foi possível exportar as composições.");
@@ -1004,10 +1043,11 @@ export default function Announce() {
       <ImportProgressToast
         open={composicaoProgressOpen}
         percent={composicaoProgress}
+        title="Importando composição..."
         message={
           composicaoProgressCount > 0
             ? `${composicaoProgressCount} composição(ões)`
-            : "Importando composição..."
+            : undefined
         }
         onClose={() => setComposicaoProgressOpen(false)}
       />
