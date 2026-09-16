@@ -13,7 +13,7 @@ import ProductInfoSection from "@/components/announce/edit/ProductInfoSection";
 import { ChannelSelector } from "@/components/announce/edit/ChannelSelector";
 
 import { useKeyboardShortcuts } from "@/components/announce/hooks/useKeyboardShortcuts";
-import { useChannels } from "@/components/announce/hooks/useChannels";
+import { useChannels } from "@/components/announce/hooks/usechannels";
 import {
   useAnnounceEdit,
   toStoreName,
