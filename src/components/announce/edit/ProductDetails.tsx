@@ -10,7 +10,7 @@ import { LoadingBar } from "@/components/ui/loading-bar";
 import CompositionModal from "@/components/announce/edit/Compositionmodal";
 import ActionsMenu from "@/components/announce/edit/Actionsmenu";
 import ProductInfoSection from "@/components/announce/edit/ProductInfoSection";
-import { ChannelSelector } from "@/components/announce/edit/ChannelSelector";
+import { ChannelSelector } from "@/components/announce/edit/Channelselector";
 
 import { useKeyboardShortcuts } from "@/components/announce/hooks/useKeyboardShortcuts";
 import { useChannels } from "@/components/announce/hooks/usechannels";
