@@ -51,6 +51,24 @@ function buildFilename(): string {
   return `MODELO - COMPOSIÇÃO - ${dataFormatada} ${horaFormatada}.xlsx`;
 }
 
+/**
+ * Monta o header Content-Disposition de forma segura para nomes
+ * de arquivo com acentuação (ex: "COMPOSIÇÃO"), seguindo RFC 5987.
+ *
+ * - filename="..." → fallback ASCII (navegadores antigos)
+ * - filename*=UTF-8''... → nome real com acentos (navegadores atuais)
+ */
+function buildContentDisposition(filename: string): string {
+  const asciiFallback = filename
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // remove acentos
+    .replace(/[^\x20-\x7E]/g, "_"); // troca qualquer não-ASCII por "_"
+
+  const encoded = encodeURIComponent(filename);
+
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
+}
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     /*
@@ -111,9 +129,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
      *
      * left join em composition/costs preserva anúncios sem
      * composição cadastrada (linha em branco para preencher).
-     *
-     * ⚠️ Ajuste o nome da coluna abaixo (a.id_bling) caso o campo
-     * real na tabela `announce` tenha outro nome.
      */
     const rows = await sql.begin(async (transaction) => {
       const jwtClaims = JSON.stringify({
@@ -179,22 +194,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Modelo Composição");
 
-    const headers = [
-      "ID Bling",
-      "Loja",
-      "Referência",
-      "Produto",
-      "Código do Item",
-      "Quantidade",
-    ];
-
     worksheet.columns = [
-      { header: headers[0], key: "id_bling", width: 16 },
-      { header: headers[1], key: "loja", width: 12 },
-      { header: headers[2], key: "referencia", width: 22 },
-      { header: headers[3], key: "produto", width: 35 },
-      { header: headers[4], key: "codigo_item", width: 16 },
-      { header: headers[5], key: "quantidade", width: 12 },
+      { header: "ID Bling", key: "id_bling", width: 16 },
+      { header: "Loja", key: "loja", width: 12 },
+      { header: "Referência", key: "referencia", width: 22 },
+      { header: "Produto", key: "produto", width: 35 },
+      { header: "Código do Item", key: "codigo_item", width: 16 },
+      { header: "Quantidade", key: "quantidade", width: 12 },
     ];
 
     rows.forEach((r) => {
@@ -235,7 +241,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       headers: {
         "Content-Type":
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="${buildFilename()}"`,
+        "Content-Disposition": buildContentDisposition(buildFilename()),
       },
     });
   } catch (error: unknown) {

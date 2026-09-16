@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type ImportRow = {
+  "ID Bling"?: string | number;
   Loja?: string;
   Referência?: string;
   "Código do Item"?: string | number;
@@ -17,6 +18,7 @@ type ImportRow = {
 
 type ResultadoLinha = {
   linha: number;
+  id_bling: string | null;
   store: string | null;
   reference: string | null;
   code: string | null;
@@ -130,8 +132,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     /*
      * 4. Monta os registros válidos para enviar ao banco.
-     * Linhas em branco (sem code/amount) são puladas aqui mesmo,
-     * sem gerar erro — igual ao comportamento original.
+     *
+     * ID Bling agora é a chave usada para localizar o anúncio
+     * exato (evita duplicidade/erro de casamento por Loja+Referência).
+     *
+     * Linhas sem "ID Bling", "Código do Item" ou "Quantidade"
+     * são puladas aqui mesmo, sem gerar erro.
      */
     const skipped: number[] = [];
     const registros: Record<string, unknown>[] = [];
@@ -139,18 +145,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     raw.forEach((row, index) => {
       const excelLine = index + 2; // +1 header, +1 índice base 1
 
+      const idBling = String(row["ID Bling"] ?? "").trim();
       const store = String(row["Loja"] ?? "").trim();
       const reference = String(row["Referência"] ?? "").trim();
       const code = String(row["Código do Item"] ?? "").trim();
       const amountRaw = row["Quantidade"];
 
-      if (!code || !amountRaw) {
+      if (!idBling || !code || !amountRaw) {
         skipped.push(excelLine);
         return;
       }
 
       registros.push({
         linha: excelLine,
+        id_bling: idBling,
         store,
         reference,
         code,
