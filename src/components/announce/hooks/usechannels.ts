@@ -20,23 +20,48 @@ export function useChannels() {
     async function fetchChannels() {
       setLoading(true);
 
-      const { data, error } = await supabase
-        .schema("newsystem")
-        .from("channels")
-        .select("id, name")
-        .order("name");
+      const [channelsRes, marketplaceRes] = await Promise.all([
+        supabase.schema("newsystem").from("channels").select("id, name"),
+        supabase
+          .schema("newsystem")
+          .from("marketplace")
+          .select("channel")
+          .is("deleted_at", null),
+      ]);
 
       if (!mounted) return;
 
-      if (error) {
-        console.error("Erro ao buscar canais:", error);
-        setError(error.message);
+      if (channelsRes.error) {
+        console.error("Erro ao buscar canais:", channelsRes.error);
+        setError(channelsRes.error.message);
         setChannels([]);
-      } else {
-        setChannels(Array.isArray(data) ? data : []);
-        setError(null);
+        setLoading(false);
+        return;
       }
 
+      if (marketplaceRes.error) {
+        console.error("Erro ao buscar canais do marketplace:", marketplaceRes.error);
+      }
+
+      // Mapa nome -> Channel, priorizando o id real da tabela `channels`
+      const map = new Map<string, Channel>();
+
+      (channelsRes.data ?? []).forEach((c) => {
+        map.set(c.name, { id: c.id, name: c.name });
+      });
+
+      (marketplaceRes.data ?? []).forEach((m: { channel: string }) => {
+        if (m.channel && !map.has(m.channel)) {
+          map.set(m.channel, { id: m.channel, name: m.channel });
+        }
+      });
+
+      const merged = Array.from(map.values()).sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+
+      setChannels(merged);
+      setError(null);
       setLoading(false);
     }
 
