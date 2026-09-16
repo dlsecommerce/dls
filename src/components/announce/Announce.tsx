@@ -13,7 +13,7 @@
   import { Controls } from "@/components/announce/Controls";
   import ExportProgressToast from "@/components/announce/Exportprogresstoast";
   import ImportProgressToast from "@/components/announce/Importprogresstoast";
-  import ExportComposicaoProgressToast from "@/components/announce/ExportComposicaoProgressToast";
+  import ExportComposicaoProgressToast from "@/components/announce/Exportprogresstoast";
   import ProductEditModal from "@/components/announce/Producteditmodal";
   import ValidateAds from "@/components/announce/ValidateAds";
 
@@ -34,7 +34,7 @@
     AnnounceSortDir,
   } from "@/components/announce/hooks/useannounce";
 
-  import { useChannels } from "@/components/announce/hooks/useChannels";
+  import { useChannels } from "@/components/announce/hooks/usechannels";
 
   import {
     importAnnounceFromXlsxOrCsv,
