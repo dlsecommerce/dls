@@ -62,11 +62,15 @@ const marketplaceSaveSchema = z.object({
   id: z.string().uuid().nullable().optional(),
   store: z.string().trim().min(1, "Selecione uma loja válida antes de salvar."),
   channel: z.string().trim().min(1, "Selecione um canal válido antes de salvar."),
+  // ✅ CORRIGIDO: announce_id substitui code_id (versão obsoleta).
+  // Coluna real na tabela `marketplace` é `announce_id uuid`, vinculada a `announce.id`.
+  announce_id: z.string().uuid("Vincule este registro a um anúncio válido antes de salvar."),
   reference: z.string().trim().min(1, "Informe uma referência válida."),
   product: z.string().trim().min(1, "Informe o nome do produto para salvar."),
   mark: z.string().trim().nullable().optional(),
   id_bling: z.string().trim().nullable().optional(),
-  code_id: z.union([z.string(), z.number()]).nullable().optional(),
+  // Mantido apenas por compatibilidade de assinatura do RPC — a função
+  // atual não usa esse valor (tabela `marketplace` não tem coluna `active`).
   active: z.boolean().optional().default(true),
 });
 
@@ -166,11 +170,6 @@ function applyFilters(query: any, params: UseMarketplaceParams, debouncedSearch:
   } else if (situacao === "Todos") {
     // sem filtro de deleted_at — traz tudo
   } else if (situacao === "Últimos incluídos") {
-    // FIX: sem cutoff de tempo — traz sempre os mais recentes.
-    // Antes havia um gte(created_at, cutoff de N dias) que zerava
-    // a lista quando não havia inclusões dentro dessa janela.
-    // A ordenação por created_at desc (aplicada no fetch) já garante
-    // que os mais recentes aparecem primeiro, sem risco de lista vazia.
     query = query.is("deleted_at", null);
   } else {
     // "Ativos" ou undefined (default)
@@ -221,8 +220,6 @@ async function fetchMarketplacePage(
 
   query = applyFilters(query, params, debouncedSearch);
 
-  // "Últimos incluídos" força ordenação por created_at desc,
-  // independentemente do sortBy/sortDir vindo dos filtros da UI.
   const isUltimosIncluidos = params.situacao === "Últimos incluídos";
   const sortBy = isUltimosIncluidos ? "created_at" : params.sortBy ?? "created_at";
   const sortDir = isUltimosIncluidos ? "desc" : params.sortDir ?? "desc";
@@ -248,24 +245,17 @@ export function useMarketplace(params: UseMarketplaceParams) {
   const [page, setPage] = useState(params.page ?? 0);
   const [pageSize, setPageSize] = useState(params.pageSize ?? DEFAULT_PAGE_SIZE);
 
-  // ---------------------------------------------------------------------
-  // Debounce do search
-  // ---------------------------------------------------------------------
   const [debouncedSearch, setDebouncedSearch] = useState(params.search ?? "");
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(params.search ?? ""), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(handle);
   }, [params.search]);
 
-  // ---------------------------------------------------------------------
-  // Chave de filtros estável (resolve problema de referência do array brands)
-  // ---------------------------------------------------------------------
   const filtersKey = useMemo(
     () => buildFiltersKey(params, debouncedSearch),
     [params.store, params.channel, params.tipo, params.condicao, params.situacao, params.brands, params.sortBy, params.sortDir, debouncedSearch]
   );
 
-  // Reseta página ao mudar qualquer filtro
   useEffect(() => {
     setPage(0);
   }, [filtersKey]);
@@ -275,9 +265,6 @@ export function useMarketplace(params: UseMarketplaceParams) {
     [filtersKey, page, pageSize]
   );
 
-  // ---------------------------------------------------------------------
-  // QUERY principal — cache, dedupe, abort e retry gerenciados pelo React Query
-  // ---------------------------------------------------------------------
   const {
     data,
     isLoading,
@@ -287,7 +274,7 @@ export function useMarketplace(params: UseMarketplaceParams) {
   } = useQuery({
     queryKey,
     queryFn: ({ signal }) => fetchMarketplacePage(params, debouncedSearch, page, pageSize, signal),
-    placeholderData: keepPreviousData, // evita flicker ao trocar de página
+    placeholderData: keepPreviousData,
     staleTime: 30_000,
     retry: (failureCount, err: any) => {
       const msg = String(err?.message || "");
@@ -300,9 +287,6 @@ export function useMarketplace(params: UseMarketplaceParams) {
   const totalCount = data?.totalCount ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
-  // ---------------------------------------------------------------------
-  // Prefetch preditivo da próxima página — navegação instantânea
-  // ---------------------------------------------------------------------
   useEffect(() => {
     if (page + 1 >= totalPages) return;
     const nextKey = ["marketplace", filtersKey, page + 1, pageSize] as const;
@@ -314,9 +298,6 @@ export function useMarketplace(params: UseMarketplaceParams) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtersKey, page, pageSize, totalPages]);
 
-  // ---------------------------------------------------------------------
-  // Realtime sync — atualiza tabela quando outro usuário edita/insere/remove
-  // ---------------------------------------------------------------------
   useEffect(() => {
     const channel = supabase
       .channel("marketplace-realtime")
@@ -336,9 +317,6 @@ export function useMarketplace(params: UseMarketplaceParams) {
 
   const refetch = useCallback(() => refetchQuery(), [refetchQuery]);
 
-  // ---------------------------------------------------------------------
-  // fetchAllMatchingIds — usado no export (todos os registros do filtro)
-  // ---------------------------------------------------------------------
   const fetchAllMatchingIds = useCallback(async () => {
     let query = supabase.schema("newsystem").from("marketplace").select("id, deleted_at");
     query = applyFilters(query, params, debouncedSearch);
@@ -365,6 +343,9 @@ export function useMarketplace(params: UseMarketplaceParams) {
       const idBling = normalizeIdBling(v.id_bling);
       const mark = v.mark?.trim() || null;
 
+      // ✅ CORRIGIDO: p_code_id (bigint, obsoleto) → p_announce_id (uuid).
+      // p_ativo é mantido na chamada só por compatibilidade de assinatura
+      // do RPC — a função atual não usa esse parâmetro internamente.
       const { data: result, error: rpcError } = await supabase
         .schema("newsystem")
         .rpc("upsert_marketplace", {
@@ -374,7 +355,7 @@ export function useMarketplace(params: UseMarketplaceParams) {
           p_reference: v.reference,
           p_product: v.product,
           p_mark: mark,
-          p_code_id: v.code_id ?? null,
+          p_announce_id: v.announce_id,
           p_ativo: v.active ?? true,
           p_id: v.id ?? null,
         });
@@ -383,7 +364,6 @@ export function useMarketplace(params: UseMarketplaceParams) {
       return { id: String(result ?? ""), input: v };
     },
 
-    // ---- Optimistic update: atualiza o cache local antes da resposta do servidor
     onMutate: async (input) => {
       const lockKey = `${input.store}:${input.channel}:${input.reference}`;
       if (savingLocksRef.current.has(lockKey)) {
@@ -414,9 +394,8 @@ export function useMarketplace(params: UseMarketplaceParams) {
     },
 
     onError: (err: any, _input, context) => {
-      if (err?.message === "__LOCKED__") return; // clique duplo — ignora silenciosamente
+      if (err?.message === "__LOCKED__") return;
 
-      // rollback do cache otimista
       context?.previousData?.forEach(([key, value]) => {
         queryClient.setQueryData(key, value);
       });
@@ -442,7 +421,6 @@ export function useMarketplace(params: UseMarketplaceParams) {
 
     onSettled: (_result, _err, _input, context) => {
       if (context?.lockKey) savingLocksRef.current.delete(context.lockKey);
-      // garante consistência final com o servidor
       queryClient.invalidateQueries({ queryKey: ["marketplace"], exact: false });
     },
   });
@@ -454,11 +432,14 @@ export function useMarketplace(params: UseMarketplaceParams) {
           id: row?.id ?? null,
           store: row?.store,
           channel: row?.channel,
+          // ✅ CORRIGIDO: announce_id substitui code_id.
+          // Deve vir preenchido no `row` (registro já existente na tabela
+          // `marketplace`, que possui a coluna `announce_id`).
+          announce_id: row?.announce_id,
           reference: row?.reference,
           product: row?.product,
           mark: row?.mark ?? null,
           id_bling: row?.id_bling ?? null,
-          code_id: row?.code_id ?? null,
           active: row?.active === undefined ? true : Boolean(row?.active),
         });
         onAfterSave?.();
@@ -474,7 +455,7 @@ export function useMarketplace(params: UseMarketplaceParams) {
   return {
     marketplaces,
     loading: isLoading,
-    isFetching, // true durante refetch em background — útil para spinner sutil
+    isFetching,
     error: error ? mapErrorMessage(error) : null,
     refetch,
     handleSave,
@@ -543,8 +524,7 @@ export function useMarketplaceBrands() {
 
 // ---------------------------------------------------------------------------
 // Funções standalone (compatibilidade com código legado que ainda usa await
-// direto em vez do hook). Internamente usam o mesmo RPC, sem cache próprio
-// — se usadas fora de componente React, prefira os hooks acima.
+// direto em vez do hook).
 // ---------------------------------------------------------------------------
 
 export async function fetchDistinctStores(): Promise<string[]> {

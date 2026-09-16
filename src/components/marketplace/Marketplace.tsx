@@ -177,25 +177,22 @@ export default function Marketplace() {
   const [allChannels, setAllChannels] = React.useState<string[]>([]);
   const [channelsLoading, setChannelsLoading] = React.useState(false);
 
-  React.useEffect(() => {
-    let active = true;
+  // ✅ FIX: extraído para função reutilizável, chamável de fora do useEffect
+  // (usado no onSuccess do CreateChannelModal para atualizar o dropdown
+  // sem precisar de F5).
+  const loadChannels = React.useCallback(() => {
     setChannelsLoading(true);
-
     fetchDistinctChannels()
-      .then((channels) => {
-        if (active) setAllChannels(channels);
-      })
+      .then((channels) => setAllChannels(channels))
       .catch((err) => {
         console.error("Erro ao buscar canais (fetchDistinctChannels):", err);
       })
-      .finally(() => {
-        if (active) setChannelsLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
+      .finally(() => setChannelsLoading(false));
   }, []);
+
+  React.useEffect(() => {
+    loadChannels();
+  }, [loadChannels]);
 
   React.useEffect(() => {
     let active = true;
@@ -756,7 +753,10 @@ export default function Marketplace() {
       <CreateChannelModal
         open={openCreateChannel}
         onClose={() => setOpenCreateChannel(false)}
-        onSuccess={refetch}
+        onSuccess={() => {
+          refetch();
+          loadChannels();
+        }}
       />
 
       <MarketplacePricingModal
