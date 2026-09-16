@@ -1,7 +1,7 @@
 // app/api/composicao/export-modelo/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { createClient } from "@supabase/supabase-js";
 import { getPostgresClient } from "@/lib/postgres";
 
@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type ModeloRow = {
+  id_bling: string | null;
   store: string | null;
   reference: string | null;
   product: string | null;
@@ -30,6 +31,24 @@ function getBearerToken(request: NextRequest): string | null {
   }
 
   return token.trim();
+}
+
+/**
+ * Gera o nome do arquivo no formato:
+ * MODELO - COMPOSIÇÃO - DD-MM-AAAA HHhMMmin.xlsx
+ */
+function buildFilename(): string {
+  const now = new Date();
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  const dataFormatada = `${pad(now.getDate())}-${pad(
+    now.getMonth() + 1
+  )}-${now.getFullYear()}`;
+
+  const horaFormatada = `${pad(now.getHours())}h${pad(now.getMinutes())}min`;
+
+  return `MODELO - COMPOSIÇÃO - ${dataFormatada} ${horaFormatada}.xlsx`;
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
@@ -92,6 +111,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
      *
      * left join em composition/costs preserva anúncios sem
      * composição cadastrada (linha em branco para preencher).
+     *
+     * ⚠️ Ajuste o nome da coluna abaixo (a.id_bling) caso o campo
+     * real na tabela `announce` tenha outro nome.
      */
     const rows = await sql.begin(async (transaction) => {
       const jwtClaims = JSON.stringify({
@@ -130,6 +152,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
       const result = await transaction<ModeloRow[]>`
         select
+          a.id_bling,
           a.store,
           a.reference,
           a.product,
@@ -149,41 +172,70 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
 
     /*
-     * 4. Monta a planilha.
+     * 4. Monta a planilha com ExcelJS (permite estilizar o cabeçalho).
      * Quando não há composição (code é null), a linha fica em
      * branco nas colunas de item, para o usuário preencher.
      */
-    const sheetRows: Record<string, string | number>[] = rows.map((r) => ({
-      Loja: r.store ?? "",
-      Referência: r.reference ?? "",
-      Produto: r.product ?? "",
-      "Código do Item": r.code ?? "",
-      Quantidade: r.amount ?? "",
-    }));
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Modelo Composição");
 
-    const worksheet = XLSX.utils.json_to_sheet(sheetRows);
-    worksheet["!cols"] = [
-      { wch: 12 },
-      { wch: 22 },
-      { wch: 35 },
-      { wch: 16 },
-      { wch: 12 },
+    const headers = [
+      "ID Bling",
+      "Loja",
+      "Referência",
+      "Produto",
+      "Código do Item",
+      "Quantidade",
     ];
 
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Modelo Composição");
+    worksheet.columns = [
+      { header: headers[0], key: "id_bling", width: 16 },
+      { header: headers[1], key: "loja", width: 12 },
+      { header: headers[2], key: "referencia", width: 22 },
+      { header: headers[3], key: "produto", width: 35 },
+      { header: headers[4], key: "codigo_item", width: 16 },
+      { header: headers[5], key: "quantidade", width: 12 },
+    ];
 
-    const buffer = XLSX.write(workbook, {
-      type: "buffer",
-      bookType: "xlsx",
+    rows.forEach((r) => {
+      worksheet.addRow({
+        id_bling: r.id_bling ?? "",
+        loja: r.store ?? "",
+        referencia: r.reference ?? "",
+        produto: r.product ?? "",
+        codigo_item: r.code ?? "",
+        quantidade: r.amount ?? "",
+      });
     });
+
+    /*
+     * 5. Estiliza o cabeçalho: fundo azul #1a8ceb, fonte branca em negrito.
+     */
+    const headerRow = worksheet.getRow(1);
+
+    headerRow.eachCell((cell) => {
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF1A8CEB" },
+      };
+      cell.font = {
+        color: { argb: "FFFFFFFF" },
+        bold: true,
+      };
+      cell.alignment = { vertical: "middle", horizontal: "left" };
+    });
+
+    headerRow.height = 20;
+
+    const buffer = await workbook.xlsx.writeBuffer();
 
     return new NextResponse(buffer, {
       status: 200,
       headers: {
         "Content-Type":
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="modelo-composicao.xlsx"`,
+        "Content-Disposition": `attachment; filename="${buildFilename()}"`,
       },
     });
   } catch (error: unknown) {
