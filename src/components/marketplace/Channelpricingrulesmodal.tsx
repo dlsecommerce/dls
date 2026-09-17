@@ -100,6 +100,17 @@ function emptyListingTypeRule(): ListingTypeRule {
   return { rate: "", fixedFee: "", frete: "", freteMode: "fixed" };
 }
 
+// Uma brand rule só é considerada "com condição preenchida" se pelo
+// menos um dos 4 campos (classico.rate/fixedFee, premium.rate/fixedFee)
+// tiver valor real. Evita gravar objetos classico/premium "vazios"
+// (que o parseValue transformaria silenciosamente em 0%), o que travava
+// a marca em taxa fixa 0 em vez de cair no fallback (default_rule).
+function hasFilledValue(sub?: BrandListingSubRule): boolean {
+  return Boolean(
+    (sub?.rate ?? "").trim() !== "" || (sub?.fixedFee ?? "").trim() !== ""
+  );
+}
+
 const modeTabClass = (active: boolean) => `
   flex-1 flex items-center justify-center gap-1.5 h-9 text-[11.5px] font-medium
   border transition-colors cursor-pointer
@@ -138,7 +149,17 @@ export default function ChannelPricingRulesModal({
   const [defaultFixedFee, setDefaultFixedFee] = useState("");
   const [brandRules, setBrandRules] = useState<BrandRule[]>([emptyBrandRule()]);
 
-  const [useCondition, setUseCondition] = useState(false);
+  // =====================
+  // Estados SEPARADOS por modo — antes um único `useCondition`
+  // controlava simultaneamente o checkbox do modo "Marca" e do modo
+  // "Fixo/Por Preço". Como é a mesma variável, marcar em um modo fazia
+  // o checkbox aparecer marcado no outro ao trocar de aba, mesmo sendo
+  // regras conceitualmente diferentes (uma é por marca, outra é geral
+  // do canal).
+  // =====================
+  const [useConditionBrand, setUseConditionBrand] = useState(false);
+  const [useConditionFlat, setUseConditionFlat] = useState(false);
+
   const [classico, setClassico] = useState<ListingTypeRule>(emptyListingTypeRule());
   const [premium, setPremium] = useState<ListingTypeRule>(emptyListingTypeRule());
 
@@ -156,7 +177,8 @@ export default function ChannelPricingRulesModal({
     setDefaultRate("");
     setDefaultFixedFee("");
     setBrandRules([emptyBrandRule()]);
-    setUseCondition(false);
+    setUseConditionBrand(false);
+    setUseConditionFlat(false);
     setClassico(emptyListingTypeRule());
     setPremium(emptyListingTypeRule());
     setFrete("");
@@ -227,11 +249,11 @@ export default function ChannelPricingRulesModal({
             });
 
             setBrandRules(loadedBrandRules);
-            if (anyBrandCondition) setUseCondition(true);
+            if (anyBrandCondition) setUseConditionBrand(true);
           }
 
           if (marketplaceRule.listing_type_rules) {
-            setUseCondition(true);
+            setUseConditionFlat(true);
             const lc = marketplaceRule.listing_type_rules.classico;
             const lp = marketplaceRule.listing_type_rules.premium;
             setClassico({
@@ -329,28 +351,43 @@ export default function ChannelPricingRulesModal({
           commission_rate: parseValue(defaultRate) / 100,
           fixed_fee: parseValue(defaultFixedFee),
         };
+
         payload.brand_rules = brandRules
           .filter((b) => b.brand.trim() !== "")
-          .map((b) => ({
-            brand: b.brand,
-            commission_rate: parseValue(b.rate) / 100,
-            fixed_fee: parseValue(b.fixedFee),
-            ...(channelIsML && useCondition
-              ? {
-                  classico: {
-                    rate: parseValue(b.classico?.rate ?? "") / 100,
-                    fixedFee: parseValue(b.classico?.fixedFee ?? ""),
-                  },
-                  premium: {
-                    rate: parseValue(b.premium?.rate ?? "") / 100,
-                    fixedFee: parseValue(b.premium?.fixedFee ?? ""),
-                  },
-                }
-              : {}),
-          }));
+          .map((b) => {
+            const hasClassico = hasFilledValue(b.classico);
+            const hasPremium = hasFilledValue(b.premium);
+
+            return {
+              brand: b.brand,
+              commission_rate: parseValue(b.rate) / 100,
+              fixed_fee: parseValue(b.fixedFee),
+              // Só grava classico/premium se houver valor REAL preenchido
+              // para aquele listing type específico. Antes, com a
+              // condição ativa, TODA marca ganhava classico+premium
+              // mesmo vazios — e parseValue("") = 0 travava a marca em
+              // taxa fixa 0% em vez de cair no fallback (default_rule).
+              ...(channelIsML && useConditionBrand && hasClassico
+                ? {
+                    classico: {
+                      rate: parseValue(b.classico?.rate ?? "") / 100,
+                      fixedFee: parseValue(b.classico?.fixedFee ?? ""),
+                    },
+                  }
+                : {}),
+              ...(channelIsML && useConditionBrand && hasPremium
+                ? {
+                    premium: {
+                      rate: parseValue(b.premium?.rate ?? "") / 100,
+                      fixedFee: parseValue(b.premium?.fixedFee ?? ""),
+                    },
+                  }
+                : {}),
+            };
+          });
       }
 
-      if (channelIsML && useCondition && pricingMode !== "brand") {
+      if (channelIsML && useConditionFlat && pricingMode !== "brand") {
         payload.listing_type_rules = {
           classico: {
             commission_rate: parseValue(classico.rate) / 100,
@@ -403,7 +440,8 @@ export default function ChannelPricingRulesModal({
     defaultFixedFee,
     brandRules,
     channelIsML,
-    useCondition,
+    useConditionBrand,
+    useConditionFlat,
     classico,
     premium,
     onApplied,
@@ -604,9 +642,9 @@ export default function ChannelPricingRulesModal({
                     <label className="mb-2 flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={useCondition}
+                        checked={useConditionBrand}
                         disabled={saving}
-                        onChange={(e) => setUseCondition(e.target.checked)}
+                        onChange={(e) => setUseConditionBrand(e.target.checked)}
                         className="h-3.5 w-3.5 accent-[#1a8ceb] cursor-pointer"
                       />
                       <span className="text-[11.5px] font-medium text-neutral-300">
@@ -634,7 +672,7 @@ export default function ChannelPricingRulesModal({
 
                   <div className="space-y-2">
                     {brandRules.map((rule, index) => {
-                      const showCondition = channelIsML && useCondition;
+                      const showCondition = channelIsML && useConditionBrand;
 
                       return (
                         <div key={index} className="border border-neutral-900 p-2 space-y-1.5">
@@ -783,7 +821,7 @@ export default function ChannelPricingRulesModal({
                     })}
                   </div>
 
-                  {channelIsML && useCondition && (
+                  {channelIsML && useConditionBrand && (
                     <p className="mt-2 text-[10px] text-neutral-600">
                       Cada marca tem sua própria condição (Clássico/Premium). Marcas sem
                       valor preenchido usam a Regra padrão (fallback) acima.
@@ -797,9 +835,9 @@ export default function ChannelPricingRulesModal({
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={useCondition}
+                      checked={useConditionFlat}
                       disabled={saving}
-                      onChange={(e) => setUseCondition(e.target.checked)}
+                      onChange={(e) => setUseConditionFlat(e.target.checked)}
                       className="h-3.5 w-3.5 accent-[#1a8ceb] cursor-pointer"
                     />
                     <span className="text-[11.5px] font-medium text-neutral-300">
@@ -807,7 +845,7 @@ export default function ChannelPricingRulesModal({
                     </span>
                   </label>
 
-                  {useCondition && (
+                  {useConditionFlat && (
                     <div className="mt-3 space-y-3">
                       <div>
                         <span className="mb-1 block text-[10.5px] text-neutral-500">Clássico</span>
