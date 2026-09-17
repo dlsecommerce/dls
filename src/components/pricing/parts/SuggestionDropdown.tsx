@@ -29,11 +29,10 @@ type SuggestionDropdownProps = {
   isLoading?: boolean;
   onHoverIndex?: (index: number) => void;
   onClose?: () => void;
-  // ✅ NOVO: elemento de referência para calcular posição (o input, geralmente)
   anchorRef?: React.RefObject<HTMLElement>;
 };
 
-// ---------- Helpers (inalterados) ----------
+// ---------- Helpers ----------
 
 const getBadgeColor = (seed: string) => {
   const colors = [
@@ -96,7 +95,7 @@ const HighlightedText: React.FC<{ text: string; term?: string }> = ({
         part.toLowerCase() === term.trim().toLowerCase() ? (
           <mark
             key={i}
-            className="rounded-sm bg-[#1a8ceb]/25 px-0.5 text-[#8ec9f7]"
+            className="rounded bg-[#1a8ceb]/25 px-0.5 text-[#8ec9f7]"
           >
             {part}
           </mark>
@@ -109,8 +108,8 @@ const HighlightedText: React.FC<{ text: string; term?: string }> = ({
 };
 
 const SkeletonRow: React.FC = () => (
-  <div className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2">
-    <div className="h-8 w-8 shrink-0 animate-pulse rounded-lg bg-white/[0.06]" />
+  <div className="flex w-full items-center gap-2.5 rounded px-2.5 py-2">
+    <div className="h-8 w-8 shrink-0 animate-pulse rounded bg-white/[0.06]" />
     <div className="min-w-0 flex-1 space-y-1.5">
       <div className="h-3 w-24 animate-pulse rounded bg-white/[0.06]" />
       <div className="h-2.5 w-32 animate-pulse rounded bg-white/[0.04]" />
@@ -150,10 +149,8 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
   const itemRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
   const internalWrapperRef = React.useRef<HTMLDivElement | null>(null);
 
-  // ✅ NOVO: mounted flag — portal só funciona no client
   const [mounted, setMounted] = React.useState(false);
 
-  // ✅ NOVO: posição calculada dinamicamente
   const [coords, setCoords] = React.useState<{
     top: number;
     left: number;
@@ -164,12 +161,10 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
     setMounted(true);
   }, []);
 
-  // ✅ NOVO: recalcula posição sempre que abrir, no scroll e no resize
   React.useEffect(() => {
     if (!isActive) return;
 
     const updatePosition = () => {
-      // Tenta usar o anchorRef; se não vier, usa o parentElement do listaRef
       const target =
         anchorRef?.current ||
         (internalWrapperRef.current?.parentElement as HTMLElement | null);
@@ -252,7 +247,7 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
           }}
           className="
             max-h-64 overflow-y-auto overscroll-contain
-            rounded-xl border border-white/[0.08]
+            rounded border border-white/[0.08]
             bg-[#101010]/95 backdrop-blur-xl
             shadow-[0_20px_50px_rgba(26,140,235,0.08)]
             p-1
@@ -296,7 +291,7 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
                   onMouseEnter={() => onHoverIndex?.(i)}
                   className={`
                     relative flex w-full items-center gap-2.5
-                    rounded-lg px-2.5 py-2.5 text-left transition-all duration-150
+                    rounded px-2.5 py-2.5 text-left transition-all duration-150
                     min-h-[44px]
                     ${isInativo ? "opacity-40" : ""}
                     ${isSelected ? "bg-[#1a8ceb]/[0.12]" : "hover:bg-white/[0.04]"}
@@ -312,12 +307,13 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
 
                   <div
                     className={`
-                      flex h-8 w-8 shrink-0 items-center justify-center rounded-lg
+                      flex h-8 w-8 shrink-0 items-center justify-center rounded
                       bg-gradient-to-br text-[10px] font-bold
                       ${badgeClass}
                     `}
                   >
-                    {getInitials(s.produto || s.codigo)}
+                    {/* ✅ CORRIGIDO: badge agora prioriza a marca como identificador visual */}
+                    {getInitials(s.marca || s.produto || s.codigo)}
                   </div>
 
                   <div className="min-w-0 flex-1">
@@ -331,18 +327,25 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
                       )}
                     </div>
 
-                    {s.produto && (
+                    {/* ✅ CORRIGIDO: antes só renderizava se s.produto existisse,
+                        fazendo a marca desaparecer junto quando o produto vinha
+                        vazio do banco. Agora produto e marca são independentes. */}
+                    {(s.produto || s.marca) && (
                       <div className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-white/40">
-                        <span className="truncate">
-                          <HighlightedText text={s.produto} term={termoBusca} />
-                        </span>
+                        {s.produto && (
+                          <span className="truncate">
+                            <HighlightedText text={s.produto} term={termoBusca} />
+                          </span>
+                        )}
+
+                        {s.produto && s.marca && (
+                          <span className="text-white/20">·</span>
+                        )}
+
                         {s.marca && (
-                          <>
-                            <span className="text-white/20">·</span>
-                            <span className="shrink-0 text-white/35">
-                              {s.marca}
-                            </span>
-                          </>
+                          <span className="shrink-0 font-medium text-white/50">
+                            {s.marca}
+                          </span>
                         )}
                       </div>
                     )}
@@ -351,7 +354,7 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <span
                       className={`
-                        rounded-md px-2 py-1 text-[13px] font-semibold tabular-nums font-mono
+                        rounded px-2 py-1 text-[13px] font-semibold tabular-nums font-mono
                         transition-colors
                         ${isSelected ? "bg-[#1a8ceb]/15 text-[#4db4ff]" : "text-[#1a8ceb]/90"}
                       `}
@@ -361,7 +364,7 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
 
                     {typeof s.packingCost === "number" && s.packingCost > 0 && (
                       <span className="text-[10px] text-white/30">
-                        📦 R$ {s.packingCost.toFixed(2)}
+                        R$ {s.packingCost.toFixed(2)}
                       </span>
                     )}
                   </div>
@@ -375,19 +378,19 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
                 <kbd className="rounded border border-white/10 bg-white/5 px-1 py-0.5 font-mono">
                   ↑↓
                 </kbd>
-                navegar
+                Navegar
               </span>
               <span className="flex items-center gap-1">
                 <kbd className="rounded border border-white/10 bg-white/5 px-1 py-0.5 font-mono">
                   ↵
                 </kbd>
-                selecionar
+                Selecionar
               </span>
               <span className="flex items-center gap-1">
                 <kbd className="rounded border border-white/10 bg-white/5 px-1 py-0.5 font-mono">
-                  esc
+                  ESC
                 </kbd>
-                fechar
+                Fechar
               </span>
             </div>
           )}
@@ -396,6 +399,5 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
     </AnimatePresence>
   );
 
-  // ✅ Renderiza fora da árvore DOM normal, direto no body — imune a overflow/z-index de pais
   return createPortal(dropdownContent, document.body);
 };

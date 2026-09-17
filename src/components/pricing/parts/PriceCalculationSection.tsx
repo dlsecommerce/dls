@@ -14,129 +14,94 @@ import { ClearAndDownloadActions } from "./ClearAndDownloadActions";
 import { AcrescimosSection } from "./AcrescimosSection";
 import { AnimatedNumber } from "./AnimatedNumber";
 import type { Calculo } from "../PricingCalculatorModern";
-
-type CalculoSetter = React.Dispatch<React.SetStateAction<Calculo>>;
-
-type PriceCalculationSectionProps = {
-  calculoLoja: Calculo;
-  setCalculoLoja: CalculoSetter;
-
-  calculoShopee: Calculo;
-  setCalculoShopee: CalculoSetter;
-
-  calculoMagalu: Calculo;
-  setCalculoMagalu: CalculoSetter;
-
-  calculoMLClassico: Calculo;
-  setCalculoMLClassico: CalculoSetter;
-
-  calculoMLPremium: Calculo;
-  setCalculoMLPremium: CalculoSetter;
-
-  calculoTiktok: Calculo;
-  setCalculoTiktok: CalculoSetter;
-
-  precoLoja: number;
-  precoShopee: number;
-  precoMagalu: number;
-  precoMLClassico: number;
-  precoMLPremium: number;
-  precoTiktok: number;
-
-  acrescimos: any;
-  setAcrescimos: (value: any) => void;
-
-  isEditing: (key: string) => boolean;
-  setEditing: (key: string, editing: boolean) => void;
-  toDisplay: (v: string) => string;
-  toInternal: (v: string) => string;
-
-  handleLinearNav: (
-    e: React.KeyboardEvent<HTMLInputElement>,
-    index: number,
-    refs: React.MutableRefObject<HTMLInputElement[]>,
-    total: number
-  ) => void;
-
-  calcLojaRefs: React.MutableRefObject<HTMLInputElement[]>;
-  calcShopeeRefs: React.MutableRefObject<HTMLInputElement[]>;
-  calcMagaluRefs: React.MutableRefObject<HTMLInputElement[]>;
-  calcMLClassicoRefs: React.MutableRefObject<HTMLInputElement[]>;
-  calcMLPremiumRefs: React.MutableRefObject<HTMLInputElement[]>;
-  calcTiktokRefs: React.MutableRefObject<HTMLInputElement[]>;
-  acrescimosRefs: React.MutableRefObject<HTMLInputElement[]>;
-
-  handleEmbalagemBlurShared: (raw: string) => void;
-  handleEmbalagemChangeShared: (raw: string) => void;
-  handleEmbalagemBlurShopee: (raw: string) => void;
-  handleEmbalagemChangeShopee: (raw: string) => void;
-
-  handleDownload: () => void;
-  handleClearAll: () => void;
-  isClearing: boolean;
-  clicks: number;
-
-  statusAcrescimo: any;
-
-  syncDescontoFromLoja: (descontoInternal: string) => void;
-
-  userEditedShopeeComissao: boolean;
-  setUserEditedShopeeComissao: (v: boolean) => void;
-
-  userEditedShopeeFrete: boolean;
-  setUserEditedShopeeFrete: (v: boolean) => void;
-
-  userEditedShopeeImposto: boolean;
-  setUserEditedShopeeImposto: (v: boolean) => void;
-
-  userEditedShopeeMargem: boolean;
-  setUserEditedShopeeMargem: (v: boolean) => void;
-
-  userEditedShopeeMarketing: boolean;
-  setUserEditedShopeeMarketing: (v: boolean) => void;
-
-  userEditedShopeeEmbalagem: boolean;
-  setUserEditedShopeeEmbalagem: (v: boolean) => void;
-
-  userEditedTiktokComissao: boolean;
-  setUserEditedTiktokComissao: (v: boolean) => void;
-
-  userEditedTiktokFrete: boolean;
-  setUserEditedTiktokFrete: (v: boolean) => void;
-};
-
-type ChannelKey =
-  | "loja"
-  | "shopee"
-  | "magalu"
-  | "mlClassico"
-  | "mlPremium"
-  | "tiktok";
+import { CHANNELS, ChannelKey, getChannelDef } from "../channelsConfig";
+import type { BrandOverrides, ManualFlags } from "../useChannelPricing";
 
 type Empresa = "pikot" | "sobaquetas";
 
-type ChannelRow = {
-  key: ChannelKey;
-  title: string;
-  subtitle: string;
+// =====================
+// Único ponto "hardcoded" que resta: identidade visual por canal.
+// Para adicionar canal novo: 1 entrada aqui + 1 objeto em
+// channelsConfig.ts. Nada mais precisa mudar neste arquivo.
+// =====================
+const MagaluLogo = () => {
+  return (
+    <span className="select-none text-[10px] font-black leading-none tracking-tight text-white">
+      Magalu
+    </span>
+  );
+};
+
+const TiktokLogo = ({ className }: { className?: string }) => {
+  return (
+    <svg
+      viewBox="0 0 48 48"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+    >
+      <path
+        fill="currentColor"
+        d="M33.5 6.5c1.4 3.6 4.4 6.4 8.1 7.2v6.4c-2.9 0-5.7-.8-8.1-2.2v13.4c0 6.9-5.6 12.6-12.5 12.6S8.5 37.2 8.5 30.3c0-6.5 5.1-11.9 11.5-12.5v6.5c-2.9.6-5 3.1-5 6.1 0 3.4 2.7 6.1 6.1 6.1s6.1-2.7 6.1-6.1V4h6.3c0 .9.1 1.7.3 2.5Z"
+      />
+    </svg>
+  );
+};
+
+type ChannelVisual = {
   icon: React.ReactNode;
   iconClassName: string;
   dotClassName: string;
-  state: Calculo;
-  preco: number;
-  refs: React.MutableRefObject<HTMLInputElement[]>;
+  priceClassName: string;
+  shortLabel: string;
 };
 
-const BLOCKS: Array<{ key: ChannelKey; nome: string; dotClassName: string }> = [
-  { key: "loja", nome: "Loja Própria", dotClassName: "bg-[#1a8ceb]" },
-  { key: "shopee", nome: "Shopee", dotClassName: "bg-orange-500" },
-  { key: "magalu", nome: "Magalu", dotClassName: "bg-[#1a8ceb]" },
-  { key: "mlClassico", nome: "Mercado Livre", dotClassName: "bg-yellow-500" },
-  { key: "mlPremium", nome: "Mercado Livre", dotClassName: "bg-yellow-500" },
-  { key: "tiktok", nome: "TikTok Shop", dotClassName: "bg-black" },
-];
+const CHANNEL_VISUAL: Record<ChannelKey, ChannelVisual> = {
+  loja: {
+    icon: <Store className="h-5 w-5 text-[#1a8ceb]" />,
+    iconClassName: "border-[#1a8ceb]/35 bg-[#1a8ceb]/15",
+    dotClassName: "bg-[#1a8ceb]",
+    priceClassName: "text-neutral-100",
+    shortLabel: "Loja",
+  },
+  shopee: {
+    icon: <ShoppingBag className="h-5 w-5 text-white" />,
+    iconClassName: "border-orange-500/30 bg-orange-500",
+    dotClassName: "bg-orange-500",
+    priceClassName: "text-orange-400",
+    shortLabel: "Shopee",
+  },
+  magalu: {
+    icon: <MagaluLogo />,
+    iconClassName: "border-[#1a8ceb]/40 bg-[#1a8ceb]",
+    dotClassName: "bg-[#1a8ceb]",
+    priceClassName: "text-[#1a8ceb]",
+    shortLabel: "Magalu",
+  },
+  mlClassico: {
+    icon: <Handshake className="h-5 w-5 text-white" />,
+    iconClassName: "border-yellow-500/30 bg-yellow-500/80",
+    dotClassName: "bg-yellow-500",
+    priceClassName: "text-yellow-400",
+    shortLabel: "Clássico",
+  },
+  mlPremium: {
+    icon: <Handshake className="h-5 w-5 text-white" />,
+    iconClassName: "border-yellow-500/30 bg-yellow-500/80",
+    dotClassName: "bg-yellow-500",
+    priceClassName: "text-yellow-400",
+    shortLabel: "Premium",
+  },
+  tiktok: {
+    icon: <TiktokLogo className="h-5 w-5 text-white" />,
+    iconClassName: "border-white/20 bg-black",
+    dotClassName: "bg-white",
+    priceClassName: "text-white",
+    shortLabel: "TikTok",
+  },
+};
 
-const STORAGE_KEY = "pricing.visibleBlocks.v5";
+const STORAGE_KEY = "pricing.visibleBlocks.v6";
 const EMPRESA_STORAGE_KEY = "pricing.empresaSelecionada.v1";
 
 const fields: Array<{
@@ -153,24 +118,6 @@ const fields: Array<{
   { key: "margem", label: "Margem de Lucro", suffix: "%", unit: "(%)" },
   { key: "marketing", label: "Marketing", suffix: "%", unit: "(%)" },
 ];
-
-const formatCurrency = (value: number) => {
-  return value.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-};
-
-const shortLabel = (key: ChannelKey) => {
-  if (key === "loja") return "Loja";
-  if (key === "shopee") return "Shopee";
-  if (key === "magalu") return "Magalu";
-  if (key === "mlClassico") return "Clássico";
-  if (key === "mlPremium") return "Premium";
-  if (key === "tiktok") return "TikTok";
-
-  return "Premium";
-};
 
 const isEmptyOrZero = (value: string) => {
   const normalized = (value || "").trim();
@@ -195,30 +142,6 @@ const ChannelIcon = ({
     >
       {children}
     </div>
-  );
-};
-
-const MagaluLogo = () => {
-  return (
-    <span className="select-none text-[10px] font-black leading-none tracking-tight text-white">
-      Magalu
-    </span>
-  );
-};
-
-const TiktokLogo = ({ className }: { className?: string }) => {
-  return (
-    <svg
-      viewBox="0 0 48 48"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-    >
-      <path
-        fill="currentColor"
-        d="M33.5 6.5c1.4 3.6 4.4 6.4 8.1 7.2v6.4c-2.9 0-5.7-.8-8.1-2.2v13.4c0 6.9-5.6 12.6-12.5 12.6S8.5 37.2 8.5 30.3c0-6.5 5.1-11.9 11.5-12.5v6.5c-2.9.6-5 3.1-5 6.1 0 3.4 2.7 6.1 6.1 6.1s6.1-2.7 6.1-6.1V4h6.3c0 .9.1 1.7.3 2.5Z"
-      />
-    </svg>
   );
 };
 
@@ -305,33 +228,81 @@ const FieldInput = ({
   );
 };
 
+type PriceCalculationSectionProps = {
+  calculos: Record<ChannelKey, Calculo>;
+  precos: Record<ChannelKey, number>;
+
+  manualFlags: Record<ChannelKey, ManualFlags>;
+  setManualFlag: (
+    key: ChannelKey,
+    field: keyof ManualFlags,
+    value: boolean
+  ) => void;
+
+  brandOverrides: Record<ChannelKey, BrandOverrides>;
+
+  setCalculo: (
+    key: ChannelKey,
+    updater: (prev: Calculo) => Calculo
+  ) => void;
+
+  channelRefsMap: Record<ChannelKey, HTMLInputElement[]>;
+
+  acrescimos: any;
+  setAcrescimos: (value: any) => void;
+
+  isEditing: (key: string) => boolean;
+  setEditing: (key: string, editing: boolean) => void;
+  toDisplay: (v: string) => string;
+  toInternal: (v: string) => string;
+
+  handleLinearNav: (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    index: number,
+    refs: React.MutableRefObject<HTMLInputElement[]>,
+    total: number
+  ) => void;
+
+  acrescimosRefs: React.MutableRefObject<HTMLInputElement[]>;
+
+  handleEmbalagemBlurShared: (raw: string) => void;
+  handleEmbalagemChangeShared: (raw: string) => void;
+  handleEmbalagemChangeChannel: (key: ChannelKey, raw: string) => void;
+  handleEmbalagemBlurChannel: (key: ChannelKey, raw: string) => void;
+
+  handleDownload: () => void;
+  handleClearAll: () => void;
+  isClearing: boolean;
+  clicks: number;
+
+  statusAcrescimo: any;
+
+  syncDescontoFromLoja: (descontoInternal: string) => void;
+};
+
+type ChannelRow = {
+  key: ChannelKey;
+  title: string;
+  subtitle: string;
+  visual: ChannelVisual;
+  state: Calculo;
+  preco: number;
+  refs: React.MutableRefObject<HTMLInputElement[]>;
+};
+
 export const PriceCalculationSection: React.FC<
   PriceCalculationSectionProps
 > = ({
-  calculoLoja,
-  setCalculoLoja,
+  calculos,
+  precos,
 
-  calculoShopee,
-  setCalculoShopee,
+  manualFlags,
+  setManualFlag,
 
-  calculoMagalu,
-  setCalculoMagalu,
+  brandOverrides,
 
-  calculoMLClassico,
-  setCalculoMLClassico,
-
-  calculoMLPremium,
-  setCalculoMLPremium,
-
-  calculoTiktok,
-  setCalculoTiktok,
-
-  precoLoja,
-  precoShopee,
-  precoMagalu,
-  precoMLClassico,
-  precoMLPremium,
-  precoTiktok,
+  setCalculo,
+  channelRefsMap,
 
   acrescimos,
   setAcrescimos,
@@ -342,19 +313,12 @@ export const PriceCalculationSection: React.FC<
   toInternal,
 
   handleLinearNav,
-
-  calcLojaRefs,
-  calcShopeeRefs,
-  calcMagaluRefs,
-  calcMLClassicoRefs,
-  calcMLPremiumRefs,
-  calcTiktokRefs,
   acrescimosRefs,
 
   handleEmbalagemBlurShared,
   handleEmbalagemChangeShared,
-  handleEmbalagemBlurShopee,
-  handleEmbalagemChangeShopee,
+  handleEmbalagemChangeChannel,
+  handleEmbalagemBlurChannel,
 
   handleDownload,
   handleClearAll,
@@ -364,25 +328,12 @@ export const PriceCalculationSection: React.FC<
   statusAcrescimo,
 
   syncDescontoFromLoja,
-
-  setUserEditedShopeeComissao,
-  setUserEditedShopeeFrete,
-  setUserEditedShopeeImposto,
-  setUserEditedShopeeMargem,
-  setUserEditedShopeeMarketing,
-
-  setUserEditedTiktokComissao,
-  setUserEditedTiktokFrete,
 }) => {
   const defaultVisible: Record<ChannelKey, boolean> = React.useMemo(
-    () => ({
-      loja: true,
-      shopee: true,
-      magalu: true,
-      mlClassico: true,
-      mlPremium: true,
-      tiktok: true,
-    }),
+    () =>
+      Object.fromEntries(
+        CHANNELS.map((c) => [c.key, true])
+      ) as Record<ChannelKey, boolean>,
     []
   );
 
@@ -398,59 +349,23 @@ export const PriceCalculationSection: React.FC<
   const [empresa, setEmpresa] = React.useState<Empresa>("pikot");
   const [isEmpresaOpen, setIsEmpresaOpen] = React.useState(false);
 
-  const pikotSnapshotRef = React.useRef<{
-    loja: Calculo;
-    shopee: Calculo;
-    magalu: Calculo;
-    mlClassico: Calculo;
-    mlPremium: Calculo;
-    tiktok: Calculo;
-  } | null>(null);
+  const pikotSnapshotRef = React.useRef<Record<
+    ChannelKey,
+    Calculo
+  > | null>(null);
 
-  // ✅ CORRIGIDO (Bug #2): função reutilizável para aplicar os
-  // overrides de imposto/comissão da Sóbaquetas. É chamada tanto
-  // na troca manual (dropdown) quanto na leitura do localStorage
-  // no mount/reload da página — antes só era chamada no clique
-  // manual, então o reload "esquecia" de reaplicar os valores.
+  // Aplica os overrides de imposto/comissão da Sóbaquetas a todos
+  // os canais de uma vez (via CHANNELS). Chamada tanto na troca
+  // manual (dropdown) quanto na leitura do localStorage no mount.
   const applySobaquetasOverrides = React.useCallback(() => {
-    setCalculoLoja((previous) => ({
-      ...previous,
-      imposto: "10",
-      comissao: "0",
-    }));
-
-    setCalculoShopee((previous) => ({
-      ...previous,
-      imposto: "10",
-    }));
-
-    setCalculoMagalu((previous) => ({
-      ...previous,
-      imposto: "10",
-    }));
-
-    setCalculoMLClassico((previous) => ({
-      ...previous,
-      imposto: "10",
-    }));
-
-    setCalculoMLPremium((previous) => ({
-      ...previous,
-      imposto: "10",
-    }));
-
-    setCalculoTiktok((previous) => ({
-      ...previous,
-      imposto: "10",
-    }));
-  }, [
-    setCalculoLoja,
-    setCalculoShopee,
-    setCalculoMagalu,
-    setCalculoMLClassico,
-    setCalculoMLPremium,
-    setCalculoTiktok,
-  ]);
+    CHANNELS.forEach((def) => {
+      setCalculo(def.key, (previous) => ({
+        ...previous,
+        imposto: "10",
+        ...(def.key === "loja" ? { comissao: "0" } : {}),
+      }));
+    });
+  }, [setCalculo]);
 
   React.useEffect(() => {
     try {
@@ -459,10 +374,9 @@ export const PriceCalculationSection: React.FC<
       if (raw === "pikot" || raw === "sobaquetas") {
         setEmpresa(raw);
 
-        // ✅ CORRIGIDO (Bug #2): reaplica os overrides no mount,
-        // pois os states de calculo* são inicializados sempre com
-        // os valores padrão do Pikot Shop, independente do que
-        // está salvo no localStorage.
+        // Reaplica os overrides no mount, pois os calculos são
+        // inicializados sempre com valores padrão do Pikot Shop,
+        // independente do que está salvo no localStorage.
         if (raw === "sobaquetas") {
           applySobaquetasOverrides();
         }
@@ -487,26 +401,16 @@ export const PriceCalculationSection: React.FC<
     }
 
     if (next === "sobaquetas") {
-      pikotSnapshotRef.current = {
-        loja: calculoLoja,
-        shopee: calculoShopee,
-        magalu: calculoMagalu,
-        mlClassico: calculoMLClassico,
-        mlPremium: calculoMLPremium,
-        tiktok: calculoTiktok,
-      };
+      pikotSnapshotRef.current = { ...calculos };
 
       applySobaquetasOverrides();
     } else {
       const snapshot = pikotSnapshotRef.current;
 
       if (snapshot) {
-        setCalculoLoja(snapshot.loja);
-        setCalculoShopee(snapshot.shopee);
-        setCalculoMagalu(snapshot.magalu);
-        setCalculoMLClassico(snapshot.mlClassico);
-        setCalculoMLPremium(snapshot.mlPremium);
-        setCalculoTiktok(snapshot.tiktok);
+        CHANNELS.forEach((def) => {
+          setCalculo(def.key, () => snapshot[def.key]);
+        });
       }
     }
 
@@ -626,7 +530,7 @@ export const PriceCalculationSection: React.FC<
   }, []);
 
   const hiddenBlocks = React.useMemo(
-    () => BLOCKS.filter((block) => !visible[block.key]),
+    () => CHANNELS.filter((c) => !visible[c.key]),
     [visible]
   );
 
@@ -648,192 +552,75 @@ export const PriceCalculationSection: React.FC<
   React.useEffect(() => {
     if (!isLayoutOpen) return;
 
-    window.addEventListener(
-      "mousedown",
-      closeLayoutOnOutside
-    );
+    window.addEventListener("mousedown", closeLayoutOnOutside);
 
     return () => {
-      window.removeEventListener(
-        "mousedown",
-        closeLayoutOnOutside
-      );
+      window.removeEventListener("mousedown", closeLayoutOnOutside);
     };
   }, [isLayoutOpen, closeLayoutOnOutside]);
 
-  const rows: ChannelRow[] = [
-    {
-      key: "loja",
-      title: "Loja Própria",
-      subtitle: "Site / E-commerce",
-      icon: <Store className="h-5 w-5 text-[#1a8ceb]" />,
-      iconClassName:
-        "border-[#1a8ceb]/35 bg-[#1a8ceb]/15",
-      dotClassName: "bg-[#1a8ceb]",
-      state: calculoLoja,
-      preco: precoLoja,
-      refs: calcLojaRefs,
-    },
-    {
-      key: "shopee",
-      title: "Shopee",
-      subtitle: "Marketplace",
-      icon: <ShoppingBag className="h-5 w-5 text-white" />,
-      iconClassName:
-        "border-orange-500/30 bg-orange-500",
-      dotClassName: "bg-orange-500",
-      state: calculoShopee,
-      preco: precoShopee,
-      refs: calcShopeeRefs,
-    },
-    {
-      key: "magalu",
-      title: "Magalu",
-      subtitle: "Marketplace",
-      icon: <MagaluLogo />,
-      iconClassName:
-        "border-[#1a8ceb]/40 bg-[#1a8ceb]",
-      dotClassName: "bg-[#1a8ceb]",
-      state: calculoMagalu,
-      preco: precoMagalu,
-      refs: calcMagaluRefs,
-    },
-    {
-      key: "mlClassico",
-      title: "Mercado Livre",
-      subtitle: "Clássico",
-      icon: <Handshake className="h-5 w-5 text-white" />,
-      iconClassName:
-        "border-yellow-500/30 bg-yellow-500/80",
-      dotClassName: "bg-yellow-500",
-      state: calculoMLClassico,
-      preco: precoMLClassico,
-      refs: calcMLClassicoRefs,
-    },
-    {
-      key: "mlPremium",
-      title: "Mercado Livre",
-      subtitle: "Premium",
-      icon: <Handshake className="h-5 w-5 text-white" />,
-      iconClassName:
-        "border-yellow-500/30 bg-yellow-500/80",
-      dotClassName: "bg-yellow-500",
-      state: calculoMLPremium,
-      preco: precoMLPremium,
-      refs: calcMLPremiumRefs,
-    },
-    {
-      key: "tiktok",
-      title: "TikTok Shop",
-      subtitle: "Marketplace",
-      icon: <TiktokLogo className="h-5 w-5 text-white" />,
-      iconClassName: "border-white/20 bg-black",
-      dotClassName: "bg-white",
-      state: calculoTiktok,
-      preco: precoTiktok,
-      refs: calcTiktokRefs,
-    },
-  ];
+  // =====================
+  // Rows derivadas 100% de CHANNELS — canal novo aparece aqui
+  // automaticamente, sem editar este arquivo.
+  // =====================
+  const rows: ChannelRow[] = CHANNELS.map((def) => ({
+    key: def.key,
+    title: def.title,
+    subtitle: def.subtitle,
+    visual: CHANNEL_VISUAL[def.key],
+    state: calculos[def.key],
+    preco: precos[def.key],
+    refs: {
+      current: channelRefsMap[def.key],
+    } as React.MutableRefObject<HTMLInputElement[]>,
+  }));
 
-  const visibleRows = rows.filter(
-    (row) => visible[row.key]
-  );
+  const visibleRows = rows.filter((row) => visible[row.key]);
 
   const totalFields = fields.length;
 
+  // =====================
+  // Handlers genéricos — substituem os blocos if/else por canal.
+  // Usam apenas as flags declaradas no ChannelDef.
+  // =====================
   const handleChange = (
     row: ChannelRow,
     field: keyof Calculo,
     internalValue: string
   ) => {
+    const def = getChannelDef(row.key);
+
     if (field === "embalagem") {
-      if (row.key === "shopee") {
-        handleEmbalagemChangeShopee(internalValue);
-      } else {
+      if (def.sharesEmbalagem) {
         handleEmbalagemChangeShared(internalValue);
-      }
-
-      return;
-    }
-
-    if (row.key === "loja") {
-      if (field === "desconto") {
-        syncDescontoFromLoja(internalValue);
       } else {
-        setCalculoLoja((previous) => ({
-          ...previous,
-          [field]: internalValue,
-        }));
+        handleEmbalagemChangeChannel(row.key, internalValue);
       }
 
       return;
     }
 
-    if (row.key === "shopee") {
-      if (field === "comissao") {
-        setUserEditedShopeeComissao(true);
-      }
-
-      if (field === "frete") {
-        setUserEditedShopeeFrete(true);
-      }
-
-      if (field === "imposto") {
-        setUserEditedShopeeImposto(true);
-      }
-
-      if (field === "margem") {
-        setUserEditedShopeeMargem(true);
-      }
-
-      if (field === "marketing") {
-        setUserEditedShopeeMarketing(true);
-      }
-
-      setCalculoShopee((previous) => ({
-        ...previous,
-        [field]: internalValue,
-      }));
-
+    if (row.key === "loja" && field === "desconto") {
+      syncDescontoFromLoja(internalValue);
       return;
     }
 
-    if (row.key === "magalu") {
-      setCalculoMagalu((previous) => ({
-        ...previous,
-        [field]: internalValue,
-      }));
-
-      return;
+    if (
+      def.hasBrandOverrides &&
+      (field === "imposto" || field === "margem" || field === "marketing")
+    ) {
+      brandOverrides[row.key].setEdited(field, true);
     }
 
-    if (row.key === "mlClassico") {
-      setCalculoMLClassico((previous) => ({
-        ...previous,
-        [field]: internalValue,
-      }));
-
-      return;
+    if (def.allowManualComissaoFrete && field === "comissao") {
+      setManualFlag(row.key, "comissao", true);
     }
 
-    if (row.key === "mlPremium") {
-      setCalculoMLPremium((previous) => ({
-        ...previous,
-        [field]: internalValue,
-      }));
-
-      return;
+    if (def.allowManualComissaoFrete && field === "frete") {
+      setManualFlag(row.key, "frete", true);
     }
 
-    if (field === "comissao") {
-      setUserEditedTiktokComissao(true);
-    }
-
-    if (field === "frete") {
-      setUserEditedTiktokFrete(true);
-    }
-
-    setCalculoTiktok((previous) => ({
+    setCalculo(row.key, (previous) => ({
       ...previous,
       [field]: internalValue,
     }));
@@ -844,146 +631,51 @@ export const PriceCalculationSection: React.FC<
     field: keyof Calculo,
     internalValue: string
   ) => {
+    const def = getChannelDef(row.key);
+
     if (field === "embalagem") {
-      if (row.key === "shopee") {
-        handleEmbalagemBlurShopee(internalValue);
-      } else {
+      if (def.sharesEmbalagem) {
         handleEmbalagemBlurShared(internalValue);
-      }
-
-      return;
-    }
-
-    if (row.key === "loja") {
-      if (field === "desconto") {
-        syncDescontoFromLoja(internalValue);
       } else {
-        setCalculoLoja((previous) => ({
-          ...previous,
-          [field]: internalValue,
-        }));
+        handleEmbalagemBlurChannel(row.key, internalValue);
       }
 
       return;
     }
 
-    if (row.key === "shopee") {
-      if (
-        field === "comissao" &&
-        isEmptyOrZero(internalValue)
-      ) {
-        setUserEditedShopeeComissao(false);
-      }
-
-      if (
-        field === "frete" &&
-        isEmptyOrZero(internalValue)
-      ) {
-        setUserEditedShopeeFrete(false);
-      }
-
-      if (
-        field === "imposto" &&
-        isEmptyOrZero(internalValue)
-      ) {
-        setUserEditedShopeeImposto(false);
-      }
-
-      if (
-        field === "margem" &&
-        isEmptyOrZero(internalValue)
-      ) {
-        setUserEditedShopeeMargem(false);
-      }
-
-      if (
-        field === "marketing" &&
-        isEmptyOrZero(internalValue)
-      ) {
-        setUserEditedShopeeMarketing(false);
-      }
-
-      setCalculoShopee((previous) => ({
-        ...previous,
-        [field]: internalValue,
-      }));
-
-      return;
-    }
-
-    if (row.key === "magalu") {
-      setCalculoMagalu((previous) => ({
-        ...previous,
-        [field]: internalValue,
-      }));
-
-      return;
-    }
-
-    if (row.key === "mlClassico") {
-      setCalculoMLClassico((previous) => ({
-        ...previous,
-        [field]: internalValue,
-      }));
-
-      return;
-    }
-
-    if (row.key === "mlPremium") {
-      setCalculoMLPremium((previous) => ({
-        ...previous,
-        [field]: internalValue,
-      }));
-
+    if (row.key === "loja" && field === "desconto") {
+      syncDescontoFromLoja(internalValue);
       return;
     }
 
     if (
+      def.hasBrandOverrides &&
+      (field === "imposto" || field === "margem" || field === "marketing") &&
+      isEmptyOrZero(internalValue)
+    ) {
+      brandOverrides[row.key].setEdited(field, false);
+    }
+
+    if (
+      def.allowManualComissaoFrete &&
       field === "comissao" &&
       isEmptyOrZero(internalValue)
     ) {
-      setUserEditedTiktokComissao(false);
+      setManualFlag(row.key, "comissao", false);
     }
 
     if (
+      def.allowManualComissaoFrete &&
       field === "frete" &&
       isEmptyOrZero(internalValue)
     ) {
-      setUserEditedTiktokFrete(false);
+      setManualFlag(row.key, "frete", false);
     }
 
-    setCalculoTiktok((previous) => ({
+    setCalculo(row.key, (previous) => ({
       ...previous,
       [field]: internalValue,
     }));
-  };
-
-  const getPriceClass = (row: ChannelRow) => {
-    if (row.key === "loja") {
-      return "text-neutral-100";
-    }
-
-    if (row.key === "shopee") {
-      return "text-orange-400";
-    }
-
-    if (row.key === "magalu") {
-      return "text-[#1a8ceb]";
-    }
-
-    if (row.key === "mlClassico") {
-      return "text-yellow-400";
-    }
-
-    if (row.key === "mlPremium") {
-      return "text-yellow-400";
-    }
-
-    if (row.key === "tiktok") {
-      return "text-white";
-    }
-
-    return "text-white";
   };
 
   const formatCopyValue = (value: number) => {
@@ -993,9 +685,7 @@ export const PriceCalculationSection: React.FC<
     });
   };
 
-  const handleCopyPrice = async (
-    row: ChannelRow
-  ) => {
+  const handleCopyPrice = async (row: ChannelRow) => {
     const value = formatCopyValue(row.preco);
 
     try {
@@ -1082,9 +772,7 @@ export const PriceCalculationSection: React.FC<
                   empresaColorClass,
                 ].join(" ")}
                 title={
-                  empresa === "pikot"
-                    ? "Pikot Shop"
-                    : "Sóbaquetas"
+                  empresa === "pikot" ? "Pikot Shop" : "Sóbaquetas"
                 }
                 aria-label="Selecionar loja / regras de taxas"
               >
@@ -1094,31 +782,15 @@ export const PriceCalculationSection: React.FC<
               <AnimatePresence>
                 {isEmpresaOpen && (
                   <motion.div
-                    initial={{
-                      opacity: 0,
-                      y: 6,
-                      scale: 0.98,
-                    }}
-                    animate={{
-                      opacity: 1,
-                      y: 0,
-                      scale: 1,
-                    }}
-                    exit={{
-                      opacity: 0,
-                      y: 6,
-                      scale: 0.98,
-                    }}
-                    transition={{
-                      duration: 0.14,
-                    }}
+                    initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                    transition={{ duration: 0.14 }}
                     className="absolute right-0 top-10 z-50 w-52 rounded border border-white/10 bg-[#1c1c1c] p-1 shadow-xl"
                   >
                     <button
                       type="button"
-                      onClick={() =>
-                        handleSelectEmpresa("pikot")
-                      }
+                      onClick={() => handleSelectEmpresa("pikot")}
                       className={[
                         "relative flex w-full cursor-pointer items-center justify-between rounded px-3 py-2 text-xs transition hover:bg-white/[0.06]",
                         empresa === "pikot"
@@ -1140,9 +812,7 @@ export const PriceCalculationSection: React.FC<
 
                     <button
                       type="button"
-                      onClick={() =>
-                        handleSelectEmpresa("sobaquetas")
-                      }
+                      onClick={() => handleSelectEmpresa("sobaquetas")}
                       className={[
                         "relative flex w-full cursor-pointer items-center justify-between rounded px-3 py-2 text-xs transition hover:bg-white/[0.06]",
                         empresa === "sobaquetas"
@@ -1185,24 +855,10 @@ export const PriceCalculationSection: React.FC<
         <AnimatePresence>
           {isLayoutOpen && (
             <motion.div
-              initial={{
-                opacity: 0,
-                y: 6,
-                scale: 0.98,
-              }}
-              animate={{
-                opacity: 1,
-                y: 0,
-                scale: 1,
-              }}
-              exit={{
-                opacity: 0,
-                y: 6,
-                scale: 0.98,
-              }}
-              transition={{
-                duration: 0.14,
-              }}
+              initial={{ opacity: 0, y: 6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.98 }}
+              transition={{ duration: 0.14 }}
               className="absolute right-4 top-14 z-50 w-full max-w-[280px] rounded border border-white/10 bg-[#1c1c1c] p-1.5 shadow-xl"
             >
               <div className="mb-2 flex items-center justify-between px-0.5">
@@ -1221,44 +877,39 @@ export const PriceCalculationSection: React.FC<
               </div>
 
               <div className="flex flex-col gap-1">
-                {BLOCKS.map((block) => {
-                  const checked = visible[block.key];
+                {CHANNELS.map((def) => {
+                  const checked = visible[def.key];
+                  const visual = CHANNEL_VISUAL[def.key];
 
                   return (
                     <button
-                      key={block.key}
+                      key={def.key}
                       type="button"
-                      onClick={() =>
-                        toggleBlock(block.key)
-                      }
+                      onClick={() => toggleBlock(def.key)}
                       className={[
                         "flex h-10 cursor-pointer items-center justify-between rounded border border-white/10 px-2 transition",
-                        checked
-                          ? "bg-white/[0.06]"
-                          : "bg-white/[0.02]",
+                        checked ? "bg-white/[0.06]" : "bg-white/[0.02]",
                         "hover:bg-white/[0.09]",
                       ].join(" ")}
                     >
                       <div className="flex min-w-0 items-center gap-2">
                         <span
-                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${block.dotClassName}`}
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${visual.dotClassName}`}
                         />
 
                         <span className="truncate text-xs text-white/85">
-                          {block.nome}
+                          {def.title}
                         </span>
 
                         <span className="shrink-0 text-[10px] text-white/45">
-                          ({shortLabel(block.key)})
+                          ({visual.shortLabel})
                         </span>
                       </div>
 
                       <div
                         className={[
                           "flex h-6 w-6 shrink-0 items-center justify-center rounded border border-white/10",
-                          checked
-                            ? "bg-white/10"
-                            : "bg-transparent",
+                          checked ? "bg-white/10" : "bg-transparent",
                         ].join(" ")}
                       >
                         {checked && (
@@ -1272,9 +923,7 @@ export const PriceCalculationSection: React.FC<
 
               <button
                 type="button"
-                onClick={() =>
-                  setVisible(defaultVisible)
-                }
+                onClick={() => setVisible(defaultVisible)}
                 className="mt-2 h-9 w-full cursor-pointer rounded border border-white/10 bg-white/[0.02] text-xs text-white/60 transition hover:bg-white/[0.08] hover:text-white/80"
               >
                 Mostrar todos
@@ -1323,10 +972,8 @@ export const PriceCalculationSection: React.FC<
               >
                 <div className="flex items-center justify-between gap-3 lg:px-4 lg:py-5">
                   <div className="flex min-w-0 items-center gap-3">
-                    <ChannelIcon
-                      className={row.iconClassName}
-                    >
-                      {row.icon}
+                    <ChannelIcon className={row.visual.iconClassName}>
+                      {row.visual.icon}
                     </ChannelIcon>
 
                     <div className="min-w-0">
@@ -1365,8 +1012,7 @@ export const PriceCalculationSection: React.FC<
                       editingKey={`${row.key}-${field.key}`}
                       suffix={field.suffix}
                       inputRef={(element) => {
-                        row.refs.current[index] =
-                          element!;
+                        row.refs.current[index] = element!;
                       }}
                       navIndex={index}
                       totalFields={totalFields}
@@ -1374,9 +1020,7 @@ export const PriceCalculationSection: React.FC<
                       onChange={(key, value) =>
                         handleChange(row, key, value)
                       }
-                      onBlur={(key, value) =>
-                        handleBlur(row, key, value)
-                      }
+                      onBlur={(key, value) => handleBlur(row, key, value)}
                       isEditing={isEditing}
                       setEditing={setEditing}
                       toDisplay={toDisplay}
@@ -1393,22 +1037,15 @@ export const PriceCalculationSection: React.FC<
 
                   <div className="flex w-full items-center justify-end gap-1.5">
                     <span
-                      className={`text-xl font-bold tabular-nums ${getPriceClass(
-                        row
-                      )}`}
+                      className={`text-xl font-bold tabular-nums ${row.visual.priceClassName}`}
                     >
                       R${" "}
-
-                      <AnimatedNumber
-                        value={Number(row.preco || 0)}
-                      />
+                      <AnimatedNumber value={Number(row.preco || 0)} />
                     </span>
 
                     <button
                       type="button"
-                      onClick={() =>
-                        handleCopyPrice(row)
-                      }
+                      onClick={() => handleCopyPrice(row)}
                       className="flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-white/10 bg-white/[0.03] text-white/50 opacity-0 transition hover:bg-white/[0.08] hover:text-white group-hover/price:opacity-100"
                       title="Copiar preço"
                     >
@@ -1429,50 +1066,33 @@ export const PriceCalculationSection: React.FC<
           {hiddenBlocks.length > 0 && (
             <motion.div
               layout
-              initial={{
-                opacity: 0,
-                y: 8,
-              }}
-              animate={{
-                opacity: 1,
-                y: 0,
-              }}
-              exit={{
-                opacity: 0,
-                y: 8,
-              }}
-              transition={{
-                duration: 0.18,
-              }}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.18 }}
               className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded border border-white/10 bg-[#181818] px-3 py-2"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] text-white/50">
-                  Ocultos
-                </span>
+                <span className="text-[11px] text-white/50">Ocultos</span>
 
-                {hiddenBlocks.map((block) => (
+                {hiddenBlocks.map((def) => (
                   <button
-                    key={block.key}
+                    key={def.key}
                     type="button"
-                    onClick={() =>
-                      restore(block.key)
-                    }
+                    onClick={() => restore(def.key)}
                     className="inline-flex h-8 cursor-pointer items-center gap-2 rounded border border-white/10 bg-white/[0.03] px-3 text-xs text-white/70 transition hover:bg-white/[0.08] hover:text-white"
-                    title={`Restaurar ${block.nome}`}
+                    title={`Restaurar ${def.title}`}
                   >
                     <ArrowUpCircle className="h-4 w-4" />
 
-                    {shortLabel(block.key)}
+                    {CHANNEL_VISUAL[def.key].shortLabel}
                   </button>
                 ))}
               </div>
 
               <button
                 type="button"
-                onClick={() =>
-                  setVisible(defaultVisible)
-                }
+                onClick={() => setVisible(defaultVisible)}
                 className="h-8 cursor-pointer rounded border border-white/10 px-3 text-xs text-white/60 transition hover:bg-white/[0.05] hover:text-white"
               >
                 Restaurar todos
