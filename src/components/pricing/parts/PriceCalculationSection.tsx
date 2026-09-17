@@ -14,8 +14,9 @@ import { ClearAndDownloadActions } from "./ClearAndDownloadActions";
 import { AcrescimosSection } from "./AcrescimosSection";
 import { AnimatedNumber } from "./AnimatedNumber";
 import type { Calculo } from "../PricingCalculatorModern";
-import { CHANNELS, ChannelKey, getChannelDef } from "../channelsConfig";
-import type { BrandOverrides, ManualFlags } from "../useChannelPricing";
+import { CHANNELS } from "@/components/costs/hooks/channelsconfig";
+import type { ChannelKey } from "@/components/costs/hooks/channelsconfig";
+import type { BrandOverrides, ManualFlags } from "@/components/costs/hooks/usechannelpricing";
 
 type Empresa = "pikot" | "sobaquetas";
 
