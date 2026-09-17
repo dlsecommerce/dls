@@ -8,6 +8,8 @@ type Sugestao = {
   codigo: string;
   custo: number;
   produto?: string;
+  marca?: string; // ✅ NOVO — reflete o que o pai já envia
+  packingCost?: number; // ✅ NOVO — reflete o que o pai já envia
 };
 
 type CostCompositionProps = {
@@ -31,13 +33,17 @@ type CostCompositionProps = {
     codigo: string,
     custo: number,
     idx: number,
-    produto?: string
+    produto?: string,
+    packingCost?: number, // ✅ NOVO
+    marca?: string // ✅ NOVO
   ) => void;
   confirmarSugestaoPrimeira: (
     idx: number,
     codigo: string,
     custo: number,
-    produto?: string
+    produto?: string,
+    packingCost?: number, // ✅ NOVO
+    marca?: string // ✅ NOVO
   ) => void;
 
   // Navegação
@@ -68,6 +74,7 @@ export const CostComposition: React.FC<CostCompositionProps> = ({
   buscarSugestoesDebounced,
   handleSugestoesKeys,
   selecionarSugestao,
+  confirmarSugestaoPrimeira,
   inputRefs,
   handleGridNav,
   isEditing,
@@ -112,6 +119,7 @@ export const CostComposition: React.FC<CostCompositionProps> = ({
               buscarSugestoesDebounced={buscarSugestoesDebounced}
               handleSugestoesKeys={handleSugestoesKeys}
               selecionarSugestao={selecionarSugestao}
+              confirmarSugestaoPrimeira={confirmarSugestaoPrimeira}
               inputRefs={inputRefs}
               handleGridNav={handleGridNav}
               isEditing={isEditing}

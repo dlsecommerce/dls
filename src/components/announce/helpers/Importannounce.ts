@@ -93,11 +93,30 @@ function normalizeIdBling(value: any): string | null {
   return idBling;
 }
 
+/**
+ * ✅ NOVO — normaliza a coluna "Canal" da planilha em um array de
+ * nomes de canal. Aceita múltiplos canais na mesma célula separados
+ * por vírgula ou ponto-e-vírgula (ex: "Shopee, Mercado Livre" ou
+ * "Shopee; Mercado Livre"). Remove espaços extras e entradas vazias.
+ * Retorna array vazio se a célula estiver em branco (nesse caso, a
+ * linha usa o fallback global de canais selecionado na tela).
+ */
+function normalizeChannelsCell(value: any): string[] {
+  const text = normalizeText(value);
+  if (!text) return [];
+
+  return text
+    .split(/[,;]+/)
+    .map((c) => c.trim())
+    .filter((c) => c.length > 0);
+}
+
 const STORE_ALIASES = ["Loja", "loja", "store"];
 const ID_BLING_ALIASES = ["ID Bling", "id bling", "id_bling", "idbling"];
 const REFERENCE_ALIASES = ["Referência", "Referencia", "referência", "referencia", "reference"];
 const PRODUTO_ALIASES = ["Produto", "produto", "product"];
 const MARCA_ALIASES = ["Marca", "marca", "mark", "brand"];
+const CANAL_ALIASES = ["Canal", "canal", "Canais", "canais", "channel", "channels"];
 
 type NormalizeOutcome =
   | { ok: true; row: any; warning?: string }
@@ -117,6 +136,11 @@ type NormalizeOutcome =
  *
  * A composição/kit do anúncio é resolvida automaticamente pelo banco
  * (não é lida nem enviada pela planilha).
+ *
+ * ✅ `channelsFromSheet`: canal(is) informado(s) na coluna "Canal" da
+ * própria linha (opcional). Usado pelo Announce.tsx para pré-montar
+ * `channelRowAssignments` automaticamente no preview, sem que o
+ * usuário precise selecionar manualmente no ConfirmImportModal.
  */
 function normalizeRow(
   rowRaw: Record<string, any>,
@@ -127,6 +151,7 @@ function normalizeRow(
   const store = normalizeStore(getByAliases(rowRaw, headerIndex, STORE_ALIASES));
   const reference = normalizeReference(getByAliases(rowRaw, headerIndex, REFERENCE_ALIASES));
   const idBling = normalizeIdBling(getByAliases(rowRaw, headerIndex, ID_BLING_ALIASES));
+  const channelsFromSheet = normalizeChannelsCell(getByAliases(rowRaw, headerIndex, CANAL_ALIASES));
 
   if (!store && !reference) return { ok: false, skip: true };
 
@@ -153,6 +178,7 @@ function normalizeRow(
       reference,
       product: normalizeText(getByAliases(rowRaw, headerIndex, PRODUTO_ALIASES)),
       mark: normalizeText(getByAliases(rowRaw, headerIndex, MARCA_ALIASES)),
+      channelsFromSheet,
     },
   };
 }
@@ -198,9 +224,8 @@ async function callImportarAnnounceApi(
     // ✅ `channels` é enviado como fallback global (compatibilidade com
     // o comportamento antigo). Cada item de `registros` pode trazer seu
     // próprio `channels` (atribuição por linha, vinda do
-    // ConfirmImportModal) — nesse caso ele tem prioridade no servidor.
-    // O endpoint /api/announce/import precisa ler
-    // `registro.channels ?? channels` por registro.
+    // ConfirmImportModal ou da coluna "Canal" da planilha) — nesse caso
+    // ele tem prioridade no servidor.
     body: JSON.stringify({ registros, modo, channels }),
   });
 
@@ -279,7 +304,7 @@ async function callImportarAnnounceApiEmLotes(
 }
 
 /**
- * ✅ NOVO — converte o mapa vindo do ConfirmImportModal
+ * Converte o mapa vindo do ConfirmImportModal
  * (canal -> índices de linha em `deduped`) em uma lista de canais
  * POR REGISTRO. Se um índice não estiver em nenhum canal do mapa,
  * cai no fallback `channelsFallback` (comportamento antigo: todos os
@@ -288,30 +313,43 @@ async function callImportarAnnounceApiEmLotes(
  * Os índices usados pelo modal correspondem exatamente à posição do
  * registro dentro de `deduped` (mesmo array usado tanto no preview
  * quanto na importação final, para o mesmo arquivo/modo).
+ *
+ * ✅ Se o registro tiver `channelsFromSheet` (coluna "Canal" da
+ * própria planilha) e não houver atribuição manual no mapa para o seu
+ * índice, usa `channelsFromSheet` em vez do fallback global — a
+ * planilha tem prioridade intermediária entre a atribuição manual do
+ * modal e a seleção global de canais na tela.
  */
 function applyChannelRowAssignments(
   deduped: any[],
   channelsFallback: string[],
   channelRowAssignments?: Record<string, number[]>
 ): any[] {
-  if (!channelRowAssignments || Object.keys(channelRowAssignments).length === 0) {
-    return deduped;
-  }
-
   const channelsByIndex = new Map<number, string[]>();
 
-  for (const [channelName, indices] of Object.entries(channelRowAssignments)) {
-    for (const idx of indices) {
-      const current = channelsByIndex.get(idx) ?? [];
-      current.push(channelName);
-      channelsByIndex.set(idx, current);
+  if (channelRowAssignments) {
+    for (const [channelName, indices] of Object.entries(channelRowAssignments)) {
+      for (const idx of indices) {
+        const current = channelsByIndex.get(idx) ?? [];
+        current.push(channelName);
+        channelsByIndex.set(idx, current);
+      }
     }
   }
 
-  return deduped.map((row, idx) => ({
-    ...row,
-    channels: channelsByIndex.get(idx) ?? channelsFallback,
-  }));
+  return deduped.map((row, idx) => {
+    const manual = channelsByIndex.get(idx);
+    if (manual && manual.length > 0) {
+      return { ...row, channels: manual };
+    }
+
+    const fromSheet = Array.isArray(row.channelsFromSheet) ? row.channelsFromSheet : [];
+    if (fromSheet.length > 0) {
+      return { ...row, channels: fromSheet };
+    }
+
+    return { ...row, channels: channelsFallback };
+  });
 }
 
 // ---------------------------------------------------------------------
@@ -350,8 +388,9 @@ function buildTimestampedFileName(prefix: string): string {
 //
 // `channels`: canais de marketplace selecionados na UI (seleção
 // global, igual nos dois modos), usados como FALLBACK quando não há
-// atribuição por linha. No modo "inclusao", o servidor cria o vínculo
-// em `marketplace` apenas nesses canais (via trigger de INSERT em
+// atribuição por linha nem canal informado na coluna "Canal" da
+// planilha. No modo "inclusao", o servidor cria o vínculo em
+// `marketplace` apenas nesses canais (via trigger de INSERT em
 // `announce`, que lê essa seleção). No modo "alteracao", além de
 // sincronizar os campos dos vínculos já existentes (trigger de
 // UPDATE), o servidor GARANTE o vínculo nesses canais para os
@@ -360,8 +399,9 @@ function buildTimestampedFileName(prefix: string): string {
 // `channelRowAssignments`: mapa opcional (canal -> índices de linha em
 // `deduped`), vindo do ConfirmImportModal. Permite que cada anúncio da
 // planilha vá para canais DIFERENTES entre si, em vez de todos irem
-// para os mesmos `channels` globais. Linhas fora do mapa usam
-// `channels` como fallback.
+// para os mesmos `channels` globais. Tem prioridade sobre o canal
+// informado na própria planilha (coluna "Canal"), que por sua vez tem
+// prioridade sobre `channels` (fallback global).
 //
 // A composição/kit do anúncio NÃO vem da planilha: é resolvida
 // automaticamente pelo banco.
@@ -508,9 +548,9 @@ export async function importAnnounceFromXlsxOrCsv(
 
   const accessToken = await ensureValidSession();
 
-  // ✅ Aplica a atribuição por linha (se houver) antes de enviar.
-  // Cada registro passa a carregar seu próprio `channels`, sobrepondo
-  // o fallback global quando presente.
+  // ✅ Aplica a atribuição por linha (manual do modal > coluna "Canal"
+  // da planilha > fallback global) antes de enviar. Cada registro
+  // passa a carregar seu próprio `channels`.
   const registrosComCanais = applyChannelRowAssignments(deduped, channels, channelRowAssignments);
 
   onProgress?.({ processed: 0, total: registrosComCanais.length, batchSize: CHUNK_SIZE });

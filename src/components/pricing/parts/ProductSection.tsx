@@ -10,6 +10,8 @@ type SugestaoProduto = {
   codigo: string;
   custo: number;
   produto?: string;
+  marca?: string;
+  packingCost?: number;
 };
 
 type TipoBuscaProduto = "codigo" | "descricao";
@@ -38,10 +40,18 @@ type ProductSectionProps = {
   selecionarProdutoSugestao?: (
     codigo: string,
     custo: number,
-    produto?: string
+    produto?: string,
+    marca?: string,
+    packingCost?: number
   ) => void;
 
   onAdicionarProduto?: () => void;
+
+  // ✅ NOVOS PROPS — todos opcionais, com fallback seguro.
+  // Se o componente pai não passar, o dropdown continua
+  // funcionando exatamente como antes (sem quebrar nada).
+  onHoverProdutoIndex?: (index: number) => void;
+  onCloseSugestoesProduto?: () => void;
 };
 
 export const ProductSection: React.FC<ProductSectionProps> = ({
@@ -60,6 +70,9 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
   selecionarProdutoSugestao,
 
   onAdicionarProduto,
+
+  onHoverProdutoIndex,
+  onCloseSugestoesProduto,
 }) => {
   const fallbackListaRef = React.useRef<HTMLDivElement>(null);
   const dropdownRef = listaProdutoRef || fallbackListaRef;
@@ -67,11 +80,69 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
   const [campoBuscaAtivo, setCampoBuscaAtivo] =
     React.useState<TipoBuscaProduto | null>(null);
 
+  // ✅ Loading local — não depende de nenhuma alteração na lógica
+  // de busca existente. Marca "buscando" ao digitar e desliga
+  // automaticamente quando o array de sugestões muda (chegou
+  // resposta) ou quando a busca é limpa/fechada.
+  const [isSearching, setIsSearching] = React.useState(false);
+  const loadingTimeoutRef = React.useRef<ReturnType<typeof setTimeout>>();
+
   const canAdd = codigo.trim() !== "" || descricao.trim() !== "";
+
+  // Termo de busca relevante para o highlight, conforme o campo ativo
+  const termoBuscaAtivo =
+    campoBuscaAtivo === "codigo"
+      ? codigo
+      : campoBuscaAtivo === "descricao"
+        ? descricao
+        : "";
+
+  React.useEffect(() => {
+    // Sempre que as sugestões mudam (chegaram do banco), desliga o loading
+    setIsSearching(false);
+  }, [sugestoesProduto]);
+
+  React.useEffect(() => {
+    // Se a lista de sugestões foi fechada, garante que o loading também some
+    if (!produtoSugestaoAtiva) {
+      setIsSearching(false);
+    }
+  }, [produtoSugestaoAtiva]);
+
+  React.useEffect(() => {
+    // Limpeza do timeout ao desmontar, evita leak
+    return () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const dispararLoading = () => {
+    setIsSearching(true);
+
+    // Failsafe: se por algum motivo a resposta nunca chegar
+    // (erro de rede, etc.), desliga o skeleton após 4s para
+    // não deixar o usuário com loading eterno.
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+    }
+
+    loadingTimeoutRef.current = setTimeout(() => {
+      setIsSearching(false);
+    }, 4000);
+  };
 
   const handleCodigoChange = (value: string) => {
     setCodigo(value);
     setCampoBuscaAtivo("codigo");
+
+    if (value.trim()) {
+      dispararLoading();
+    } else {
+      setIsSearching(false);
+    }
+
     buscarSugestoesProdutoDebounced?.(value, "codigo");
   };
 
@@ -86,6 +157,13 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
   const handleDescricaoChange = (value: string) => {
     setDescricao(value);
     setCampoBuscaAtivo("descricao");
+
+    if (value.trim()) {
+      dispararLoading();
+    } else {
+      setIsSearching(false);
+    }
+
     buscarSugestoesProdutoDebounced?.(value, "descricao");
   };
 
@@ -100,13 +178,24 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
   const handleSelect = (
     codigoSelecionado: string,
     custoSelecionado: number,
-    produtoSelecionado?: string
+    produtoSelecionado?: string,
+    marcaSelecionada?: string,
+    packingCostSelecionado?: number
   ) => {
+    setIsSearching(false);
+
     selecionarProdutoSugestao?.(
       codigoSelecionado,
       custoSelecionado,
-      produtoSelecionado
+      produtoSelecionado,
+      marcaSelecionada,
+      packingCostSelecionado
     );
+  };
+
+  const handleClose = () => {
+    setIsSearching(false);
+    onCloseSugestoesProduto?.();
   };
 
   return (
@@ -164,6 +253,10 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
             listaRef={dropdownRef}
             indiceSelecionado={indiceProdutoSelecionado}
             onSelect={handleSelect}
+            termoBusca={campoBuscaAtivo === "codigo" ? termoBuscaAtivo : ""}
+            isLoading={campoBuscaAtivo === "codigo" && isSearching}
+            onHoverIndex={onHoverProdutoIndex}
+            onClose={handleClose}
           />
         </div>
 
@@ -188,13 +281,15 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
           />
 
           <SuggestionDropdown
-            isActive={
-              produtoSugestaoAtiva && campoBuscaAtivo === "descricao"
-            }
+            isActive={produtoSugestaoAtiva && campoBuscaAtivo === "descricao"}
             sugestoes={sugestoesProduto}
             listaRef={dropdownRef}
             indiceSelecionado={indiceProdutoSelecionado}
             onSelect={handleSelect}
+            termoBusca={campoBuscaAtivo === "descricao" ? termoBuscaAtivo : ""}
+            isLoading={campoBuscaAtivo === "descricao" && isSearching}
+            onHoverIndex={onHoverProdutoIndex}
+            onClose={handleClose}
           />
         </div>
       </div>

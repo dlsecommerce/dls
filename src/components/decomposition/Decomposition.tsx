@@ -40,9 +40,22 @@ type SugestaoProduto = {
   codigo: string;
   custo: number;
   produto?: string;
+  marca?: string; // ✅ NOVO
+  packingCost?: number; // ✅ NOVO
+};
+
+type SugestaoComposicao = {
+  codigo: string;
+  custo: number;
+  produto?: string;
+  marca?: string; // ✅ NOVO
+  packingCost?: number; // ✅ NOVO
 };
 
 type TipoBuscaProduto = "codigo" | "descricao";
+
+// ✅ Colunas padronizadas para newsystem.costs
+const SELECT_COLS = "code, current_cost, product, packing_cost, mark";
 
 function debounce<T extends (...args: any[]) => any>(fn: T, delay: number) {
   let timer: ReturnType<typeof setTimeout>;
@@ -63,12 +76,23 @@ const linhaVazia = (): Item => ({
   custo: "",
 });
 
+// ✅ Mapeia resultado do newsystem.costs para o formato SugestaoProduto/Composicao
+const mapCostsResultado = (data: any[] | null) =>
+  data?.map((item) => ({
+    codigo: item.code,
+    custo: Number(item.current_cost) || 0,
+    produto: item.product || "",
+    marca: item.mark || "",
+    packingCost: Number(item.packing_cost) || 0,
+  })) || [];
+
 export default function Decomposition() {
   /* ===== Estado principal ===== */
   const [precoVenda, setPrecoVenda] = useState<string>("");
 
   const [produtoCodigo, setProdutoCodigo] = useState("");
   const [produtoDescricao, setProdutoDescricao] = useState("");
+  const [produtoMarca, setProdutoMarca] = useState(""); // ✅ NOVO
 
   const [composicao, setComposicao] = useState<Item[]>([linhaVazia()]);
 
@@ -85,9 +109,7 @@ export default function Decomposition() {
   const ultimaBuscaProdutoRef = useRef("");
 
   /* ===== Sugestões Supabase da composição ===== */
-  const [sugestoes, setSugestoes] = useState<
-    { codigo: string; custo: number }[]
-  >([]);
+  const [sugestoes, setSugestoes] = useState<SugestaoComposicao[]>([]);
 
   const [campoAtivo, setCampoAtivo] = useState<number | null>(null);
   const [indiceSelecionado, setIndiceSelecionado] = useState<number>(-1);
@@ -105,9 +127,15 @@ export default function Decomposition() {
       !String(item?.codigo || "").trim() &&
       !String(item?.quantidade || "").trim() &&
       !String(item?.custo || "").trim() &&
-      !String(item?.descricao || "").trim() &&
-      !String(item?.produto || "").trim()
+      !String((item as any)?.descricao || "").trim() &&
+      !String((item as any)?.produto || "").trim()
     );
+  };
+
+  // ✅ Resolve a marca ativa a partir do primeiro item preenchido da composição
+  const resolveMarcaAtiva = (lista: Item[]): string => {
+    const item = lista.find((i: any) => String(i?.marca || "").trim());
+    return (item as any)?.marca || "";
   };
 
   /* ===== Cálculos ===== */
@@ -148,7 +176,7 @@ export default function Decomposition() {
     });
   }, [composicao, custoTotalGeral, precoVenda]);
 
-  /* ===== Busca de sugestão do Produto ===== */
+  /* ===== Busca de sugestão do Produto (newsystem.costs) ===== */
   const buscarSugestoesProduto = async (
     termo: string,
     tipo: TipoBuscaProduto
@@ -165,25 +193,19 @@ export default function Decomposition() {
       return;
     }
 
-    const coluna = tipo === "codigo" ? "Código" : "Produto";
-
-    const mapResultados = (data: any[] | null) =>
-      data?.map((d) => ({
-        codigo: d["Código"],
-        custo: Number(d["Custo Atual"]) || 0,
-        produto: d["Produto"] || "",
-      })) || [];
+    const coluna = tipo === "codigo" ? "code" : "product";
 
     const exact = await supabase
-      .from("custos")
-      .select('"Código", "Custo Atual", "Produto"')
-      .eq(`"${coluna}"`, raw)
+      .schema("newsystem")
+      .from("costs")
+      .select(SELECT_COLS)
+      .eq(coluna, raw)
       .limit(8);
 
     if (ultimaBuscaProdutoRef.current !== buscaAtual) return;
 
     if (exact.data && exact.data.length > 0) {
-      const lista = mapResultados(exact.data);
+      const lista = mapCostsResultado(exact.data);
 
       setSugestoesProduto(lista);
       setProdutoSugestaoAtiva(true);
@@ -192,15 +214,16 @@ export default function Decomposition() {
     }
 
     const starts = await supabase
-      .from("custos")
-      .select('"Código", "Custo Atual", "Produto"')
-      .ilike(`"${coluna}"`, `${raw}%`)
+      .schema("newsystem")
+      .from("costs")
+      .select(SELECT_COLS)
+      .ilike(coluna, `${raw}%`)
       .limit(8);
 
     if (ultimaBuscaProdutoRef.current !== buscaAtual) return;
 
     if (starts.data && starts.data.length > 0) {
-      const lista = mapResultados(starts.data);
+      const lista = mapCostsResultado(starts.data);
 
       setSugestoesProduto(lista);
       setProdutoSugestaoAtiva(true);
@@ -209,14 +232,15 @@ export default function Decomposition() {
     }
 
     const partial = await supabase
-      .from("custos")
-      .select('"Código", "Custo Atual", "Produto"')
-      .ilike(`"${coluna}"`, `%${raw}%`)
+      .schema("newsystem")
+      .from("costs")
+      .select(SELECT_COLS)
+      .ilike(coluna, `%${raw}%`)
       .limit(8);
 
     if (ultimaBuscaProdutoRef.current !== buscaAtual) return;
 
-    const lista = mapResultados(partial.data);
+    const lista = mapCostsResultado(partial.data);
 
     setSugestoesProduto(lista);
     setProdutoSugestaoAtiva(lista.length > 0);
@@ -235,43 +259,57 @@ export default function Decomposition() {
     setIndiceProdutoSelecionado(-1);
   };
 
+  // ✅ Agora recebe também marca/packingCost e grava em `composicao`.
+  // Os campos extras usam cast seguro (as Item) — se `CompositionCosts.tsx`
+  // ainda não conhece `marca`/`embalagem`, eles ficam guardados no objeto
+  // mas não afetam a UI existente (comportamento aditivo, sem quebra).
   const adicionarProdutoNaComposicao = (
     codigo: string,
     custo: number,
-    produto?: string
+    produto?: string,
+    marca?: string,
+    packingCost?: number
   ) => {
     setComposicao((prev) => {
-      const novoItem: Item = {
+      const novoItem = {
         codigo,
         quantidade: "1,00",
         custo: formatBR(Number(custo) || 0),
         produto: produto || "",
         descricao: produto || "",
-      };
+        marca: marca || "",
+        embalagem: formatBR(Number(packingCost) || 0),
+      } as Item;
 
       const indexVazio = prev.findIndex(isLinhaVazia);
 
+      let novo: Item[];
+
       if (indexVazio >= 0) {
-        const novo = [...prev];
+        novo = [...prev];
 
         novo[indexVazio] = {
           ...novo[indexVazio],
           ...novoItem,
         };
-
-        return novo;
+      } else {
+        novo = [...prev, novoItem];
       }
 
-      return [...prev, novoItem];
+      setProdutoMarca(resolveMarcaAtiva(novo));
+
+      return novo;
     });
   };
 
   const selecionarProdutoSugestao = (
     codigo: string,
     custo: number,
-    produto?: string
+    produto?: string,
+    marca?: string,
+    packingCost?: number
   ) => {
-    adicionarProdutoNaComposicao(codigo, custo, produto);
+    adicionarProdutoNaComposicao(codigo, custo, produto, marca, packingCost);
     limparProdutoBusca();
   };
 
@@ -282,13 +320,15 @@ export default function Decomposition() {
     if (!codigo && !descricao) return;
 
     setComposicao((prev) => {
-      const novoItem: Item = {
+      const novoItem = {
         codigo: codigo || "Produto sem código",
         quantidade: "1,00",
         custo: "0,00",
         produto: descricao,
         descricao,
-      };
+        marca: "",
+        embalagem: "0,00",
+      } as Item;
 
       const indexVazio = prev.findIndex(isLinhaVazia);
 
@@ -334,7 +374,13 @@ export default function Decomposition() {
       const item = sugestoesProduto[index];
 
       if (item) {
-        selecionarProdutoSugestao(item.codigo, item.custo, item.produto);
+        selecionarProdutoSugestao(
+          item.codigo,
+          item.custo,
+          item.produto,
+          item.marca,
+          item.packingCost
+        );
       }
     } else if (e.key === "Tab") {
       e.preventDefault();
@@ -344,7 +390,13 @@ export default function Decomposition() {
       const item = sugestoesProduto[index];
 
       if (item) {
-        selecionarProdutoSugestao(item.codigo, item.custo, item.produto);
+        selecionarProdutoSugestao(
+          item.codigo,
+          item.custo,
+          item.produto,
+          item.marca,
+          item.packingCost
+        );
       }
     } else if (e.key === "Escape") {
       e.preventDefault();
@@ -374,7 +426,7 @@ export default function Decomposition() {
       document.removeEventListener("mousedown", handleClickOutsideProduto);
   }, [produtoSugestaoAtiva]);
 
-  /* ===== Supabase: buscar sugestões da composição ===== */
+  /* ===== Supabase: buscar sugestões da composição (newsystem.costs) ===== */
   const buscarSugestoes = async (termo: string, idx: number) => {
     const raw = termo.trim();
 
@@ -387,38 +439,76 @@ export default function Decomposition() {
       return;
     }
 
-    const { data, error } = await supabase
-      .from("custos")
-      .select('"Código", "Custo Atual"')
-      .ilike('"Código"', `%${raw}%`)
+    const exact = await supabase
+      .schema("newsystem")
+      .from("costs")
+      .select(SELECT_COLS)
+      .eq("code", raw)
       .limit(5);
 
     if (myReqId !== reqIdRef.current) return;
 
-    if (error) {
-      console.error("Erro Supabase:", error);
+    if (exact.data && exact.data.length > 0) {
+      setCampoAtivo(idx);
+      setSugestoes(mapCostsResultado(exact.data));
+      setIndiceSelecionado(0);
       return;
     }
 
+    const starts = await supabase
+      .schema("newsystem")
+      .from("costs")
+      .select(SELECT_COLS)
+      .ilike("code", `${raw}%`)
+      .limit(5);
+
+    if (myReqId !== reqIdRef.current) return;
+
+    if (starts.data && starts.data.length > 0) {
+      setCampoAtivo(idx);
+      setSugestoes(mapCostsResultado(starts.data));
+      setIndiceSelecionado(0);
+      return;
+    }
+
+    const partial = await supabase
+      .schema("newsystem")
+      .from("costs")
+      .select(SELECT_COLS)
+      .ilike("code", `%${raw}%`)
+      .limit(5);
+
+    if (myReqId !== reqIdRef.current) return;
+
+    const lista = mapCostsResultado(partial.data);
+
     setCampoAtivo(idx);
-
-    setSugestoes(
-      data?.map((d) => ({
-        codigo: d["Código"],
-        custo: Number(d["Custo Atual"]) || 0,
-      })) || []
-    );
-
-    setIndiceSelecionado((data?.length ?? 0) > 0 ? 0 : -1);
+    setSugestoes(lista);
+    setIndiceSelecionado(lista.length > 0 ? 0 : -1);
   };
 
-  const selecionarSugestao = (codigo: string, custo: number, idx: number) => {
+  // ✅ Agora grava marca/embalagem também ao selecionar item da composição
+  const selecionarSugestao = (
+    codigo: string,
+    custo: number,
+    idx: number,
+    produto?: string,
+    marca?: string,
+    packingCost?: number
+  ) => {
     const novo = [...composicao];
 
-    novo[idx].codigo = codigo;
-    novo[idx].custo = formatBR(custo);
+    novo[idx] = {
+      ...novo[idx],
+      codigo,
+      custo: formatBR(custo),
+      produto: produto || (novo[idx] as any)?.produto || "",
+      marca: marca || "",
+      embalagem: formatBR(Number(packingCost) || 0),
+    } as Item;
 
     setComposicao(novo);
+    setProdutoMarca(resolveMarcaAtiva(novo));
 
     setSugestoes([]);
     setCampoAtivo(null);
@@ -435,23 +525,21 @@ export default function Decomposition() {
     if (campoAtivo === idx && sugestoes.length > 0) {
       const s = sugestoes[0];
 
-      selecionarSugestao(s.codigo, s.custo, idx);
+      selecionarSugestao(s.codigo, s.custo, idx, s.produto, s.marca, s.packingCost);
       return;
     }
 
     const { data } = await supabase
-      .from("custos")
-      .select('"Código", "Custo Atual"')
-      .ilike('"Código"', `%${termo}%`)
+      .schema("newsystem")
+      .from("costs")
+      .select(SELECT_COLS)
+      .ilike("code", `%${termo}%`)
       .limit(1);
 
     if (data && data.length > 0) {
-      const s = {
-        codigo: data[0]["Código"],
-        custo: Number(data[0]["Custo Atual"]) || 0,
-      };
+      const [s] = mapCostsResultado(data);
 
-      selecionarSugestao(s.codigo, s.custo, idx);
+      selecionarSugestao(s.codigo, s.custo, idx, s.produto, s.marca, s.packingCost);
     }
   };
 
@@ -537,7 +625,14 @@ export default function Decomposition() {
 
         const s = sugestoes[indiceSelecionado];
 
-        selecionarSugestao(s.codigo, s.custo, idx);
+        selecionarSugestao(
+          s.codigo,
+          s.custo,
+          idx,
+          s.produto,
+          s.marca,
+          s.packingCost
+        );
         return;
       }
     }

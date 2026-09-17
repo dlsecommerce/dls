@@ -13,6 +13,7 @@ type ComposicaoRow = {
   store: string | null;
   reference: string | null;
   product: string | null;
+  mark: string | null;
   code: string | null;
   amount: number | null;
 };
@@ -165,6 +166,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           a.store,
           a.reference,
           a.product,
+          a.mark,
           c.code,
           comp.amount
         from newsystem.composition comp
@@ -198,6 +200,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       { header: "Loja", key: "loja", width: 12 },
       { header: "Referência", key: "referencia", width: 22 },
       { header: "Produto", key: "produto", width: 35 },
+      { header: "Marca", key: "marca", width: 18 },
       { header: "Código do Item", key: "codigo_item", width: 16 },
       { header: "Quantidade", key: "quantidade", width: 12 },
     ];
@@ -207,6 +210,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       loja: c.store ?? "",
       referencia: c.reference ?? "",
       produto: c.product ?? "",
+      marca: c.mark ?? "",
       codigo_item: c.code ?? "",
       quantidade: c.amount ?? 0,
     }));

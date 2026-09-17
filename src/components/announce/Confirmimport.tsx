@@ -84,7 +84,7 @@ const CHANNEL_STYLES: Record<string, { bg: string; text: string; border: string 
   Shopee: { bg: "#EE4D2D", text: "#FFFFFF", border: "#EE4D2D" },
   Magalu: { bg: "#0086FF", text: "#FFFFFF", border: "#0086FF" },
   "Mercado Livre": { bg: "#FFE600", text: "#1A1A1A", border: "#FFE600" },
-  Tray: { bg: "#FF6B00", text: "#FFFFFF", border: "#FF6B00" },
+  Tray: { bg: "#005CB3", text: "#FFFFFF", border: "#005CB3" },
   Olist: { bg: "#1A6CE8", text: "#FFFFFF", border: "#1A6CE8" },
   "TikTok Shop": { bg: "#FFFFFF", text: "#000000", border: "#FFFFFF" },
 };

@@ -33,7 +33,6 @@ type PriceCalculationSectionProps = {
   calculoMLPremium: Calculo;
   setCalculoMLPremium: CalculoSetter;
 
-  // ✅ NOVO: TikTok Shop
   calculoTiktok: Calculo;
   setCalculoTiktok: CalculoSetter;
 
@@ -42,7 +41,7 @@ type PriceCalculationSectionProps = {
   precoMagalu: number;
   precoMLClassico: number;
   precoMLPremium: number;
-  precoTiktok: number; // ✅ NOVO
+  precoTiktok: number;
 
   acrescimos: any;
   setAcrescimos: (value: any) => void;
@@ -64,7 +63,7 @@ type PriceCalculationSectionProps = {
   calcMagaluRefs: React.MutableRefObject<HTMLInputElement[]>;
   calcMLClassicoRefs: React.MutableRefObject<HTMLInputElement[]>;
   calcMLPremiumRefs: React.MutableRefObject<HTMLInputElement[]>;
-  calcTiktokRefs: React.MutableRefObject<HTMLInputElement[]>; // ✅ NOVO
+  calcTiktokRefs: React.MutableRefObject<HTMLInputElement[]>;
   acrescimosRefs: React.MutableRefObject<HTMLInputElement[]>;
 
   handleEmbalagemBlurShared: (raw: string) => void;
@@ -99,7 +98,6 @@ type PriceCalculationSectionProps = {
   userEditedShopeeEmbalagem: boolean;
   setUserEditedShopeeEmbalagem: (v: boolean) => void;
 
-  // ✅ NOVO: trava manual TikTok (comissão / taxa fixa)
   userEditedTiktokComissao: boolean;
   setUserEditedTiktokComissao: (v: boolean) => void;
 
@@ -113,7 +111,7 @@ type ChannelKey =
   | "magalu"
   | "mlClassico"
   | "mlPremium"
-  | "tiktok"; // ✅ NOVO
+  | "tiktok";
 
 type Empresa = "pikot" | "sobaquetas";
 
@@ -135,10 +133,10 @@ const BLOCKS: Array<{ key: ChannelKey; nome: string; dotClassName: string }> = [
   { key: "magalu", nome: "Magalu", dotClassName: "bg-[#1a8ceb]" },
   { key: "mlClassico", nome: "Mercado Livre", dotClassName: "bg-yellow-500" },
   { key: "mlPremium", nome: "Mercado Livre", dotClassName: "bg-yellow-500" },
-  { key: "tiktok", nome: "TikTok Shop", dotClassName: "bg-black" }, // ✅ NOVO
+  { key: "tiktok", nome: "TikTok Shop", dotClassName: "bg-black" },
 ];
 
-const STORAGE_KEY = "pricing.visibleBlocks.v5"; // ✅ versão bump (novo bloco)
+const STORAGE_KEY = "pricing.visibleBlocks.v5";
 const EMPRESA_STORAGE_KEY = "pricing.empresaSelecionada.v1";
 
 const fields: Array<{
@@ -147,48 +145,13 @@ const fields: Array<{
   suffix?: string;
   unit: string;
 }> = [
-  {
-    key: "desconto",
-    label: "Desconto",
-    suffix: "%",
-    unit: "(%)",
-  },
-  {
-    key: "embalagem",
-    label: "Embalagem",
-    suffix: "R$",
-    unit: "(R$)",
-  },
-  {
-    key: "frete",
-    label: "Frete",
-    suffix: "R$",
-    unit: "(R$)",
-  },
-  {
-    key: "imposto",
-    label: "Imposto",
-    suffix: "%",
-    unit: "(%)",
-  },
-  {
-    key: "comissao",
-    label: "Comissão",
-    suffix: "%",
-    unit: "(%)",
-  },
-  {
-    key: "margem",
-    label: "Margem de Lucro",
-    suffix: "%",
-    unit: "(%)",
-  },
-  {
-    key: "marketing",
-    label: "Marketing",
-    suffix: "%",
-    unit: "(%)",
-  },
+  { key: "desconto", label: "Desconto", suffix: "%", unit: "(%)" },
+  { key: "embalagem", label: "Embalagem", suffix: "R$", unit: "(R$)" },
+  { key: "frete", label: "Frete", suffix: "R$", unit: "(R$)" },
+  { key: "imposto", label: "Imposto", suffix: "%", unit: "(%)" },
+  { key: "comissao", label: "Comissão", suffix: "%", unit: "(%)" },
+  { key: "margem", label: "Margem de Lucro", suffix: "%", unit: "(%)" },
+  { key: "marketing", label: "Marketing", suffix: "%", unit: "(%)" },
 ];
 
 const formatCurrency = (value: number) => {
@@ -204,7 +167,7 @@ const shortLabel = (key: ChannelKey) => {
   if (key === "magalu") return "Magalu";
   if (key === "mlClassico") return "Clássico";
   if (key === "mlPremium") return "Premium";
-  if (key === "tiktok") return "TikTok"; // ✅ NOVO
+  if (key === "tiktok") return "TikTok";
 
   return "Premium";
 };
@@ -243,7 +206,6 @@ const MagaluLogo = () => {
   );
 };
 
-// ✅ NOVO: ícone do TikTok (lucide-react não possui o logo, então usamos um SVG próprio)
 const TiktokLogo = ({ className }: { className?: string }) => {
   return (
     <svg
@@ -361,15 +323,15 @@ export const PriceCalculationSection: React.FC<
   calculoMLPremium,
   setCalculoMLPremium,
 
-  calculoTiktok, // ✅ NOVO
-  setCalculoTiktok, // ✅ NOVO
+  calculoTiktok,
+  setCalculoTiktok,
 
   precoLoja,
   precoShopee,
   precoMagalu,
   precoMLClassico,
   precoMLPremium,
-  precoTiktok, // ✅ NOVO
+  precoTiktok,
 
   acrescimos,
   setAcrescimos,
@@ -386,7 +348,7 @@ export const PriceCalculationSection: React.FC<
   calcMagaluRefs,
   calcMLClassicoRefs,
   calcMLPremiumRefs,
-  calcTiktokRefs, // ✅ NOVO
+  calcTiktokRefs,
   acrescimosRefs,
 
   handleEmbalagemBlurShared,
@@ -409,8 +371,8 @@ export const PriceCalculationSection: React.FC<
   setUserEditedShopeeMargem,
   setUserEditedShopeeMarketing,
 
-  setUserEditedTiktokComissao, // ✅ NOVO
-  setUserEditedTiktokFrete, // ✅ NOVO
+  setUserEditedTiktokComissao,
+  setUserEditedTiktokFrete,
 }) => {
   const defaultVisible: Record<ChannelKey, boolean> = React.useMemo(
     () => ({
@@ -419,7 +381,7 @@ export const PriceCalculationSection: React.FC<
       magalu: true,
       mlClassico: true,
       mlPremium: true,
-      tiktok: true, // ✅ NOVO
+      tiktok: true,
     }),
     []
   );
@@ -442,8 +404,53 @@ export const PriceCalculationSection: React.FC<
     magalu: Calculo;
     mlClassico: Calculo;
     mlPremium: Calculo;
-    tiktok: Calculo; // ✅ NOVO
+    tiktok: Calculo;
   } | null>(null);
+
+  // ✅ CORRIGIDO (Bug #2): função reutilizável para aplicar os
+  // overrides de imposto/comissão da Sóbaquetas. É chamada tanto
+  // na troca manual (dropdown) quanto na leitura do localStorage
+  // no mount/reload da página — antes só era chamada no clique
+  // manual, então o reload "esquecia" de reaplicar os valores.
+  const applySobaquetasOverrides = React.useCallback(() => {
+    setCalculoLoja((previous) => ({
+      ...previous,
+      imposto: "10",
+      comissao: "0",
+    }));
+
+    setCalculoShopee((previous) => ({
+      ...previous,
+      imposto: "10",
+    }));
+
+    setCalculoMagalu((previous) => ({
+      ...previous,
+      imposto: "10",
+    }));
+
+    setCalculoMLClassico((previous) => ({
+      ...previous,
+      imposto: "10",
+    }));
+
+    setCalculoMLPremium((previous) => ({
+      ...previous,
+      imposto: "10",
+    }));
+
+    setCalculoTiktok((previous) => ({
+      ...previous,
+      imposto: "10",
+    }));
+  }, [
+    setCalculoLoja,
+    setCalculoShopee,
+    setCalculoMagalu,
+    setCalculoMLClassico,
+    setCalculoMLPremium,
+    setCalculoTiktok,
+  ]);
 
   React.useEffect(() => {
     try {
@@ -451,11 +458,19 @@ export const PriceCalculationSection: React.FC<
 
       if (raw === "pikot" || raw === "sobaquetas") {
         setEmpresa(raw);
+
+        // ✅ CORRIGIDO (Bug #2): reaplica os overrides no mount,
+        // pois os states de calculo* são inicializados sempre com
+        // os valores padrão do Pikot Shop, independente do que
+        // está salvo no localStorage.
+        if (raw === "sobaquetas") {
+          applySobaquetasOverrides();
+        }
       }
     } catch {
       // Ignora erros de acesso ao localStorage.
     }
-  }, []);
+  }, [applySobaquetasOverrides]);
 
   React.useEffect(() => {
     try {
@@ -478,40 +493,10 @@ export const PriceCalculationSection: React.FC<
         magalu: calculoMagalu,
         mlClassico: calculoMLClassico,
         mlPremium: calculoMLPremium,
-        tiktok: calculoTiktok, // ✅ NOVO
+        tiktok: calculoTiktok,
       };
 
-      setCalculoLoja((previous) => ({
-        ...previous,
-        imposto: "10",
-        comissao: "0",
-      }));
-
-      setCalculoShopee((previous) => ({
-        ...previous,
-        imposto: "10",
-      }));
-
-      setCalculoMagalu((previous) => ({
-        ...previous,
-        imposto: "10",
-      }));
-
-      setCalculoMLClassico((previous) => ({
-        ...previous,
-        imposto: "10",
-      }));
-
-      setCalculoMLPremium((previous) => ({
-        ...previous,
-        imposto: "10",
-      }));
-
-      // ✅ NOVO: TikTok Shop -> 10% imposto (Sóbaquetas)
-      setCalculoTiktok((previous) => ({
-        ...previous,
-        imposto: "10",
-      }));
+      applySobaquetasOverrides();
     } else {
       const snapshot = pikotSnapshotRef.current;
 
@@ -521,7 +506,7 @@ export const PriceCalculationSection: React.FC<
         setCalculoMagalu(snapshot.magalu);
         setCalculoMLClassico(snapshot.mlClassico);
         setCalculoMLPremium(snapshot.mlPremium);
-        setCalculoTiktok(snapshot.tiktok); // ✅ NOVO
+        setCalculoTiktok(snapshot.tiktok);
       }
     }
 
@@ -737,7 +722,6 @@ export const PriceCalculationSection: React.FC<
       preco: precoMLPremium,
       refs: calcMLPremiumRefs,
     },
-    // ✅ NOVO: TikTok Shop — bloco preto com ícone do TikTok
     {
       key: "tiktok",
       title: "TikTok Shop",
@@ -841,7 +825,6 @@ export const PriceCalculationSection: React.FC<
       return;
     }
 
-    // ✅ NOVO: TikTok Shop — trava manual de comissão/frete (taxa fixa)
     if (field === "comissao") {
       setUserEditedTiktokComissao(true);
     }
@@ -955,7 +938,6 @@ export const PriceCalculationSection: React.FC<
       return;
     }
 
-    // ✅ NOVO: TikTok Shop — reset da trava manual quando o campo é limpo/zerado
     if (
       field === "comissao" &&
       isEmptyOrZero(internalValue)
@@ -998,7 +980,7 @@ export const PriceCalculationSection: React.FC<
     }
 
     if (row.key === "tiktok") {
-      return "text-white"; // ✅ NOVO
+      return "text-white";
     }
 
     return "text-white";
@@ -1063,7 +1045,6 @@ export const PriceCalculationSection: React.FC<
             </h2>
           </div>
 
-          {/* Badge centralizado da empresa selecionada */}
           <div
             className={[
               "pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border bg-white/[0.03] px-3 py-1 sm:flex",
@@ -1090,7 +1071,6 @@ export const PriceCalculationSection: React.FC<
           </div>
 
           <div className="flex items-center gap-1">
-            {/* Ícone: seletor de empresa (loja) */}
             <div className="relative mr-1" data-empresa-dropdown>
               <button
                 type="button"

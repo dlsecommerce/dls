@@ -16,6 +16,16 @@ import { cn } from "@/lib/utils";
 
 type Loja = "Pikot Shop" | "Sóbaquetas";
 
+// Lista estática dos canais disponíveis (mesma referência do ChannelSelector)
+const CANAIS_DISPONIVEIS = [
+  { id: "shopee", name: "Shopee" },
+  { id: "magalu", name: "Magalu" },
+  { id: "mercado-livre", name: "Mercado Livre" },
+  { id: "tray", name: "Tray" },
+  { id: "olist", name: "Olist" },
+  { id: "tiktok-shop", name: "TikTok Shop" },
+];
+
 export default function PlanilhaModelo() {
   const { status, errorMessage, resetResultado, iniciarAutomacao } =
     useAutomacaoPlanilhas();
@@ -25,6 +35,7 @@ export default function PlanilhaModelo() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedLoja, setSelectedLoja] = useState<Loja | null>(null);
+  const [selectedCanais, setSelectedCanais] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const isProcessing = status === "uploading" || status === "processing";
@@ -49,8 +60,9 @@ export default function PlanilhaModelo() {
     if (file) startFlow(file);
   }, []);
 
-  const handleLojaSelect = (loja: Loja) => {
+  const handleLojaCanalConfirm = (loja: Loja, canais: string[]) => {
     setSelectedLoja(loja);
+    setSelectedCanais(canais);
     setLojaModalOpen(false);
     setPreviewOpen(true);
   };
@@ -58,9 +70,9 @@ export default function PlanilhaModelo() {
   const handlePreviewConfirm = async (file: File) => {
     setPreviewOpen(false);
 
-    if (selectedLoja) {
+    if (selectedLoja && selectedCanais.length > 0) {
       try {
-        await iniciarAutomacao(selectedLoja, file);
+        await iniciarAutomacao(selectedLoja, file, selectedCanais);
       } catch (err) {
         console.error("Falha na automação:", err);
       }
@@ -71,6 +83,7 @@ export default function PlanilhaModelo() {
     resetResultado();
     setRawFile(null);
     setSelectedLoja(null);
+    setSelectedCanais([]);
   };
 
   return (
@@ -206,7 +219,8 @@ export default function PlanilhaModelo() {
       <SelecionarLojaModal
         open={lojaModalOpen}
         onOpenChange={setLojaModalOpen}
-        onSelect={handleLojaSelect}
+        onConfirm={handleLojaCanalConfirm}
+        availableChannels={CANAIS_DISPONIVEIS}
       />
 
       <PreviewPlanilhaModal

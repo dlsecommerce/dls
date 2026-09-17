@@ -9,6 +9,8 @@ type SugestaoProduto = {
   codigo: string;
   custo: number;
   produto?: string;
+  marca?: string; // ✅ NOVO
+  packingCost?: number; // ✅ NOVO
 };
 
 type TipoBuscaProduto = "codigo" | "descricao";
@@ -34,10 +36,14 @@ type DecompositionProductSectionProps = {
     e: React.KeyboardEvent<HTMLInputElement>
   ) => void;
 
+  // ✅ atualizado: agora recebe também marca e packingCost,
+  // igual ao ProductSection.tsx do PricingCalculatorModern
   selecionarProdutoSugestao?: (
     codigo: string,
     custo: number,
-    produto?: string
+    produto?: string,
+    marca?: string,
+    packingCost?: number
   ) => void;
 
   onAdicionarProduto?: () => void;
@@ -98,15 +104,20 @@ export const DecompositionProductSection: React.FC<
     }
   };
 
+  // ✅ atualizado: repassa marca e packingCost da sugestão selecionada
   const handleSelect = (
     codigoSelecionado: string,
     custoSelecionado: number,
-    produtoSelecionado?: string
+    produtoSelecionado?: string,
+    marcaSelecionada?: string,
+    packingCostSelecionado?: number
   ) => {
     selecionarProdutoSugestao?.(
       codigoSelecionado,
       custoSelecionado,
-      produtoSelecionado
+      produtoSelecionado,
+      marcaSelecionada,
+      packingCostSelecionado
     );
   };
 
@@ -119,6 +130,13 @@ export const DecompositionProductSection: React.FC<
 
     onAdicionarProduto?.();
   };
+
+  const termoBuscaAtivo =
+    campoBuscaAtivo === "codigo"
+      ? codigo
+      : campoBuscaAtivo === "descricao"
+        ? descricao
+        : "";
 
   return (
     <section className="rounded border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]">
@@ -175,6 +193,7 @@ export const DecompositionProductSection: React.FC<
             listaRef={dropdownRef}
             indiceSelecionado={indiceProdutoSelecionado}
             onSelect={handleSelect}
+            termoBusca={campoBuscaAtivo === "codigo" ? termoBuscaAtivo : ""}
           />
         </div>
 
@@ -206,6 +225,7 @@ export const DecompositionProductSection: React.FC<
             listaRef={dropdownRef}
             indiceSelecionado={indiceProdutoSelecionado}
             onSelect={handleSelect}
+            termoBusca={campoBuscaAtivo === "descricao" ? termoBuscaAtivo : ""}
           />
         </div>
       </div>

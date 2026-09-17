@@ -154,11 +154,18 @@ export async function exportAnnounceToXlsx(
 // ✅ Planilha modelo (gerada 100% no client, mesmo padrão visual do
 // export normal). Usada pelo botão "Baixar planilha modelo". Não
 // depende de nenhum arquivo estático em /public.
+//
+// ✅ NOVO — inclui a coluna "Canal": permite ao usuário já informar,
+// linha a linha, para qual(is) canal(is) de marketplace cada anúncio
+// deve ser vinculado na importação (múltiplos canais separados por
+// vírgula ou ponto-e-vírgula, ex: "Shopee, Mercado Livre"). Essa
+// coluna é opcional — se deixada em branco, o anúncio usa o(s)
+// canal(is) selecionado(s) globalmente na tela de importação.
 // ---------------------------------------------------------------------
 export async function exportAnnounceModelo(): Promise<void> {
   const XLSX = await import("xlsx-js-style");
 
-  const headers = ["Loja", "ID Bling", "Referência", "Produto", "Marca", "Código ID"];
+  const headers = ["Loja", "ID Bling", "Referência", "Produto", "Marca", "Código ID", "Canal"];
   const exampleRow = [
     "Pikot Shop",
     "16653222561",
@@ -166,6 +173,7 @@ export async function exportAnnounceModelo(): Promise<void> {
     "Cooktop a Gás Fischer 5 Bocas Tripla Chama",
     "Fischer",
     "",
+    "Shopee, Mercado Livre",
   ];
 
   const headerStyle = {
@@ -196,6 +204,7 @@ export async function exportAnnounceModelo(): Promise<void> {
     { wch: 42 }, // Produto
     { wch: 16 }, // Marca
     { wch: 12 }, // Código ID
+    { wch: 28 }, // Canal
   ];
 
   const wb = XLSX.utils.book_new();

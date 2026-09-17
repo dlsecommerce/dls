@@ -12,6 +12,7 @@ type ImportRow = {
   "ID Bling"?: string | number;
   Loja?: string;
   Referência?: string;
+  Marca?: string;
   "Código do Item"?: string | number;
   Quantidade?: string | number;
 };
@@ -145,6 +146,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
      * ID Bling agora é a chave usada para localizar o anúncio
      * exato (evita duplicidade/erro de casamento por Loja+Referência).
      *
+     * "Marca" é lida apenas como informação de apoio/conferência
+     * (não é usada para casamento nem enviada à função SQL, que
+     * localiza o anúncio pelo id_bling — a marca do anúncio já
+     * existe no banco e não deve ser sobrescrita por esta rotina).
+     *
      * Linhas sem "ID Bling", "Código do Item" ou "Quantidade"
      * são puladas aqui mesmo, sem gerar erro.
      */
@@ -158,6 +164,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const idBling = String(row["ID Bling"] ?? "").trim();
       const store = String(row["Loja"] ?? "").trim();
       const reference = String(row["Referência"] ?? "").trim();
+      const mark = String(row["Marca"] ?? "").trim();
       const code = String(row["Código do Item"] ?? "").trim();
       const amountRaw = row["Quantidade"];
 
@@ -171,6 +178,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         id_bling: idBling,
         store,
         reference,
+        mark,
         code,
         amount: amountRaw,
       });

@@ -20,6 +20,7 @@ const HEADER_ROW = [
   "Referência",
   "Produto",
   "Marca",
+  "Canal",
   "Código ID",
 ];
 
@@ -43,11 +44,31 @@ function isVoltageOnlyTitle(produto: string): boolean {
   return /^voltagem\s*:/i.test(produto.trim());
 }
 
+/**
+ * Faz o parse do campo "canais" enviado no FormData.
+ * Aceita JSON.stringify de um array de strings.
+ */
+function parseCanais(raw: string | null): string[] {
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((c) => String(c ?? "").trim())
+      .filter((c) => c.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const loja = formData.get("loja") as Loja | null;
     const blingFile = formData.get("bling") as File | null;
+    const canaisRaw = formData.get("canais") as string | null;
 
     if (!loja) {
       return NextResponse.json(
@@ -63,6 +84,15 @@ export async function POST(request: NextRequest) {
     if (!blingFile) {
       return NextResponse.json(
         { error: "Planilha Bling não enviada." },
+        { status: 400 }
+      );
+    }
+
+    const canais = parseCanais(canaisRaw);
+
+    if (!canais.length) {
+      return NextResponse.json(
+        { error: "Selecione ao menos um canal." },
         { status: 400 }
       );
     }
@@ -142,7 +172,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Substitui título nas linhas que só têm "Voltagem:xxx"
+    // ✅ CORRIGIDO: canais concatenados numa única célula, mesmo
+    // padrão usado em exportAnnounceModelo() e esperado por
+    // normalizeChannelsCell() no import de announce. Gera 1 linha
+    // por produto (não mais 1 linha por produto x canal).
+    const canaisFormatados = canais.join(", ");
+
     const outputRows = parsedRows.map((row) => {
       let produtoFinal = row.produto;
 
@@ -155,7 +190,15 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      return [loja, row.idBling, row.referencia, produtoFinal, row.marca, ""];
+      return [
+        loja,
+        row.idBling,
+        row.referencia,
+        produtoFinal,
+        row.marca,
+        canaisFormatados,
+        "",
+      ];
     });
 
     const newWorkbook = new ExcelJS.Workbook();
@@ -176,12 +219,13 @@ export async function POST(request: NextRequest) {
     });
 
     worksheet.columns = [
-      { width: 14 },
-      { width: 14 },
-      { width: 22 },
-      { width: 50 },
-      { width: 16 },
-      { width: 12 },
+      { width: 14 }, // Loja
+      { width: 14 }, // ID Bling
+      { width: 22 }, // Referência
+      { width: 50 }, // Produto
+      { width: 16 }, // Marca
+      { width: 16 }, // Canal
+      { width: 12 }, // Código ID
     ];
 
     const buffer = await newWorkbook.xlsx.writeBuffer();
@@ -210,4 +254,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-} 
+}

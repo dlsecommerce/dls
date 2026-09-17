@@ -2,6 +2,7 @@ import React from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { SuggestionDropdown } from "@/components/pricing/parts/SuggestionDropdown";
 
 export type Item = {
   codigo: string;
@@ -9,6 +10,16 @@ export type Item = {
   custo: string;
   descricao?: string;
   produto?: string;
+  marca?: string; // ✅ NOVO
+  embalagem?: string; // ✅ NOVO — packing_cost formatado em BR
+};
+
+type Sugestao = {
+  codigo: string;
+  custo: number;
+  produto?: string;
+  marca?: string;
+  packingCost?: number;
 };
 
 type Props = {
@@ -27,6 +38,26 @@ type Props = {
   ) => void;
   onBlurQuantidade: (idx: number) => void;
   onBlurCusto: (idx: number) => void;
+
+  // ✅ NOVOS — todos opcionais, com fallback seguro. Sem eles, o
+  // comportamento antigo (Tab/Enter -> autoSelecionarPrimeiro)
+  // continua funcionando exatamente como antes.
+  sugestoes?: Sugestao[];
+  campoAtivo?: number | null;
+  setCampoAtivo?: (idx: number | null) => void;
+  indiceSelecionado?: number;
+  setIndiceSelecionado?: (idx: number) => void;
+  listaRef?: React.RefObject<HTMLDivElement>;
+  buscarSugestoes?: (termo: string, idx: number) => void;
+  selecionarSugestao?: (
+    codigo: string,
+    custo: number,
+    idx: number,
+    produto?: string,
+    marca?: string,
+    packingCost?: number
+  ) => void;
+  autoSelecionarPrimeiro?: (idx: number) => Promise<void>;
 };
 
 const inputClass = `
@@ -43,6 +74,8 @@ const linhaVazia = (): Item => ({
   custo: "",
   descricao: "",
   produto: "",
+  marca: "",
+  embalagem: "",
 });
 
 const itemTemConteudo = (item: Item) => {
@@ -88,9 +121,21 @@ export default function ComposicaoCustos({
   handleKeyDownQuantidade,
   onBlurQuantidade,
   onBlurCusto,
+  sugestoes = [],
+  campoAtivo = null,
+  setCampoAtivo,
+  indiceSelecionado = -1,
+  setIndiceSelecionado,
+  listaRef,
+  buscarSugestoes,
+  selecionarSugestao,
+  autoSelecionarPrimeiro,
 }: Props) {
   const ignoreBlur = React.useRef(false);
   const focusIndexRef = React.useRef<number | null>(null);
+
+  const fallbackListaRef = React.useRef<HTMLDivElement>(null);
+  const dropdownRef = listaRef || fallbackListaRef;
 
   const [mostrarInputs, setMostrarInputs] = React.useState(() =>
     composicao.some(itemTemConteudo)
@@ -170,6 +215,38 @@ export default function ComposicaoCustos({
         }
       }, 0);
     }
+  };
+
+  // ✅ Handler do input de código: dispara busca de sugestões (se
+  // disponível) e limpa produto/marca/embalagem antigos ao editar.
+  const handleCodigoChange = (idx: number, value: string) => {
+    atualizarItem(setComposicao, idx, {
+      codigo: value,
+      produto: "",
+      descricao: "",
+      marca: "",
+      embalagem: "",
+    });
+
+    if (!buscarSugestoes) return;
+
+    if (!value.trim()) {
+      setCampoAtivo?.(null);
+      return;
+    }
+
+    buscarSugestoes(value, idx);
+  };
+
+  const handleSelecionarSugestao = (
+    idx: number,
+    codigo: string,
+    custo: number,
+    produto?: string,
+    marca?: string,
+    packingCost?: number
+  ) => {
+    selecionarSugestao?.(codigo, custo, idx, produto, marca, packingCost);
   };
 
   return (
@@ -265,16 +342,39 @@ export default function ComposicaoCustos({
                         }}
                         value={item.codigo}
                         placeholder="SKU"
-                        onChange={(e) => {
-                          atualizarItem(setComposicao, idx, {
-                            codigo: e.target.value,
-                            produto: "",
-                            descricao: "",
-                          });
+                        onChange={(e) => handleCodigoChange(idx, e.target.value)}
+                        onFocus={() => {
+                          if (item.codigo.trim()) {
+                            buscarSugestoes?.(item.codigo, idx);
+                          }
                         }}
                         onKeyDown={(e) => handleKeyDownCodigo(e, idx)}
                         className={`${inputClass} w-full text-center`}
                       />
+
+                      {/* ✅ Dropdown real de sugestões — só ativo se o pai
+                          fornecer as props necessárias. Sem elas, nada é
+                          renderizado (comportamento antigo preservado). */}
+                      {Boolean(buscarSugestoes && selecionarSugestao) && (
+                        <SuggestionDropdown
+                          isActive={campoAtivo === idx}
+                          sugestoes={sugestoes}
+                          listaRef={dropdownRef}
+                          indiceSelecionado={indiceSelecionado}
+                          onSelect={(codigo, custo, produto, marca, packingCost) =>
+                            handleSelecionarSugestao(
+                              idx,
+                              codigo,
+                              custo,
+                              produto,
+                              marca,
+                              packingCost
+                            )
+                          }
+                          termoBusca={item.codigo}
+                          onClose={() => setCampoAtivo?.(null)}
+                        />
+                      )}
                     </div>
 
                     <div className="min-w-0 lg:px-3 lg:py-3">
@@ -282,15 +382,21 @@ export default function ComposicaoCustos({
                         Descrição
                       </label>
 
-                      <div className="flex h-10 min-w-0 max-w-full items-center overflow-hidden rounded border border-white/10 bg-[#070707] px-3">
+                      <div className="flex h-10 min-w-0 max-w-full items-center gap-1.5 overflow-hidden rounded border border-white/10 bg-[#070707] px-3">
                         <span
                           title={descricao}
-                          className={`block w-full min-w-0 overflow-hidden truncate whitespace-nowrap text-center text-sm font-semibold ${
+                          className={`block min-w-0 flex-1 overflow-hidden truncate whitespace-nowrap text-center text-sm font-semibold ${
                             descricao ? "text-white" : "text-white/20"
                           }`}
                         >
                           {descricao || "PRODUTO"}
                         </span>
+
+                        {item.marca && (
+                          <span className="shrink-0 rounded bg-white/5 px-1.5 py-0.5 text-[10px] font-medium text-white/40">
+                            {item.marca}
+                          </span>
+                        )}
                       </div>
                     </div>
 

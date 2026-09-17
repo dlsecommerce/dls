@@ -96,13 +96,15 @@ export default function PrecoVenda({
 
     const fileName = `DECOMPOSIÇÃO_${dataFormatada}_${horaFormatada}.xlsx`;
 
+    // ✅ Coluna "Marca" adicionada
     const composicaoRows: (string | number)[][] = [
       ["Preço de Venda (R$)", precoVenda || "0,00"],
       [],
-      ["Código", "Descrição", "Quantidade", "Custo (R$)"],
+      ["Código", "Descrição", "Marca", "Quantidade", "Custo (R$)"],
       ...composicao.map((i) => [
         i.codigo || "",
         getDescricaoItem(i),
+        i.marca || "",
         i.quantidade || "",
         i.custo || "",
       ]),
@@ -181,12 +183,15 @@ export default function PrecoVenda({
     if (composicaoSheet["A1"]) composicaoSheet["A1"].s = titleStyle;
     if (resultadosSheet["A1"]) resultadosSheet["A1"].s = titleStyle;
 
-    applyHeaderStyle(composicaoSheet, 3, ["A", "B", "C", "D"]);
+    // ✅ Coluna E adicionada (Marca deslocou Quantidade/Custo)
+    applyHeaderStyle(composicaoSheet, 3, ["A", "B", "C", "D", "E"]);
     applyHeaderStyle(resultadosSheet, 4, ["A", "B", "C", "D"]);
 
+    // ✅ Largura da coluna Marca adicionada
     composicaoSheet["!cols"] = [
       { wch: 18 },
       { wch: 44 },
+      { wch: 16 },
       { wch: 15 },
       { wch: 15 },
     ];

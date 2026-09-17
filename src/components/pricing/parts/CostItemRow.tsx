@@ -8,6 +8,8 @@ type Sugestao = {
   codigo: string;
   custo: number;
   produto?: string;
+  marca?: string; // ✅ NOVO
+  packingCost?: number; // ✅ NOVO
 };
 
 type CostItemRowProps = {
@@ -31,7 +33,9 @@ type CostItemRowProps = {
     codigo: string,
     custo: number,
     idx: number,
-    produto?: string
+    produto?: string,
+    packingCost?: number, // ✅ NOVO
+    marca?: string // ✅ NOVO
   ) => void;
 
   // Navegação / refs
@@ -165,6 +169,13 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
           )}
         </div>
 
+        {/*
+          ⚠️ Este input de código só é visível no mobile (sm:hidden).
+          No desktop, esta coluna mostra apenas o título/descrição
+          (somente leitura). Se a edição de código no desktop for
+          necessária, este bloco precisa ser exibido também acima
+          de sm, ou um botão de "editar" precisa reabrir a busca.
+        */}
         <div className="mt-2 sm:hidden">
           <Input
             ref={(el) => {
@@ -209,9 +220,17 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
             sugestoes={sugestoes}
             listaRef={listaRef}
             indiceSelecionado={indiceSelecionado}
-            onSelect={(codigo, custo, produto) =>
-              selecionarSugestao(codigo, custo, idx, produto)
+            onSelect={(codigo, custo, produto, marca, packingCost) =>
+              selecionarSugestao(
+                codigo,
+                custo,
+                idx,
+                produto,
+                packingCost,
+                marca
+              )
             }
+            termoBusca={item.codigo || ""}
           />
         </div>
       </div>
@@ -318,17 +337,6 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
       >
         <X className="h-4 w-4" />
       </Button>
-
-      <div className="hidden">
-        <Input
-          ref={(el) => {
-            if (!inputRefs.current[idx]) inputRefs.current[idx] = [];
-            inputRefs.current[idx][0] = el!;
-          }}
-          value={item.codigo || ""}
-          onChange={() => {}}
-        />
-      </div>
     </div>
   );
 };

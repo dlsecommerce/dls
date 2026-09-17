@@ -580,6 +580,9 @@ export default function Announce() {
   // ✅ Mapa canal -> índices das linhas do preview que serão enviadas
   // para aquele canal. Usado pelo ConfirmImportModal para permitir
   // escolher, linha a linha, quais anúncios vão para qual canal.
+  // Pode vir PRÉ-PREENCHIDO automaticamente quando a planilha traz a
+  // coluna "Canal" (ver runImportPreview abaixo) — o usuário ainda
+  // pode ajustar manualmente no modal antes de confirmar.
   const [importChannelRowAssignments, setImportChannelRowAssignments] =
     React.useState<Record<string, number[]>>({});
 
@@ -600,10 +603,60 @@ export default function Announce() {
     try {
       const result: any = await importAnnounceFromXlsxOrCsv(file, true);
 
+      // ✅ Se a planilha trouxe a coluna "Canal" preenchida em alguma
+      // linha, pré-monta automaticamente o mapa canal -> índices, para
+      // que o usuário já veja tudo pronto no modal (podendo ajustar
+      // manualmente antes de confirmar). Os índices correspondem à
+      // posição em `result.data` (mesmo array usado na importação
+      // final), não em `previewRows` (que é só um recorte das 50
+      // primeiras linhas para exibição).
+      const autoAssignments: Record<string, number[]> = {};
+      const canaisNaoEncontrados = new Set<string>();
+      const nomesValidos = new Set(
+        (availableChannels ?? []).map((c: any) =>
+          String(c?.name ?? c).trim().toLowerCase()
+        )
+      );
+
+      result.data.forEach((row: any, idx: number) => {
+        const canaisLinha: string[] = Array.isArray(row.channelsFromSheet)
+          ? row.channelsFromSheet
+          : [];
+
+        for (const canal of canaisLinha) {
+          const canalNormalizado = canal.trim();
+          const existeNaLista = nomesValidos.has(canalNormalizado.toLowerCase());
+
+          if (!existeNaLista) {
+            canaisNaoEncontrados.add(canalNormalizado);
+            continue;
+          }
+
+          if (!autoAssignments[canalNormalizado]) {
+            autoAssignments[canalNormalizado] = [];
+          }
+          autoAssignments[canalNormalizado].push(idx);
+        }
+      });
+
+      const warningsFinais = [...(result.warnings ?? [])];
+
+      if (canaisNaoEncontrados.size > 0) {
+        warningsFinais.push(
+          `Os seguintes canais informados na planilha não foram reconhecidos e serão ignorados: ${Array.from(
+            canaisNaoEncontrados
+          ).join(", ")}. Verifique se o nome está exatamente igual ao cadastrado no sistema.`
+        );
+      }
+
+      if (Object.keys(autoAssignments).length > 0) {
+        setImportChannelRowAssignments(autoAssignments);
+      }
+
       setPendingFile(file);
       setPreviewRows(result.data.slice(0, 50));
       setImportCount(result.data.length);
-      setWarnings(result.warnings ?? []);
+      setWarnings(warningsFinais);
       setImportErrors(result.errors ?? []);
       setImportRowErrors(result.rowErrors ?? []);
       setOpenImport(true);

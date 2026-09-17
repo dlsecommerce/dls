@@ -16,8 +16,13 @@ interface Resultado {
   blob: Blob;
 }
 
-function buildAutomationMessage(loja: Loja, nomeArquivo: string) {
-  return `A automação da loja ${loja} gerou o arquivo "${nomeArquivo}".`;
+function buildAutomationMessage(
+  loja: Loja,
+  canais: string[],
+  nomeArquivo: string
+) {
+  const canaisLabel = canais.join(", ");
+  return `A automação da loja ${loja} (canais: ${canaisLabel}) gerou o arquivo "${nomeArquivo}".`;
 }
 
 async function getErrorMessageFromResponse(response: Response) {
@@ -64,9 +69,17 @@ export function useAutomacaoPlanilhas() {
     setErrorMessage("");
   };
 
-  const iniciarAutomacao = async (loja: Loja, blingFile: File) => {
+  const iniciarAutomacao = async (
+    loja: Loja,
+    blingFile: File,
+    canais: string[]
+  ) => {
     if (!blingFile) {
       throw new Error("Selecione a planilha Bling antes de iniciar.");
+    }
+
+    if (!canais.length) {
+      throw new Error("Selecione ao menos um canal antes de iniciar.");
     }
 
     try {
@@ -76,6 +89,7 @@ export function useAutomacaoPlanilhas() {
       const formData = new FormData();
       formData.append("loja", loja);
       formData.append("bling", blingFile);
+      formData.append("canais", JSON.stringify(canais));
 
       const response = await fetch("/api/planilha/generate-spreadsheet", {
         method: "POST",
@@ -120,7 +134,7 @@ export function useAutomacaoPlanilhas() {
 
       createNotification({
         title: "Planilha atualizada gerada",
-        message: buildAutomationMessage(loja, nomeArquivo),
+        message: buildAutomationMessage(loja, canais, nomeArquivo),
         action: "status",
         entityType: "spreadsheet_automation",
         link: "/dashboard/anuncios",
