@@ -37,14 +37,21 @@ const emptyManualFlags = (): ManualFlags => ({
 // Defaults estáticos calculados uma única vez (CHANNELS não muda em runtime).
 // Evita recriar os mesmos objetos via .map() em toda chamada de
 // resetAll/resetManualState e na inicialização dos useState.
+//
+// embalagem SEMPRE nasce vazia ("") — nunca fixa em c.defaults.embalagem.
+// Isso é o que permite os 3 modos funcionarem em cascata dentro de
+// calcularPreco: 1) banco (packaging_cost da composição), 2) fixo
+// (fallback hardcoded quando a composição não tem custo de embalagem),
+// 3) manual (usuário digita algo, o campo deixa de estar vazio e passa
+// a ter prioridade). Antes, o default já vinha com "5" preenchido, o
+// que fazia o cálculo tratar TODO produto como se already tivesse
+// embalagem manual, nunca somando o packaging_cost real do banco.
 // =====================
 const DEFAULT_CALCULOS = Object.fromEntries(
-  CHANNELS.map((c) => [c.key, { ...c.defaults }])
-) as Record<ChannelKey, Calculo>;
-
-const RESET_CALCULOS = Object.fromEntries(
   CHANNELS.map((c) => [c.key, { ...c.defaults, embalagem: "" }])
 ) as Record<ChannelKey, Calculo>;
+
+const RESET_CALCULOS = DEFAULT_CALCULOS;
 
 const DEFAULT_MANUAL_FLAGS = Object.fromEntries(
   CHANNELS.map((c) => [c.key, emptyManualFlags()])
