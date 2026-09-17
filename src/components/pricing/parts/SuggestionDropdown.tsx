@@ -34,34 +34,6 @@ type SuggestionDropdownProps = {
 
 // ---------- Helpers ----------
 
-const getBadgeColor = (seed: string) => {
-  const colors = [
-    "from-[#1a8ceb]/25 to-[#1a8ceb]/5 text-[#5eb2f5]",
-    "from-orange-500/25 to-orange-500/5 text-orange-300",
-    "from-emerald-500/25 to-emerald-500/5 text-emerald-300",
-    "from-purple-500/25 to-purple-500/5 text-purple-300",
-    "from-yellow-500/25 to-yellow-500/5 text-yellow-300",
-  ];
-
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = (hash << 5) - hash + seed.charCodeAt(i);
-  }
-
-  return colors[Math.abs(hash) % colors.length];
-};
-
-const getInitials = (text: string) => {
-  const clean = text.trim();
-  if (!clean) return "?";
-
-  const parts = clean.split(/\s+/).filter(Boolean);
-
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-
-  return (parts[0][0] + parts[1][0]).toUpperCase();
-};
-
 const escapeRegExp = (text: string) => {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 };
@@ -109,7 +81,6 @@ const HighlightedText: React.FC<{ text: string; term?: string }> = ({
 
 const SkeletonRow: React.FC = () => (
   <div className="flex w-full items-center gap-2.5 rounded px-2.5 py-2">
-    <div className="h-8 w-8 shrink-0 animate-pulse rounded bg-white/[0.06]" />
     <div className="min-w-0 flex-1 space-y-1.5">
       <div className="h-3 w-24 animate-pulse rounded bg-white/[0.06]" />
       <div className="h-2.5 w-32 animate-pulse rounded bg-white/[0.04]" />
@@ -270,8 +241,6 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
           {showResults &&
             sugestoes.map((s, i) => {
               const isSelected = i === indiceSelecionado;
-              const badgeSeed = s.marca || s.codigo;
-              const badgeClass = getBadgeColor(badgeSeed);
               const isInativo = Boolean(s.inativo);
 
               return (
@@ -305,17 +274,6 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
                     />
                   )}
 
-                  <div
-                    className={`
-                      flex h-8 w-8 shrink-0 items-center justify-center rounded
-                      bg-gradient-to-br text-[10px] font-bold
-                      ${badgeClass}
-                    `}
-                  >
-                    {/* ✅ CORRIGIDO: badge agora prioriza a marca como identificador visual */}
-                    {getInitials(s.marca || s.produto || s.codigo)}
-                  </div>
-
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 truncate text-[13px] font-semibold tracking-tight text-white">
                       <HighlightedText text={s.codigo} term={termoBusca} />
@@ -327,9 +285,6 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
                       )}
                     </div>
 
-                    {/* ✅ CORRIGIDO: antes só renderizava se s.produto existisse,
-                        fazendo a marca desaparecer junto quando o produto vinha
-                        vazio do banco. Agora produto e marca são independentes. */}
                     {(s.produto || s.marca) && (
                       <div className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-white/40">
                         {s.produto && (

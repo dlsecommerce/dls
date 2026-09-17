@@ -14,7 +14,7 @@ import { ClearAndDownloadActions } from "./ClearAndDownloadActions";
 import { AcrescimosSection } from "./AcrescimosSection";
 import { AnimatedNumber } from "./AnimatedNumber";
 import type { Calculo } from "../PricingCalculatorModern";
-import { CHANNELS } from "@/components/costs/hooks/channelsconfig";
+import { CHANNELS, getChannelDef } from "@/components/costs/hooks/channelsconfig";
 import type { ChannelKey } from "@/components/costs/hooks/channelsconfig";
 import type { BrandOverrides, ManualFlags } from "@/components/costs/hooks/usechannelpricing";
 
@@ -355,18 +355,32 @@ export const PriceCalculationSection: React.FC<
     Calculo
   > | null>(null);
 
-  // Aplica os overrides de imposto/comissão da Sóbaquetas a todos
-  // os canais de uma vez (via CHANNELS). Chamada tanto na troca
-  // manual (dropdown) quanto na leitura do localStorage no mount.
-  const applySobaquetasOverrides = React.useCallback(() => {
-    CHANNELS.forEach((def) => {
-      setCalculo(def.key, (previous) => ({
-        ...previous,
-        imposto: "10",
-        ...(def.key === "loja" ? { comissao: "0" } : {}),
-      }));
-    });
-  }, [setCalculo]);
+  // =====================
+  // Imposto é CONSTANTE FIXA por empresa — nunca vem de pricing_rules.
+  // 10% Sóbaquetas / 14% Pikot Shop. Respeita manualFlags.imposto:
+  // se o usuário já editou manualmente, a troca de empresa não
+  // sobrescreve o valor.
+  // =====================
+  const applyEmpresaOverrides = React.useCallback(
+    (emp: Empresa) => {
+      const impostoFixo = emp === "sobaquetas" ? "10" : "14";
+
+      CHANNELS.forEach((def) => {
+        setCalculo(def.key, (previous) => {
+          const jaEhManual = manualFlags[def.key]?.imposto;
+
+          return {
+            ...previous,
+            imposto: jaEhManual ? previous.imposto : impostoFixo,
+            ...(def.key === "loja" && emp === "sobaquetas"
+              ? { comissao: "0" }
+              : {}),
+          };
+        });
+      });
+    },
+    [setCalculo, manualFlags]
+  );
 
   React.useEffect(() => {
     try {
@@ -378,14 +392,13 @@ export const PriceCalculationSection: React.FC<
         // Reaplica os overrides no mount, pois os calculos são
         // inicializados sempre com valores padrão do Pikot Shop,
         // independente do que está salvo no localStorage.
-        if (raw === "sobaquetas") {
-          applySobaquetasOverrides();
-        }
+        applyEmpresaOverrides(raw);
       }
     } catch {
       // Ignora erros de acesso ao localStorage.
     }
-  }, [applySobaquetasOverrides]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   React.useEffect(() => {
     try {
@@ -403,8 +416,6 @@ export const PriceCalculationSection: React.FC<
 
     if (next === "sobaquetas") {
       pikotSnapshotRef.current = { ...calculos };
-
-      applySobaquetasOverrides();
     } else {
       const snapshot = pikotSnapshotRef.current;
 
@@ -415,6 +426,7 @@ export const PriceCalculationSection: React.FC<
       }
     }
 
+    applyEmpresaOverrides(next);
     setEmpresa(next);
     setIsEmpresaOpen(false);
   };
@@ -583,6 +595,10 @@ export const PriceCalculationSection: React.FC<
   // =====================
   // Handlers genéricos — substituem os blocos if/else por canal.
   // Usam apenas as flags declaradas no ChannelDef.
+  //
+  // Imposto NÃO passa mais por brandOverrides: é constante fixa
+  // por empresa (10%/14%), controlada só por manualFlags.imposto.
+  // Desconto agora também é override de marca.
   // =====================
   const handleChange = (
     row: ChannelRow,
@@ -608,9 +624,13 @@ export const PriceCalculationSection: React.FC<
 
     if (
       def.hasBrandOverrides &&
-      (field === "imposto" || field === "margem" || field === "marketing")
+      (field === "margem" || field === "marketing" || field === "desconto")
     ) {
       brandOverrides[row.key].setEdited(field, true);
+    }
+
+    if (field === "imposto") {
+      setManualFlag(row.key, "imposto", true);
     }
 
     if (def.allowManualComissaoFrete && field === "comissao") {
@@ -651,10 +671,14 @@ export const PriceCalculationSection: React.FC<
 
     if (
       def.hasBrandOverrides &&
-      (field === "imposto" || field === "margem" || field === "marketing") &&
+      (field === "margem" || field === "marketing" || field === "desconto") &&
       isEmptyOrZero(internalValue)
     ) {
       brandOverrides[row.key].setEdited(field, false);
+    }
+
+    if (field === "imposto" && isEmptyOrZero(internalValue)) {
+      setManualFlag(row.key, "imposto", false);
     }
 
     if (

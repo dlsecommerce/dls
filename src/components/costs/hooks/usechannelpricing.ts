@@ -6,16 +6,22 @@ import { usebrandpricingoverrides } from "@/components/costs/hooks/usebrandprici
 import { loadMarketplaceChannelRule } from "@/components/costs/hooks/usepricingrules";
 import type { Calculo } from "@/components/pricing/PricingCalculatorModern";
 
+// Imposto agora é constante fixa por empresa (10% Sóbaquetas / 14% Pikot),
+// controlada em PriceCalculationSection.tsx. Aqui só precisamos travar
+// edição manual do usuário, igual comissão/frete/embalagem.
 export type ManualFlags = {
   comissao: boolean;
   frete: boolean;
   embalagem: boolean;
+  imposto: boolean;
 };
 
-export type BrandRuleField = "imposto" | "marketing" | "margem";
+// Imposto SAIU do sistema de brand overrides (não é regra de marca).
+// Desconto ENTROU.
+export type BrandRuleField = "marketing" | "margem" | "desconto";
 
 export type BrandOverrides = {
-  flags: { imposto: boolean; marketing: boolean; margem: boolean };
+  flags: { marketing: boolean; margem: boolean; desconto: boolean };
   setEdited: (field: BrandRuleField, value: boolean) => void;
   resetFlags: () => void;
 };
@@ -24,6 +30,7 @@ const emptyManualFlags = (): ManualFlags => ({
   comissao: false,
   frete: false,
   embalagem: false,
+  imposto: false,
 });
 
 export function useChannelPricing(
@@ -66,6 +73,7 @@ export function useChannelPricing(
   // =====================
   // Brand overrides — um hook por canal (CHANNELS é estático, então
   // chamar o hook em loop fixo é seguro quanto a rules-of-hooks).
+  // Imposto NÃO entra mais aqui — é constante fixa por empresa.
   // =====================
   const shoppingBrandOverrides = {} as Record<ChannelKey, BrandOverrides>;
 
@@ -75,9 +83,9 @@ export function useChannelPricing(
       produtoMarca,
       (updater: (prev: Calculo) => Calculo) => setCalculo(def.key, updater),
       {
-        imposto: def.defaults.imposto,
         marketing: def.defaults.marketing,
         margem: def.defaults.margem,
+        desconto: def.defaults.desconto,
       }
     );
 
