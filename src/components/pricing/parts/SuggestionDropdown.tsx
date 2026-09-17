@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 
 type Sugestao = {
@@ -9,7 +10,7 @@ type Sugestao = {
   produto?: string;
   marca?: string;
   packingCost?: number;
-  inativo?: boolean; // opcional — não quebra chamadas existentes
+  inativo?: boolean;
 };
 
 type SuggestionDropdownProps = {
@@ -24,14 +25,15 @@ type SuggestionDropdownProps = {
     marca?: string,
     packingCost?: number
   ) => void;
-  // Props opcionais — todas com fallback seguro
-  termoBusca?: string; // usado para highlight
-  isLoading?: boolean; // skeleton state
-  onHoverIndex?: (index: number) => void; // sync mouse -> teclado
-  onClose?: () => void; // Esc
+  termoBusca?: string;
+  isLoading?: boolean;
+  onHoverIndex?: (index: number) => void;
+  onClose?: () => void;
+  // ✅ NOVO: elemento de referência para calcular posição (o input, geralmente)
+  anchorRef?: React.RefObject<HTMLElement>;
 };
 
-// ---------- Helpers ----------
+// ---------- Helpers (inalterados) ----------
 
 const getBadgeColor = (seed: string) => {
   const colors = [
@@ -61,14 +63,10 @@ const getInitials = (text: string) => {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 };
 
-// Escapa caracteres especiais de regex antes de usar no highlight,
-// evita erro/crash se o usuário digitar algo como "(" ou "*"
 const escapeRegExp = (text: string) => {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 };
 
-// Renderiza o texto com o termo buscado destacado.
-// Se não houver termo ou não houver match, retorna o texto original sem alterações.
 const HighlightedText: React.FC<{ text: string; term?: string }> = ({
   text,
   term,
@@ -110,8 +108,6 @@ const HighlightedText: React.FC<{ text: string; term?: string }> = ({
   );
 };
 
-// ---------- Skeleton (loading state) ----------
-
 const SkeletonRow: React.FC = () => (
   <div className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2">
     <div className="h-8 w-8 shrink-0 animate-pulse rounded-lg bg-white/[0.06]" />
@@ -122,8 +118,6 @@ const SkeletonRow: React.FC = () => (
     <div className="h-6 w-16 shrink-0 animate-pulse rounded-md bg-white/[0.05]" />
   </div>
 );
-
-// ---------- Empty state ----------
 
 const EmptyState: React.FC = () => (
   <div className="flex flex-col items-center justify-center gap-2 px-4 py-8 text-center">
@@ -151,11 +145,57 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
   isLoading = false,
   onHoverIndex,
   onClose,
+  anchorRef,
 }) => {
-  // Refs individuais de cada item, para scroll automático
   const itemRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
+  const internalWrapperRef = React.useRef<HTMLDivElement | null>(null);
 
-  // Scroll automático para o item selecionado quando navega por teclado
+  // ✅ NOVO: mounted flag — portal só funciona no client
+  const [mounted, setMounted] = React.useState(false);
+
+  // ✅ NOVO: posição calculada dinamicamente
+  const [coords, setCoords] = React.useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // ✅ NOVO: recalcula posição sempre que abrir, no scroll e no resize
+  React.useEffect(() => {
+    if (!isActive) return;
+
+    const updatePosition = () => {
+      // Tenta usar o anchorRef; se não vier, usa o parentElement do listaRef
+      const target =
+        anchorRef?.current ||
+        (internalWrapperRef.current?.parentElement as HTMLElement | null);
+
+      if (!target) return;
+
+      const rect = target.getBoundingClientRect();
+
+      setCoords({
+        top: rect.bottom + 6,
+        left: rect.left,
+        width: rect.width,
+      });
+    };
+
+    updatePosition();
+
+    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("resize", updatePosition);
+
+    return () => {
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [isActive, anchorRef]);
+
   React.useEffect(() => {
     const el = itemRefs.current[indiceSelecionado];
 
@@ -164,7 +204,6 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
     }
   }, [indiceSelecionado]);
 
-  // Fechar com Esc
   React.useEffect(() => {
     if (!isActive) return;
 
@@ -185,23 +224,34 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
   const showEmpty = isActive && !isLoading && sugestoes.length === 0;
   const showResults = isActive && !isLoading && sugestoes.length > 0;
 
-  if (!showSkeleton && !showEmpty && !showResults) {
-    return null;
-  }
+  if (!mounted) return null;
+  if (!showSkeleton && !showEmpty && !showResults) return null;
+  if (!coords) return null;
 
-  return (
+  const dropdownContent = (
     <AnimatePresence>
       {(showSkeleton || showEmpty || showResults) && (
         <motion.div
-          ref={listaRef}
+          ref={(el) => {
+            internalWrapperRef.current = el;
+            if (listaRef && "current" in listaRef) {
+              (listaRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+            }
+          }}
           layout
           initial={{ opacity: 0, y: -4, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -4, scale: 0.98 }}
           transition={{ duration: 0.12, ease: "easeOut" }}
+          style={{
+            position: "fixed",
+            top: coords.top,
+            left: coords.left,
+            width: coords.width,
+            zIndex: 9999,
+          }}
           className="
-            absolute left-0 top-full z-[999] mt-1.5
-            max-h-64 w-full overflow-y-auto overscroll-contain
+            max-h-64 overflow-y-auto overscroll-contain
             rounded-xl border border-white/[0.08]
             bg-[#101010]/95 backdrop-blur-xl
             shadow-[0_20px_50px_rgba(26,140,235,0.08)]
@@ -212,7 +262,6 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
         >
           <div className="absolute inset-x-3 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
 
-          {/* ---------- Loading ---------- */}
           {showSkeleton && (
             <div className="space-y-0.5">
               <SkeletonRow />
@@ -221,10 +270,8 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
             </div>
           )}
 
-          {/* ---------- Empty ---------- */}
           {showEmpty && <EmptyState />}
 
-          {/* ---------- Resultados ---------- */}
           {showResults &&
             sugestoes.map((s, i) => {
               const isSelected = i === indiceSelecionado;
@@ -322,7 +369,6 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
               );
             })}
 
-          {/* Rodapé com dicas de teclado — só aparece com resultados reais */}
           {showResults && (
             <div className="mt-1 flex items-center justify-end gap-3 border-t border-white/[0.06] px-2.5 py-1.5 text-[10px] text-white/30">
               <span className="flex items-center gap-1">
@@ -349,4 +395,7 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
       )}
     </AnimatePresence>
   );
+
+  // ✅ Renderiza fora da árvore DOM normal, direto no body — imune a overflow/z-index de pais
+  return createPortal(dropdownContent, document.body);
 };

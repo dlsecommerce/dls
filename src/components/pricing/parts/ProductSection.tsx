@@ -47,9 +47,6 @@ type ProductSectionProps = {
 
   onAdicionarProduto?: () => void;
 
-  // ✅ NOVOS PROPS — todos opcionais, com fallback seguro.
-  // Se o componente pai não passar, o dropdown continua
-  // funcionando exatamente como antes (sem quebrar nada).
   onHoverProdutoIndex?: (index: number) => void;
   onCloseSugestoesProduto?: () => void;
 };
@@ -77,19 +74,19 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
   const fallbackListaRef = React.useRef<HTMLDivElement>(null);
   const dropdownRef = listaProdutoRef || fallbackListaRef;
 
+  // ✅ NOVO — refs de âncora, usadas pelo portal do SuggestionDropdown
+  // para calcular a posição correta (fixed) fora da árvore com overflow.
+  const codigoWrapperRef = React.useRef<HTMLDivElement>(null);
+  const descricaoWrapperRef = React.useRef<HTMLDivElement>(null);
+
   const [campoBuscaAtivo, setCampoBuscaAtivo] =
     React.useState<TipoBuscaProduto | null>(null);
 
-  // ✅ Loading local — não depende de nenhuma alteração na lógica
-  // de busca existente. Marca "buscando" ao digitar e desliga
-  // automaticamente quando o array de sugestões muda (chegou
-  // resposta) ou quando a busca é limpa/fechada.
   const [isSearching, setIsSearching] = React.useState(false);
   const loadingTimeoutRef = React.useRef<ReturnType<typeof setTimeout>>();
 
   const canAdd = codigo.trim() !== "" || descricao.trim() !== "";
 
-  // Termo de busca relevante para o highlight, conforme o campo ativo
   const termoBuscaAtivo =
     campoBuscaAtivo === "codigo"
       ? codigo
@@ -98,19 +95,16 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
         : "";
 
   React.useEffect(() => {
-    // Sempre que as sugestões mudam (chegaram do banco), desliga o loading
     setIsSearching(false);
   }, [sugestoesProduto]);
 
   React.useEffect(() => {
-    // Se a lista de sugestões foi fechada, garante que o loading também some
     if (!produtoSugestaoAtiva) {
       setIsSearching(false);
     }
   }, [produtoSugestaoAtiva]);
 
   React.useEffect(() => {
-    // Limpeza do timeout ao desmontar, evita leak
     return () => {
       if (loadingTimeoutRef.current) {
         clearTimeout(loadingTimeoutRef.current);
@@ -121,9 +115,6 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
   const dispararLoading = () => {
     setIsSearching(true);
 
-    // Failsafe: se por algum motivo a resposta nunca chegar
-    // (erro de rede, etc.), desliga o skeleton após 4s para
-    // não deixar o usuário com loading eterno.
     if (loadingTimeoutRef.current) {
       clearTimeout(loadingTimeoutRef.current);
     }
@@ -209,12 +200,16 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
       </div>
 
       <div className="space-y-4">
-        <div className="relative z-[140]">
+        <div className="relative">
           <label className="mb-1.5 block text-xs font-medium text-white/50">
             Código / SKU
           </label>
 
-          <div className="flex overflow-hidden rounded border border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+          {/* ✅ ref adicionada aqui — é a âncora usada pelo portal */}
+          <div
+            ref={codigoWrapperRef}
+            className="flex overflow-hidden rounded border border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30"
+          >
             <Input
               value={codigo}
               onChange={(e) => handleCodigoChange(e.target.value)}
@@ -257,28 +252,32 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
             isLoading={campoBuscaAtivo === "codigo" && isSearching}
             onHoverIndex={onHoverProdutoIndex}
             onClose={handleClose}
+            anchorRef={codigoWrapperRef}
           />
         </div>
 
-        <div className="relative z-[130]">
+        <div className="relative">
           <label className="mb-1.5 block text-xs font-medium text-white/50">
             Descrição
           </label>
 
-          <Input
-            value={descricao}
-            onChange={(e) => handleDescricaoChange(e.target.value)}
-            onFocus={handleDescricaoFocus}
-            onKeyDown={handleProdutoSugestoesKeys}
-            placeholder="Ex: TENNESSEE 5A MARFIM MADEIRA"
-            className="
-              h-10 rounded border-white/10 bg-[#070707] px-3
-              text-sm font-semibold text-white shadow-none outline-none
-              placeholder:text-white/20
-              focus:border-[#1a8ceb]/70 focus:ring-1 focus:ring-[#1a8ceb]/30
-              focus-visible:ring-0 focus-visible:ring-offset-0
-            "
-          />
+          {/* ✅ ref adicionada aqui — é a âncora usada pelo portal */}
+          <div ref={descricaoWrapperRef}>
+            <Input
+              value={descricao}
+              onChange={(e) => handleDescricaoChange(e.target.value)}
+              onFocus={handleDescricaoFocus}
+              onKeyDown={handleProdutoSugestoesKeys}
+              placeholder="Ex: TENNESSEE 5A MARFIM MADEIRA"
+              className="
+                h-10 rounded border-white/10 bg-[#070707] px-3
+                text-sm font-semibold text-white shadow-none outline-none
+                placeholder:text-white/20
+                focus:border-[#1a8ceb]/70 focus:ring-1 focus:ring-[#1a8ceb]/30
+                focus-visible:ring-0 focus-visible:ring-offset-0
+              "
+            />
+          </div>
 
           <SuggestionDropdown
             isActive={produtoSugestaoAtiva && campoBuscaAtivo === "descricao"}
@@ -290,6 +289,7 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
             isLoading={campoBuscaAtivo === "descricao" && isSearching}
             onHoverIndex={onHoverProdutoIndex}
             onClose={handleClose}
+            anchorRef={descricaoWrapperRef}
           />
         </div>
       </div>
