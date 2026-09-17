@@ -9,8 +9,8 @@ type SugestaoProduto = {
   codigo: string;
   custo: number;
   produto?: string;
-  marca?: string; // ✅ NOVO
-  packingCost?: number; // ✅ NOVO
+  marca?: string;
+  packingCost?: number;
 };
 
 type TipoBuscaProduto = "codigo" | "descricao";
@@ -36,8 +36,6 @@ type DecompositionProductSectionProps = {
     e: React.KeyboardEvent<HTMLInputElement>
   ) => void;
 
-  // ✅ atualizado: agora recebe também marca e packingCost,
-  // igual ao ProductSection.tsx do PricingCalculatorModern
   selecionarProdutoSugestao?: (
     codigo: string,
     custo: number,
@@ -70,6 +68,11 @@ export const DecompositionProductSection: React.FC<
 }) => {
   const fallbackListaRef = React.useRef<HTMLDivElement>(null);
   const dropdownRef = listaProdutoRef || fallbackListaRef;
+
+  // ✅ NOVO — refs de âncora, usadas pelo portal do SuggestionDropdown
+  // para calcular a posição correta (fixed), imune ao overflow dos pais.
+  const codigoWrapperRef = React.useRef<HTMLDivElement>(null);
+  const descricaoWrapperRef = React.useRef<HTMLDivElement>(null);
 
   const [campoBuscaAtivo, setCampoBuscaAtivo] =
     React.useState<TipoBuscaProduto | null>(null);
@@ -104,7 +107,6 @@ export const DecompositionProductSection: React.FC<
     }
   };
 
-  // ✅ atualizado: repassa marca e packingCost da sugestão selecionada
   const handleSelect = (
     codigoSelecionado: string,
     custoSelecionado: number,
@@ -149,12 +151,16 @@ export const DecompositionProductSection: React.FC<
       </div>
 
       <div className="space-y-4">
-        <div className="relative z-[140]">
+        <div className="relative">
           <label className="mb-1.5 block text-xs font-medium text-white/50">
             Código / SKU
           </label>
 
-          <div className="flex h-10 items-stretch overflow-hidden rounded border border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+          {/* ✅ ref adicionada aqui — âncora do portal */}
+          <div
+            ref={codigoWrapperRef}
+            className="flex h-10 items-stretch overflow-hidden rounded border border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30"
+          >
             <Input
               value={codigo}
               onChange={(e) => handleCodigoChange(e.target.value)}
@@ -194,30 +200,34 @@ export const DecompositionProductSection: React.FC<
             indiceSelecionado={indiceProdutoSelecionado}
             onSelect={handleSelect}
             termoBusca={campoBuscaAtivo === "codigo" ? termoBuscaAtivo : ""}
+            anchorRef={codigoWrapperRef}
           />
         </div>
 
-        <div className="relative z-[130] min-w-0">
+        <div className="relative min-w-0">
           <label className="mb-1.5 block text-xs font-medium text-white/50">
             Descrição
           </label>
 
-          <Input
-            value={descricao}
-            title={descricao}
-            onChange={(e) => handleDescricaoChange(e.target.value)}
-            onFocus={handleDescricaoFocus}
-            onKeyDown={handleProdutoSugestoesKeys}
-            placeholder="Ex: TENNESSEE 5A MARFIM MADEIRA"
-            className="
-              h-10 w-full min-w-0 truncate rounded border-white/10 bg-[#070707] px-3
-              text-sm font-semibold text-white shadow-none outline-none
-              overflow-hidden text-ellipsis whitespace-nowrap
-              placeholder:text-white/20
-              focus:border-[#1a8ceb]/70 focus:ring-1 focus:ring-[#1a8ceb]/30
-              focus-visible:ring-0 focus-visible:ring-offset-0
-            "
-          />
+          {/* ✅ ref adicionada aqui — âncora do portal */}
+          <div ref={descricaoWrapperRef}>
+            <Input
+              value={descricao}
+              title={descricao}
+              onChange={(e) => handleDescricaoChange(e.target.value)}
+              onFocus={handleDescricaoFocus}
+              onKeyDown={handleProdutoSugestoesKeys}
+              placeholder="Ex: TENNESSEE 5A MARFIM MADEIRA"
+              className="
+                h-10 w-full min-w-0 truncate rounded border-white/10 bg-[#070707] px-3
+                text-sm font-semibold text-white shadow-none outline-none
+                overflow-hidden text-ellipsis whitespace-nowrap
+                placeholder:text-white/20
+                focus:border-[#1a8ceb]/70 focus:ring-1 focus:ring-[#1a8ceb]/30
+                focus-visible:ring-0 focus-visible:ring-offset-0
+              "
+            />
+          </div>
 
           <SuggestionDropdown
             isActive={produtoSugestaoAtiva && campoBuscaAtivo === "descricao"}
@@ -226,6 +236,7 @@ export const DecompositionProductSection: React.FC<
             indiceSelecionado={indiceProdutoSelecionado}
             onSelect={handleSelect}
             termoBusca={campoBuscaAtivo === "descricao" ? termoBuscaAtivo : ""}
+            anchorRef={descricaoWrapperRef}
           />
         </div>
       </div>

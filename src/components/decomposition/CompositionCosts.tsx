@@ -10,8 +10,8 @@ export type Item = {
   custo: string;
   descricao?: string;
   produto?: string;
-  marca?: string; // ✅ NOVO
-  embalagem?: string; // ✅ NOVO — packing_cost formatado em BR
+  marca?: string;
+  embalagem?: string;
 };
 
 type Sugestao = {
@@ -39,9 +39,6 @@ type Props = {
   onBlurQuantidade: (idx: number) => void;
   onBlurCusto: (idx: number) => void;
 
-  // ✅ NOVOS — todos opcionais, com fallback seguro. Sem eles, o
-  // comportamento antigo (Tab/Enter -> autoSelecionarPrimeiro)
-  // continua funcionando exatamente como antes.
   sugestoes?: Sugestao[];
   campoAtivo?: number | null;
   setCampoAtivo?: (idx: number | null) => void;
@@ -137,6 +134,11 @@ export default function ComposicaoCustos({
   const fallbackListaRef = React.useRef<HTMLDivElement>(null);
   const dropdownRef = listaRef || fallbackListaRef;
 
+  // ✅ NOVO — refs de âncora por linha, usadas pelo portal do
+  // SuggestionDropdown para calcular a posição (fixed) correta,
+  // imune ao overflow-hidden/overflow-y-auto da tabela.
+  const codeWrapperRefs = React.useRef<Array<HTMLDivElement | null>>([]);
+
   const [mostrarInputs, setMostrarInputs] = React.useState(() =>
     composicao.some(itemTemConteudo)
   );
@@ -217,8 +219,6 @@ export default function ComposicaoCustos({
     }
   };
 
-  // ✅ Handler do input de código: dispara busca de sugestões (se
-  // disponível) e limpa produto/marca/embalagem antigos ao editar.
   const handleCodigoChange = (idx: number, value: string) => {
     atualizarItem(setComposicao, idx, {
       codigo: value,
@@ -336,25 +336,29 @@ export default function ComposicaoCustos({
                         Código / SKU
                       </label>
 
-                      <Input
+                      {/* ✅ ref adicionada aqui — âncora do portal */}
+                      <div
                         ref={(el) => {
-                          if (el) codeRefs.current[idx] = el;
+                          codeWrapperRefs.current[idx] = el;
                         }}
-                        value={item.codigo}
-                        placeholder="SKU"
-                        onChange={(e) => handleCodigoChange(idx, e.target.value)}
-                        onFocus={() => {
-                          if (item.codigo.trim()) {
-                            buscarSugestoes?.(item.codigo, idx);
-                          }
-                        }}
-                        onKeyDown={(e) => handleKeyDownCodigo(e, idx)}
-                        className={`${inputClass} w-full text-center`}
-                      />
+                      >
+                        <Input
+                          ref={(el) => {
+                            if (el) codeRefs.current[idx] = el;
+                          }}
+                          value={item.codigo}
+                          placeholder="SKU"
+                          onChange={(e) => handleCodigoChange(idx, e.target.value)}
+                          onFocus={() => {
+                            if (item.codigo.trim()) {
+                              buscarSugestoes?.(item.codigo, idx);
+                            }
+                          }}
+                          onKeyDown={(e) => handleKeyDownCodigo(e, idx)}
+                          className={`${inputClass} w-full text-center`}
+                        />
+                      </div>
 
-                      {/* ✅ Dropdown real de sugestões — só ativo se o pai
-                          fornecer as props necessárias. Sem elas, nada é
-                          renderizado (comportamento antigo preservado). */}
                       {Boolean(buscarSugestoes && selecionarSugestao) && (
                         <SuggestionDropdown
                           isActive={campoAtivo === idx}
@@ -373,6 +377,7 @@ export default function ComposicaoCustos({
                           }
                           termoBusca={item.codigo}
                           onClose={() => setCampoAtivo?.(null)}
+                          anchorRef={{ current: codeWrapperRefs.current[idx] }}
                         />
                       )}
                     </div>
