@@ -1,3 +1,4 @@
+// components/announce/helpers/Importannounce.ts
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import { createNotification } from "@/lib/createNotification";
@@ -194,6 +195,12 @@ async function callImportarAnnounceApi(
       "Content-Type": "application/json",
       Authorization: `Bearer ${accessToken}`,
     },
+    // ✅ `channels` é enviado como fallback global (compatibilidade com
+    // o comportamento antigo). Cada item de `registros` pode trazer seu
+    // próprio `channels` (atribuição por linha, vinda do
+    // ConfirmImportModal) — nesse caso ele tem prioridade no servidor.
+    // O endpoint /api/announce/import precisa ler
+    // `registro.channels ?? channels` por registro.
     body: JSON.stringify({ registros, modo, channels }),
   });
 
@@ -271,6 +278,42 @@ async function callImportarAnnounceApiEmLotes(
   return acumulado;
 }
 
+/**
+ * ✅ NOVO — converte o mapa vindo do ConfirmImportModal
+ * (canal -> índices de linha em `deduped`) em uma lista de canais
+ * POR REGISTRO. Se um índice não estiver em nenhum canal do mapa,
+ * cai no fallback `channelsFallback` (comportamento antigo: todos os
+ * canais selecionados globalmente se aplicam a todo mundo).
+ *
+ * Os índices usados pelo modal correspondem exatamente à posição do
+ * registro dentro de `deduped` (mesmo array usado tanto no preview
+ * quanto na importação final, para o mesmo arquivo/modo).
+ */
+function applyChannelRowAssignments(
+  deduped: any[],
+  channelsFallback: string[],
+  channelRowAssignments?: Record<string, number[]>
+): any[] {
+  if (!channelRowAssignments || Object.keys(channelRowAssignments).length === 0) {
+    return deduped;
+  }
+
+  const channelsByIndex = new Map<number, string[]>();
+
+  for (const [channelName, indices] of Object.entries(channelRowAssignments)) {
+    for (const idx of indices) {
+      const current = channelsByIndex.get(idx) ?? [];
+      current.push(channelName);
+      channelsByIndex.set(idx, current);
+    }
+  }
+
+  return deduped.map((row, idx) => ({
+    ...row,
+    channels: channelsByIndex.get(idx) ?? channelsFallback,
+  }));
+}
+
 // ---------------------------------------------------------------------
 // Notificação — disparada em background pelo chamador (fire-and-forget).
 // ---------------------------------------------------------------------
@@ -306,12 +349,19 @@ function buildTimestampedFileName(prefix: string): string {
 //    sobrescrito: é a chave de busca, não um campo editável.
 //
 // `channels`: canais de marketplace selecionados na UI (seleção
-// global, igual nos dois modos). No modo "inclusao", o servidor cria
-// o vínculo em `marketplace` apenas nesses canais (via trigger de
-// INSERT em `announce`, que lê essa seleção). No modo "alteracao",
-// além de sincronizar os campos dos vínculos já existentes (trigger
-// de UPDATE), o servidor GARANTE o vínculo nesses canais para os
+// global, igual nos dois modos), usados como FALLBACK quando não há
+// atribuição por linha. No modo "inclusao", o servidor cria o vínculo
+// em `marketplace` apenas nesses canais (via trigger de INSERT em
+// `announce`, que lê essa seleção). No modo "alteracao", além de
+// sincronizar os campos dos vínculos já existentes (trigger de
+// UPDATE), o servidor GARANTE o vínculo nesses canais para os
 // anúncios que ainda não os possuíam.
+//
+// `channelRowAssignments`: mapa opcional (canal -> índices de linha em
+// `deduped`), vindo do ConfirmImportModal. Permite que cada anúncio da
+// planilha vá para canais DIFERENTES entre si, em vez de todos irem
+// para os mesmos `channels` globais. Linhas fora do mapa usam
+// `channels` como fallback.
 //
 // A composição/kit do anúncio NÃO vem da planilha: é resolvida
 // automaticamente pelo banco.
@@ -321,7 +371,8 @@ export async function importAnnounceFromXlsxOrCsv(
   previewOnly = false,
   onProgress?: (progress: ImportProgress) => void,
   modo: ModoImportacao = "inclusao",
-  channels: string[] = []
+  channels: string[] = [],
+  channelRowAssignments?: Record<string, number[]>
 ): Promise<ImportResult> {
   const startedAt = performance.now();
   const warnings: string[] = [];
@@ -441,6 +492,11 @@ export async function importAnnounceFromXlsxOrCsv(
       : `Registros únicos detectados: ${deduped.length}.`
   );
 
+  // ⚠️ IMPORTANTE: `deduped` é o MESMO array retornado no preview
+  // (previewOnly=true) e usado como base dos índices em
+  // `channelRowAssignments` no ConfirmImportModal. Por isso os índices
+  // continuam válidos aqui, na chamada final de importação — desde que
+  // o arquivo e o modo sejam os mesmos entre o preview e a confirmação.
   if (previewOnly) {
     return {
       data: deduped,
@@ -452,9 +508,20 @@ export async function importAnnounceFromXlsxOrCsv(
 
   const accessToken = await ensureValidSession();
 
-  onProgress?.({ processed: 0, total: deduped.length, batchSize: CHUNK_SIZE });
+  // ✅ Aplica a atribuição por linha (se houver) antes de enviar.
+  // Cada registro passa a carregar seu próprio `channels`, sobrepondo
+  // o fallback global quando presente.
+  const registrosComCanais = applyChannelRowAssignments(deduped, channels, channelRowAssignments);
 
-  const resultado = await callImportarAnnounceApiEmLotes(deduped, accessToken, modo, channels, onProgress);
+  onProgress?.({ processed: 0, total: registrosComCanais.length, batchSize: CHUNK_SIZE });
+
+  const resultado = await callImportarAnnounceApiEmLotes(
+    registrosComCanais,
+    accessToken,
+    modo,
+    channels,
+    onProgress
+  );
 
   if (resultado.errosCount > 0) {
     const shown = resultado.erros.slice(0, MAX_ERRORS_SHOWN);

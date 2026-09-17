@@ -1,3 +1,4 @@
+// ProductDetails.tsx
 "use client";
 // build fix: casing ProductInfoSection
 

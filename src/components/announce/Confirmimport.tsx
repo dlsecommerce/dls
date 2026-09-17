@@ -15,6 +15,7 @@ import {
   ClipboardList,
   FileSpreadsheet,
   X,
+  Check,
 } from "lucide-react";
 
 import { ChannelSelector } from "@/components/announce/edit/Channelselector";
@@ -30,14 +31,11 @@ type Channel = {
 
 /** Erro estruturado: associado a uma linha (e opcionalmente a uma coluna específica) */
 export type RowError = {
-  /** índice da linha no array `preview` (0-based) */
   row: number;
-  /** chave da coluna (opcional). Se omitido, marca a linha inteira */
   field?: string;
   message: string;
 };
 
-/** Resultado final da importação, retornado pela API */
 export type ImportResult = {
   total: number;
   importados: number;
@@ -59,30 +57,39 @@ type Props = {
   preview?: PreviewRow[];
   warnings?: string[];
   errors?: string[];
-  /** Erros amarrados a linha/coluna específica, exibidos dentro da tabela */
   rowErrors?: RowError[];
   tipo: Tipo;
   customTitle?: string;
   customText?: string;
-  /** Quantidade de registros que já existem e serão ignorados (não bloqueia a importação) */
   duplicatesCount?: number;
-  /** Resultado final retornado pela API após a importação ser concluída */
   result?: ImportResult | null;
-  /** Canais de marketplace disponíveis para vincular a importação (inclusão e alteração) */
   availableChannels?: Channel[];
-  /** Canais selecionados atualmente */
   selectedChannels?: string[];
-  /** Callback disparado ao alterar a seleção de canais */
   onChannelsChange?: (channels: string[]) => void;
+  /**
+   * Mapa: nome do canal -> índices das linhas do `preview` que serão
+   * enviadas para aquele canal. Se omitido para um canal selecionado,
+   * assume-se TODAS as linhas.
+   */
+  channelRowAssignments?: Record<string, number[]>;
+  onChannelRowAssignmentsChange?: (assignments: Record<string, number[]>) => void;
 };
 
-/** Cores e ícones */
 const GREEN = "#22c55e";
 const GREEN_HOVER = "#34d365";
 const RED = "#ef4444";
 const ORANGE = "#f97316";
 
-/** Componente cabeçalho das seções */
+const CHANNEL_STYLES: Record<string, { bg: string; text: string; border: string }> = {
+  Shopee: { bg: "#EE4D2D", text: "#FFFFFF", border: "#EE4D2D" },
+  Magalu: { bg: "#0086FF", text: "#FFFFFF", border: "#0086FF" },
+  "Mercado Livre": { bg: "#FFE600", text: "#1A1A1A", border: "#FFE600" },
+  Tray: { bg: "#FF6B00", text: "#FFFFFF", border: "#FF6B00" },
+  Olist: { bg: "#1A6CE8", text: "#FFFFFF", border: "#1A6CE8" },
+  "TikTok Shop": { bg: "#FFFFFF", text: "#000000", border: "#FFFFFF" },
+};
+const DEFAULT_CHANNEL_STYLE = { bg: "#FFFFFF", text: "#000000", border: "#FFFFFF" };
+
 function SectionHeader({
   icon,
   title,
@@ -105,10 +112,8 @@ function SectionHeader({
   );
 }
 
-/** Utils de preview */
 const COLUMN_PRIORITY = ["code_id"];
 
-/** Tradução das colunas técnicas para rótulos em português */
 const COLUMN_LABELS: Record<string, string> = {
   code_id: "Código",
   store: "Loja",
@@ -162,7 +167,6 @@ function formatCellValue(value: unknown): string {
   return String(value);
 }
 
-/** Caixa de alerta (erros / avisos) */
 function AlertBox({
   variant,
   title,
@@ -211,7 +215,6 @@ function AlertBox({
   );
 }
 
-/** Caixa informativa não bloqueante (ex: duplicatas que serão ignoradas) */
 function InfoBox({ title, description }: { title: string; description: string }) {
   return (
     <div
@@ -241,7 +244,6 @@ function InfoBox({ title, description }: { title: string; description: string })
   );
 }
 
-/** Mapas auxiliares para localizar erros por linha/coluna rapidamente */
 type RowErrorMap = Map<number, { rowMessage?: string; fields: Map<string, string> }>;
 
 function buildRowErrorMap(rowErrors: RowError[]): RowErrorMap {
@@ -260,16 +262,32 @@ function buildRowErrorMap(rowErrors: RowError[]): RowErrorMap {
   return map;
 }
 
-/** Tabela de pré-visualização */
+/**
+ * Tabela de pré-visualização.
+ * Quando `activeChannel` é informado, ganha uma coluna extra de checkbox
+ * para marcar quais linhas serão enviadas para aquele canal.
+ */
 function PreviewTable({
   preview,
   keys,
   rowErrorMap,
+  activeChannel,
+  channelStyle,
+  selectedRows,
+  onToggleRow,
+  onToggleAllRows,
 }: {
   preview: PreviewRow[];
   keys: string[];
   rowErrorMap: RowErrorMap;
+  activeChannel?: string | null;
+  channelStyle?: { bg: string; text: string; border: string };
+  selectedRows?: Set<number>;
+  onToggleRow?: (rowIndex: number) => void;
+  onToggleAllRows?: () => void;
 }) {
+  const showAssignColumn = Boolean(activeChannel && onToggleRow && selectedRows);
+
   if (keys.length === 0) {
     return (
       <div className="w-full border border-neutral-800 p-4 text-center text-[11px] text-neutral-600">
@@ -278,6 +296,9 @@ function PreviewTable({
     );
   }
 
+  const allChecked = showAssignColumn && selectedRows!.size === preview.length && preview.length > 0;
+  const someChecked = showAssignColumn && selectedRows!.size > 0 && !allChecked;
+
   return (
     <div className="w-full border border-neutral-800 overflow-hidden">
       <div className="h-56 overflow-auto">
@@ -285,6 +306,26 @@ function PreviewTable({
           <caption className="sr-only">Pré-visualização dos registros a serem importados</caption>
           <thead className="sticky top-0 z-10 bg-neutral-900">
             <tr>
+              {showAssignColumn && (
+                <th scope="col" className="w-9 whitespace-nowrap p-2">
+                  <button
+                    type="button"
+                    onClick={onToggleAllRows}
+                    className={[
+                      "flex h-4 w-4 items-center justify-center rounded-[4px] border transition-colors",
+                      allChecked
+                        ? "border-white bg-white"
+                        : someChecked
+                        ? "border-white/50 bg-white/20"
+                        : "border-neutral-600 bg-transparent",
+                    ].join(" ")}
+                    title={allChecked ? "Desmarcar todas" : "Marcar todas"}
+                  >
+                    {allChecked && <Check className="h-2.5 w-2.5 text-black" strokeWidth={3} />}
+                    {someChecked && <span className="h-[1.5px] w-2 rounded-full bg-white/80" />}
+                  </button>
+                </th>
+              )}
               {keys.map((k) => (
                 <th
                   key={k}
@@ -301,15 +342,36 @@ function PreviewTable({
             {preview.map((row, i) => {
               const rowErr = rowErrorMap.get(i);
               const hasRowError = Boolean(rowErr);
+              const isRowChecked = showAssignColumn && selectedRows!.has(i);
 
               return (
                 <tr
                   key={i}
                   className={`border-t border-neutral-900 transition-colors ${
-                    hasRowError ? "bg-red-950/30" : "hover:bg-neutral-900/60"
+                    hasRowError
+                      ? "bg-red-950/30"
+                      : isRowChecked
+                      ? "bg-white/[0.04]"
+                      : "hover:bg-neutral-900/60"
                   }`}
                   title={rowErr?.rowMessage}
                 >
+                  {showAssignColumn && (
+                    <td className="p-2">
+                      <button
+                        type="button"
+                        onClick={() => onToggleRow!(i)}
+                        className={[
+                          "flex h-4 w-4 items-center justify-center rounded-[4px] border transition-colors cursor-pointer",
+                          isRowChecked
+                            ? "border-white bg-white"
+                            : "border-neutral-600 bg-transparent hover:border-neutral-400",
+                        ].join(" ")}
+                      >
+                        {isRowChecked && <Check className="h-2.5 w-2.5 text-black" strokeWidth={3} />}
+                      </button>
+                    </td>
+                  )}
                   {keys.map((k) => {
                     const raw = row?.[k];
                     const value = formatCellValue(raw);
@@ -346,11 +408,31 @@ function PreviewTable({
           </tbody>
         </table>
       </div>
+
+      {/* Legenda do canal ativo */}
+      {activeChannel && channelStyle && (
+        <div className="flex items-center justify-between border-t border-neutral-900 bg-neutral-950 px-3 py-1.5">
+          <span className="text-[10px] text-neutral-500">
+            Marcando anúncios para{" "}
+            <span
+              className="rounded px-1.5 py-0.5 font-semibold"
+              style={{
+                backgroundColor: `${channelStyle.bg}22`,
+                color: channelStyle.bg === "#FFFFFF" ? "#ffffff" : channelStyle.bg,
+              }}
+            >
+              {activeChannel}
+            </span>
+          </span>
+          <span className="text-[10px] tabular-nums text-neutral-500">
+            {selectedRows?.size ?? 0}/{preview.length} selecionados
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
-/** Toast embutido */
 function InlineToast({ message, onClose }: { message: InlineMessage; onClose: () => void }) {
   if (!message) return null;
 
@@ -390,7 +472,6 @@ function InlineToast({ message, onClose }: { message: InlineMessage; onClose: ()
   );
 }
 
-/** Componente modal principal */
 export default function ConfirmImportModal({
   open,
   onOpenChange,
@@ -409,6 +490,8 @@ export default function ConfirmImportModal({
   availableChannels = [],
   selectedChannels = [],
   onChannelsChange,
+  channelRowAssignments = {},
+  onChannelRowAssignmentsChange,
 }: Props) {
   const hasErrors = errors.length > 0 || rowErrors.length > 0;
   const hasWarnings = warnings.length > 0 && !hasErrors;
@@ -419,6 +502,7 @@ export default function ConfirmImportModal({
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
 
   const [inlineMessage, setInlineMessage] = useState<InlineMessage>(null);
+  const [activeChannel, setActiveChannel] = useState<string | null>(null);
 
   const keys = useMemo(
     () => (preview.length > 0 ? sortPreviewKeys(Object.keys(preview[0])) : []),
@@ -440,11 +524,52 @@ export default function ConfirmImportModal({
 
   const willInsertCount = isInclusao ? Math.max(count - duplicatesCount, 0) : count;
 
-  // Botão de confirmação: sempre VERDE, exceto quando há erros bloqueantes (VERMELHO/desabilitado)
   const ACCENT = hasErrors ? RED : GREEN;
   const ACCENT_HOVER = GREEN_HOVER;
 
   const showChannelSelector = Boolean(onChannelsChange) && availableChannels.length > 0;
+  const canAssignRows = Boolean(onChannelRowAssignmentsChange) && preview.length > 0;
+
+  // Ativa automaticamente o primeiro canal selecionado como "canal ativo" de atribuição
+  useEffect(() => {
+    if (!canAssignRows) return;
+    if (activeChannel && selectedChannels.includes(activeChannel)) return;
+    setActiveChannel(selectedChannels[0] ?? null);
+  }, [selectedChannels, activeChannel, canAssignRows]);
+
+  const activeChannelStyle = activeChannel
+    ? CHANNEL_STYLES[activeChannel] ?? DEFAULT_CHANNEL_STYLE
+    : undefined;
+
+  const activeRowSelection = useMemo(() => {
+    if (!activeChannel) return new Set<number>();
+    const assigned = channelRowAssignments[activeChannel];
+    // Se nunca foi customizado, assume TODAS as linhas selecionadas por padrão
+    if (assigned === undefined) {
+      return new Set(preview.map((_, i) => i));
+    }
+    return new Set(assigned);
+  }, [activeChannel, channelRowAssignments, preview]);
+
+  function toggleRowForActiveChannel(rowIndex: number) {
+    if (!activeChannel || !onChannelRowAssignmentsChange) return;
+    const current = new Set(activeRowSelection);
+    if (current.has(rowIndex)) current.delete(rowIndex);
+    else current.add(rowIndex);
+    onChannelRowAssignmentsChange({
+      ...channelRowAssignments,
+      [activeChannel]: Array.from(current),
+    });
+  }
+
+  function toggleAllRowsForActiveChannel() {
+    if (!activeChannel || !onChannelRowAssignmentsChange) return;
+    const allSelected = activeRowSelection.size === preview.length;
+    onChannelRowAssignmentsChange({
+      ...channelRowAssignments,
+      [activeChannel]: allSelected ? [] : preview.map((_, i) => i),
+    });
+  }
 
   useEffect(() => {
     if (open && !loading) {
@@ -461,7 +586,6 @@ export default function ConfirmImportModal({
     if (!open) setInlineMessage(null);
   }, [open]);
 
-  // Exibe o resumo final quando a API retorna o resultado da importação
   useEffect(() => {
     if (result) {
       setInlineMessage({
@@ -536,7 +660,6 @@ export default function ConfirmImportModal({
         onInteractOutside={(e) => loading && e.preventDefault()}
         className="bg-[#0a0a0a] border border-neutral-800 shadow-2xl w-[calc(100vw-16px)] max-w-[calc(100vw-16px)] max-h-[calc(100dvh-16px)] sm:max-w-2xl sm:w-[90%] flex flex-col overflow-hidden p-4 sm:p-6 pb-[calc(1rem+env(safe-area-inset-bottom))]"
       >
-        {/* Cabeçalho */}
         <DialogHeader className="shrink-0 border-b border-neutral-900 pb-3">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4" style={{ color: ACCENT }} />
@@ -545,7 +668,6 @@ export default function ConfirmImportModal({
           <p className="mt-1 text-[11px] text-neutral-500">{targetLabel}</p>
         </DialogHeader>
 
-        {/* Conteúdo */}
         <div className="min-h-0 flex-1 overflow-y-auto pr-1 mt-4">
           {/* Resumo do arquivo */}
           <div>
@@ -609,6 +731,47 @@ export default function ConfirmImportModal({
                     disabled={loading}
                   />
                 </div>
+
+                {/* Tabs para escolher qual canal está sendo editado na tabela abaixo */}
+                {canAssignRows && selectedChannels.length > 0 && (
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] text-neutral-600">Editar anúncios de:</span>
+                    {selectedChannels.map((ch) => {
+                      const style = CHANNEL_STYLES[ch] ?? DEFAULT_CHANNEL_STYLE;
+                      const isActive = activeChannel === ch;
+                      const assignedCount =
+                        channelRowAssignments[ch]?.length ?? preview.length;
+                      return (
+                        <button
+                          key={ch}
+                          type="button"
+                          onClick={() => setActiveChannel(ch)}
+                          disabled={loading}
+                          style={
+                            isActive
+                              ? {
+                                  backgroundColor: style.bg,
+                                  color: style.text,
+                                  borderColor: style.border,
+                                }
+                              : undefined
+                          }
+                          className={[
+                            "rounded border px-2.5 py-1 text-[11px] font-medium transition-colors",
+                            loading ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+                            !isActive &&
+                              "border-neutral-800 bg-transparent text-neutral-500 hover:border-neutral-600 hover:text-neutral-300",
+                          ].join(" ")}
+                        >
+                          {ch}{" "}
+                          <span className="tabular-nums opacity-70">
+                            ({assignedCount}/{preview.length})
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -646,7 +809,7 @@ export default function ConfirmImportModal({
             </>
           )}
 
-          {/* Preview */}
+          {/* Preview (agora com seleção por anúncio, se houver canal ativo) */}
           {preview.length > 0 && (
             <>
               <div className="my-5 h-px bg-neutral-900" />
@@ -655,17 +818,27 @@ export default function ConfirmImportModal({
                   icon={<FileSpreadsheet className="h-3.5 w-3.5" />}
                   title="Pré-visualização"
                   description={
-                    rowErrors.length > 0
+                    canAssignRows && activeChannel
+                      ? "Marque quais anúncios serão enviados para o canal selecionado acima"
+                      : rowErrors.length > 0
                       ? "Amostra dos dados — células em vermelho indicam erro"
                       : "Amostra dos dados que serão processados"
                   }
                 />
-                <PreviewTable preview={preview} keys={keys} rowErrorMap={rowErrorMap} />
+                <PreviewTable
+                  preview={preview}
+                  keys={keys}
+                  rowErrorMap={rowErrorMap}
+                  activeChannel={canAssignRows ? activeChannel : null}
+                  channelStyle={activeChannelStyle}
+                  selectedRows={canAssignRows ? activeRowSelection : undefined}
+                  onToggleRow={canAssignRows ? toggleRowForActiveChannel : undefined}
+                  onToggleAllRows={canAssignRows ? toggleAllRowsForActiveChannel : undefined}
+                />
               </div>
             </>
           )}
 
-          {/* Toast embutido */}
           {inlineMessage && (
             <>
               <div className="my-5 h-px bg-neutral-900" />
@@ -674,7 +847,6 @@ export default function ConfirmImportModal({
           )}
         </div>
 
-        {/* Botões */}
         <DialogFooter className="mt-5 flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
           <button
             type="button"

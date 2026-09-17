@@ -15,6 +15,9 @@ type RegistroInput = {
   reference: string;
   product: string | null;
   mark: string | null;
+  // ✅ Canais específicos desta linha (linha a linha). Se vazio/ausente,
+  // usa o array `channels` global enviado no corpo da requisição.
+  channels: string[];
 };
 
 type RegistroResultado = {
@@ -34,7 +37,7 @@ async function getAuthenticatedUser(request: NextRequest) {
   return getUserFromAccessToken(token);
 }
 
-function isValidRegistro(r: any): r is RegistroInput {
+function isValidRegistro(r: any): r is Omit<RegistroInput, "channels"> {
   return (
     r &&
     typeof r === "object" &&
@@ -62,6 +65,16 @@ function sanitizeChannels(raw: unknown): string[] {
     .map((c) => c.trim());
 
   return Array.from(new Set(cleaned)).slice(0, MAX_CHANNELS);
+}
+
+/**
+ * ✅ Retorna uma chave estável (canônica) para um array de canais,
+ * usada para agrupar anúncios que recebem exatamente o mesmo
+ * conjunto de canais (permite fazer um único INSERT em lote por
+ * grupo, em vez de um INSERT por anúncio).
+ */
+function channelsSignature(channels: string[]): string {
+  return [...channels].sort().join("\u0000");
 }
 
 function keyOfInclusao(store: string, reference: string): string {
@@ -183,13 +196,13 @@ function filterIntraBatchIdBlingDuplicates(
 
 // -----------------------------------------------------------------------
 // INCLUSÃO (apenas registros já filtrados como "novos" e sem conflito de id_bling)
-// Retorna também os `id` das linhas afetadas — usados depois para
-// vincular os canais de marketplace selecionados na importação.
+// Retorna as linhas afetadas com sua chave de correspondência (key),
+// usadas depois para localizar o registro original e seus `channels`.
 // -----------------------------------------------------------------------
 async function insertBatchOnlyNew(
   transaction: any,
   batch: RegistroInput[]
-): Promise<{ affectedKeys: Set<string>; affectedIds: string[] }> {
+): Promise<{ affectedKeys: Set<string>; affected: { id: string; key: string }[] }> {
   const stores = batch.map((r) => r.store);
   const idBlings = batch.map((r) => r.id_bling);
   const references = batch.map((r) => r.reference);
@@ -219,23 +232,25 @@ async function insertBatchOnlyNew(
   `;
 
   const affectedKeys = new Set<string>();
-  const affectedIds: string[] = [];
+  const affected: { id: string; key: string }[] = [];
 
   for (const r of inserted) {
-    affectedKeys.add(keyOfInclusao(r.store, r.reference));
-    affectedIds.push(r.id);
+    const key = keyOfInclusao(r.store, r.reference);
+    affectedKeys.add(key);
+    affected.push({ id: r.id, key });
   }
 
-  return { affectedKeys, affectedIds };
+  return { affectedKeys, affected };
 }
 
 // -----------------------------------------------------------------------
-// ALTERAÇÃO — idem, retorna também os `id` das linhas atualizadas.
+// ALTERAÇÃO — idem, retorna as linhas afetadas com sua chave de
+// correspondência (key).
 // -----------------------------------------------------------------------
 async function updateBatchOnlyExisting(
   transaction: any,
   batch: RegistroInput[]
-): Promise<{ affectedKeys: Set<string>; affectedIds: string[] }> {
+): Promise<{ affectedKeys: Set<string>; affected: { id: string; key: string }[] }> {
   const stores = batch.map((r) => r.store);
   const idBlings = batch.map((r) => r.id_bling);
   const references = batch.map((r) => r.reference);
@@ -262,14 +277,15 @@ async function updateBatchOnlyExisting(
   `;
 
   const affectedKeys = new Set<string>();
-  const affectedIds: string[] = [];
+  const affected: { id: string; key: string }[] = [];
 
   for (const r of updated) {
-    affectedKeys.add(keyOfAlteracao(r.store, r.id_bling));
-    affectedIds.push(r.id);
+    const key = keyOfAlteracao(r.store, r.id_bling);
+    affectedKeys.add(key);
+    affected.push({ id: r.id, key });
   }
 
-  return { affectedKeys, affectedIds };
+  return { affectedKeys, affected };
 }
 
 // -----------------------------------------------------------------------
@@ -311,6 +327,43 @@ async function linkChannelsToAnnounces(
   `;
 }
 
+/**
+ * ✅ Agrupa uma lista de anúncios afetados (id + key de correspondência)
+ * pelo conjunto de canais efetivo de cada registro original, e chama
+ * `linkChannelsToAnnounces` uma vez por grupo — permitindo que cada
+ * linha do arquivo tenha seus próprios canais, com o mínimo de
+ * round-trips ao banco (agrupa quem tem exatamente o mesmo conjunto).
+ */
+async function linkChannelsPerRow(
+  transaction: any,
+  affected: { id: string; key: string }[],
+  registrosPorKey: Map<string, RegistroInput>
+): Promise<void> {
+  if (affected.length === 0) return;
+
+  const grupos = new Map<string, { channels: string[]; ids: string[] }>();
+
+  for (const { id, key } of affected) {
+    const registro = registrosPorKey.get(key);
+    const efetivo = registro?.channels ?? [];
+
+    if (efetivo.length === 0) continue;
+
+    const signature = channelsSignature(efetivo);
+    const grupo = grupos.get(signature);
+
+    if (grupo) {
+      grupo.ids.push(id);
+    } else {
+      grupos.set(signature, { channels: efetivo, ids: [id] });
+    }
+  }
+
+  for (const { channels, ids } of grupos.values()) {
+    await linkChannelsToAnnounces(transaction, ids, channels);
+  }
+}
+
 // -----------------------------------------------------------------------
 // Fallback linha a linha
 // -----------------------------------------------------------------------
@@ -319,8 +372,8 @@ async function processRowByRow(
   batch: RegistroInput[],
   modo: ModoImportacao,
   erros: RegistroResultado[]
-): Promise<string[]> {
-  const idsProcessados: string[] = [];
+): Promise<{ id: string; channels: string[] }[]> {
+  const processados: { id: string; channels: string[] }[] = [];
 
   for (const registro of batch) {
     try {
@@ -352,7 +405,7 @@ async function processRowByRow(
           continue;
         }
 
-        idsProcessados.push(result[0].id);
+        processados.push({ id: result[0].id, channels: registro.channels });
       } else {
         const result = await transaction`
           update newsystem.announce
@@ -376,7 +429,7 @@ async function processRowByRow(
           continue;
         }
 
-        idsProcessados.push(result[0].id);
+        processados.push({ id: result[0].id, channels: registro.channels });
       }
     } catch (error: unknown) {
       const dbError = error as { message?: string; code?: string; constraint?: string };
@@ -400,14 +453,14 @@ async function processRowByRow(
     }
   }
 
-  return idsProcessados;
+  return processados;
 }
 
 async function processAllBatches(
   transaction: any,
   registros: RegistroInput[],
   modo: ModoImportacao,
-  channels: string[],
+  channelsGlobal: string[],
   erros: RegistroResultado[]
 ): Promise<number> {
   let importados = 0;
@@ -417,15 +470,27 @@ async function processAllBatches(
     const batch = registros.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE);
     const savepointName = `sp_batch_${i}`;
 
+    // ✅ Mapa key → registro do próprio batch, usado para localizar o
+    // `channels` efetivo (por linha, com fallback ao global) de cada
+    // anúncio afetado pelo INSERT/UPDATE em massa.
+    const registrosPorKey = new Map<string, RegistroInput>();
+    for (const registro of batch) {
+      const key =
+        modo === "inclusao"
+          ? keyOfInclusao(registro.store, registro.reference)
+          : keyOfAlteracao(registro.store, registro.id_bling);
+      registrosPorKey.set(key, registro);
+    }
+
     await transaction.unsafe(`savepoint ${savepointName}`);
 
     try {
-      const { affectedKeys, affectedIds } =
+      const { affectedKeys, affected } =
         modo === "inclusao"
           ? await insertBatchOnlyNew(transaction, batch)
           : await updateBatchOnlyExisting(transaction, batch);
 
-      await linkChannelsToAnnounces(transaction, affectedIds, channels);
+      await linkChannelsPerRow(transaction, affected, registrosPorKey);
 
       await transaction.unsafe(`release savepoint ${savepointName}`);
 
@@ -453,10 +518,22 @@ async function processAllBatches(
       await transaction.unsafe(`rollback to savepoint ${savepointName}`);
       await transaction.unsafe(`release savepoint ${savepointName}`);
 
-      const idsFallback = await processRowByRow(transaction, batch, modo, erros);
-      importados += idsFallback.length;
+      const processados = await processRowByRow(transaction, batch, modo, erros);
+      importados += processados.length;
 
-      await linkChannelsToAnnounces(transaction, idsFallback, channels);
+      // ✅ Fallback linha a linha também respeita canais por registro.
+      const grupos = new Map<string, { channels: string[]; ids: string[] }>();
+      for (const { id, channels } of processados) {
+        const efetivo = channels.length > 0 ? channels : channelsGlobal;
+        if (efetivo.length === 0) continue;
+        const signature = channelsSignature(efetivo);
+        const grupo = grupos.get(signature);
+        if (grupo) grupo.ids.push(id);
+        else grupos.set(signature, { channels: efetivo, ids: [id] });
+      }
+      for (const { channels: canaisGrupo, ids } of grupos.values()) {
+        await linkChannelsToAnnounces(transaction, ids, canaisGrupo);
+      }
     }
   }
 
@@ -492,7 +569,9 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   const modo: ModoImportacao = body.modo;
-  const channels = sanitizeChannels(body?.channels);
+  // ✅ Canais globais (fallback): usados por qualquer linha que não
+  // defina o seu próprio `channels`.
+  const channelsGlobal = sanitizeChannels(body?.channels);
   const registrosRaw = Array.isArray(body?.registros) ? body.registros : null;
 
   if (!registrosRaw || registrosRaw.length === 0) {
@@ -517,12 +596,18 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   for (const raw of registrosRaw) {
     if (isValidRegistro(raw)) {
+      // ✅ Prioriza `raw.channels` (canais específicos da linha). Se
+      // ausente/vazio, usa o array global como fallback.
+      const channelsLinha = sanitizeChannels((raw as any)?.channels);
+      const channelsEfetivo = channelsLinha.length > 0 ? channelsLinha : channelsGlobal;
+
       registros.push({
         store: raw.store,
         id_bling: raw.id_bling ?? null,
         reference: raw.reference,
         product: raw.product ?? null,
         mark: raw.mark ?? null,
+        channels: channelsEfetivo,
       });
     } else {
       erros.push({
@@ -562,9 +647,12 @@ export async function POST(request: NextRequest): Promise<Response> {
     );
   }
 
-  // ✅ Aviso: nenhum canal foi selecionado na importação — os registros
-  // serão importados/alterados, mas SEM vínculo em nenhum marketplace.
-  if (channels.length === 0) {
+  // ✅ Aviso: nenhum canal (nem por linha, nem global) foi definido —
+  // os registros afetados serão importados/alterados, mas SEM vínculo
+  // em nenhum marketplace.
+  const nenhumRegistroTemCanal = registrosParaProcessar.every((r) => r.channels.length === 0);
+
+  if (nenhumRegistroTemCanal) {
     warnings.push(
       `Nenhum canal de marketplace foi selecionado. Os registros importados NÃO serão vinculados a nenhum canal.`
     );
@@ -645,7 +733,13 @@ export async function POST(request: NextRequest): Promise<Response> {
       }
 
       if (registrosFinais.length > 0) {
-        importados = await processAllBatches(transaction, registrosFinais, modo, channels, erros);
+        importados = await processAllBatches(
+          transaction,
+          registrosFinais,
+          modo,
+          channelsGlobal,
+          erros
+        );
       }
     });
 
