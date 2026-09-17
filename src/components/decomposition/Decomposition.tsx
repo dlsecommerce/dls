@@ -55,7 +55,7 @@ type SugestaoComposicao = {
 type TipoBuscaProduto = "codigo" | "descricao";
 
 // ✅ Colunas padronizadas para newsystem.costs
-const SELECT_COLS = "code, current_cost, product, packing_cost, mark";
+const SELECT_COLS = "code, current_cost, product, packaging_cost, mark";
 
 function debounce<T extends (...args: any[]) => any>(fn: T, delay: number) {
   let timer: ReturnType<typeof setTimeout>;
@@ -83,7 +83,7 @@ const mapCostsResultado = (data: any[] | null) =>
     custo: Number(item.current_cost) || 0,
     produto: item.product || "",
     marca: item.mark || "",
-    packingCost: Number(item.packing_cost) || 0,
+    packingCost: Number(item.packaging_cost) || 0,
   })) || [];
 
 export default function Decomposition() {

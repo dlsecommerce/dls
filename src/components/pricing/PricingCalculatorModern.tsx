@@ -27,14 +27,14 @@ type Sugestao = {
   custo: number;
   produto?: string;
   marca?: string;
-  packingCost?: number; // ✅ NOVO: packing_cost do item (costs)
+  packingCost?: number; // ✅ NOVO: packaging_cost do item (costs)
 };
 
 type TipoBuscaProduto = "codigo" | "descricao";
 
 // =====================
 // Embalagem padrão (fallback), usada SOMENTE quando nenhum item
-// da composição tem packing_cost cadastrado em `costs`.
+// da composição tem packaging_cost cadastrado em `costs`.
 // =====================
 const EMBALAGEM_PADRAO = "5";
 
@@ -524,7 +524,7 @@ export default function PricingCalculatorModern() {
 
   // =====================
   // Busca de sugestões da Composição (newsystem.costs)
-  // ✅ agora também traz packing_cost e mark (marca)
+  // ✅ agora também traz packaging_cost e mark (marca)
   // =====================
   const buscarSugestoes = async (termo: string, idx: number) => {
     const raw = termo.trim();
@@ -536,7 +536,7 @@ export default function PricingCalculatorModern() {
       return;
     }
 
-    const SELECT_COLS = "code, current_cost, product, packing_cost, mark";
+    const SELECT_COLS = "code, current_cost, product, packaging_cost, mark";
 
     const mapResultados = (data: any[] | null) =>
       data?.map((item) => ({
@@ -544,7 +544,7 @@ export default function PricingCalculatorModern() {
         custo: Number(item.current_cost) || 0,
         produto: item.product || "",
         marca: item.mark || "",
-        packingCost: Number(item.packing_cost) || 0,
+        packingCost: Number(item.packaging_cost) || 0,
       })) || [];
 
     const exact = await supabase
@@ -605,7 +605,7 @@ export default function PricingCalculatorModern() {
 
   // =====================
   // Busca de sugestão do Produto (newsystem.costs)
-  // ✅ agora também traz packing_cost e mark (marca)
+  // ✅ agora também traz packaging_cost e mark (marca)
   // =====================
   const buscarSugestoesProduto = async (
     termo: string,
@@ -625,7 +625,7 @@ export default function PricingCalculatorModern() {
     }
 
     const coluna = tipo === "codigo" ? "code" : "product";
-    const SELECT_COLS = "code, current_cost, product, packing_cost, mark";
+    const SELECT_COLS = "code, current_cost, product, packaging_cost, mark";
 
     const mapResultados = (data: any[] | null) =>
       data?.map((item) => ({
@@ -633,7 +633,7 @@ export default function PricingCalculatorModern() {
         custo: Number(item.current_cost) || 0,
         produto: item.product || "",
         marca: item.mark || "",
-        packingCost: Number(item.packing_cost) || 0,
+        packingCost: Number(item.packaging_cost) || 0,
       })) || [];
 
     const exact = await supabase
@@ -703,7 +703,7 @@ export default function PricingCalculatorModern() {
 
   // =====================
   // ✅ NOVO: cada item da composição passa a guardar `embalagem`
-  // (packing_cost do produto) e `marca`. Ao final, recalcula a
+  // (packaging_cost do produto) e `marca`. Ao final, recalcula a
   // "marca ativa" com base no primeiro item preenchido.
   // =====================
   const confirmarSugestaoPrimeira = (
@@ -770,7 +770,7 @@ export default function PricingCalculatorModern() {
   };
 
   // =====================
-  // ✅ NOVO: guarda packing_cost e marca também no item criado
+  // ✅ NOVO: guarda packaging_cost e marca também no item criado
   // pela busca de produto (ProductSection), e recalcula a marca
   // ativa a partir da composição inteira.
   // =====================
@@ -1053,9 +1053,9 @@ export default function PricingCalculatorModern() {
   // =====================
   // ⚠️ Os campos manuais de "Embalagem" por canal continuam
   // existindo como OVERRIDE MANUAL. Se o usuário digitar um valor
-  // aqui, ele sobrescreve a soma automática dos packing_cost dos
+  // aqui, ele sobrescreve a soma automática dos packaging_cost dos
   // itens da composição (ver calcularPreco). Se deixar vazio, a
-  // calculadora usa a soma real vinda de `costs.packing_cost`.
+  // calculadora usa a soma real vinda de `costs.packaging_cost`.
   // =====================
   const handleEmbalagemChangeShared = (raw: string) => {
     const value = toInternal(raw);
@@ -1104,7 +1104,7 @@ export default function PricingCalculatorModern() {
   };
 
   // =====================
-  // ✅ NOVO: soma o packing_cost real de cada item da composição
+  // ✅ NOVO: soma o packaging_cost real de cada item da composição
   // (× quantidade). Essa é a embalagem "automática" por produto.
   // =====================
   const calcularEmbalagemComposicao = () =>
@@ -1119,7 +1119,7 @@ export default function PricingCalculatorModern() {
   // =====================
   // ✅ CORRIGIDO: embalagem agora prioriza o override manual do
   // campo do canal; se ele estiver vazio, usa a soma real dos
-  // packing_cost dos itens; se também não houver, cai no fallback
+  // packaging_cost dos itens; se também não houver, cai no fallback
   // hardcoded (EMBALAGEM_PADRAO) apenas como última instância.
   // =====================
   const calcularPreco = (dados: Calculo) => {
@@ -1158,7 +1158,7 @@ export default function PricingCalculatorModern() {
 
   // =====================
   // Cálculo do preço de venda por item da composição
-  // ✅ agora usa o packing_cost real do próprio item (embalagemUnitaria)
+  // ✅ agora usa o packaging_cost real do próprio item (embalagemUnitaria)
   // =====================
   const calcularPrecoLojaItem = (
     custoUnitario: number,
