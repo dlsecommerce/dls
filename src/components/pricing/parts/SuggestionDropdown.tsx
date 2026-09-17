@@ -220,7 +220,6 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
             max-h-64 overflow-y-auto overscroll-contain
             rounded border border-white/[0.08]
             bg-[#101010]/95 backdrop-blur-xl
-            shadow-[0_20px_50px_rgba(26,140,235,0.08)]
             p-1
             [scrollbar-width:thin]
             [scrollbar-color:rgba(255,255,255,0.15)_transparent]

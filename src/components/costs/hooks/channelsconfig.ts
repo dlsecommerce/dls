@@ -45,7 +45,7 @@ export const CHANNELS: ChannelDef[] = [
       desconto: "",
       imposto: "14",
       margem: "15",
-      frete: "",
+      frete: "0,00",
       comissao: "6",
       marketing: "3",
       embalagem: EMBALAGEM_PADRAO,

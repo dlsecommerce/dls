@@ -39,10 +39,17 @@ interface PriceTier {
   fixedFee: string;
 }
 
+interface BrandListingSubRule {
+  rate: string;
+  fixedFee: string;
+}
+
 interface BrandRule {
   brand: string;
   rate: string;
   fixedFee: string;
+  classico?: BrandListingSubRule;
+  premium?: BrandListingSubRule;
 }
 
 interface ListingTypeRule {
@@ -66,6 +73,14 @@ function parseValue(raw: string): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+// Converte uma taxa decimal (ex: 0.14000000000000002) em percentual
+// exibível sem lixo de ponto flutuante (ex: "14").
+function toPercentDisplay(rate: number | null | undefined): string {
+  if (rate == null || Number.isNaN(rate)) return "";
+  const pct = Math.round(rate * 100 * 1e6) / 1e6;
+  return String(pct);
+}
+
 const isMercadoLivre = (channel: string) =>
   channel.trim().toLocaleLowerCase("pt-BR").includes("mercado livre");
 
@@ -75,6 +90,10 @@ function emptyTier(): PriceTier {
 
 function emptyBrandRule(): BrandRule {
   return { brand: "", rate: "", fixedFee: "" };
+}
+
+function emptyBrandListingSubRule(): BrandListingSubRule {
+  return { rate: "", fixedFee: "" };
 }
 
 function emptyListingTypeRule(): ListingTypeRule {
@@ -111,23 +130,18 @@ export default function ChannelPricingRulesModal({
 
   const [pricingMode, setPricingMode] = useState<PricingMode>("flat");
 
-  // Modo Fixo
   const [comissao, setComissao] = useState("");
 
-  // Modo Por Preço (tiers)
   const [tiers, setTiers] = useState<PriceTier[]>([emptyTier()]);
 
-  // Modo Categoria (Marca)
   const [defaultRate, setDefaultRate] = useState("");
   const [defaultFixedFee, setDefaultFixedFee] = useState("");
   const [brandRules, setBrandRules] = useState<BrandRule[]>([emptyBrandRule()]);
 
-  // Condição (Mercado Livre) — camada opcional sobre qualquer modo
   const [useCondition, setUseCondition] = useState(false);
   const [classico, setClassico] = useState<ListingTypeRule>(emptyListingTypeRule());
   const [premium, setPremium] = useState<ListingTypeRule>(emptyListingTypeRule());
 
-  // Frete (independente da comissão)
   const [frete, setFrete] = useState("");
   const [freteMode, setFreteMode] = useState<"fixed" | "percent">("fixed");
 
@@ -173,26 +187,47 @@ export default function ChannelPricingRulesModal({
             setTiers(
               marketplaceRule.commission_tiers.map((t: any) => ({
                 min: String(t.min ?? ""),
-                max: String(t.max ?? ""),
-                rate: String(t.rate != null ? t.rate * 100 : ""),
+                max: t.max != null ? String(t.max) : "",
+                rate: toPercentDisplay(t.rate),
                 fixedFee: String(t.fixedFee ?? ""),
               }))
             );
           }
 
           if (marketplaceRule.default_rule) {
-            setDefaultRate(String(marketplaceRule.default_rule.commission_rate * 100 ?? ""));
+            setDefaultRate(toPercentDisplay(marketplaceRule.default_rule.commission_rate));
             setDefaultFixedFee(String(marketplaceRule.default_rule.fixed_fee ?? ""));
           }
 
           if (marketplaceRule.brand_rules?.length) {
-            setBrandRules(
-              marketplaceRule.brand_rules.map((b: any) => ({
+            let anyBrandCondition = false;
+
+            const loadedBrandRules = marketplaceRule.brand_rules.map((b: any) => {
+              const hasClassico = b.classico != null;
+              const hasPremium = b.premium != null;
+              if (hasClassico || hasPremium) anyBrandCondition = true;
+
+              return {
                 brand: b.brand,
-                rate: String(b.commission_rate * 100 ?? ""),
+                rate: toPercentDisplay(b.commission_rate),
                 fixedFee: String(b.fixed_fee ?? ""),
-              }))
-            );
+                classico: hasClassico
+                  ? {
+                      rate: toPercentDisplay(b.classico.rate),
+                      fixedFee: String(b.classico.fixedFee ?? ""),
+                    }
+                  : undefined,
+                premium: hasPremium
+                  ? {
+                      rate: toPercentDisplay(b.premium.rate),
+                      fixedFee: String(b.premium.fixedFee ?? ""),
+                    }
+                  : undefined,
+              };
+            });
+
+            setBrandRules(loadedBrandRules);
+            if (anyBrandCondition) setUseCondition(true);
           }
 
           if (marketplaceRule.listing_type_rules) {
@@ -200,13 +235,13 @@ export default function ChannelPricingRulesModal({
             const lc = marketplaceRule.listing_type_rules.classico;
             const lp = marketplaceRule.listing_type_rules.premium;
             setClassico({
-              rate: String(lc?.commission_rate != null ? lc.commission_rate * 100 : ""),
+              rate: toPercentDisplay(lc?.commission_rate),
               fixedFee: String(lc?.fixed_fee ?? ""),
               frete: String(lc?.frete ?? ""),
               freteMode: lc?.frete_mode ?? "fixed",
             });
             setPremium({
-              rate: String(lp?.commission_rate != null ? lp.commission_rate * 100 : ""),
+              rate: toPercentDisplay(lp?.commission_rate),
               fixedFee: String(lp?.fixed_fee ?? ""),
               frete: String(lp?.frete ?? ""),
               freteMode: lp?.frete_mode ?? "fixed",
@@ -230,7 +265,6 @@ export default function ChannelPricingRulesModal({
     [saving, onOpenChange, resetState]
   );
 
-  // --- Handlers: Tiers ---
   const addTier = () => setTiers((prev) => [...prev, emptyTier()]);
   const removeTier = (index: number) =>
     setTiers((prev) => prev.filter((_, i) => i !== index));
@@ -239,13 +273,30 @@ export default function ChannelPricingRulesModal({
       prev.map((t, i) => (i === index ? { ...t, [field]: value } : t))
     );
 
-  // --- Handlers: Brand rules ---
   const addBrandRule = () => setBrandRules((prev) => [...prev, emptyBrandRule()]);
   const removeBrandRule = (index: number) =>
     setBrandRules((prev) => prev.filter((_, i) => i !== index));
-  const updateBrandRule = (index: number, field: keyof BrandRule, value: string) =>
+  const updateBrandRule = (
+    index: number,
+    field: "brand" | "rate" | "fixedFee",
+    value: string
+  ) =>
     setBrandRules((prev) =>
       prev.map((b, i) => (i === index ? { ...b, [field]: value } : b))
+    );
+
+  const updateBrandListing = (
+    index: number,
+    listingType: "classico" | "premium",
+    field: keyof BrandListingSubRule,
+    value: string
+  ) =>
+    setBrandRules((prev) =>
+      prev.map((b, i) => {
+        if (i !== index) return b;
+        const current = b[listingType] ?? emptyBrandListingSubRule();
+        return { ...b, [listingType]: { ...current, [field]: value } };
+      })
     );
 
   const handleSave = useCallback(async () => {
@@ -262,11 +313,12 @@ export default function ChannelPricingRulesModal({
       };
 
       if (pricingMode === "tiered") {
+        // min é obrigatório; max vazio = "sem limite superior" (null)
         payload.commission_tiers = tiers
-          .filter((t) => t.min !== "" && t.max !== "")
+          .filter((t) => t.min !== "")
           .map((t) => ({
             min: parseValue(t.min),
-            max: parseValue(t.max),
+            max: t.max !== "" ? parseValue(t.max) : null,
             rate: parseValue(t.rate) / 100,
             fixedFee: parseValue(t.fixedFee),
           }));
@@ -283,10 +335,22 @@ export default function ChannelPricingRulesModal({
             brand: b.brand,
             commission_rate: parseValue(b.rate) / 100,
             fixed_fee: parseValue(b.fixedFee),
+            ...(channelIsML && useCondition
+              ? {
+                  classico: {
+                    rate: parseValue(b.classico?.rate ?? "") / 100,
+                    fixedFee: parseValue(b.classico?.fixedFee ?? ""),
+                  },
+                  premium: {
+                    rate: parseValue(b.premium?.rate ?? "") / 100,
+                    fixedFee: parseValue(b.premium?.fixedFee ?? ""),
+                  },
+                }
+              : {}),
           }));
       }
 
-      if (channelIsML && useCondition) {
+      if (channelIsML && useCondition && pricingMode !== "brand") {
         payload.listing_type_rules = {
           classico: {
             commission_rate: parseValue(classico.rate) / 100,
@@ -303,19 +367,13 @@ export default function ChannelPricingRulesModal({
         };
       }
 
-      // 1) Salva a regra do canal
       await saveMarketplaceChannelRule(payload as any);
 
-      // 2) Recalcula commission_rate/freight de todos os anúncios do canal.
-      //    O trigger no banco enfileira automaticamente o recálculo de
-      //    selling_price em segundo plano (pg_cron processa em até 1 min).
       const { data: result, error: rpcError } = await supabase
         .schema("newsystem")
         .rpc("recalc_channel_pricing", { p_channel: channel });
 
       if (rpcError) {
-        // A regra foi salva, mas o recálculo em massa falhou.
-        // Não bloqueia o fluxo, mas avisa o usuário.
         setError(
           "Regras salvas, mas houve um erro ao recalcular os preços do canal."
         );
@@ -384,7 +442,6 @@ export default function ChannelPricingRulesModal({
             </div>
           ) : (
             <>
-              {/* Seletor de modo */}
               <div className="mb-4">
                 <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-500">
                   Tipo de comissão
@@ -417,7 +474,6 @@ export default function ChannelPricingRulesModal({
                 </div>
               </div>
 
-              {/* ---- MODO FIXO ---- */}
               {pricingMode === "flat" && (
                 <div className="mb-4">
                   <div className="mb-1.5 flex items-center gap-2">
@@ -441,7 +497,6 @@ export default function ChannelPricingRulesModal({
                 </div>
               )}
 
-              {/* ---- MODO POR PREÇO (TIERS) ---- */}
               {pricingMode === "tiered" && (
                 <div className="mb-4">
                   <div className="mb-1.5 flex items-center justify-between">
@@ -480,7 +535,7 @@ export default function ChannelPricingRulesModal({
                           value={tier.max}
                           disabled={saving}
                           onChange={(e) => updateTier(index, "max", sanitizeDecimalInput(e.target.value))}
-                          placeholder="Máx. R$"
+                          placeholder="Máx. (vazio = sem limite)"
                           className={miniInputClass}
                         />
                         <input
@@ -512,12 +567,13 @@ export default function ChannelPricingRulesModal({
                   </div>
 
                   <p className="mt-2 text-[10px] text-neutral-600">
-                    Nesse modo, cada faixa tem seu próprio frete. O campo geral de "Frete" abaixo não se aplica aqui.
+                    Nesse modo, cada faixa tem seu próprio frete. Deixe "Máx." vazio para
+                    representar uma faixa "acima de X" sem limite superior. O campo geral
+                    de "Frete" abaixo não se aplica aqui.
                   </p>
                 </div>
               )}
 
-              {/* ---- MODO CATEGORIA (MARCA) ---- */}
               {pricingMode === "brand" && (
                 <div className="mb-4">
                   <div className="mb-2">
@@ -544,6 +600,21 @@ export default function ChannelPricingRulesModal({
                     </div>
                   </div>
 
+                  {channelIsML && (
+                    <label className="mb-2 flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={useCondition}
+                        disabled={saving}
+                        onChange={(e) => setUseCondition(e.target.checked)}
+                        className="h-3.5 w-3.5 accent-[#1a8ceb] cursor-pointer"
+                      />
+                      <span className="text-[11.5px] font-medium text-neutral-300">
+                        Diferenciar Clássico / Premium por marca
+                      </span>
+                    </label>
+                  )}
+
                   <div className="mb-1.5 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Tag className="h-3.5 w-3.5 text-neutral-500" />
@@ -562,66 +633,166 @@ export default function ChannelPricingRulesModal({
                   </div>
 
                   <div className="space-y-2">
-                    {brandRules.map((rule, index) => (
-                      <div
-                        key={index}
-                        className="grid grid-cols-[1.4fr_0.8fr_0.8fr_auto] gap-1.5 border border-neutral-900 p-2"
-                      >
-                        {allBrands.length > 0 ? (
-                          <select
-                            value={rule.brand}
-                            disabled={saving}
-                            onChange={(e) => updateBrandRule(index, "brand", e.target.value)}
-                            className={`${miniInputClass} cursor-pointer`}
+                    {brandRules.map((rule, index) => {
+                      const showCondition = channelIsML && useCondition;
+
+                      return (
+                        <div key={index} className="border border-neutral-900 p-2 space-y-1.5">
+                          <div
+                            className={`grid gap-1.5 ${
+                              showCondition
+                                ? "grid-cols-[1.4fr_auto]"
+                                : "grid-cols-[1.4fr_0.8fr_0.8fr_auto]"
+                            }`}
                           >
-                            <option value="">Selecione</option>
-                            {allBrands.map((b) => (
-                              <option key={b} value={b}>
-                                {b}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            value={rule.brand}
-                            disabled={saving}
-                            onChange={(e) => updateBrandRule(index, "brand", e.target.value)}
-                            placeholder="Marca"
-                            className={miniInputClass}
-                          />
-                        )}
-                        <input
-                          inputMode="decimal"
-                          value={rule.rate}
-                          disabled={saving}
-                          onChange={(e) => updateBrandRule(index, "rate", sanitizeDecimalInput(e.target.value))}
-                          placeholder="%"
-                          className={miniInputClass}
-                        />
-                        <input
-                          inputMode="decimal"
-                          value={rule.fixedFee}
-                          disabled={saving}
-                          onChange={(e) => updateBrandRule(index, "fixedFee", sanitizeDecimalInput(e.target.value))}
-                          placeholder="Taxa R$"
-                          className={miniInputClass}
-                        />
-                        <button
-                          type="button"
-                          disabled={saving || brandRules.length === 1}
-                          onClick={() => removeBrandRule(index)}
-                          className="flex h-9 w-9 items-center justify-center text-neutral-500 hover:text-red-400 transition-colors cursor-pointer disabled:opacity-30"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    ))}
+                            {allBrands.length > 0 ? (
+                              <select
+                                value={rule.brand}
+                                disabled={saving}
+                                onChange={(e) => updateBrandRule(index, "brand", e.target.value)}
+                                className={`${miniInputClass} cursor-pointer`}
+                              >
+                                <option value="">Selecione</option>
+                                {allBrands.map((b) => (
+                                  <option key={b} value={b}>
+                                    {b}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                value={rule.brand}
+                                disabled={saving}
+                                onChange={(e) => updateBrandRule(index, "brand", e.target.value)}
+                                placeholder="Marca"
+                                className={miniInputClass}
+                              />
+                            )}
+
+                            {!showCondition && (
+                              <>
+                                <input
+                                  inputMode="decimal"
+                                  value={rule.rate}
+                                  disabled={saving}
+                                  onChange={(e) =>
+                                    updateBrandRule(index, "rate", sanitizeDecimalInput(e.target.value))
+                                  }
+                                  placeholder="%"
+                                  className={miniInputClass}
+                                />
+                                <input
+                                  inputMode="decimal"
+                                  value={rule.fixedFee}
+                                  disabled={saving}
+                                  onChange={(e) =>
+                                    updateBrandRule(index, "fixedFee", sanitizeDecimalInput(e.target.value))
+                                  }
+                                  placeholder="Taxa R$"
+                                  className={miniInputClass}
+                                />
+                              </>
+                            )}
+
+                            <button
+                              type="button"
+                              disabled={saving || brandRules.length === 1}
+                              onClick={() => removeBrandRule(index)}
+                              className="flex h-9 w-9 items-center justify-center text-neutral-500 hover:text-red-400 transition-colors cursor-pointer disabled:opacity-30"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+
+                          {showCondition && (
+                            <div className="grid grid-cols-2 gap-1.5 pl-0">
+                              <div>
+                                <span className="mb-1 block text-[10px] text-neutral-500">Clássico</span>
+                                <div className="grid grid-cols-2 gap-1">
+                                  <input
+                                    inputMode="decimal"
+                                    value={rule.classico?.rate ?? ""}
+                                    disabled={saving}
+                                    onChange={(e) =>
+                                      updateBrandListing(
+                                        index,
+                                        "classico",
+                                        "rate",
+                                        sanitizeDecimalInput(e.target.value)
+                                      )
+                                    }
+                                    placeholder="% comissão"
+                                    className={miniInputClass}
+                                  />
+                                  <input
+                                    inputMode="decimal"
+                                    value={rule.classico?.fixedFee ?? ""}
+                                    disabled={saving}
+                                    onChange={(e) =>
+                                      updateBrandListing(
+                                        index,
+                                        "classico",
+                                        "fixedFee",
+                                        sanitizeDecimalInput(e.target.value)
+                                      )
+                                    }
+                                    placeholder="Frete R$"
+                                    className={miniInputClass}
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <span className="mb-1 block text-[10px] text-neutral-500">Premium</span>
+                                <div className="grid grid-cols-2 gap-1">
+                                  <input
+                                    inputMode="decimal"
+                                    value={rule.premium?.rate ?? ""}
+                                    disabled={saving}
+                                    onChange={(e) =>
+                                      updateBrandListing(
+                                        index,
+                                        "premium",
+                                        "rate",
+                                        sanitizeDecimalInput(e.target.value)
+                                      )
+                                    }
+                                    placeholder="% comissão"
+                                    className={miniInputClass}
+                                  />
+                                  <input
+                                    inputMode="decimal"
+                                    value={rule.premium?.fixedFee ?? ""}
+                                    disabled={saving}
+                                    onChange={(e) =>
+                                      updateBrandListing(
+                                        index,
+                                        "premium",
+                                        "fixedFee",
+                                        sanitizeDecimalInput(e.target.value)
+                                      )
+                                    }
+                                    placeholder="Frete R$"
+                                    className={miniInputClass}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
+
+                  {channelIsML && useCondition && (
+                    <p className="mt-2 text-[10px] text-neutral-600">
+                      Cada marca tem sua própria condição (Clássico/Premium). Marcas sem
+                      valor preenchido usam a Regra padrão (fallback) acima.
+                    </p>
+                  )}
                 </div>
               )}
 
-              {/* ---- CONDIÇÃO (SOMENTE MERCADO LIVRE) ---- */}
-              {channelIsML && (
+              {channelIsML && pricingMode !== "brand" && (
                 <div className="mb-4 border border-neutral-900 p-3">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -775,7 +946,6 @@ export default function ChannelPricingRulesModal({
                 </div>
               )}
 
-              {/* Frete geral (não se aplica ao modo "Por Preço") */}
               {pricingMode === "tiered" ? (
                 <div className="mb-4 border border-neutral-800 px-3 py-2">
                   <div className="mb-1 flex items-center gap-2">
@@ -838,7 +1008,6 @@ export default function ChannelPricingRulesModal({
                 </div>
               )}
 
-              {/* Margem mínima — referência */}
               {margemMinima !== null && (
                 <div className="border border-neutral-800 px-3 py-2">
                   <p className="text-[10.5px] text-neutral-500">

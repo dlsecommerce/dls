@@ -1,3 +1,5 @@
+// hooks/usepricingrules.ts
+
 import { supabase } from "@/integrations/supabase/client";
 
 const SCHEMA = "newsystem";
@@ -11,10 +13,19 @@ export interface PriceTierPayload {
   fixedFee: number;
 }
 
+// Sub-regra de condição (Clássico/Premium) associada a UMA marca específica.
+// Presente apenas quando o canal é Mercado Livre e a marca tem condição própria.
+export interface BrandListingSubRulePayload {
+  rate: number;
+  fixedFee: number;
+}
+
 export interface BrandRulePayload {
   brand: string;
   commission_rate: number;
   fixed_fee: number;
+  classico?: BrandListingSubRulePayload;
+  premium?: BrandListingSubRulePayload;
 }
 
 export interface ListingTypeRulePayload {
@@ -66,56 +77,160 @@ const toDbRuleType = (rule_type: string) =>
 const fromDbRuleType = (rule_type: string) =>
   RULE_TYPE_FROM_DB[rule_type] ?? rule_type;
 
-export async function resolveRule({
-  rule_type,
-  code,
-  store,
-  channel,
-  brand,
-}: {
+// Prioridade de escopo compartilhada por resolveRule e resolveRulesBatch.
+const SCOPE_PRIORITY: Record<RuleScope, number> = {
+  product: 1,
+  brand: 2,
+  channel: 3,
+  store: 4,
+  global: 5,
+};
+
+function buildScopeOrFilter(params: {
+  code?: string;
+  store?: string;
+  channel?: string;
+  brand?: string;
+}) {
+  return [
+    params.code ? `and(scope.eq.product,scope_value.eq.${params.code})` : null,
+    params.channel ? `and(scope.eq.channel,scope_value.eq.${params.channel})` : null,
+    params.store ? `and(scope.eq.store,scope_value.eq.${params.store})` : null,
+    params.brand ? `and(scope.eq.brand,scope_value.eq.${params.brand})` : null,
+    `scope.eq.global`,
+  ]
+    .filter(Boolean)
+    .join(",");
+}
+
+/**
+ * -----------------------------------------------------------------------
+ * CACHE DE resolveRule POR COMBINAÇÃO DE PARÂMETROS.
+ * -----------------------------------------------------------------------
+ * Sem cache, cada chamada bate direto no banco — mesmo que seja
+ * exatamente a mesma combinação rule_type/brand/channel/store/code pedida
+ * segundos antes. Dedup + reuso de Promise, igual ao padrão já usado em
+ * loadMarketplaceChannelRule.
+ * -----------------------------------------------------------------------
+ */
+const resolveRuleCache = new Map<string, Promise<any | null>>();
+
+function resolveRuleCacheKey(params: {
   rule_type: string;
   code?: string;
   store?: string;
   channel?: string;
   brand?: string;
 }) {
-  const dbRuleType = toDbRuleType(rule_type);
+  return [
+    toDbRuleType(params.rule_type),
+    params.code ?? "",
+    params.store ?? "",
+    params.channel ?? "",
+    params.brand ?? "",
+  ].join("|");
+}
+
+/** Invalida o cache de resolveRule — chamar após createRule/deactivateRule. */
+export function invalidateResolveRuleCache(rule_type?: string) {
+  if (!rule_type) {
+    resolveRuleCache.clear();
+    return;
+  }
+  const dbType = toDbRuleType(rule_type);
+  for (const key of resolveRuleCache.keys()) {
+    if (key.startsWith(`${dbType}|`)) {
+      resolveRuleCache.delete(key);
+    }
+  }
+}
+
+export async function resolveRule(params: {
+  rule_type: string;
+  code?: string;
+  store?: string;
+  channel?: string;
+  brand?: string;
+}) {
+  const key = resolveRuleCacheKey(params);
+  const cached = resolveRuleCache.get(key);
+  if (cached) return cached;
+
+  const promise = (async () => {
+    const dbRuleType = toDbRuleType(params.rule_type);
+
+    const { data, error } = await supabase
+      .schema(SCHEMA)
+      .from("pricing_rules")
+      .select("*")
+      .eq("active", true)
+      .eq("rule_type", dbRuleType)
+      .or(buildScopeOrFilter(params));
+
+    if (error) throw error;
+    if (!data?.length) return null;
+
+    const sorted = data.sort(
+      (a, b) => SCOPE_PRIORITY[a.scope as RuleScope] - SCOPE_PRIORITY[b.scope as RuleScope]
+    )[0];
+
+    return { ...sorted, rule_type: fromDbRuleType(sorted.rule_type) };
+  })().catch((err) => {
+    resolveRuleCache.delete(key); // permite retry em caso de erro
+    throw err;
+  });
+
+  resolveRuleCache.set(key, promise);
+  return promise;
+}
+
+/**
+ * Resolve múltiplas rule_types de uma vez em UMA única query (em vez de
+ * N chamadas a resolveRule). Usado principalmente por
+ * usebrandpricingoverrides.ts para buscar marketing + margem + desconto
+ * de uma marca em 1 round-trip, ao invés de 3.
+ *
+ * Retorna um mapa { [rule_type_front]: regra_resolvida | null }.
+ */
+export async function resolveRulesBatch(params: {
+  rule_types: string[]; // nomes em PT (front), ex: ["marketing", "margem_minima", "desconto"]
+  code?: string;
+  store?: string;
+  channel?: string;
+  brand?: string;
+}) {
+  const dbRuleTypes = params.rule_types.map(toDbRuleType);
 
   const { data, error } = await supabase
     .schema(SCHEMA)
     .from("pricing_rules")
     .select("*")
     .eq("active", true)
-    .eq("rule_type", dbRuleType)
-    .or(
-      [
-        code ? `and(scope.eq.product,scope_value.eq.${code})` : null,
-        channel ? `and(scope.eq.channel,scope_value.eq.${channel})` : null,
-        store ? `and(scope.eq.store,scope_value.eq.${store})` : null,
-        brand ? `and(scope.eq.brand,scope_value.eq.${brand})` : null,
-        `scope.eq.global`,
-      ]
-        .filter(Boolean)
-        .join(",")
-    );
+    .in("rule_type", dbRuleTypes)
+    .or(buildScopeOrFilter(params));
 
   if (error) throw error;
-  if (!data?.length) return null;
 
-  // Prioridade: product > brand > channel > store > global
-  const priority: Record<RuleScope, number> = {
-    product: 1,
-    brand: 2,
-    channel: 3,
-    store: 4,
-    global: 5,
-  };
+  const result: Record<string, any | null> = {};
 
-  const sorted = data.sort(
-    (a, b) => priority[a.scope as RuleScope] - priority[b.scope as RuleScope]
-  )[0];
+  for (const rt of params.rule_types) {
+    const dbType = toDbRuleType(rt);
+    const rows = (data ?? []).filter((r: any) => r.rule_type === dbType);
 
-  return { ...sorted, rule_type: fromDbRuleType(sorted.rule_type) };
+    if (!rows.length) {
+      result[rt] = null;
+      continue;
+    }
+
+    const sorted = rows.sort(
+      (a: any, b: any) =>
+        SCOPE_PRIORITY[a.scope as RuleScope] - SCOPE_PRIORITY[b.scope as RuleScope]
+    )[0];
+
+    result[rt] = { ...sorted, rule_type: fromDbRuleType(sorted.rule_type) };
+  }
+
+  return result;
 }
 
 export function applyRule(baseValue: number, rule: any) {
@@ -190,6 +305,10 @@ export async function createRule(payload: {
 
   if (error) throw error;
 
+  // ✅ Invalida o cache de resolveRule/resolveRulesBatch para este rule_type,
+  // garantindo que a próxima leitura reflita a nova regra imediatamente.
+  invalidateResolveRuleCache(payload.rule_type);
+
   return { ...data, rule_type: fromDbRuleType(data.rule_type) };
 }
 
@@ -201,23 +320,68 @@ export async function deactivateRule(id: string) {
     .eq("id", id);
 
   if (error) throw error;
+
+  // ✅ Não sabemos o rule_type aqui sem outra query — limpa todo o cache
+  // de resolveRule por segurança, já que uma regra foi desativada.
+  invalidateResolveRuleCache();
+}
+
+/**
+ * -----------------------------------------------------------------------
+ * CACHE DE loadDistinctStores/Channels/Brands.
+ * -----------------------------------------------------------------------
+ * Dados que alimentam dropdowns e mudam raramente (só quando surge loja,
+ * canal ou marca nova). TTL de 10 minutos evita refazer a RPC toda vez
+ * que o modal de ajustes é reaberto na mesma sessão.
+ * -----------------------------------------------------------------------
+ */
+const DISTINCT_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutos
+const distinctCache = new Map<string, { promise: Promise<string[]>; timestamp: number }>();
+
+function loadDistinctCached(
+  key: string,
+  rpcName: string,
+  field: string
+): Promise<string[]> {
+  const cached = distinctCache.get(key);
+  if (cached && Date.now() - cached.timestamp < DISTINCT_CACHE_TTL_MS) {
+    return cached.promise;
+  }
+
+  const promise = supabase
+    .schema(SCHEMA)
+    .rpc(rpcName)
+    .then(({ data, error }) => {
+      if (error) throw error;
+      return (data || [])
+        .map((r: any) => String(r[field] ?? "").trim())
+        .filter(Boolean)
+        .sort((a: string, b: string) => a.localeCompare(b));
+    })
+    .catch((err) => {
+      distinctCache.delete(key); // permite retry
+      throw err;
+    });
+
+  distinctCache.set(key, { promise, timestamp: Date.now() });
+  return promise;
+}
+
+/** Invalida o cache de lojas/canais/marcas distintas (todos ou um específico). */
+export function invalidateDistinctCache(key?: "stores" | "channels" | "brands") {
+  if (key) {
+    distinctCache.delete(key);
+  } else {
+    distinctCache.clear();
+  }
 }
 
 /**
  * Lista as lojas distintas cadastradas em `announce.store`,
  * usada para popular o seletor de escopo "Loja" no modal de ajustes.
  */
-export async function loadDistinctStores(): Promise<string[]> {
-  const { data, error } = await supabase
-    .schema(SCHEMA)
-    .rpc("get_distinct_stores");
-
-  if (error) throw error;
-
-  return (data || [])
-    .map((r: any) => String(r.store ?? "").trim())
-    .filter(Boolean)
-    .sort((a: string, b: string) => a.localeCompare(b));
+export function loadDistinctStores(): Promise<string[]> {
+  return loadDistinctCached("stores", "get_distinct_stores", "store");
 }
 
 /**
@@ -225,17 +389,8 @@ export async function loadDistinctStores(): Promise<string[]> {
  * usada para popular o seletor de escopo "Canal" no modal de ajustes
  * e o dropdown de canais no ChannelPricingRulesModal.
  */
-export async function loadDistinctChannels(): Promise<string[]> {
-  const { data, error } = await supabase
-    .schema(SCHEMA)
-    .rpc("get_distinct_channels");
-
-  if (error) throw error;
-
-  return (data || [])
-    .map((r: any) => String(r.channel ?? "").trim())
-    .filter(Boolean)
-    .sort((a: string, b: string) => a.localeCompare(b));
+export function loadDistinctChannels(): Promise<string[]> {
+  return loadDistinctCached("channels", "get_distinct_channels", "channel");
 }
 
 /**
@@ -243,17 +398,8 @@ export async function loadDistinctChannels(): Promise<string[]> {
  * usada para popular o seletor de "Restringir por marca" no campo Desconto
  * do modal de ajustes em massa.
  */
-export async function loadDistinctBrands(): Promise<string[]> {
-  const { data, error } = await supabase
-    .schema(SCHEMA)
-    .rpc("get_distinct_brands");
-
-  if (error) throw error;
-
-  return (data || [])
-    .map((r: any) => String(r.brand ?? "").trim())
-    .filter(Boolean)
-    .sort((a: string, b: string) => a.localeCompare(b));
+export function loadDistinctBrands(): Promise<string[]> {
+  return loadDistinctCached("brands", "get_distinct_brands", "brand");
 }
 
 /**
@@ -277,24 +423,59 @@ export async function loadChannelPricingRule(channel: string) {
 }
 
 /**
+ * -----------------------------------------------------------------------
+ * CACHE DE REGRAS DE MARKETPLACE POR NOME DE CANAL (dbRuleName).
+ * -----------------------------------------------------------------------
+ * Canais como "Mercado Livre Clássico" e "Mercado Livre Premium"
+ * compartilham o mesmo dbRuleName ("Mercado Livre") — sem cache, isso
+ * gera 2 requisições idênticas ao banco a cada troca de marca/produto.
+ * Com o cache, a segunda chamada reaproveita a Promise da primeira
+ * (dedupe), e o resultado fica guardado pra buscas futuras da sessão.
+ * -----------------------------------------------------------------------
+ */
+const marketplaceRuleCache = new Map<string, Promise<MarketplaceChannelRule | null>>();
+
+/** Invalida o cache — chamar após salvar uma regra via saveMarketplaceChannelRule. */
+export function invalidateMarketplaceRuleCache(channel?: string) {
+  if (channel) {
+    marketplaceRuleCache.delete(channel);
+  } else {
+    marketplaceRuleCache.clear();
+  }
+}
+
+/**
  * Carrega as taxas exclusivas do marketplace (comissão + frete) de um canal,
  * incluindo o modo de precificação (fixo, por faixa de preço ou por marca)
- * e, quando aplicável, as regras de Condição (Clássico/Premium) do Mercado Livre.
+ * e, quando aplicável, as regras de Condição (Clássico/Premium) do Mercado Livre
+ * — sejam elas globais (listing_type_rules) ou específicas de cada marca
+ * (brand_rules[].classico/premium, presentes quando pricing_mode === "brand").
  * Persistidas em newsystem.marketplace_channel_rules — NÃO alteram
  * current_cost, apenas compõem o preço exibido/enviado ao canal.
+ *
+ * Com cache por `channel` — evita requisições duplicadas quando múltiplos
+ * canais front-end compartilham o mesmo dbRuleName (ex: Mercado Livre
+ * Clássico/Premium).
  */
 export async function loadMarketplaceChannelRule(
   channel: string
 ): Promise<MarketplaceChannelRule | null> {
-  const { data, error } = await supabase
+  const cached = marketplaceRuleCache.get(channel);
+  if (cached) return cached;
+
+  const promise = supabase
     .schema(SCHEMA)
     .from("marketplace_channel_rules")
     .select("*")
     .eq("channel", channel)
-    .maybeSingle();
+    .maybeSingle()
+    .then(({ data, error }) => {
+      if (error) throw error;
+      return data as MarketplaceChannelRule | null;
+    });
 
-  if (error) throw error;
-  return data as MarketplaceChannelRule | null;
+  marketplaceRuleCache.set(channel, promise);
+  return promise;
 }
 
 /**
@@ -302,10 +483,13 @@ export async function loadMarketplaceChannelRule(
  * Suporta 3 modos de comissão (pricing_mode):
  *  - "flat": comissão fixa (%) sobre o preço de venda
  *  - "tiered": faixas de preço (commission_tiers), cada uma com % + taxa fixa
- *  - "brand": comissão por marca (brand_rules) + regra padrão (default_rule)
+ *  - "brand": comissão por marca (brand_rules) + regra padrão (default_rule).
+ *    Cada item de brand_rules pode opcionalmente carregar classico/premium
+ *    (condição própria daquela marca) — tem prioridade sobre tudo o mais.
  * Além disso, canais do tipo Mercado Livre podem informar listing_type_rules
- * (Clássico/Premium), que tem prioridade sobre o pricing_mode selecionado
- * E sobre o frete geral do canal (cada condição pode ter seu próprio frete).
+ * (Clássico/Premium GLOBAL), usado apenas nos modos "flat"/"tiered". No modo
+ * "brand", listing_type_rules deve vir null — a condição vive dentro de cada
+ * brand_rule (ver ChannelPricingRulesModal.handleSave).
  */
 export async function saveMarketplaceChannelRule(payload: {
   channel: string;
@@ -343,12 +527,23 @@ export async function saveMarketplaceChannelRule(payload: {
     .single();
 
   if (error) throw error;
+
+  // ✅ Invalida o cache para que a próxima leitura reflita a mudança
+  invalidateMarketplaceRuleCache(payload.channel);
+
   return data;
 }
 
 /**
  * Calcula a comissão de um produto para um canal, respeitando a
- * precedência: Condição (ML) > modo selecionado (fixo/faixa de preço/marca).
+ * precedência:
+ *   1) Condição por marca (brand_rules[].classico/premium) — se o
+ *      pricing_mode for "brand" e a marca do produto tiver essa condição
+ *      preenchida, ela vence tudo.
+ *   2) Condição (Mercado Livre) global — listing_type_rules, só relevante
+ *      fora do modo "brand" (no modo "brand" essa chave vem null).
+ *   3) Modo selecionado (tiered/brand sem condição).
+ *   4) Fallback flat.
  * Retorna o valor em R$ da comissão sobre o preço informado.
  */
 export function calcularComissaoCanal(
@@ -358,13 +553,26 @@ export function calcularComissaoCanal(
 ): number {
   if (!rule) return 0;
 
-  // 1º: Condição (Mercado Livre)
+  const normalizedBrand = norm(produto.brand ?? "");
+
+  // 1º: Condição por marca (maior prioridade)
+  if (rule.pricing_mode === "brand" && produto.listingType) {
+    const brandRule = rule.brand_rules?.find(
+      (b) => norm(b.brand) === normalizedBrand
+    );
+    const brandListing = brandRule?.[produto.listingType];
+    if (brandListing) {
+      return precoVenda * (brandListing.rate / 100) + brandListing.fixedFee;
+    }
+  }
+
+  // 2º: Condição (Mercado Livre) global
   if (rule.listing_type_rules && produto.listingType) {
     const lt = rule.listing_type_rules[produto.listingType];
     if (lt) return precoVenda * lt.commission_rate + lt.fixed_fee;
   }
 
-  // 2º: modo selecionado
+  // 3º: modo selecionado
   if (rule.pricing_mode === "tiered" && rule.commission_tiers?.length) {
     const tier = rule.commission_tiers.find(
       (t) => precoVenda >= t.min && precoVenda <= t.max
@@ -374,7 +582,7 @@ export function calcularComissaoCanal(
 
   if (rule.pricing_mode === "brand") {
     const brandRule = rule.brand_rules?.find(
-      (b) => norm(b.brand) === norm(produto.brand ?? "")
+      (b) => norm(b.brand) === normalizedBrand
     );
     if (brandRule) {
       return precoVenda * brandRule.commission_rate + brandRule.fixed_fee;
@@ -387,25 +595,39 @@ export function calcularComissaoCanal(
     }
   }
 
-  // 3º: fallback flat
+  // 4º: fallback flat
   return precoVenda * (rule.comissao / 100);
 }
 
 /**
  * Calcula o valor do frete (fixo em R$ ou percentual) sobre o preço de venda.
- * Respeita a precedência: Condição (ML) > frete geral do canal.
- * Se a condição (Clássico/Premium) tiver um frete próprio preenchido
- * (listing_type_rules[listingType].frete != null), ele sobrescreve o
- * frete geral (rule.frete/rule.frete_mode) — igual à comissão.
+ * Respeita a mesma precedência da comissão:
+ *   1) Condição por marca (brand_rules[].classico/premium.fixedFee) — se
+ *      preenchido, sobrescreve tudo (sempre tratado como valor fixo em R$,
+ *      já que a marca não tem um freteMode próprio — usa o mesmo padrão
+ *      "fixedFee" das faixas de preço/tiers).
+ *   2) Condição (Mercado Livre) global, com seu próprio frete_mode.
+ *   3) Fallback — frete geral do canal.
  */
 export function calcularFreteCanal(
   rule: MarketplaceChannelRule | null,
   precoVenda: number,
-  listingType?: "classico" | "premium"
+  listingType?: "classico" | "premium",
+  brand?: string
 ): number {
   if (!rule) return 0;
 
-  // 1º: Condição (Mercado Livre) — se o frete da condição foi preenchido
+  // 1º: Condição por marca
+  if (rule.pricing_mode === "brand" && listingType && brand) {
+    const normalizedBrand = norm(brand);
+    const brandRule = rule.brand_rules?.find((b) => norm(b.brand) === normalizedBrand);
+    const brandListing = brandRule?.[listingType];
+    if (brandListing?.fixedFee != null) {
+      return brandListing.fixedFee;
+    }
+  }
+
+  // 2º: Condição (Mercado Livre) global — se o frete da condição foi preenchido
   if (rule.listing_type_rules && listingType) {
     const lt = rule.listing_type_rules[listingType];
     if (lt?.frete != null) {
@@ -415,7 +637,7 @@ export function calcularFreteCanal(
     }
   }
 
-  // 2º: fallback — frete geral do canal
+  // 3º: fallback — frete geral do canal
   return rule.frete_mode === "percent"
     ? precoVenda * (rule.frete / 100)
     : rule.frete;

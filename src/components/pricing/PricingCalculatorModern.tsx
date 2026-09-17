@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { usePrecificacao } from "@/hooks/usePrecificacao";
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx-js-style";
@@ -35,6 +35,11 @@ type Sugestao = {
 type TipoBuscaProduto = "codigo" | "descricao";
 
 const EMBALAGEM_PADRAO = "5";
+
+// Termos com menos de 2 caracteres geram queries `ilike %x%` muito
+// genéricas (batem em quase toda a tabela) — sem ganho de UX real,
+// só carga desnecessária no banco. Abaixo disso, não busca.
+const MIN_CHARS_BUSCA = 2;
 
 const toInternal = (v: string): string => {
   if (!v) return "";
@@ -103,6 +108,45 @@ const ACRESCIMO_FRETE_FIELD: Partial<Record<ChannelKey, string>> = {
   mlPremium: "freteMercadoLivrePremium",
 };
 
+// Colunas usadas nas buscas de sugestão (composição + produto).
+const SELECT_COLS = "code, current_cost, product, packaging_cost, mark";
+
+const mapResultados = (data: any[] | null): Sugestao[] =>
+  data?.map((item) => ({
+    codigo: item.code,
+    custo: Number(item.current_cost) || 0,
+    produto: item.product || "",
+    marca: item.mark || "",
+    packingCost: Number(item.packaging_cost) || 0,
+  })) || [];
+
+/**
+ * Ordena os resultados de uma busca por relevância em relação ao termo
+ * e à coluna pesquisada: match exato > começa com o termo > contém o termo.
+ * Usado para transformar 1 única query `ilike` (%termo%) em um ranking
+ * equivalente ao que antes exigia até 3 requisições sequenciais
+ * (exact -> starts -> partial) ao banco.
+ */
+function ordenarPorRelevancia<T extends { codigo: string; produto?: string }>(
+  lista: T[],
+  termo: string,
+  coluna: "codigo" | "produto"
+): T[] {
+  const termoNorm = termo.trim().toLowerCase();
+
+  const valor = (item: T) =>
+    (coluna === "codigo" ? item.codigo : item.produto || "").toLowerCase();
+
+  const score = (item: T) => {
+    const v = valor(item);
+    if (v === termoNorm) return 0;
+    if (v.startsWith(termoNorm)) return 1;
+    return 2;
+  };
+
+  return [...lista].sort((a, b) => score(a) - score(b));
+}
+
 export default function PricingCalculatorModern() {
   const {
     composicao,
@@ -136,9 +180,21 @@ export default function PricingCalculatorModern() {
   const [campoAtivo, setCampoAtivo] = useState<number | null>(null);
   const [indiceSelecionado, setIndiceSelecionado] = useState<number>(-1);
 
+  // Refs voláteis usadas dentro dos listeners de "clicar fora" — evita
+  // recriar os listeners (removeEventListener + addEventListener) a
+  // cada tecla digitada, já que `sugestoes` muda em toda busca.
+  const sugestoesRef = useRef(sugestoes);
+  sugestoesRef.current = sugestoes;
+
   const listaRef = useRef<HTMLDivElement>(null);
   const inputRefs = useRef<HTMLInputElement[][]>([]);
   const acrescimosRefs = useRef<HTMLInputElement[]>([]);
+
+  // AbortControllers para cancelar requisições de busca em voo quando
+  // uma nova busca é disparada (digitação rápida) — evita que N
+  // requisições completas rodem em paralelo no banco.
+  const buscaAbortControllerRef = useRef<AbortController | null>(null);
+  const buscaProdutoAbortControllerRef = useRef<AbortController | null>(null);
 
   // Refs de navegação por canal — Record<ChannelKey, ref>, substitui
   // os 6 useRef individuais.
@@ -167,49 +223,61 @@ export default function PricingCalculatorModern() {
 
   // =====================
   // Cálculo de preço (usa composicao do escopo do componente)
+  // -----------------------------------------------------------------
+  // Envolvido em useCallback: `usechannelpricing.ts` memoiza `precos`
+  // com base nesta função como dependência. Sem useCallback, uma nova
+  // referência era criada em TODO render, invalidando aquele useMemo
+  // e recalculando preços de todos os canais sem necessidade real —
+  // uma das causas do "piscar" na tela.
   // =====================
-  const calcularEmbalagemComposicao = () =>
-    composicao.reduce(
-      (sum: number, item: any) =>
-        sum +
-        (parseFloat(toInternal(item.embalagem || "0")) || 0) *
-          (parseFloat(toInternal(item.quantidade || "0")) || 0),
-      0
-    );
+  const calcularEmbalagemComposicao = useCallback(
+    () =>
+      composicao.reduce(
+        (sum: number, item: any) =>
+          sum +
+          (parseFloat(toInternal(item.embalagem || "0")) || 0) *
+            (parseFloat(toInternal(item.quantidade || "0")) || 0),
+        0
+      ),
+    [composicao]
+  );
 
-  const calcularPreco = (dados: Calculo) => {
-    const custo = composicao.reduce(
-      (sum, item) =>
-        sum +
-        (parseFloat(item.custo) || 0) * (parseFloat(item.quantidade) || 0),
-      0
-    );
+  const calcularPreco = useCallback(
+    (dados: Calculo) => {
+      const custo = composicao.reduce(
+        (sum, item) =>
+          sum +
+          (parseFloat(item.custo) || 0) * (parseFloat(item.quantidade) || 0),
+        0
+      );
 
-    const desconto = (parseFloat(dados.desconto) || 0) / 100;
-    const imposto = (parseFloat(dados.imposto) || 0) / 100;
-    const margem = (parseFloat(dados.margem) || 0) / 100;
-    const comissao = (parseFloat(dados.comissao) || 0) / 100;
-    const marketing = (parseFloat(dados.marketing) || 0) / 100;
-    const frete = parseFloat(dados.frete) || 0;
+      const desconto = (parseFloat(dados.desconto) || 0) / 100;
+      const imposto = (parseFloat(dados.imposto) || 0) / 100;
+      const margem = (parseFloat(dados.margem) || 0) / 100;
+      const comissao = (parseFloat(dados.comissao) || 0) / 100;
+      const marketing = (parseFloat(dados.marketing) || 0) / 100;
+      const frete = parseFloat(dados.frete) || 0;
 
-    const embalagemManual = parseFloat(dados.embalagem || "");
-    const embalagemAutomatica = calcularEmbalagemComposicao();
+      const embalagemManual = parseFloat(dados.embalagem || "");
+      const embalagemAutomatica = calcularEmbalagemComposicao();
 
-    const embalagem =
-      !isNaN(embalagemManual) && dados.embalagem
-        ? embalagemManual
-        : embalagemAutomatica > 0
-          ? embalagemAutomatica
-          : parseFloat(EMBALAGEM_PADRAO);
+      const embalagem =
+        !isNaN(embalagemManual) && dados.embalagem
+          ? embalagemManual
+          : embalagemAutomatica > 0
+            ? embalagemAutomatica
+            : parseFloat(EMBALAGEM_PADRAO);
 
-    const custoLiquido = custo * (1 - desconto);
-    const divisor = 1 - (imposto + margem + comissao + marketing);
+      const custoLiquido = custo * (1 - desconto);
+      const divisor = 1 - (imposto + margem + comissao + marketing);
 
-    const preco =
-      divisor > 0 ? (custoLiquido + frete + embalagem) / divisor : 0;
+      const preco =
+        divisor > 0 ? (custoLiquido + frete + embalagem) / divisor : 0;
 
-    return isFinite(preco) ? preco : 0;
-  };
+      return isFinite(preco) ? preco : 0;
+    },
+    [composicao, calcularEmbalagemComposicao]
+  );
 
   // =====================
   // Motor único de canais — substitui os 6 useState<Calculo>, 12
@@ -315,6 +383,10 @@ export default function PricingCalculatorModern() {
 
   // =====================
   // Fechar sugestões da composição ao clicar fora
+  // -----------------------------------------------------------------
+  // Usa `sugestoesRef` em vez de `sugestoes` nas deps — evita recriar
+  // o listener no DOM a cada tecla digitada (sugestoes muda em toda
+  // busca), mantendo o handler sempre com o valor mais recente via ref.
   // =====================
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -328,8 +400,10 @@ export default function PricingCalculatorModern() {
       const clickNoInputAtivo = Boolean(inputEl && inputEl.contains(target));
 
       if (!clickDentroLista && !clickNoInputAtivo) {
-        if (sugestoes.length > 0) {
-          const sugestao = sugestoes[0];
+        const sugestoesAtuais = sugestoesRef.current;
+
+        if (sugestoesAtuais.length > 0) {
+          const sugestao = sugestoesAtuais[0];
 
           confirmarSugestaoPrimeira(
             campoAtivo,
@@ -350,7 +424,8 @@ export default function PricingCalculatorModern() {
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [campoAtivo, sugestoes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campoAtivo]);
 
   // =====================
   // Fechar sugestões do produto ao clicar fora
@@ -394,69 +469,54 @@ export default function PricingCalculatorModern() {
 
   const ultimaBuscaRef = useRef("");
 
+  /**
+   * ANTES: até 3 requisições sequenciais ao banco (exact -> starts ->
+   * partial), cada uma esperando a anterior terminar para decidir se
+   * dispara a próxima. No pior caso (termo raro, sem match exato nem
+   * por prefixo), o usuário esperava 3 round-trips em cascata.
+   *
+   * AGORA: 1 única requisição com `ilike %termo%` (superset de todos
+   * os casos anteriores), e o ranking exact > prefixo > contém é feito
+   * em memória no cliente (instantâneo) via `ordenarPorRelevancia`.
+   *
+   * Além disso: requisição anterior é cancelada via AbortController
+   * quando uma nova busca é disparada (digitação rápida não deixa N
+   * requisições completas rodando em paralelo no banco), e termos com
+   * menos de MIN_CHARS_BUSCA caracteres não disparam busca (evita
+   * queries `%x%` genéricas demais).
+   */
   const buscarSugestoes = async (termo: string, idx: number) => {
     const raw = termo.trim();
     ultimaBuscaRef.current = raw;
 
-    if (!raw) {
+    if (!raw || raw.length < MIN_CHARS_BUSCA) {
       setSugestoes([]);
       return;
     }
 
-    const SELECT_COLS = "code, current_cost, product, packaging_cost, mark";
+    buscaAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    buscaAbortControllerRef.current = controller;
 
-    const mapResultados = (data: any[] | null) =>
-      data?.map((item) => ({
-        codigo: item.code,
-        custo: Number(item.current_cost) || 0,
-        produto: item.product || "",
-        marca: item.mark || "",
-        packingCost: Number(item.packaging_cost) || 0,
-      })) || [];
-
-    const exact = await supabase
-      .schema("newsystem")
-      .from("costs")
-      .select(SELECT_COLS)
-      .eq("code", raw)
-      .limit(5);
-
-    if (ultimaBuscaRef.current !== raw) return;
-
-    if (exact.data && exact.data.length > 0) {
-      setCampoAtivo(idx);
-      setSugestoes(mapResultados(exact.data));
-      setIndiceSelecionado(0);
-      return;
-    }
-
-    const starts = await supabase
-      .schema("newsystem")
-      .from("costs")
-      .select(SELECT_COLS)
-      .ilike("code", `${raw}%`)
-      .limit(5);
-
-    if (ultimaBuscaRef.current !== raw) return;
-
-    if (starts.data && starts.data.length > 0) {
-      setCampoAtivo(idx);
-      setSugestoes(mapResultados(starts.data));
-      setIndiceSelecionado(0);
-      return;
-    }
-
-    const partial = await supabase
+    const { data, error } = await supabase
       .schema("newsystem")
       .from("costs")
       .select(SELECT_COLS)
       .ilike("code", `%${raw}%`)
-      .limit(5);
+      .limit(15)
+      .abortSignal(controller.signal);
 
     if (ultimaBuscaRef.current !== raw) return;
+    if (error) return; // inclui abort — ignorado silenciosamente
+
+    const lista = ordenarPorRelevancia(
+      mapResultados(data),
+      raw,
+      "codigo"
+    ).slice(0, 5);
 
     setCampoAtivo(idx);
-    setSugestoes(mapResultados(partial.data));
+    setSugestoes(lista);
     setIndiceSelecionado(0);
   };
 
@@ -472,7 +532,7 @@ export default function PricingCalculatorModern() {
     const buscaAtual = `${tipo}:${raw}`;
     ultimaBuscaProdutoRef.current = buscaAtual;
 
-    if (!raw) {
+    if (!raw || raw.length < MIN_CHARS_BUSCA) {
       setSugestoesProduto([]);
       setProdutoSugestaoAtiva(false);
       setIndiceProdutoSelecionado(-1);
@@ -480,61 +540,28 @@ export default function PricingCalculatorModern() {
     }
 
     const coluna = tipo === "codigo" ? "code" : "product";
-    const SELECT_COLS = "code, current_cost, product, packaging_cost, mark";
 
-    const mapResultados = (data: any[] | null) =>
-      data?.map((item) => ({
-        codigo: item.code,
-        custo: Number(item.current_cost) || 0,
-        produto: item.product || "",
-        marca: item.mark || "",
-        packingCost: Number(item.packaging_cost) || 0,
-      })) || [];
+    buscaProdutoAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    buscaProdutoAbortControllerRef.current = controller;
 
-    const exact = await supabase
-      .schema("newsystem")
-      .from("costs")
-      .select(SELECT_COLS)
-      .eq(coluna, raw)
-      .limit(8);
-
-    if (ultimaBuscaProdutoRef.current !== buscaAtual) return;
-
-    if (exact.data && exact.data.length > 0) {
-      const lista = mapResultados(exact.data);
-      setSugestoesProduto(lista);
-      setProdutoSugestaoAtiva(true);
-      setIndiceProdutoSelecionado(0);
-      return;
-    }
-
-    const starts = await supabase
-      .schema("newsystem")
-      .from("costs")
-      .select(SELECT_COLS)
-      .ilike(coluna, `${raw}%`)
-      .limit(8);
-
-    if (ultimaBuscaProdutoRef.current !== buscaAtual) return;
-
-    if (starts.data && starts.data.length > 0) {
-      const lista = mapResultados(starts.data);
-      setSugestoesProduto(lista);
-      setProdutoSugestaoAtiva(true);
-      setIndiceProdutoSelecionado(0);
-      return;
-    }
-
-    const partial = await supabase
+    const { data, error } = await supabase
       .schema("newsystem")
       .from("costs")
       .select(SELECT_COLS)
       .ilike(coluna, `%${raw}%`)
-      .limit(8);
+      .limit(20)
+      .abortSignal(controller.signal);
 
     if (ultimaBuscaProdutoRef.current !== buscaAtual) return;
+    if (error) return; // inclui abort — ignorado silenciosamente
 
-    const lista = mapResultados(partial.data);
+    const lista = ordenarPorRelevancia(
+      mapResultados(data),
+      raw,
+      tipo === "codigo" ? "codigo" : "produto"
+    ).slice(0, 8);
+
     setSugestoesProduto(lista);
     setProdutoSugestaoAtiva(lista.length > 0);
     setIndiceProdutoSelecionado(lista.length > 0 ? 0 : -1);
@@ -543,6 +570,18 @@ export default function PricingCalculatorModern() {
   const buscarSugestoesProdutoDebounced = useRef(
     debounce(buscarSugestoesProduto, 120)
   ).current;
+
+  // Cancela debounces pendentes e requisições em voo ao desmontar o
+  // componente — evita setState em componente desmontado.
+  useEffect(() => {
+    return () => {
+      buscarSugestoesDebounced.cancel();
+      buscarSugestoesProdutoDebounced.cancel();
+      buscaAbortControllerRef.current?.abort();
+      buscaProdutoAbortControllerRef.current?.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const confirmarSugestaoPrimeira = (
     idx: number,
@@ -863,52 +902,55 @@ export default function PricingCalculatorModern() {
 
   // =====================
   // Limpar tudo
+  // -----------------------------------------------------------------
+  // Refatorado: side effects saíram de dentro do updater de setClicks
+  // (que deve permanecer puro, já que updaters podem rodar mais de uma
+  // vez em cenários de concorrência do React 18). `clicks` já está
+  // disponível no closure do render atual.
   // =====================
   const [isClearing, setIsClearing] = useState(false);
   const [clicks, setClicks] = useState(0);
 
   const handleClearAll = () => {
-    setClicks((prev) => {
-      const newCount = prev + 1;
+    const newCount = clicks + 1;
+    setClicks(newCount);
 
-      if (newCount < 5) {
-        setIsClearing(true);
-        setComposicao([]);
+    if (newCount >= 5) {
+      setIsClearing(true);
+      console.warn("Botão de limpar bloqueado após 5 cliques.");
+      return;
+    }
 
-        setProdutoCodigo("");
-        setProdutoDescricao("");
-        setProdutoMarca("");
+    setIsClearing(true);
+    setComposicao([]);
 
-        setSugestoesProduto([]);
-        setProdutoSugestaoAtiva(false);
-        setIndiceProdutoSelecionado(-1);
+    setProdutoCodigo("");
+    setProdutoDescricao("");
+    setProdutoMarca("");
 
-        resetChannelsAll();
+    setSugestoesProduto([]);
+    setProdutoSugestaoAtiva(false);
+    setIndiceProdutoSelecionado(-1);
 
-        setAcrescimos({
-          precoLoja: "",
-          precoShopee: "",
-          precoMagalu: "",
-          precoMercadoLivreClassico: "",
-          precoMercadoLivrePremium: "",
-          precoTiktok: "",
-          freteMercadoLivreClassico: "",
-          freteMercadoLivrePremium: "",
-          acrescimoClassico: 0,
-          acrescimoPremium: 0,
-        });
+    resetChannelsAll();
 
-        isFirstRenderComposicaoRef.current = true;
-        lastComposicaoSnapshotRef.current = "";
-
-        setTimeout(() => setIsClearing(false), 300);
-      } else {
-        setIsClearing(true);
-        console.warn("Botão de limpar bloqueado após 5 cliques.");
-      }
-
-      return newCount;
+    setAcrescimos({
+      precoLoja: "",
+      precoShopee: "",
+      precoMagalu: "",
+      precoMercadoLivreClassico: "",
+      precoMercadoLivrePremium: "",
+      precoTiktok: "",
+      freteMercadoLivreClassico: "",
+      freteMercadoLivrePremium: "",
+      acrescimoClassico: 0,
+      acrescimoPremium: 0,
     });
+
+    isFirstRenderComposicaoRef.current = true;
+    lastComposicaoSnapshotRef.current = "";
+
+    setTimeout(() => setIsClearing(false), 300);
   };
 
   useEffect(() => {

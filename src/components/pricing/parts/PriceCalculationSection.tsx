@@ -146,23 +146,7 @@ const ChannelIcon = ({
   );
 };
 
-const FieldInput = ({
-  value,
-  fieldKey,
-  editingKey,
-  suffix,
-  inputRef,
-  navIndex,
-  totalFields,
-  refs,
-  onChange,
-  onBlur,
-  isEditing,
-  setEditing,
-  toDisplay,
-  toInternal,
-  handleLinearNav,
-}: {
+type FieldInputProps = {
   value: string | undefined;
   fieldKey: keyof Calculo;
   editingKey: string;
@@ -183,51 +167,98 @@ const FieldInput = ({
     refs: React.MutableRefObject<HTMLInputElement[]>,
     total: number
   ) => void;
-}) => {
-  const rawValue = value || "";
-
-  const displayValue = isEditing(editingKey)
-    ? rawValue
-    : toDisplay(rawValue);
-
-  return (
-    <div className="mx-auto flex h-10 w-full max-w-[96px] items-center rounded border border-white/10 bg-[#070707] px-2 transition focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
-      <input
-        ref={inputRef}
-        value={displayValue}
-        inputMode="decimal"
-        onFocus={() => setEditing(editingKey, true)}
-        onBlur={(event) => {
-          setEditing(editingKey, false);
-
-          const internalValue = toInternal(event.target.value);
-
-          onBlur(fieldKey, internalValue);
-        }}
-        onChange={(event) => {
-          const internalValue = toInternal(event.target.value);
-
-          onChange(fieldKey, internalValue);
-        }}
-        onKeyDown={(event) =>
-          handleLinearNav(event, navIndex, refs, totalFields)
-        }
-        className="
-          h-full w-full min-w-0 bg-transparent text-center text-sm font-semibold text-white
-          outline-none placeholder:text-white/20
-          focus:outline-none focus:ring-0
-          focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0
-        "
-      />
-
-      {suffix && (
-        <span className="ml-1 shrink-0 text-xs font-semibold text-white/45">
-          {suffix}
-        </span>
-      )}
-    </div>
-  );
 };
+
+/**
+ * Memoizado: com 6 canais x 7 campos = 42 instâncias deste componente,
+ * digitar em UM campo não pode mais forçar re-render dos outros 41.
+ *
+ * O comparador customizado ignora `isEditing`/`setEditing`/`toDisplay`/
+ * `toInternal`/`handleLinearNav`/`onChange`/`onBlur` na comparação de
+ * função (assumindo que agora são estáveis via useCallback no pai) e
+ * compara apenas os valores que de fato mudam a renderização deste
+ * campo específico: `value` e o estado de edição do PRÓPRIO campo.
+ */
+const FieldInput = React.memo(
+  ({
+    value,
+    fieldKey,
+    editingKey,
+    suffix,
+    inputRef,
+    navIndex,
+    totalFields,
+    refs,
+    onChange,
+    onBlur,
+    isEditing,
+    setEditing,
+    toDisplay,
+    toInternal,
+    handleLinearNav,
+  }: FieldInputProps) => {
+    const rawValue = value || "";
+
+    const displayValue = isEditing(editingKey)
+      ? rawValue
+      : toDisplay(rawValue);
+
+    return (
+      <div className="mx-auto flex h-10 w-full max-w-[96px] items-center rounded border border-white/10 bg-[#070707] px-2 transition focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+        <input
+          ref={inputRef}
+          value={displayValue}
+          inputMode="decimal"
+          onFocus={() => setEditing(editingKey, true)}
+          onBlur={(event) => {
+            setEditing(editingKey, false);
+
+            const internalValue = toInternal(event.target.value);
+
+            onBlur(fieldKey, internalValue);
+          }}
+          onChange={(event) => {
+            const internalValue = toInternal(event.target.value);
+
+            onChange(fieldKey, internalValue);
+          }}
+          onKeyDown={(event) =>
+            handleLinearNav(event, navIndex, refs, totalFields)
+          }
+          className="
+            h-full w-full min-w-0 bg-transparent text-center text-sm font-semibold text-white
+            outline-none placeholder:text-white/20
+            focus:outline-none focus:ring-0
+            focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0
+          "
+        />
+
+        {suffix && (
+          <span className="ml-1 shrink-0 text-xs font-semibold text-white/45">
+            {suffix}
+          </span>
+        )}
+      </div>
+    );
+  },
+  (prev, next) => {
+    // Comparador manual: `isEditing` sempre é a mesma função (definida
+    // no componente pai raiz, PricingCalculatorModern), mas o valor
+    // que ela retorna PARA ESTE campo pode ter mudado — precisamos
+    // recalcular na comparação, não só comparar identidade de função.
+    return (
+      prev.value === next.value &&
+      prev.fieldKey === next.fieldKey &&
+      prev.editingKey === next.editingKey &&
+      prev.suffix === next.suffix &&
+      prev.navIndex === next.navIndex &&
+      prev.totalFields === next.totalFields &&
+      prev.isEditing(prev.editingKey) === next.isEditing(next.editingKey)
+    );
+  }
+);
+
+FieldInput.displayName = "FieldInput";
 
 type PriceCalculationSectionProps = {
   calculos: Record<ChannelKey, Calculo>;
@@ -575,20 +606,33 @@ export const PriceCalculationSection: React.FC<
   // =====================
   // Rows derivadas 100% de CHANNELS — canal novo aparece aqui
   // automaticamente, sem editar este arquivo.
+  //
+  // Memoizado: sem isso, cada canal recebia um objeto NOVO de refs
+  // (`{ current: channelRefsMap[def.key] }`) a cada render, mesmo que
+  // `channelRefsMap` (a origem) seja estável durante toda a vida do
+  // componente. Isso gerava lixo de memória e invalidava a igualdade
+  // referencial de `row.refs` usada como prop em FieldInput/handleLinearNav.
   // =====================
-  const rows: ChannelRow[] = CHANNELS.map((def) => ({
-    key: def.key,
-    title: def.title,
-    subtitle: def.subtitle,
-    visual: CHANNEL_VISUAL[def.key],
-    state: calculos[def.key],
-    preco: precos[def.key],
-    refs: {
-      current: channelRefsMap[def.key],
-    } as React.MutableRefObject<HTMLInputElement[]>,
-  }));
+  const rows: ChannelRow[] = React.useMemo(
+    () =>
+      CHANNELS.map((def) => ({
+        key: def.key,
+        title: def.title,
+        subtitle: def.subtitle,
+        visual: CHANNEL_VISUAL[def.key],
+        state: calculos[def.key],
+        preco: precos[def.key],
+        refs: {
+          current: channelRefsMap[def.key],
+        } as React.MutableRefObject<HTMLInputElement[]>,
+      })),
+    [calculos, precos, channelRefsMap]
+  );
 
-  const visibleRows = rows.filter((row) => visible[row.key]);
+  const visibleRows = React.useMemo(
+    () => rows.filter((row) => visible[row.key]),
+    [rows, visible]
+  );
 
   const totalFields = fields.length;
 
@@ -599,148 +643,167 @@ export const PriceCalculationSection: React.FC<
   // Imposto NÃO passa mais por brandOverrides: é constante fixa
   // por empresa (10%/14%), controlada só por manualFlags.imposto.
   // Desconto agora também é override de marca.
+  //
+  // Envolvidos em useCallback: são passados como props para os 42
+  // FieldInput (agora memoizados) — sem isso, o React.memo do
+  // FieldInput seria invalidado a cada render do componente pai.
   // =====================
-  const handleChange = (
-    row: ChannelRow,
-    field: keyof Calculo,
-    internalValue: string
-  ) => {
-    const def = getChannelDef(row.key);
+  const handleChange = React.useCallback(
+    (row: ChannelRow, field: keyof Calculo, internalValue: string) => {
+      const def = getChannelDef(row.key);
 
-    if (field === "embalagem") {
-      if (def.sharesEmbalagem) {
-        handleEmbalagemChangeShared(internalValue);
-      } else {
-        handleEmbalagemChangeChannel(row.key, internalValue);
+      if (field === "embalagem") {
+        if (def.sharesEmbalagem) {
+          handleEmbalagemChangeShared(internalValue);
+        } else {
+          handleEmbalagemChangeChannel(row.key, internalValue);
+        }
+
+        return;
       }
 
-      return;
-    }
-
-    if (row.key === "loja" && field === "desconto") {
-      syncDescontoFromLoja(internalValue);
-      return;
-    }
-
-    if (
-      def.hasBrandOverrides &&
-      (field === "margem" || field === "marketing" || field === "desconto")
-    ) {
-      brandOverrides[row.key].setEdited(field, true);
-    }
-
-    if (field === "imposto") {
-      setManualFlag(row.key, "imposto", true);
-    }
-
-    if (def.allowManualComissaoFrete && field === "comissao") {
-      setManualFlag(row.key, "comissao", true);
-    }
-
-    if (def.allowManualComissaoFrete && field === "frete") {
-      setManualFlag(row.key, "frete", true);
-    }
-
-    setCalculo(row.key, (previous) => ({
-      ...previous,
-      [field]: internalValue,
-    }));
-  };
-
-  const handleBlur = (
-    row: ChannelRow,
-    field: keyof Calculo,
-    internalValue: string
-  ) => {
-    const def = getChannelDef(row.key);
-
-    if (field === "embalagem") {
-      if (def.sharesEmbalagem) {
-        handleEmbalagemBlurShared(internalValue);
-      } else {
-        handleEmbalagemBlurChannel(row.key, internalValue);
+      if (row.key === "loja" && field === "desconto") {
+        syncDescontoFromLoja(internalValue);
+        return;
       }
 
-      return;
-    }
+      if (
+        def.hasBrandOverrides &&
+        (field === "margem" || field === "marketing" || field === "desconto")
+      ) {
+        brandOverrides[row.key].setEdited(field, true);
+      }
 
-    if (row.key === "loja" && field === "desconto") {
-      syncDescontoFromLoja(internalValue);
-      return;
-    }
+      if (field === "imposto") {
+        setManualFlag(row.key, "imposto", true);
+      }
 
-    if (
-      def.hasBrandOverrides &&
-      (field === "margem" || field === "marketing" || field === "desconto") &&
-      isEmptyOrZero(internalValue)
-    ) {
-      brandOverrides[row.key].setEdited(field, false);
-    }
+      if (def.allowManualComissaoFrete && field === "comissao") {
+        setManualFlag(row.key, "comissao", true);
+      }
 
-    if (field === "imposto" && isEmptyOrZero(internalValue)) {
-      setManualFlag(row.key, "imposto", false);
-    }
+      if (def.allowManualComissaoFrete && field === "frete") {
+        setManualFlag(row.key, "frete", true);
+      }
 
-    if (
-      def.allowManualComissaoFrete &&
-      field === "comissao" &&
-      isEmptyOrZero(internalValue)
-    ) {
-      setManualFlag(row.key, "comissao", false);
-    }
+      setCalculo(row.key, (previous) => ({
+        ...previous,
+        [field]: internalValue,
+      }));
+    },
+    [
+      handleEmbalagemChangeShared,
+      handleEmbalagemChangeChannel,
+      syncDescontoFromLoja,
+      brandOverrides,
+      setManualFlag,
+      setCalculo,
+    ]
+  );
 
-    if (
-      def.allowManualComissaoFrete &&
-      field === "frete" &&
-      isEmptyOrZero(internalValue)
-    ) {
-      setManualFlag(row.key, "frete", false);
-    }
+  const handleBlur = React.useCallback(
+    (row: ChannelRow, field: keyof Calculo, internalValue: string) => {
+      const def = getChannelDef(row.key);
 
-    setCalculo(row.key, (previous) => ({
-      ...previous,
-      [field]: internalValue,
-    }));
-  };
+      if (field === "embalagem") {
+        if (def.sharesEmbalagem) {
+          handleEmbalagemBlurShared(internalValue);
+        } else {
+          handleEmbalagemBlurChannel(row.key, internalValue);
+        }
 
-  const formatCopyValue = (value: number) => {
+        return;
+      }
+
+      if (row.key === "loja" && field === "desconto") {
+        syncDescontoFromLoja(internalValue);
+        return;
+      }
+
+      if (
+        def.hasBrandOverrides &&
+        (field === "margem" || field === "marketing" || field === "desconto") &&
+        isEmptyOrZero(internalValue)
+      ) {
+        brandOverrides[row.key].setEdited(field, false);
+      }
+
+      if (field === "imposto" && isEmptyOrZero(internalValue)) {
+        setManualFlag(row.key, "imposto", false);
+      }
+
+      if (
+        def.allowManualComissaoFrete &&
+        field === "comissao" &&
+        isEmptyOrZero(internalValue)
+      ) {
+        setManualFlag(row.key, "comissao", false);
+      }
+
+      if (
+        def.allowManualComissaoFrete &&
+        field === "frete" &&
+        isEmptyOrZero(internalValue)
+      ) {
+        setManualFlag(row.key, "frete", false);
+      }
+
+      setCalculo(row.key, (previous) => ({
+        ...previous,
+        [field]: internalValue,
+      }));
+    },
+    [
+      handleEmbalagemBlurShared,
+      handleEmbalagemBlurChannel,
+      syncDescontoFromLoja,
+      brandOverrides,
+      setManualFlag,
+      setCalculo,
+    ]
+  );
+
+  const formatCopyValue = React.useCallback((value: number) => {
     return Number(value || 0).toLocaleString("pt-BR", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-  };
+  }, []);
 
-  const handleCopyPrice = async (row: ChannelRow) => {
-    const value = formatCopyValue(row.preco);
+  const handleCopyPrice = React.useCallback(
+    async (row: ChannelRow) => {
+      const value = formatCopyValue(row.preco);
 
-    try {
-      await navigator.clipboard.writeText(value);
+      try {
+        await navigator.clipboard.writeText(value);
 
-      setCopiedKey(row.key);
+        setCopiedKey(row.key);
 
-      setTimeout(() => {
-        setCopiedKey(null);
-      }, 1200);
-    } catch {
-      const textarea = document.createElement("textarea");
+        setTimeout(() => {
+          setCopiedKey(null);
+        }, 1200);
+      } catch {
+        const textarea = document.createElement("textarea");
 
-      textarea.value = value;
+        textarea.value = value;
 
-      document.body.appendChild(textarea);
+        document.body.appendChild(textarea);
 
-      textarea.select();
+        textarea.select();
 
-      document.execCommand("copy");
+        document.execCommand("copy");
 
-      document.body.removeChild(textarea);
+        document.body.removeChild(textarea);
 
-      setCopiedKey(row.key);
+        setCopiedKey(row.key);
 
-      setTimeout(() => {
-        setCopiedKey(null);
-      }, 1200);
-    }
-  };
+        setTimeout(() => {
+          setCopiedKey(null);
+        }, 1200);
+      }
+    },
+    [formatCopyValue]
+  );
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
