@@ -38,6 +38,10 @@ type TipoBuscaProduto = "codigo" | "descricao";
 // desnecessária no banco. Abaixo disso, não busca.
 const MIN_CHARS_BUSCA = 2;
 
+// Cache de buscas recentes: evita repetir a mesma query se o usuário
+// digitar/apagar e voltar ao mesmo termo dentro do TTL.
+const CACHE_TTL_MS = 30_000;
+
 const toInternal = (v: string): string => {
   if (!v) return "";
 
@@ -105,11 +109,6 @@ const ACRESCIMO_FRETE_FIELD: Partial<Record<ChannelKey, string>> = {
   mlPremium: "freteMercadoLivrePremium",
 };
 
-// Colunas usadas nas buscas de sugestão (composição + produto).
-// packaging_cost REMOVIDO: embalagem não vem mais do banco por item,
-// é controlada 100% no motor de canais (Fixa/Manual, aplicada 1x).
-const SELECT_COLS = "code, current_cost, product, mark";
-
 const mapResultados = (data: any[] | null): Sugestao[] =>
   data?.map((item) => ({
     codigo: item.code,
@@ -118,70 +117,74 @@ const mapResultados = (data: any[] | null): Sugestao[] =>
     marca: item.mark || "",
   })) || [];
 
-/**
- * Ordena os resultados de uma busca por relevância em relação ao termo
- * e à coluna pesquisada: match exato > começa com o termo > contém o termo.
- */
-function ordenarPorRelevancia<T extends { codigo: string; produto?: string }>(
-  lista: T[],
-  termo: string,
-  coluna: "codigo" | "produto"
-): T[] {
-  const termoNorm = termo.trim().toLowerCase();
+// =====================
+// Cache client-side de buscas recentes (Map em módulo — sobrevive
+// entre re-renders, é limpo naturalmente pelo TTL).
+// =====================
+type CacheEntry = { data: Sugestao[]; ts: number };
+const searchCacheRef = { current: new Map<string, CacheEntry>() };
 
-  const valor = (item: T) =>
-    (coluna === "codigo" ? item.codigo : item.produto || "").toLowerCase();
+function getCached(cacheKey: string): Sugestao[] | null {
+  const entry = searchCacheRef.current.get(cacheKey);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > CACHE_TTL_MS) {
+    searchCacheRef.current.delete(cacheKey);
+    return null;
+  }
+  return entry.data;
+}
 
-  const score = (item: T) => {
-    const v = valor(item);
-    if (v === termoNorm) return 0;
-    if (v.startsWith(termoNorm)) return 1;
-    return 2;
-  };
-
-  return [...lista].sort((a, b) => score(a) - score(b));
+function setCached(cacheKey: string, data: Sugestao[]) {
+  searchCacheRef.current.set(cacheKey, { data, ts: Date.now() });
 }
 
 /**
- * Busca otimizada em 2 estágios contra uma coluna específica.
+ * Busca otimizada via RPC `search_costs_column` (Postgres function
+ * com índice trigram/GIN — ver migration `20260918_optimize_costs_search.sql`).
  * -----------------------------------------------------------------
- * ESTÁGIO 1 (rápido, usa índice B-tree/trigram): `ilike 'termo%'`
- * — prefixo. A maioria das buscas por código/produto é digitada do
- * início, então isso resolve quase sempre já na 1ª consulta e é
- * MUITO mais rápido que `%termo%` (que força scan completo sem
- * índice adequado).
+ * Substitui o antigo esquema de 2 estágios (prefixo + fallback
+ * "contém"), que fazia até 2 round-trips ao banco por busca. Agora,
+ * com índice trigram, uma única chamada cobre prefixo, "contém" e
+ * ranking por similaridade (útil até para erro de digitação).
  *
- * ESTÁGIO 2 (fallback, só dispara se o estágio 1 não achar nada):
- * `ilike '%termo%'` — contém, cobre o caso de busca por termo no
- * meio da string (ex: parte do nome do produto).
- *
- * Ambos os estágios respeitam o `AbortSignal` recebido.
+ * Resultado é cacheado por até `CACHE_TTL_MS` para evitar reconsultas
+ * quando o usuário digita/apaga e volta ao mesmo termo rapidamente.
  */
-async function buscarComPrefixoEFallback(
-  coluna: string,
+async function buscarPorColuna(
+  coluna: "code" | "product" | "mark",
   raw: string,
   limit: number,
   signal: AbortSignal
 ): Promise<{ data: any[] | null; error: any }> {
-  const prefixResult = await supabase
+  const cacheKey = `${coluna}:${raw}:${limit}`;
+  const cached = getCached(cacheKey);
+
+  if (cached) {
+    return {
+      data: cached.map((s) => ({
+        code: s.codigo,
+        current_cost: s.custo,
+        product: s.produto,
+        mark: s.marca,
+      })),
+      error: null,
+    };
+  }
+
+  const { data, error } = await supabase
     .schema("newsystem")
-    .from("costs")
-    .select(SELECT_COLS)
-    .ilike(coluna, `${raw}%`)
-    .limit(limit)
+    .rpc("search_costs_column", {
+      p_column: coluna,
+      p_term: raw,
+      p_limit: limit,
+    })
     .abortSignal(signal);
 
-  if (prefixResult.error) return prefixResult;
-  if (prefixResult.data && prefixResult.data.length > 0) return prefixResult;
+  if (!error && data) {
+    setCached(cacheKey, mapResultados(data));
+  }
 
-  // Nada por prefixo — tenta "contém" como fallback.
-  return supabase
-    .schema("newsystem")
-    .from("costs")
-    .select(SELECT_COLS)
-    .ilike(coluna, `%${raw}%`)
-    .limit(limit)
-    .abortSignal(signal);
+  return { data, error };
 }
 
 export default function PricingCalculatorModern() {
@@ -482,9 +485,9 @@ export default function PricingCalculatorModern() {
   const ultimaBuscaRef = useRef("");
 
   /**
-   * Busca de sugestões da COMPOSIÇÃO — usa `buscarComPrefixoEFallback`
-   * (estágio 1 = prefixo indexado e instantâneo, estágio 2 = contém,
-   * só quando o prefixo não retorna nada).
+   * Busca de sugestões da COMPOSIÇÃO — via RPC `search_costs_column`
+   * (índice trigram/GIN, ranking por similaridade feito no banco).
+   * Já retorna ordenado, sem necessidade de reordenar no client.
    */
   const buscarSugestoes = async (termo: string, idx: number) => {
     const raw = termo.trim();
@@ -499,36 +502,30 @@ export default function PricingCalculatorModern() {
     const controller = new AbortController();
     buscaAbortControllerRef.current = controller;
 
-    const { data, error } = await buscarComPrefixoEFallback(
+    const { data, error } = await buscarPorColuna(
       "code",
       raw,
-      15,
+      5,
       controller.signal
     );
 
     if (ultimaBuscaRef.current !== raw) return;
     if (error) return; // inclui abort — ignorado silenciosamente
 
-    const lista = ordenarPorRelevancia(
-      mapResultados(data),
-      raw,
-      "codigo"
-    ).slice(0, 5);
-
     setCampoAtivo(idx);
-    setSugestoes(lista);
+    setSugestoes(mapResultados(data));
     setIndiceSelecionado(0);
   };
 
-  // Debounce reduzido de 120ms -> 60ms: com busca por prefixo indexado
+  // Debounce reduzido de 120ms -> 60ms: com busca via índice trigram
   // a query é rápida o suficiente pra não precisar de tanta espera.
   const buscarSugestoesDebounced = useRef(
     debounce(buscarSugestoes, 60)
   ).current;
 
   /**
-   * Busca de sugestões do PRODUTO — mesmo padrão de 2 estágios,
-   * aplicado tanto pra busca por código quanto por descrição.
+   * Busca de sugestões do PRODUTO — mesmo padrão via RPC, aplicado
+   * tanto pra busca por código quanto por descrição.
    */
   const buscarSugestoesProduto = async (
     termo: string,
@@ -551,21 +548,17 @@ export default function PricingCalculatorModern() {
     const controller = new AbortController();
     buscaProdutoAbortControllerRef.current = controller;
 
-    const { data, error } = await buscarComPrefixoEFallback(
+    const { data, error } = await buscarPorColuna(
       coluna,
       raw,
-      20,
+      8,
       controller.signal
     );
 
     if (ultimaBuscaProdutoRef.current !== buscaAtual) return;
     if (error) return; // inclui abort — ignorado silenciosamente
 
-    const lista = ordenarPorRelevancia(
-      mapResultados(data),
-      raw,
-      tipo === "codigo" ? "codigo" : "produto"
-    ).slice(0, 8);
+    const lista = mapResultados(data);
 
     setSugestoesProduto(lista);
     setProdutoSugestaoAtiva(lista.length > 0);
