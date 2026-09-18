@@ -34,8 +34,11 @@ export type ChannelDef = {
   sharesEmbalagem: boolean;
 };
 
-/** Valor fixo padrão de embalagem, usado como último fallback quando
- *  não há custo de embalagem vindo da composição do produto (banco).
+/** Valor fixo padrão de embalagem, usado quando o usuário não define
+ *  um valor manual para o canal. Embalagem é custo de PACOTE/ANÚNCIO,
+ *  não por item da composição — por isso não existe mais modo "banco"
+ *  (packaging_cost por item somado à composição foi removido: inflava
+ *  o custo em anúncios com múltiplos itens).
  *  Exportado para ser consumido também por usechannelpricing.ts e
  *  PricingCalculatorModern.tsx — fonte única, sem duplicação. */
 export const EMBALAGEM_PADRAO = "5";

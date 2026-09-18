@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { usePrecificacao } from "@/hooks/usePrecificacao";
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx-js-style";
@@ -222,24 +222,13 @@ export default function PricingCalculatorModern() {
   // =====================
   // Cálculo de preço (usa composicao do escopo do componente)
   // -----------------------------------------------------------------
-  // Envolvido em useCallback: `usechannelpricing.ts` memoiza `precos`
-  // com base nesta função como dependência. Sem useCallback, uma nova
-  // referência era criada em TODO render, invalidando aquele useMemo
-  // e recalculando preços de todos os canais sem necessidade real —
-  // uma das causas do "piscar" na tela.
+  // Embalagem SAIU do modo "banco" — não é mais somada por item da
+  // composição. Um anúncio com múltiplos itens tem UM único pacote de
+  // envio, então embalagem só pode ser Fixa (EMBALAGEM_PADRAO) ou
+  // Manual (editada pelo usuário). Multiplicar packaging_cost por
+  // item*quantidade estava inflando o custo em anúncios com vários
+  // produtos na composição.
   // =====================
-  const calcularEmbalagemComposicao = useCallback(
-    () =>
-      composicao.reduce(
-        (sum: number, item: any) =>
-          sum +
-          (parseFloat(toInternal(item.embalagem || "0")) || 0) *
-            (parseFloat(toInternal(item.quantidade || "0")) || 0),
-        0
-      ),
-    [composicao]
-  );
-
   const calcularPreco = useCallback(
     (dados: Calculo) => {
       const custo = composicao.reduce(
@@ -257,14 +246,11 @@ export default function PricingCalculatorModern() {
       const frete = parseFloat(dados.frete) || 0;
 
       const embalagemManual = parseFloat(dados.embalagem || "");
-      const embalagemAutomatica = calcularEmbalagemComposicao();
 
       const embalagem =
         !isNaN(embalagemManual) && dados.embalagem
           ? embalagemManual
-          : embalagemAutomatica > 0
-            ? embalagemAutomatica
-            : parseFloat(EMBALAGEM_PADRAO);
+          : parseFloat(EMBALAGEM_PADRAO);
 
       const custoLiquido = custo * (1 - desconto);
       const divisor = 1 - (imposto + margem + comissao + marketing);
@@ -274,16 +260,12 @@ export default function PricingCalculatorModern() {
 
       return isFinite(preco) ? preco : 0;
     },
-    [composicao, calcularEmbalagemComposicao]
+    [composicao]
   );
 
   // =====================
   // Motor único de canais — substitui os 6 useState<Calculo>, 12
   // flags manuais e 6 useEffect de regra automática.
-  // `calcularEmbalagemComposicao` é passado explicitamente ao hook,
-  // que agora usa esse valor para preencher visualmente o campo
-  // `embalagem` em `calculos` (antes só influenciava o preço,
-  // deixando o input sempre vazio/zerado na tela).
   // =====================
   const {
     calculos,
@@ -295,16 +277,20 @@ export default function PricingCalculatorModern() {
     precos,
     resetAll: resetChannelsAll,
     resetManualState,
-  } = useChannelPricing(
-    produtoMarca,
-    calcularPreco,
-    calcularEmbalagemComposicao
-  );
+  } = useChannelPricing(produtoMarca, calcularPreco);
 
+  // =====================
+  // calcularPrecoLojaItem (usado só na exportação do Excel, coluna
+  // "Preço de Venda" por linha da composição).
+  // -----------------------------------------------------------------
+  // Embalagem passa a ser aplicada UMA ÚNICA VEZ (valor global do
+  // canal Loja: fixo ou manual), nunca mais por item/quantidade —
+  // reflete que o custo de embalagem é por pacote/anúncio, não por
+  // unidade dentro da composição.
+  // =====================
   const calcularPrecoLojaItem = (
     custoUnitario: number,
-    quantidade: number,
-    embalagemUnitaria?: number
+    quantidade: number
   ) => {
     const calculoLoja = calculos.loja;
     const custoItem = custoUnitario * quantidade;
@@ -321,16 +307,16 @@ export default function PricingCalculatorModern() {
       toInternal(calculoLoja.embalagem || "")
     );
 
-    const embalagemItem =
+    const embalagem =
       !isNaN(embalagemManual) && calculoLoja.embalagem
         ? embalagemManual
-        : (embalagemUnitaria || 0) * quantidade;
+        : parseFloat(EMBALAGEM_PADRAO);
 
     const custoLiquido = custoItem * (1 - desconto);
     const divisor = 1 - (imposto + margem + comissao + marketing);
 
     const preco =
-      divisor > 0 ? (custoLiquido + frete + embalagemItem) / divisor : 0;
+      divisor > 0 ? (custoLiquido + frete + embalagem) / divisor : 0;
 
     return isFinite(preco) ? preco : 0;
   };
@@ -984,18 +970,12 @@ export default function PricingCalculatorModern() {
       ...composicao.map((item: any) => {
         const custoUnitario = parseFloat(toInternal(item.custo)) || 0;
         const quantidade = parseFloat(toInternal(item.quantidade)) || 0;
-        const embalagemUnitaria =
-          parseFloat(toInternal(item.embalagem || "0")) || 0;
 
         return [
           item.codigo || "",
           item.produto || item.descricao || "",
           item.quantidade || "",
-          calcularPrecoLojaItem(
-            custoUnitario,
-            quantidade,
-            embalagemUnitaria
-          ).toFixed(2),
+          calcularPrecoLojaItem(custoUnitario, quantidade).toFixed(2),
         ];
       }),
     ];

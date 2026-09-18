@@ -39,14 +39,15 @@ const emptyManualFlags = (): ManualFlags => ({
 // resetAll/resetManualState e na inicialização dos useState.
 //
 // embalagem SEMPRE nasce vazia ("") — nunca fixa em c.defaults.embalagem.
-// Isso é o que permite os 3 modos funcionarem em cascata: 1) banco
-// (packaging_cost da composição), 2) fixo (fallback hardcoded quando a
-// composição não tem custo de embalagem), 3) manual (usuário digita
-// algo, o campo passa a ter prioridade via manualFlags).
+// Modo "banco" foi REMOVIDO: embalagem é custo de pacote/anúncio, não
+// de item da composição — somar packaging_cost por item*quantidade
+// inflava o custo em anúncios com múltiplos produtos. Agora existem
+// só 2 modos: 1) Fixo (fallback EMBALAGEM_PADRAO quando o campo está
+// vazio), 2) Manual (usuário digita, manualFlags trava o valor).
 //
-// O preenchimento efetivo do campo (banco ou fixo) é feito pelo
-// useEffect "Engine de embalagem" abaixo — SEM ele, o campo ficava
-// vazio na tela pra sempre, mesmo influenciando o preço internamente.
+// O preenchimento do fallback fixo é feito pelo useEffect "Engine de
+// embalagem" abaixo — SEM ele, o campo ficava vazio na tela pra
+// sempre, mesmo influenciando o preço internamente.
 // =====================
 const DEFAULT_CALCULOS = Object.fromEntries(
   CHANNELS.map((c) => [c.key, { ...c.defaults, embalagem: "" }])
@@ -102,8 +103,7 @@ loadAllDbRules().catch(() => {});
 
 export function useChannelPricing(
   produtoMarca: string,
-  calcularPreco: (c: Calculo) => number,
-  calcularEmbalagemAutomatica: () => number
+  calcularPreco: (c: Calculo) => number
 ) {
   const [calculos, setCalculos] = useState<Record<ChannelKey, Calculo>>(
     () => ({ ...DEFAULT_CALCULOS })
@@ -181,19 +181,16 @@ export function useChannelPricing(
   }, []);
 
   // =====================
-  // Engine de embalagem — resolve os 3 modos (Banco > Fixo > Manual)
+  // Engine de embalagem — resolve os 2 modos restantes (Fixo > Manual)
   // e ESCREVE o valor resolvido de volta no estado `calculos`.
   // -----------------------------------------------------------------
-  // Sem este efeito, `calcularEmbalagemAutomatica()` só era consumido
-  // dentro de `calcularPreco` (influenciava o preço "por baixo"), mas
-  // o campo de embalagem exibido em cada canal permanecia sempre
-  // vazio — nada nunca reescrevia `calculos[key].embalagem`.
+  // Modo "banco" (packaging_cost * quantidade por item da composição)
+  // foi REMOVIDO: embalagem é custo do pacote/anúncio como um todo,
+  // não da soma dos itens dentro dele.
   //
   // - Canal com manualFlags[key].embalagem = true → pulado, preserva
   //   o valor digitado pelo usuário.
-  // - automatico > 0 (composição tem packaging_cost) → usa o valor do
-  //   banco em todos os demais canais.
-  // - automatico === 0 → cai no fallback fixo (EMBALAGEM_PADRAO).
+  // - Caso contrário → aplica EMBALAGEM_PADRAO.
   //
   // Segue o mesmo padrão do engine de comissão/frete: 1 único efeito,
   // 1 única atualização de estado por ciclo.
@@ -202,25 +199,24 @@ export function useChannelPricing(
     setCalculos((prevCalculos) => {
       let changed = false;
       const next = { ...prevCalculos };
-      const automatico = calcularEmbalagemAutomatica();
 
       for (const def of CHANNELS) {
         const flags = manualFlags[def.key];
 
         if (flags.embalagem) continue;
 
-        const resolved =
-          automatico > 0 ? automatico.toFixed(2) : EMBALAGEM_PADRAO;
-
-        if (prevCalculos[def.key].embalagem !== resolved) {
-          next[def.key] = { ...prevCalculos[def.key], embalagem: resolved };
+        if (prevCalculos[def.key].embalagem !== EMBALAGEM_PADRAO) {
+          next[def.key] = {
+            ...prevCalculos[def.key],
+            embalagem: EMBALAGEM_PADRAO,
+          };
           changed = true;
         }
       }
 
       return changed ? next : prevCalculos;
     });
-  }, [calcularEmbalagemAutomatica, manualFlags]);
+  }, [manualFlags]);
 
   // =====================
   // Engine única de regra automática de comissão/frete.
