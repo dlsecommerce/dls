@@ -9,7 +9,6 @@ type Sugestao = {
   custo: number;
   produto?: string;
   marca?: string;
-  packingCost?: number;
   inativo?: boolean;
 };
 
@@ -22,8 +21,7 @@ type SuggestionDropdownProps = {
     codigo: string,
     custo: number,
     produto?: string,
-    marca?: string,
-    packingCost?: number
+    marca?: string
   ) => void;
   termoBusca?: string;
   isLoading?: boolean;
@@ -254,7 +252,7 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
                   transition={{ duration: 0.12, delay: i * 0.02 }}
                   onMouseDown={(e) => {
                     e.preventDefault();
-                    onSelect(s.codigo, s.custo, s.produto, s.marca, s.packingCost);
+                    onSelect(s.codigo, s.custo, s.produto, s.marca);
                   }}
                   onMouseEnter={() => onHoverIndex?.(i)}
                   className={`
@@ -315,12 +313,6 @@ export const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
                     >
                       R$ {s.custo.toFixed(2)}
                     </span>
-
-                    {typeof s.packingCost === "number" && s.packingCost > 0 && (
-                      <span className="text-[10px] text-white/30">
-                        R$ {s.packingCost.toFixed(2)}
-                      </span>
-                    )}
                   </div>
                 </motion.button>
               );

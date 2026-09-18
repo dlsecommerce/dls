@@ -29,7 +29,6 @@ type Sugestao = {
   custo: number;
   produto?: string;
   marca?: string;
-  packingCost?: number;
 };
 
 type TipoBuscaProduto = "codigo" | "descricao";
@@ -107,7 +106,9 @@ const ACRESCIMO_FRETE_FIELD: Partial<Record<ChannelKey, string>> = {
 };
 
 // Colunas usadas nas buscas de sugestão (composição + produto).
-const SELECT_COLS = "code, current_cost, product, packaging_cost, mark";
+// packaging_cost REMOVIDO: embalagem não vem mais do banco por item,
+// é controlada 100% no motor de canais (Fixa/Manual, aplicada 1x).
+const SELECT_COLS = "code, current_cost, product, mark";
 
 const mapResultados = (data: any[] | null): Sugestao[] =>
   data?.map((item) => ({
@@ -115,7 +116,6 @@ const mapResultados = (data: any[] | null): Sugestao[] =>
     custo: Number(item.current_cost) || 0,
     produto: item.product || "",
     marca: item.mark || "",
-    packingCost: Number(item.packaging_cost) || 0,
   })) || [];
 
 /**
@@ -333,7 +333,6 @@ export default function PricingCalculatorModern() {
         codigo: item.codigo,
         custo: item.custo,
         quantidade: item.quantidade,
-        embalagem: item.embalagem,
         marca: item.marca,
       })),
       marca: produtoMarca,
@@ -402,7 +401,6 @@ export default function PricingCalculatorModern() {
             sugestao.codigo,
             sugestao.custo,
             sugestao.produto,
-            sugestao.packingCost,
             sugestao.marca
           );
         }
@@ -580,7 +578,6 @@ export default function PricingCalculatorModern() {
     codigo: string,
     custo: number,
     produto?: string,
-    packingCost?: number,
     marca?: string
   ) => {
     const novo = [...composicao];
@@ -591,7 +588,6 @@ export default function PricingCalculatorModern() {
       produto: produto || novo[idx]?.produto || "",
       descricao: produto || novo[idx]?.descricao || "",
       custo: (Number(custo) || 0).toFixed(2),
-      embalagem: (Number(packingCost) || 0).toFixed(2),
       marca: marca !== undefined ? marca : novo[idx]?.marca || "",
       quantidade: novo[idx]?.quantidade || "1",
     };
@@ -607,10 +603,9 @@ export default function PricingCalculatorModern() {
     custo: number,
     idx: number,
     produto?: string,
-    packingCost?: number,
     marca?: string
   ) => {
-    confirmarSugestaoPrimeira(idx, codigo, custo, produto, packingCost, marca);
+    confirmarSugestaoPrimeira(idx, codigo, custo, produto, marca);
 
     setSugestoes([]);
     setCampoAtivo(null);
@@ -642,8 +637,7 @@ export default function PricingCalculatorModern() {
     codigo: string,
     custo: number,
     produto?: string,
-    marca?: string,
-    packingCost?: number
+    marca?: string
   ) => {
     setComposicao((prev: any[]) => {
       const novoItem = {
@@ -652,7 +646,6 @@ export default function PricingCalculatorModern() {
         descricao: produto || "",
         quantidade: "1",
         custo: (Number(custo) || 0).toFixed(2),
-        embalagem: (Number(packingCost) || 0).toFixed(2),
         marca: marca || "",
       };
 
@@ -688,7 +681,6 @@ export default function PricingCalculatorModern() {
         descricao,
         quantidade: "1",
         custo: "0",
-        embalagem: "0",
         marca: "",
       };
 
@@ -732,7 +724,6 @@ export default function PricingCalculatorModern() {
         sugestao.custo,
         idx,
         sugestao.produto,
-        sugestao.packingCost,
         sugestao.marca
       );
     } else if (e.key === "Tab") {
@@ -745,7 +736,6 @@ export default function PricingCalculatorModern() {
         sugestao.codigo,
         sugestao.custo,
         sugestao.produto,
-        sugestao.packingCost,
         sugestao.marca
       );
 
@@ -786,8 +776,7 @@ export default function PricingCalculatorModern() {
           item.codigo,
           item.custo,
           item.produto,
-          item.marca,
-          item.packingCost
+          item.marca
         );
       }
     } else if (e.key === "Escape") {

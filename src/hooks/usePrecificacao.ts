@@ -30,7 +30,7 @@ export function usePrecificacao() {
     precoMagalu: "",
     precoMercadoLivreClassico: "",
     precoMercadoLivrePremium: "",
-    precoTiktok: "", // ✅ NOVO
+    precoTiktok: "",
     freteMercadoLivreClassico: "",
     freteMercadoLivrePremium: "",
     acrescimoClassico: 0,
@@ -74,7 +74,17 @@ export function usePrecificacao() {
   };
 
   // ==================================================
-  // Embalagem: prioridade banco/manual -> fallback fixo
+  // Embalagem: NÃO é mais calculada por item da composição.
+  // -----------------------------------------------------------------
+  // Um anúncio com múltiplos itens tem UM único pacote de envio.
+  // Embalagem agora é responsabilidade exclusiva do motor de canais
+  // (useChannelPricing / calcularPreco em PricingCalculatorModern):
+  // Fixa (EMBALAGEM_PADRAO) ou Manual (editada pelo usuário), somada
+  // UMA VEZ ao preço final — nunca multiplicada por item/quantidade.
+  //
+  // `resolverEmbalagem` é mantida apenas por compatibilidade externa
+  // (é exportada pelo hook), mas NÃO participa mais do cálculo de
+  // `custoTotal` abaixo.
   // ==================================================
   const EMBALAGEM_PADRAO = 5;
 
@@ -85,13 +95,10 @@ export function usePrecificacao() {
   };
 
   // ==================================================
-  // Custo total (agora inclui embalagem por item)
+  // Custo total — SEM embalagem (evita duplicidade com o canal).
   // ==================================================
   const custoTotal = composicao.reduce(
-    (sum, item) =>
-      sum +
-      parseBR(item.custo) * parseBR(item.quantidade) +
-      resolverEmbalagem(item),
+    (sum, item) => sum + parseBR(item.custo) * parseBR(item.quantidade),
     0
   );
 
@@ -108,9 +115,9 @@ export function usePrecificacao() {
   const custoLiquido = custoTotal * (1 - desconto);
   const divisor = 1 - (imposto + lucro + comissao + marketing);
 
-  // ⚠️ EMBALAGEM_FIXA removida daqui: já está somada dentro de custoTotal
-  // por item (via resolverEmbalagem), evitando duplicidade.
-  const precoVenda = divisor > 0 ? (custoLiquido + frete) / divisor : 0;
+  // Embalagem fixa aplicada aqui (fluxo legado) — única vez, global.
+  const precoVenda =
+    divisor > 0 ? (custoLiquido + frete + EMBALAGEM_PADRAO) / divisor : 0;
 
   // ==================================================
   // Cálculo de acréscimo

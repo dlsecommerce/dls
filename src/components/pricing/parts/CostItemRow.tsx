@@ -8,8 +8,7 @@ type Sugestao = {
   codigo: string;
   custo: number;
   produto?: string;
-  marca?: string; // ✅ NOVO
-  packingCost?: number; // ✅ NOVO
+  marca?: string;
 };
 
 type CostItemRowProps = {
@@ -34,8 +33,7 @@ type CostItemRowProps = {
     custo: number,
     idx: number,
     produto?: string,
-    packingCost?: number, // ✅ NOVO
-    marca?: string // ✅ NOVO
+    marca?: string
   ) => void;
 
   // Navegação / refs
@@ -220,15 +218,8 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
             sugestoes={sugestoes}
             listaRef={listaRef}
             indiceSelecionado={indiceSelecionado}
-            onSelect={(codigo, custo, produto, marca, packingCost) =>
-              selecionarSugestao(
-                codigo,
-                custo,
-                idx,
-                produto,
-                packingCost,
-                marca
-              )
+            onSelect={(codigo, custo, produto, marca) =>
+              selecionarSugestao(codigo, custo, idx, produto, marca)
             }
             termoBusca={item.codigo || ""}
           />

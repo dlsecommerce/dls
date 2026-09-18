@@ -11,7 +11,6 @@ type SugestaoProduto = {
   custo: number;
   produto?: string;
   marca?: string;
-  packingCost?: number;
 };
 
 type TipoBuscaProduto = "codigo" | "descricao";
@@ -41,8 +40,7 @@ type ProductSectionProps = {
     codigo: string,
     custo: number,
     produto?: string,
-    marca?: string,
-    packingCost?: number
+    marca?: string
   ) => void;
 
   onAdicionarProduto?: () => void;
@@ -170,8 +168,7 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
     codigoSelecionado: string,
     custoSelecionado: number,
     produtoSelecionado?: string,
-    marcaSelecionada?: string,
-    packingCostSelecionado?: number
+    marcaSelecionada?: string
   ) => {
     setIsSearching(false);
 
@@ -179,8 +176,7 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
       codigoSelecionado,
       custoSelecionado,
       produtoSelecionado,
-      marcaSelecionada,
-      packingCostSelecionado
+      marcaSelecionada
     );
   };
 

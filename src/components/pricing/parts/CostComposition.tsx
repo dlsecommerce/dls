@@ -8,8 +8,7 @@ type Sugestao = {
   codigo: string;
   custo: number;
   produto?: string;
-  marca?: string; // ✅ NOVO — reflete o que o pai já envia
-  packingCost?: number; // ✅ NOVO — reflete o que o pai já envia
+  marca?: string;
 };
 
 type CostCompositionProps = {
@@ -34,16 +33,14 @@ type CostCompositionProps = {
     custo: number,
     idx: number,
     produto?: string,
-    packingCost?: number, // ✅ NOVO
-    marca?: string // ✅ NOVO
+    marca?: string
   ) => void;
   confirmarSugestaoPrimeira: (
     idx: number,
     codigo: string,
     custo: number,
     produto?: string,
-    packingCost?: number, // ✅ NOVO
-    marca?: string // ✅ NOVO
+    marca?: string
   ) => void;
 
   // Navegação
