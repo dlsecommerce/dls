@@ -178,6 +178,23 @@ type FieldInputProps = {
  * função (assumindo que agora são estáveis via useCallback no pai) e
  * compara apenas os valores que de fato mudam a renderização deste
  * campo específico: `value` e o estado de edição do PRÓPRIO campo.
+ *
+ * -----------------------------------------------------------------
+ * BUFFER LOCAL (correção do "input volta ao digitar"):
+ * -----------------------------------------------------------------
+ * Enquanto o campo está em foco, o valor exibido vem de um state
+ * interno (`localValue`), NÃO do `value` vindo de fora. Isso existe
+ * porque múltiplos useEffects no hook pai (engine de comissão/frete,
+ * engine de embalagem, brand overrides — um por canal) podem disparar
+ * entre uma tecla digitada e outra, sobrescrevendo `calculos[key]`
+ * antes da flag manual "vencer a corrida". Sem o buffer, o campo
+ * controlado exibia esse valor sobrescrito e "revertia" visualmente
+ * enquanto o usuário digitava.
+ *
+ * O buffer só é resincronizado com o valor externo quando o campo
+ * NÃO está em edição (troca de canal, reset, regra automática
+ * aplicada sem o usuário estar com foco ali). No blur, o valor final
+ * já foi propagado pro estado externo normalmente via onChange/onBlur.
  */
 const FieldInput = React.memo(
   ({
@@ -198,10 +215,17 @@ const FieldInput = React.memo(
     handleLinearNav,
   }: FieldInputProps) => {
     const rawValue = value || "";
+    const editing = isEditing(editingKey);
 
-    const displayValue = isEditing(editingKey)
-      ? rawValue
-      : toDisplay(rawValue);
+    const [localValue, setLocalValue] = React.useState(rawValue);
+
+    React.useEffect(() => {
+      if (!editing) {
+        setLocalValue(rawValue);
+      }
+    }, [rawValue, editing]);
+
+    const displayValue = editing ? localValue : toDisplay(rawValue);
 
     return (
       <div className="mx-auto flex h-10 w-full max-w-[96px] items-center rounded border border-white/10 bg-[#070707] px-2 transition focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
@@ -209,7 +233,10 @@ const FieldInput = React.memo(
           ref={inputRef}
           value={displayValue}
           inputMode="decimal"
-          onFocus={() => setEditing(editingKey, true)}
+          onFocus={() => {
+            setLocalValue(rawValue);
+            setEditing(editingKey, true);
+          }}
           onBlur={(event) => {
             setEditing(editingKey, false);
 
@@ -218,6 +245,8 @@ const FieldInput = React.memo(
             onBlur(fieldKey, internalValue);
           }}
           onChange={(event) => {
+            setLocalValue(event.target.value);
+
             const internalValue = toInternal(event.target.value);
 
             onChange(fieldKey, internalValue);
@@ -642,7 +671,13 @@ export const PriceCalculationSection: React.FC<
   //
   // Imposto NÃO passa mais por brandOverrides: é constante fixa
   // por empresa (10%/14%), controlada só por manualFlags.imposto.
-  // Desconto agora também é override de marca.
+  //
+  // Desconto na Loja é caso especial: `syncDescontoFromLoja` propaga
+  // o valor pra TODOS os canais (não só a Loja), então a flag de
+  // "edição manual" precisa ser marcada em TODOS os canais também —
+  // senão o useEffect de usebrandpricingoverrides dos outros 5 canais
+  // roda de novo com `flags.desconto === false` e sobrescreve o valor
+  // sincronizado de volta pro default/regra de marca.
   //
   // Envolvidos em useCallback: são passados como props para os 42
   // FieldInput (agora memoizados) — sem isso, o React.memo do
@@ -663,6 +698,11 @@ export const PriceCalculationSection: React.FC<
       }
 
       if (row.key === "loja" && field === "desconto") {
+        CHANNELS.forEach((c) => {
+          if (getChannelDef(c.key).hasBrandOverrides) {
+            brandOverrides[c.key].setEdited("desconto", true);
+          }
+        });
         syncDescontoFromLoja(internalValue);
         return;
       }
@@ -716,6 +756,13 @@ export const PriceCalculationSection: React.FC<
       }
 
       if (row.key === "loja" && field === "desconto") {
+        if (isEmptyOrZero(internalValue)) {
+          CHANNELS.forEach((c) => {
+            if (getChannelDef(c.key).hasBrandOverrides) {
+              brandOverrides[c.key].setEdited("desconto", false);
+            }
+          });
+        }
         syncDescontoFromLoja(internalValue);
         return;
       }
