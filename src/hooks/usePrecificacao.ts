@@ -6,8 +6,10 @@ type ComposicaoItem = {
   codigo: string;
   quantidade: string;
   custo: string;
+  embalagem?: string;
   produto?: string;
   descricao?: string;
+  marca?: string;
 };
 
 export function usePrecificacao() {
@@ -72,12 +74,24 @@ export function usePrecificacao() {
   };
 
   // ==================================================
-  // Custo total
+  // Embalagem: prioridade banco/manual -> fallback fixo
   // ==================================================
-  const EMBALAGEM_FIXA = 5;
+  const EMBALAGEM_PADRAO = 5;
 
+  const resolverEmbalagem = (item: ComposicaoItem): number => {
+    const valor = parseBR(item.embalagem);
+    if (valor > 0) return valor;
+    return EMBALAGEM_PADRAO;
+  };
+
+  // ==================================================
+  // Custo total (agora inclui embalagem por item)
+  // ==================================================
   const custoTotal = composicao.reduce(
-    (sum, item) => sum + parseBR(item.custo) * parseBR(item.quantidade),
+    (sum, item) =>
+      sum +
+      parseBR(item.custo) * parseBR(item.quantidade) +
+      resolverEmbalagem(item),
     0
   );
 
@@ -94,8 +108,9 @@ export function usePrecificacao() {
   const custoLiquido = custoTotal * (1 - desconto);
   const divisor = 1 - (imposto + lucro + comissao + marketing);
 
-  const precoVenda =
-    divisor > 0 ? (custoLiquido + frete + EMBALAGEM_FIXA) / divisor : 0;
+  // ⚠️ EMBALAGEM_FIXA removida daqui: já está somada dentro de custoTotal
+  // por item (via resolverEmbalagem), evitando duplicidade.
+  const precoVenda = divisor > 0 ? (custoLiquido + frete) / divisor : 0;
 
   // ==================================================
   // Cálculo de acréscimo
@@ -166,6 +181,8 @@ export function usePrecificacao() {
         descricao: "",
         quantidade: "1",
         custo: "",
+        embalagem: "",
+        marca: "",
       },
     ]);
 
@@ -220,5 +237,6 @@ export function usePrecificacao() {
     removerItem,
     alteracoes,
     registrarAlteracao,
+    resolverEmbalagem,
   };
 }

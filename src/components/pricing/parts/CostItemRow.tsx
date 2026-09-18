@@ -155,7 +155,7 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
   const suffix = getSuffix(item);
 
   return (
-    <div className="group grid grid-cols-1 items-end gap-2 border-b border-white/10 py-2 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_92px_145px_auto] sm:gap-3">
+    <div className="group grid grid-cols-1 items-end gap-2 border-b border-white/10 py-2 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_92px_145px_110px_auto] sm:gap-3">
       <div className="relative min-w-0 self-center">
         <div className="min-w-0">
           <span className="block truncate text-sm font-semibold text-white">
@@ -319,6 +319,59 @@ export const CostItemRow: React.FC<CostItemRowProps> = ({
               {suffix}
             </span>
           )}
+        </div>
+      </div>
+
+      {/* ✅ NOVO: Embalagem (manual, preenchido pelo banco ou vazio = usa padrão fixo) */}
+      <div className="min-w-0">
+        <label className="mb-1.5 block text-center text-xs font-medium text-white/50">
+          Embalagem
+        </label>
+
+        <div className="flex h-10 items-center rounded border border-white/10 bg-[#070707] px-3 focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+          <span className="mr-1.5 text-sm font-semibold text-white/80">
+            R$
+          </span>
+
+          <Input
+            ref={(el) => {
+              if (!inputRefs.current[idx]) inputRefs.current[idx] = [];
+              inputRefs.current[idx][3] = el!;
+            }}
+            type="text"
+            inputMode="decimal"
+            placeholder="5,00"
+            value={
+              isEditing(`e-${idx}`)
+                ? item.embalagem
+                : toDisplay(item.embalagem)
+            }
+            onFocus={() => setEditing(`e-${idx}`, true)}
+            onBlur={(e) => {
+              setEditing(`e-${idx}`, false);
+
+              const novo = [...composicao];
+
+              novo[idx] = {
+                ...novo[idx],
+                embalagem: toInternal(e.target.value),
+              };
+
+              setComposicao(novo);
+            }}
+            onChange={(e) => {
+              const novo = [...composicao];
+
+              novo[idx] = {
+                ...novo[idx],
+                embalagem: toInternal(e.target.value),
+              };
+
+              setComposicao(novo);
+            }}
+            onKeyDown={(e) => handleGridNav(e, idx, 3)}
+            className={`${cleanInnerInputClass} !text-right`}
+          />
         </div>
       </div>
 
