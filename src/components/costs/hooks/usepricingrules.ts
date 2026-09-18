@@ -35,6 +35,19 @@ export interface ListingTypeRulePayload {
   frete_mode?: "fixed" | "percent";
 }
 
+// Bloco de Condição (Clássico/Premium) para UM modo de precificação específico.
+export interface ListingTypeRulesByMode {
+  classico: ListingTypeRulePayload;
+  premium: ListingTypeRulePayload;
+}
+
+// listing_type_rules agora é indexado por pricing_mode — cada modo
+// (flat/tiered/brand) carrega sua PRÓPRIA condição Clássico/Premium,
+// permitindo configurações independentes por modo sem se sobrescreverem.
+export type ListingTypeRulesMap = Partial<
+  Record<"flat" | "tiered" | "brand", ListingTypeRulesByMode>
+>;
+
 export interface MarketplaceChannelRule {
   channel: string;
   pricing_mode: "flat" | "tiered" | "brand";
@@ -44,10 +57,7 @@ export interface MarketplaceChannelRule {
   commission_tiers?: PriceTierPayload[] | null;
   default_rule?: { commission_rate: number; fixed_fee: number } | null;
   brand_rules?: BrandRulePayload[] | null;
-  listing_type_rules?: {
-    classico: ListingTypeRulePayload;
-    premium: ListingTypeRulePayload;
-  } | null;
+  listing_type_rules?: ListingTypeRulesMap | null;
 }
 
 const norm = (v: string) => v.trim().toLocaleLowerCase("pt-BR");
@@ -448,10 +458,11 @@ export function invalidateMarketplaceRuleCache(channel?: string) {
  * Carrega as taxas exclusivas do marketplace (comissão + frete) de um canal,
  * incluindo o modo de precificação (fixo, por faixa de preço ou por marca)
  * e, quando aplicável, as regras de Condição (Clássico/Premium) do Mercado Livre
- * — sejam elas globais (listing_type_rules) ou específicas de cada marca
- * (brand_rules[].classico/premium, presentes quando pricing_mode === "brand").
- * Persistidas em newsystem.marketplace_channel_rules — NÃO alteram
- * current_cost, apenas compõem o preço exibido/enviado ao canal.
+ * — sejam elas globais (listing_type_rules, indexadas por pricing_mode) ou
+ * específicas de cada marca (brand_rules[].classico/premium, presentes
+ * quando pricing_mode === "brand"). Persistidas em
+ * newsystem.marketplace_channel_rules — NÃO alteram current_cost, apenas
+ * compõem o preço exibido/enviado ao canal.
  *
  * Com cache por `channel` — evita requisições duplicadas quando múltiplos
  * canais front-end compartilham o mesmo dbRuleName (ex: Mercado Livre
@@ -487,17 +498,23 @@ export async function loadMarketplaceChannelRule(
  *    Cada item de brand_rules pode opcionalmente carregar classico/premium
  *    (condição própria daquela marca) — tem prioridade sobre tudo o mais.
  *
- * IMPORTANTE — listing_type_rules (Clássico/Premium GLOBAL) é uma camada
- * INDEPENDENTE de pricing_mode: pode coexistir com "flat", "tiered" ou
- * "brand" (ver calcularComissaoCanal/calcularFreteCanal, que a checam em
- * prioridade 2, antes do modo selecionado). Por isso este save faz MERGE
- * com o registro existente em vez de substituir a linha inteira: cada
- * bloco (commission_tiers, default_rule, brand_rules, listing_type_rules)
- * só é sobrescrito quando o `payload` o envia explicitamente (!== undefined).
- * Isso evita que salvar no modo "brand" ou "tiered" apague um
- * listing_type_rules configurado anteriormente no modo "flat" (e vice-versa).
- * Para REMOVER um bloco intencionalmente, envie-o como `null` explicitamente
- * (nunca omita a chave do payload por estar em outro modo).
+ * IMPORTANTE — listing_type_rules (Clássico/Premium GLOBAL) agora é
+ * indexado POR pricing_mode: `listing_type_rules[pricing_mode]`. Ou seja,
+ * cada modo (flat/tiered/brand) tem sua PRÓPRIA condição Clássico/Premium,
+ * configurada e persistida de forma independente — salvar no modo "brand"
+ * não apaga a condição configurada no modo "flat", pois cada uma vive em
+ * uma chave diferente do mapa.
+ *
+ * Por isso este save faz MERGE PROFUNDO em `listing_type_rules`: preserva
+ * todas as chaves de modo já existentes, sobrescrevendo apenas a chave do
+ * `payload.pricing_mode` atual (quando enviada). Os demais blocos
+ * (commission_tiers, default_rule, brand_rules) seguem o merge raso
+ * anterior — só são sobrescritos quando o `payload` os envia
+ * explicitamente (!== undefined).
+ *
+ * Para REMOVER a condição de um modo específico, envie
+ * `listing_type_rules: null` — isso apaga APENAS a chave do
+ * `pricing_mode` atual, preservando as demais.
  */
 export async function saveMarketplaceChannelRule(payload: {
   channel: string;
@@ -508,15 +525,11 @@ export async function saveMarketplaceChannelRule(payload: {
   commission_tiers?: PriceTierPayload[] | null;
   default_rule?: { commission_rate: number; fixed_fee: number } | null;
   brand_rules?: BrandRulePayload[] | null;
-  listing_type_rules?: {
-    classico: ListingTypeRulePayload;
-    premium: ListingTypeRulePayload;
-  } | null;
+  listing_type_rules?: ListingTypeRulesByMode | null;
 }) {
   // Carrega o registro atual — necessário para preservar blocos que este
-  // salvamento específico não está enviando (ex: listing_type_rules
-  // configurado no modo "flat" deve sobreviver a um save feito no modo
-  // "brand" ou "tiered", já que agora essas camadas coexistem).
+  // salvamento específico não está enviando (ex: listing_type_rules de
+  // outros modos, que devem sobreviver a um save feito no modo atual).
   const { data: existing, error: fetchError } = await supabase
     .schema(SCHEMA)
     .from("marketplace_channel_rules")
@@ -525,6 +538,31 @@ export async function saveMarketplaceChannelRule(payload: {
     .maybeSingle();
 
   if (fetchError) throw fetchError;
+
+  const existingListingTypeRules: ListingTypeRulesMap =
+    existing?.listing_type_rules ?? {};
+
+  // Merge profundo: preserva as chaves de OUTROS modos, sobrescreve (ou
+  // remove, se null) apenas a chave do pricing_mode enviado neste save.
+  let mergedListingTypeRules: ListingTypeRulesMap | null;
+
+  if (payload.listing_type_rules === undefined) {
+    // Nada foi enviado para este modo — preserva o mapa como está.
+    mergedListingTypeRules = Object.keys(existingListingTypeRules).length
+      ? existingListingTypeRules
+      : null;
+  } else if (payload.listing_type_rules === null) {
+    // Remove explicitamente a condição do modo atual, preservando os demais.
+    const { [payload.pricing_mode]: _removed, ...rest } =
+      existingListingTypeRules;
+    mergedListingTypeRules = Object.keys(rest).length ? rest : null;
+  } else {
+    // Sobrescreve apenas a chave do modo atual.
+    mergedListingTypeRules = {
+      ...existingListingTypeRules,
+      [payload.pricing_mode]: payload.listing_type_rules,
+    };
+  }
 
   const mergedRow = {
     channel: payload.channel,
@@ -544,10 +582,7 @@ export async function saveMarketplaceChannelRule(payload: {
       payload.brand_rules !== undefined
         ? payload.brand_rules
         : existing?.brand_rules ?? null,
-    listing_type_rules:
-      payload.listing_type_rules !== undefined
-        ? payload.listing_type_rules
-        : existing?.listing_type_rules ?? null,
+    listing_type_rules: mergedListingTypeRules,
     updated_at: new Date().toISOString(),
   };
 
@@ -572,8 +607,9 @@ export async function saveMarketplaceChannelRule(payload: {
  *   1) Condição por marca (brand_rules[].classico/premium) — se o
  *      pricing_mode for "brand" e a marca do produto tiver essa condição
  *      preenchida, ela vence tudo.
- *   2) Condição (Mercado Livre) global — listing_type_rules, agora pode
- *      coexistir com QUALQUER pricing_mode (flat/tiered/brand).
+ *   2) Condição (Mercado Livre) global DO MODO ATUAL —
+ *      listing_type_rules[rule.pricing_mode], já que cada modo agora tem
+ *      sua própria condição Clássico/Premium independente.
  *   3) Modo selecionado (tiered/brand sem condição).
  *   4) Fallback flat.
  * Retorna o valor em R$ da comissão sobre o preço informado.
@@ -598,9 +634,10 @@ export function calcularComissaoCanal(
     }
   }
 
-  // 2º: Condição (Mercado Livre) global
-  if (rule.listing_type_rules && produto.listingType) {
-    const lt = rule.listing_type_rules[produto.listingType];
+  // 2º: Condição (Mercado Livre) global DO MODO ATUAL
+  const listingRulesForMode = rule.listing_type_rules?.[rule.pricing_mode];
+  if (listingRulesForMode && produto.listingType) {
+    const lt = listingRulesForMode[produto.listingType];
     if (lt) return precoVenda * lt.commission_rate + lt.fixed_fee;
   }
 
@@ -638,7 +675,8 @@ export function calcularComissaoCanal(
  *      preenchido, sobrescreve tudo (sempre tratado como valor fixo em R$,
  *      já que a marca não tem um freteMode próprio — usa o mesmo padrão
  *      "fixedFee" das faixas de preço/tiers).
- *   2) Condição (Mercado Livre) global, com seu próprio frete_mode.
+ *   2) Condição (Mercado Livre) global DO MODO ATUAL, com seu próprio
+ *      frete_mode.
  *   3) Fallback — frete geral do canal.
  */
 export function calcularFreteCanal(
@@ -659,9 +697,11 @@ export function calcularFreteCanal(
     }
   }
 
-  // 2º: Condição (Mercado Livre) global — se o frete da condição foi preenchido
-  if (rule.listing_type_rules && listingType) {
-    const lt = rule.listing_type_rules[listingType];
+  // 2º: Condição (Mercado Livre) global DO MODO ATUAL — se o frete da
+  // condição foi preenchido
+  const listingRulesForMode = rule.listing_type_rules?.[rule.pricing_mode];
+  if (listingRulesForMode && listingType) {
+    const lt = listingRulesForMode[listingType];
     if (lt?.frete != null) {
       return lt.frete_mode === "percent"
         ? precoVenda * (lt.frete / 100)

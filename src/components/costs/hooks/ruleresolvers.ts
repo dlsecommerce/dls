@@ -8,7 +8,7 @@ export type ResolvedRule = { comissao: string; frete: string };
  * condição própria (classico/premium) — usado apenas quando o canal é ML
  * e pricing_mode === "brand". Tem prioridade máxima: se a marca tiver
  * classico/premium preenchido, isso sobrepõe QUALQUER outra regra
- * (listing_type_rules global, flat, default_rule, tiers).
+ * (listing_type_rules do modo, flat, default_rule, tiers).
  */
 function resolveBrandListingRule(
   rule: any | null,
@@ -81,8 +81,10 @@ function tiersFromRule(rule: any | null): PriceTierLike[] | null {
  * Resolve comissão/frete de um canal seguindo, em ordem de prioridade:
  * 1) Condição por marca (Mercado Livre, modo "brand" com classico/premium
  *    preenchido na própria marca) — MAIOR prioridade
- * 2) Regra de listing-type global (Mercado Livre Clássico/Premium,
- *    definida fora do modo "brand")
+ * 2) Regra de listing-type DO MODO ATUAL (Mercado Livre Clássico/Premium,
+ *    definida dentro de listing_type_rules[rule.pricing_mode] — cada modo
+ *    de comissão agora tem sua própria condição Clássico/Premium
+ *    independente, ao invés de uma única condição global compartilhada)
  * 3) Regra flat ou por marca sem condição (vinda do banco)
  * 4) Regra por faixa de preço (tiered, banco ou fallback hardcoded do canal)
  *
@@ -102,9 +104,13 @@ export function resolveRuleForChannel(
   const brandListing = resolveBrandListingRule(rule, marca, def.mlListingType, fallback);
   if (brandListing) return brandListing;
 
-  // 2) Condição global (só se não achou regra de marca com condição própria)
+  // 2) Condição DO MODO ATUAL (só se não achou regra de marca com
+  // condição própria) — listing_type_rules agora é indexado por
+  // pricing_mode, então cada modo (flat/tiered/brand) tem sua própria
+  // condição Clássico/Premium configurada independentemente.
   if (def.mlListingType && rule?.listing_type_rules) {
-    const lt = rule.listing_type_rules[def.mlListingType];
+    const listingRulesForMode = rule.listing_type_rules[rule.pricing_mode];
+    const lt = listingRulesForMode?.[def.mlListingType];
 
     if (lt) {
       return {
