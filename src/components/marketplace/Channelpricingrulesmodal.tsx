@@ -60,28 +60,17 @@ interface ListingTypeRule {
 }
 
 // =====================
-// Condição (Clássico/Premium) continua sendo um "slice" por modo
-// (flat/tiered/brand), cada um com seu enabled + valores próprios.
+// Condição (Clássico/Premium) agora é um "slice" completo por
+// pricing_mode — cada modo (flat/tiered/brand) tem seu próprio
+// checkbox "enabled" + seus próprios valores de classico/premium.
+// Isso substitui os antigos `useConditionFlat`/`classico`/`premium`
+// únicos, que eram compartilhados entre os 3 modos e se misturavam
+// ao trocar de aba.
 // =====================
 interface ConditionSlice {
   enabled: boolean;
   classico: ListingTypeRule;
   premium: ListingTypeRule;
-}
-
-// =====================
-// NOVO: flags de ativação por modo. Substituem o antigo `pricingMode`
-// como "seletor exclusivo". Agora um canal pode ter, ao mesmo tempo,
-// regra flat + tiered + brand habilitadas — a resolução em cascata
-// (no backend / ruleresolvers.ts) decide qual aplicar para cada item,
-// na ordem: brand > tiered > flat.
-// `activeTab` continua existindo só para controlar QUAL bloco está
-// sendo exibido/editado no momento na UI.
-// =====================
-interface ModeEnabledFlags {
-  flat: boolean;
-  tiered: boolean;
-  brand: boolean;
 }
 
 type Props = {
@@ -98,6 +87,8 @@ function parseValue(raw: string): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+// Converte uma taxa decimal (ex: 0.14000000000000002) em percentual
+// exibível sem lixo de ponto flutuante (ex: "14").
 function toPercentDisplay(rate: number | null | undefined): string {
   if (rate == null || Number.isNaN(rate)) return "";
   const pct = Math.round(rate * 100 * 1e6) / 1e6;
@@ -139,16 +130,22 @@ function emptyConditionByMode(): Record<PricingMode, ConditionSlice> {
   };
 }
 
-function emptyModeFlags(): ModeEnabledFlags {
-  return { flat: true, tiered: false, brand: false };
-}
-
+// Uma brand rule só é considerada "com condição preenchida" se pelo
+// menos um dos 4 campos (classico.rate/fixedFee, premium.rate/fixedFee)
+// tiver valor real. Evita gravar objetos classico/premium "vazios"
+// (que o parseValue transformaria silenciosamente em 0%), o que travava
+// a marca em taxa fixa 0 em vez de cair no fallback (default_rule).
 function hasFilledValue(sub?: BrandListingSubRule): boolean {
   return Boolean(
     (sub?.rate ?? "").trim() !== "" || (sub?.fixedFee ?? "").trim() !== ""
   );
 }
 
+// A mesma checagem, usada para decidir se o bloco Clássico/Premium do
+// modo ativo (listing_type_rules[pricingMode]) tem valor real
+// preenchido em pelo menos um dos dois listing types — evita enviar um
+// objeto "vazio" quando o checkbox está marcado mas nenhum campo foi
+// preenchido.
 function hasFilledListingType(rule: ListingTypeRule): boolean {
   return (
     rule.rate.trim() !== "" ||
@@ -157,14 +154,12 @@ function hasFilledListingType(rule: ListingTypeRule): boolean {
   );
 }
 
-const modeTabClass = (active: boolean, enabled: boolean) => `
+const modeTabClass = (active: boolean) => `
   flex-1 flex items-center justify-center gap-1.5 h-9 text-[11.5px] font-medium
-  border transition-colors cursor-pointer relative
+  border transition-colors cursor-pointer
   ${
     active
       ? "border-[#1a8ceb] bg-[#1a8ceb]/10 text-[#1a8ceb]"
-      : enabled
-      ? "border-neutral-700 text-neutral-300 hover:border-neutral-600"
       : "border-neutral-800 text-neutral-500 hover:text-neutral-300 hover:border-neutral-700"
   }
 `;
@@ -187,11 +182,7 @@ export default function ChannelPricingRulesModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Aba exibida atualmente (não é mais "modo exclusivo salvo", é só a UI)
-  const [activeTab, setActiveTab] = useState<PricingMode>("flat");
-
-  // Flags de ativação independentes — controlam o que é enviado no save
-  const [modeEnabled, setModeEnabled] = useState<ModeEnabledFlags>(emptyModeFlags());
+  const [pricingMode, setPricingMode] = useState<PricingMode>("flat");
 
   const [comissao, setComissao] = useState("");
 
@@ -203,20 +194,26 @@ export default function ChannelPricingRulesModal({
 
   const [useConditionBrand, setUseConditionBrand] = useState(false);
 
+  // =====================
+  // Condição (Clássico/Premium) indexada por pricing_mode — cada modo
+  // (Fixo/Por Preço/Marca) tem sua PRÓPRIA condição, independente das
+  // demais. Substitui os antigos `useConditionFlat`/`classico`/`premium`
+  // únicos e compartilhados entre modos.
+  // =====================
   const [conditionByMode, setConditionByMode] = useState<Record<PricingMode, ConditionSlice>>(
     emptyConditionByMode
   );
 
-  const activeCondition = conditionByMode[activeTab];
+  const activeCondition = conditionByMode[pricingMode];
 
   const setActiveCondition = useCallback(
     (updater: (prev: ConditionSlice) => ConditionSlice) => {
       setConditionByMode((prev) => ({
         ...prev,
-        [activeTab]: updater(prev[activeTab]),
+        [pricingMode]: updater(prev[pricingMode]),
       }));
     },
-    [activeTab]
+    [pricingMode]
   );
 
   const [frete, setFrete] = useState("");
@@ -227,8 +224,7 @@ export default function ChannelPricingRulesModal({
   const channelIsML = isMercadoLivre(channel);
 
   const resetState = useCallback(() => {
-    setActiveTab("flat");
-    setModeEnabled(emptyModeFlags());
+    setPricingMode("flat");
     setComissao("");
     setTiers([emptyTier()]);
     setDefaultRate("");
@@ -253,28 +249,8 @@ export default function ChannelPricingRulesModal({
     ])
       .then(([marketplaceRule, pricingRule]) => {
         if (marketplaceRule) {
-          // Aba inicial exibida = último modo salvo (só afeta a UI)
-          const lastMode = (marketplaceRule.pricing_mode as PricingMode) ?? "flat";
-          setActiveTab(lastMode);
-
-          // Flags de ativação: usa campos explícitos do backend se
-          // existirem (flat_enabled/tiered_enabled/brand_enabled).
-          // Se não existirem (registros antigos), infere pela presença
-          // de dados preenchidos em cada bloco — mantém compatibilidade
-          // com o formato anterior (modo único).
-          const hasTiersData = !!marketplaceRule.commission_tiers?.length;
-          const hasBrandData = !!marketplaceRule.brand_rules?.length;
-          const hasFlatData =
-            marketplaceRule.comissao != null && marketplaceRule.comissao !== 0;
-
-          setModeEnabled({
-            flat:
-              marketplaceRule.flat_enabled ?? (lastMode === "flat" || hasFlatData),
-            tiered:
-              marketplaceRule.tiered_enabled ?? (lastMode === "tiered" || hasTiersData),
-            brand:
-              marketplaceRule.brand_enabled ?? (lastMode === "brand" || hasBrandData),
-          });
+          const mode = (marketplaceRule.pricing_mode as PricingMode) ?? "flat";
+          setPricingMode(mode);
 
           setComissao(String(marketplaceRule.comissao ?? ""));
           setFrete(String(marketplaceRule.frete ?? ""));
@@ -327,6 +303,9 @@ export default function ChannelPricingRulesModal({
             if (anyBrandCondition) setUseConditionBrand(true);
           }
 
+          // listing_type_rules agora é indexado por pricing_mode — cada
+          // modo (flat/tiered/brand) carrega sua PRÓPRIA condição
+          // Clássico/Premium, independente dos demais.
           if (marketplaceRule.listing_type_rules) {
             const nextByMode = emptyConditionByMode();
 
@@ -408,11 +387,6 @@ export default function ChannelPricingRulesModal({
       })
     );
 
-  // Alterna se um modo está habilitado (participa da cascata de resolução)
-  const toggleModeEnabled = (mode: PricingMode) => {
-    setModeEnabled((prev) => ({ ...prev, [mode]: !prev[mode] }));
-  };
-
   const handleSave = useCallback(async () => {
     if (!channel) return;
     setSaving(true);
@@ -420,23 +394,14 @@ export default function ChannelPricingRulesModal({
     try {
       const payload: Record<string, unknown> = {
         channel,
-        // Mantido só por compatibilidade / último modo editado —
-        // não é mais usado como seletor exclusivo na resolução.
-        pricing_mode: activeTab,
-        flat_enabled: modeEnabled.flat,
-        tiered_enabled: modeEnabled.tiered,
-        brand_enabled: modeEnabled.brand,
+        pricing_mode: pricingMode,
+        comissao: parseValue(comissao),
+        frete: parseValue(frete),
+        freteMode,
       };
 
-      // Bloco FLAT — enviado se habilitado, independente da aba aberta
-      if (modeEnabled.flat) {
-        payload.comissao = parseValue(comissao);
-        payload.frete = parseValue(frete);
-        payload.freteMode = freteMode;
-      }
-
-      // Bloco TIERED
-      if (modeEnabled.tiered) {
+      if (pricingMode === "tiered") {
+        // min é obrigatório; max vazio = "sem limite superior" (null)
         payload.commission_tiers = tiers
           .filter((t) => t.min !== "")
           .map((t) => ({
@@ -445,12 +410,9 @@ export default function ChannelPricingRulesModal({
             rate: parseValue(t.rate) / 100,
             fixedFee: parseValue(t.fixedFee),
           }));
-      } else {
-        payload.commission_tiers = null;
       }
 
-      // Bloco BRAND
-      if (modeEnabled.brand) {
+      if (pricingMode === "brand") {
         payload.default_rule = {
           commission_rate: parseValue(defaultRate) / 100,
           fixed_fee: parseValue(defaultFixedFee),
@@ -466,6 +428,11 @@ export default function ChannelPricingRulesModal({
               brand: b.brand,
               commission_rate: parseValue(b.rate) / 100,
               fixed_fee: parseValue(b.fixedFee),
+              // Só grava classico/premium se houver valor REAL preenchido
+              // para aquele listing type específico. Antes, com a
+              // condição ativa, TODA marca ganhava classico+premium
+              // mesmo vazios — e parseValue("") = 0 travava a marca em
+              // taxa fixa 0% em vez de cair no fallback (default_rule).
               ...(channelIsML && useConditionBrand && hasClassico
                 ? {
                     classico: {
@@ -484,48 +451,40 @@ export default function ChannelPricingRulesModal({
                 : {}),
             };
           });
-      } else {
-        payload.default_rule = null;
-        payload.brand_rules = null;
       }
 
       // =====================
-      // listing_type_rules agora envia a condição de TODOS os modos
-      // habilitados (merge feito no backend preserva os demais).
-      // Modo desabilitado ou sem condição marcada envia `null` para
-      // aquele slot, limpando apenas ele.
+      // listing_type_rules agora é enviado relativo ao MODO ATIVO
+      // (conditionByMode[pricingMode]) — cada modo tem sua própria
+      // condição Clássico/Premium, persistida sob
+      // listing_type_rules[pricing_mode] no banco (merge feito em
+      // saveMarketplaceChannelRule, que preserva os demais modos).
+      //
+      // Se o usuário desmarcar o checkbox deste modo, enviamos `null`
+      // explicitamente para remover APENAS a condição deste modo,
+      // preservando as condições configuradas nos outros modos.
       // =====================
       if (channelIsML) {
-        const listingTypeRules: Record<string, unknown> = {};
+        const { enabled, classico, premium } = activeCondition;
 
-        (["flat", "tiered", "brand"] as PricingMode[]).forEach((mode) => {
-          const { enabled, classico, premium } = conditionByMode[mode];
-          const shouldSend =
-            modeEnabled[mode] &&
-            enabled &&
-            (hasFilledListingType(classico) || hasFilledListingType(premium));
-
-          if (shouldSend) {
-            listingTypeRules[mode] = {
-              classico: {
-                commission_rate: parseValue(classico.rate) / 100,
-                fixed_fee: parseValue(classico.fixedFee),
-                frete: classico.frete !== "" ? parseValue(classico.frete) : null,
-                frete_mode: classico.freteMode,
-              },
-              premium: {
-                commission_rate: parseValue(premium.rate) / 100,
-                fixed_fee: parseValue(premium.fixedFee),
-                frete: premium.frete !== "" ? parseValue(premium.frete) : null,
-                frete_mode: premium.freteMode,
-              },
-            };
-          } else {
-            listingTypeRules[mode] = null;
-          }
-        });
-
-        payload.listing_type_rules = listingTypeRules;
+        if (enabled && (hasFilledListingType(classico) || hasFilledListingType(premium))) {
+          payload.listing_type_rules = {
+            classico: {
+              commission_rate: parseValue(classico.rate) / 100,
+              fixed_fee: parseValue(classico.fixedFee),
+              frete: classico.frete !== "" ? parseValue(classico.frete) : null,
+              frete_mode: classico.freteMode,
+            },
+            premium: {
+              commission_rate: parseValue(premium.rate) / 100,
+              fixed_fee: parseValue(premium.fixedFee),
+              frete: premium.frete !== "" ? parseValue(premium.frete) : null,
+              frete_mode: premium.freteMode,
+            },
+          };
+        } else if (!enabled) {
+          payload.listing_type_rules = null;
+        }
       }
 
       await saveMarketplaceChannelRule(payload as any);
@@ -555,8 +514,7 @@ export default function ChannelPricingRulesModal({
     }
   }, [
     channel,
-    activeTab,
-    modeEnabled,
+    pricingMode,
     comissao,
     frete,
     freteMode,
@@ -566,7 +524,7 @@ export default function ChannelPricingRulesModal({
     brandRules,
     channelIsML,
     useConditionBrand,
-    conditionByMode,
+    activeCondition,
     onApplied,
     onOpenChange,
     resetState,
@@ -603,69 +561,40 @@ export default function ChannelPricingRulesModal({
             </div>
           ) : (
             <>
-              <div className="mb-2">
+              <div className="mb-4">
                 <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-500">
-                  Blocos de comissão (podem ficar ativos ao mesmo tempo)
+                  Tipo de comissão
                 </span>
                 <div className="flex gap-2">
                   <button
                     type="button"
                     disabled={saving}
-                    onClick={() => setActiveTab("flat")}
-                    className={modeTabClass(activeTab === "flat", modeEnabled.flat)}
+                    onClick={() => setPricingMode("flat")}
+                    className={modeTabClass(pricingMode === "flat")}
                   >
                     <Percent className="h-3.5 w-3.5" /> Fixo
-                    {modeEnabled.flat && (
-                      <span className="absolute -top-1 -right-1 h-1.5 w-1.5 rounded-full bg-[#1a8ceb]" />
-                    )}
                   </button>
                   <button
                     type="button"
                     disabled={saving}
-                    onClick={() => setActiveTab("tiered")}
-                    className={modeTabClass(activeTab === "tiered", modeEnabled.tiered)}
+                    onClick={() => setPricingMode("tiered")}
+                    className={modeTabClass(pricingMode === "tiered")}
                   >
                     <Layers className="h-3.5 w-3.5" /> Por Preço
-                    {modeEnabled.tiered && (
-                      <span className="absolute -top-1 -right-1 h-1.5 w-1.5 rounded-full bg-[#1a8ceb]" />
-                    )}
                   </button>
                   <button
                     type="button"
                     disabled={saving}
-                    onClick={() => setActiveTab("brand")}
-                    className={modeTabClass(activeTab === "brand", modeEnabled.brand)}
+                    onClick={() => setPricingMode("brand")}
+                    className={modeTabClass(pricingMode === "brand")}
                   >
                     <Tag className="h-3.5 w-3.5" /> Marca
-                    {modeEnabled.brand && (
-                      <span className="absolute -top-1 -right-1 h-1.5 w-1.5 rounded-full bg-[#1a8ceb]" />
-                    )}
                   </button>
                 </div>
-                <p className="mt-1.5 text-[10px] text-neutral-600">
-                  Prioridade de resolução: Marca &gt; Por Preço &gt; Fixo. Um item usa a
-                  primeira regra habilitada que se aplique a ele.
-                </p>
               </div>
 
-              {/* Checkbox de ativação do bloco da aba atual */}
-              <label className="mb-3 flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={modeEnabled[activeTab]}
-                  disabled={saving}
-                  onChange={() => toggleModeEnabled(activeTab)}
-                  className="h-3.5 w-3.5 accent-[#1a8ceb] cursor-pointer"
-                />
-                <span className="text-[11.5px] font-medium text-neutral-300">
-                  Ativar bloco "
-                  {activeTab === "flat" ? "Fixo" : activeTab === "tiered" ? "Por Preço" : "Marca"}
-                  " para este canal
-                </span>
-              </label>
-
-              {activeTab === "flat" && (
-                <div className={`mb-4 ${!modeEnabled.flat ? "opacity-40" : ""}`}>
+              {pricingMode === "flat" && (
+                <div className="mb-4">
                   <div className="mb-1.5 flex items-center gap-2">
                     <Percent className="h-3.5 w-3.5 text-neutral-500" />
                     <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-500">
@@ -677,7 +606,7 @@ export default function ChannelPricingRulesModal({
                     <input
                       inputMode="decimal"
                       value={comissao}
-                      disabled={saving || !modeEnabled.flat}
+                      disabled={saving}
                       onChange={(e) => setComissao(sanitizeDecimalInput(e.target.value))}
                       onBlur={() => setComissao(formatDecimalOnBlur(comissao))}
                       placeholder="0,00"
@@ -687,8 +616,8 @@ export default function ChannelPricingRulesModal({
                 </div>
               )}
 
-              {activeTab === "tiered" && (
-                <div className={`mb-4 ${!modeEnabled.tiered ? "opacity-40" : ""}`}>
+              {pricingMode === "tiered" && (
+                <div className="mb-4">
                   <div className="mb-1.5 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Layers className="h-3.5 w-3.5 text-neutral-500" />
@@ -698,7 +627,7 @@ export default function ChannelPricingRulesModal({
                     </div>
                     <button
                       type="button"
-                      disabled={saving || !modeEnabled.tiered}
+                      disabled={saving}
                       onClick={addTier}
                       className="flex items-center gap-1 text-[11px] text-[#1a8ceb] hover:underline cursor-pointer disabled:opacity-40"
                     >
@@ -715,7 +644,7 @@ export default function ChannelPricingRulesModal({
                         <input
                           inputMode="decimal"
                           value={tier.min}
-                          disabled={saving || !modeEnabled.tiered}
+                          disabled={saving}
                           onChange={(e) => updateTier(index, "min", sanitizeDecimalInput(e.target.value))}
                           placeholder="Mín. R$"
                           className={miniInputClass}
@@ -723,7 +652,7 @@ export default function ChannelPricingRulesModal({
                         <input
                           inputMode="decimal"
                           value={tier.max}
-                          disabled={saving || !modeEnabled.tiered}
+                          disabled={saving}
                           onChange={(e) => updateTier(index, "max", sanitizeDecimalInput(e.target.value))}
                           placeholder="Máx. (vazio = sem limite)"
                           className={miniInputClass}
@@ -731,7 +660,7 @@ export default function ChannelPricingRulesModal({
                         <input
                           inputMode="decimal"
                           value={tier.rate}
-                          disabled={saving || !modeEnabled.tiered}
+                          disabled={saving}
                           onChange={(e) => updateTier(index, "rate", sanitizeDecimalInput(e.target.value))}
                           placeholder="%"
                           className={miniInputClass}
@@ -739,14 +668,14 @@ export default function ChannelPricingRulesModal({
                         <input
                           inputMode="decimal"
                           value={tier.fixedFee}
-                          disabled={saving || !modeEnabled.tiered}
+                          disabled={saving}
                           onChange={(e) => updateTier(index, "fixedFee", sanitizeDecimalInput(e.target.value))}
                           placeholder="Frete R$"
                           className={miniInputClass}
                         />
                         <button
                           type="button"
-                          disabled={saving || tiers.length === 1 || !modeEnabled.tiered}
+                          disabled={saving || tiers.length === 1}
                           onClick={() => removeTier(index)}
                           className="flex h-9 w-9 items-center justify-center text-neutral-500 hover:text-red-400 transition-colors cursor-pointer disabled:opacity-30"
                         >
@@ -764,8 +693,8 @@ export default function ChannelPricingRulesModal({
                 </div>
               )}
 
-              {activeTab === "brand" && (
-                <div className={`mb-4 ${!modeEnabled.brand ? "opacity-40" : ""}`}>
+              {pricingMode === "brand" && (
+                <div className="mb-4">
                   <div className="mb-2">
                     <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-500">
                       Regra padrão (fallback)
@@ -774,7 +703,7 @@ export default function ChannelPricingRulesModal({
                       <input
                         inputMode="decimal"
                         value={defaultRate}
-                        disabled={saving || !modeEnabled.brand}
+                        disabled={saving}
                         onChange={(e) => setDefaultRate(sanitizeDecimalInput(e.target.value))}
                         placeholder="% comissão"
                         className={miniInputClass}
@@ -782,7 +711,7 @@ export default function ChannelPricingRulesModal({
                       <input
                         inputMode="decimal"
                         value={defaultFixedFee}
-                        disabled={saving || !modeEnabled.brand}
+                        disabled={saving}
                         onChange={(e) => setDefaultFixedFee(sanitizeDecimalInput(e.target.value))}
                         placeholder="Taxa fixa R$"
                         className={miniInputClass}
@@ -795,7 +724,7 @@ export default function ChannelPricingRulesModal({
                       <input
                         type="checkbox"
                         checked={useConditionBrand}
-                        disabled={saving || !modeEnabled.brand}
+                        disabled={saving}
                         onChange={(e) => setUseConditionBrand(e.target.checked)}
                         className="h-3.5 w-3.5 accent-[#1a8ceb] cursor-pointer"
                       />
@@ -814,7 +743,7 @@ export default function ChannelPricingRulesModal({
                     </div>
                     <button
                       type="button"
-                      disabled={saving || !modeEnabled.brand}
+                      disabled={saving}
                       onClick={addBrandRule}
                       className="flex items-center gap-1 text-[11px] text-[#1a8ceb] hover:underline cursor-pointer disabled:opacity-40"
                     >
@@ -838,7 +767,7 @@ export default function ChannelPricingRulesModal({
                             {allBrands.length > 0 ? (
                               <select
                                 value={rule.brand}
-                                disabled={saving || !modeEnabled.brand}
+                                disabled={saving}
                                 onChange={(e) => updateBrandRule(index, "brand", e.target.value)}
                                 className={`${miniInputClass} cursor-pointer`}
                               >
@@ -852,7 +781,7 @@ export default function ChannelPricingRulesModal({
                             ) : (
                               <input
                                 value={rule.brand}
-                                disabled={saving || !modeEnabled.brand}
+                                disabled={saving}
                                 onChange={(e) => updateBrandRule(index, "brand", e.target.value)}
                                 placeholder="Marca"
                                 className={miniInputClass}
@@ -864,7 +793,7 @@ export default function ChannelPricingRulesModal({
                                 <input
                                   inputMode="decimal"
                                   value={rule.rate}
-                                  disabled={saving || !modeEnabled.brand}
+                                  disabled={saving}
                                   onChange={(e) =>
                                     updateBrandRule(index, "rate", sanitizeDecimalInput(e.target.value))
                                   }
@@ -874,7 +803,7 @@ export default function ChannelPricingRulesModal({
                                 <input
                                   inputMode="decimal"
                                   value={rule.fixedFee}
-                                  disabled={saving || !modeEnabled.brand}
+                                  disabled={saving}
                                   onChange={(e) =>
                                     updateBrandRule(index, "fixedFee", sanitizeDecimalInput(e.target.value))
                                   }
@@ -886,7 +815,7 @@ export default function ChannelPricingRulesModal({
 
                             <button
                               type="button"
-                              disabled={saving || brandRules.length === 1 || !modeEnabled.brand}
+                              disabled={saving || brandRules.length === 1}
                               onClick={() => removeBrandRule(index)}
                               className="flex h-9 w-9 items-center justify-center text-neutral-500 hover:text-red-400 transition-colors cursor-pointer disabled:opacity-30"
                             >
@@ -902,7 +831,7 @@ export default function ChannelPricingRulesModal({
                                   <input
                                     inputMode="decimal"
                                     value={rule.classico?.rate ?? ""}
-                                    disabled={saving || !modeEnabled.brand}
+                                    disabled={saving}
                                     onChange={(e) =>
                                       updateBrandListing(
                                         index,
@@ -917,7 +846,7 @@ export default function ChannelPricingRulesModal({
                                   <input
                                     inputMode="decimal"
                                     value={rule.classico?.fixedFee ?? ""}
-                                    disabled={saving || !modeEnabled.brand}
+                                    disabled={saving}
                                     onChange={(e) =>
                                       updateBrandListing(
                                         index,
@@ -937,7 +866,7 @@ export default function ChannelPricingRulesModal({
                                   <input
                                     inputMode="decimal"
                                     value={rule.premium?.rate ?? ""}
-                                    disabled={saving || !modeEnabled.brand}
+                                    disabled={saving}
                                     onChange={(e) =>
                                       updateBrandListing(
                                         index,
@@ -952,7 +881,7 @@ export default function ChannelPricingRulesModal({
                                   <input
                                     inputMode="decimal"
                                     value={rule.premium?.fixedFee ?? ""}
-                                    disabled={saving || !modeEnabled.brand}
+                                    disabled={saving}
                                     onChange={(e) =>
                                       updateBrandListing(
                                         index,
@@ -982,13 +911,20 @@ export default function ChannelPricingRulesModal({
                 </div>
               )}
 
+              {/*
+                Bloco de Condição (Clássico/Premium) DO MODO ATIVO —
+                cada aba (Fixo/Por Preço/Marca) tem seu próprio checkbox
+                "enabled" e seus próprios valores, lidos de
+                conditionByMode[pricingMode] via activeCondition. Trocar
+                de aba troca automaticamente os valores exibidos aqui.
+              */}
               {channelIsML && (
-                <div className={`mb-4 border border-neutral-900 p-3 ${!modeEnabled[activeTab] ? "opacity-40" : ""}`}>
+                <div className="mb-4 border border-neutral-900 p-3">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={activeCondition.enabled}
-                      disabled={saving || !modeEnabled[activeTab]}
+                      disabled={saving}
                       onChange={(e) =>
                         setActiveCondition((prev) => ({ ...prev, enabled: e.target.checked }))
                       }
@@ -1168,16 +1104,16 @@ export default function ChannelPricingRulesModal({
                       </div>
 
                       <p className="text-[10px] text-neutral-600">
-                        Essa condição é exclusiva do bloco selecionado acima (
-                        {activeTab === "flat" ? "Fixo" : activeTab === "tiered" ? "Por Preço" : "Marca"}
-                        ). Cada bloco guarda sua própria configuração.
+                        Essa condição é exclusiva do modo selecionado acima ({pricingMode === "flat" ? "Fixo" : pricingMode === "tiered" ? "Por Preço" : "Marca"}).
+                        Ao trocar de aba, uma condição diferente (ou vazia) pode ser exibida —
+                        cada modo guarda sua própria configuração.
                       </p>
                     </div>
                   )}
                 </div>
               )}
 
-              {activeTab === "tiered" ? (
+              {pricingMode === "tiered" ? (
                 <div className="mb-4 border border-neutral-800 px-3 py-2">
                   <div className="mb-1 flex items-center gap-2">
                     <Truck className="h-3.5 w-3.5 text-neutral-500" />
@@ -1191,7 +1127,7 @@ export default function ChannelPricingRulesModal({
                   </p>
                 </div>
               ) : (
-                <div className={`mb-4 ${!modeEnabled.flat && activeTab === "flat" ? "opacity-40" : ""}`}>
+                <div className="mb-4">
                   <div className="mb-1.5 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Truck className="h-3.5 w-3.5 text-neutral-500" />
