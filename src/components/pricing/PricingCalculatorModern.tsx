@@ -10,7 +10,7 @@ import { createNotification } from "@/lib/createNotification";
 import { ProductSection } from "./parts/ProductSection";
 import { CostComposition } from "./parts/CostComposition";
 import { PriceCalculationSection } from "./parts/PriceCalculationSection";
-import { CHANNELS } from "@/components/costs/hooks/channelsconfig";
+import { CHANNELS, EMBALAGEM_PADRAO } from "@/components/costs/hooks/channelsconfig";
 import type { ChannelKey } from "@/components/costs/hooks/channelsconfig";
 import { useChannelPricing } from "@/components/costs/hooks/usechannelpricing";
 
@@ -33,8 +33,6 @@ type Sugestao = {
 };
 
 type TipoBuscaProduto = "codigo" | "descricao";
-
-const EMBALAGEM_PADRAO = "5";
 
 // Termos com menos de 2 caracteres geram queries `ilike %x%` muito
 // genéricas (batem em quase toda a tabela) — sem ganho de UX real,
@@ -282,6 +280,10 @@ export default function PricingCalculatorModern() {
   // =====================
   // Motor único de canais — substitui os 6 useState<Calculo>, 12
   // flags manuais e 6 useEffect de regra automática.
+  // `calcularEmbalagemComposicao` é passado explicitamente ao hook,
+  // que agora usa esse valor para preencher visualmente o campo
+  // `embalagem` em `calculos` (antes só influenciava o preço,
+  // deixando o input sempre vazio/zerado na tela).
   // =====================
   const {
     calculos,
@@ -293,7 +295,11 @@ export default function PricingCalculatorModern() {
     precos,
     resetAll: resetChannelsAll,
     resetManualState,
-  } = useChannelPricing(produtoMarca, calcularPreco);
+  } = useChannelPricing(
+    produtoMarca,
+    calcularPreco,
+    calcularEmbalagemComposicao
+  );
 
   const calcularPrecoLojaItem = (
     custoUnitario: number,

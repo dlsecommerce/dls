@@ -34,7 +34,11 @@ export type ChannelDef = {
   sharesEmbalagem: boolean;
 };
 
-const EMBALAGEM_PADRAO = "5";
+/** Valor fixo padrão de embalagem, usado como último fallback quando
+ *  não há custo de embalagem vindo da composição do produto (banco).
+ *  Exportado para ser consumido também por usechannelpricing.ts e
+ *  PricingCalculatorModern.tsx — fonte única, sem duplicação. */
+export const EMBALAGEM_PADRAO = "5";
 
 export const CHANNELS: ChannelDef[] = [
   {
@@ -76,7 +80,7 @@ export const CHANNELS: ChannelDef[] = [
     ],
     hasBrandOverrides: true,
     allowManualComissaoFrete: true,
-    sharesEmbalagem: true, // ✅ CORRIGIDO — antes: false (impedia espelhamento do modo Fixo)
+    sharesEmbalagem: true,
   },
   {
     key: "magalu",
