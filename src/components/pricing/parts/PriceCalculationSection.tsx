@@ -120,14 +120,31 @@ const fields: Array<{
   { key: "marketing", label: "Marketing", suffix: "%", unit: "(%)" },
 ];
 
-const isEmptyOrZero = (value: string) => {
+/**
+ * FIX (bug do "0" sendo tratado como vazio em TODOS os campos):
+ * -----------------------------------------------------------------
+ * A versão anterior (`isEmptyOrZero`) considerava `numberValue === 0`
+ * como "vazio" — isso fazia com que digitar "0" em QUALQUER campo
+ * (desconto, imposto, margem, frete, comissão, marketing) desligasse
+ * a flag manual (`setManualFlag`/`brandOverrides.setEdited(..., false)`)
+ * no blur, mesmo o usuário tendo digitado algo válido. Resultado: o
+ * engine automático (banco/regra de marca/brand override) assumia o
+ * controle de volta e sobrescrevia o "0" digitado no próximo ciclo.
+ *
+ * `isEmpty` só considera vazio quando a STRING está realmente vazia
+ * (ou não é um número válido) — nunca quando o valor numérico é zero.
+ * "0" agora é tratado como qualquer outro valor manual: liga a flag
+ * no onChange, mantém a flag ligada no onBlur (nunca desliga por ser
+ * zero). Sem conflito com o modo "banco": a flag continua sendo a
+ * ÚNICA fonte de verdade consultada pelos engines automáticos — só
+ * desliga quando o campo fica de fato vazio (usuário apagou tudo).
+ */
+const isEmpty = (value: string) => {
   const normalized = (value || "").trim();
 
-  if (!normalized) return true;
+  if (normalized === "") return true;
 
-  const numberValue = Number(normalized);
-
-  return !isFinite(numberValue) || numberValue === 0;
+  return !isFinite(Number(normalized));
 };
 
 const ChannelIcon = ({
@@ -741,6 +758,12 @@ export const PriceCalculationSection: React.FC<
     ]
   );
 
+  /**
+   * FIX aplicado aqui: todas as chamadas que decidem "desligar a flag
+   * manual" agora usam `isEmpty` em vez de `isEmptyOrZero`. "0" nunca
+   * mais desliga a flag — só desliga quando o campo fica realmente
+   * vazio (string "").
+   */
   const handleBlur = React.useCallback(
     (row: ChannelRow, field: keyof Calculo, internalValue: string) => {
       const def = getChannelDef(row.key);
@@ -756,7 +779,7 @@ export const PriceCalculationSection: React.FC<
       }
 
       if (row.key === "loja" && field === "desconto") {
-        if (isEmptyOrZero(internalValue)) {
+        if (isEmpty(internalValue)) {
           CHANNELS.forEach((c) => {
             if (getChannelDef(c.key).hasBrandOverrides) {
               brandOverrides[c.key].setEdited("desconto", false);
@@ -770,19 +793,19 @@ export const PriceCalculationSection: React.FC<
       if (
         def.hasBrandOverrides &&
         (field === "margem" || field === "marketing" || field === "desconto") &&
-        isEmptyOrZero(internalValue)
+        isEmpty(internalValue)
       ) {
         brandOverrides[row.key].setEdited(field, false);
       }
 
-      if (field === "imposto" && isEmptyOrZero(internalValue)) {
+      if (field === "imposto" && isEmpty(internalValue)) {
         setManualFlag(row.key, "imposto", false);
       }
 
       if (
         def.allowManualComissaoFrete &&
         field === "comissao" &&
-        isEmptyOrZero(internalValue)
+        isEmpty(internalValue)
       ) {
         setManualFlag(row.key, "comissao", false);
       }
@@ -790,7 +813,7 @@ export const PriceCalculationSection: React.FC<
       if (
         def.allowManualComissaoFrete &&
         field === "frete" &&
-        isEmptyOrZero(internalValue)
+        isEmpty(internalValue)
       ) {
         setManualFlag(row.key, "frete", false);
       }
