@@ -96,6 +96,37 @@ function loadAllDbRules(): Promise<Record<ChannelKey, any | null>> {
   return dbRulesCache;
 }
 
+// =====================
+// Invalida o cache em módulo das regras de banco.
+// =====================
+export function invalidateDbRulesCache() {
+  dbRulesCache = null;
+}
+
+// =====================
+// NOVO: Pub/sub global para notificar TODAS as instâncias montadas
+// do hook quando uma regra é salva em outro lugar da aplicação (ex:
+// CreateChannelModal, que não tem acesso direto a este hook, pois
+// vive em outra árvore de componentes / outra tela).
+// -----------------------------------------------------------------
+// Sem isso, invalidar o cache não bastava: uma instância do hook já
+// montada (ex: calculadora aberta em outra aba) continuava exibindo
+// `dbRules` antigo em memória até um unmount/remount ou reload de
+// página — essa era a causa raiz real de "só funciona com reload"
+// quando a regra é salva por uma tela diferente da calculadora.
+// =====================
+type DbRulesMap = Record<ChannelKey, any | null>;
+const dbRulesSubscribers = new Set<(map: DbRulesMap) => void>();
+
+export function invalidateAndRefetchDbRules(): Promise<DbRulesMap> {
+  invalidateDbRulesCache();
+
+  return loadAllDbRules().then((map) => {
+    dbRulesSubscribers.forEach((callback) => callback(map));
+    return map;
+  });
+}
+
 // Warm-up antecipado: dispara o fetch assim que o módulo é importado,
 // não quando o componente monta. Ignora erro aqui — o efeito no hook
 // trata a falha e mantém fallback hardcoded.
@@ -178,6 +209,38 @@ export function useChannelPricing(
     return () => {
       active = false;
     };
+  }, []);
+
+  // =====================
+  // NOVO: assina o pub/sub global. Qualquer chamada a
+  // `invalidateAndRefetchDbRules()` feita em QUALQUER lugar da
+  // aplicação (ex: CreateChannelModal, ao salvar regras de um canal)
+  // atualiza automaticamente o `dbRules` desta instância — mesmo que
+  // ela tenha sido montada antes da regra ser salva, e mesmo que
+  // esteja em uma tela/aba diferente de onde a regra foi salva.
+  // =====================
+  useEffect(() => {
+    const callback = (map: Record<ChannelKey, any | null>) => setDbRules(map);
+    dbRulesSubscribers.add(callback);
+    return () => {
+      dbRulesSubscribers.delete(callback);
+    };
+  }, []);
+
+  // =====================
+  // Refetch manual das regras de banco.
+  // -----------------------------------------------------------------
+  // Invalida o cache em módulo e refaz o fetch imediatamente,
+  // atualizando `dbRules` neste hook (e em qualquer outra instância
+  // montada, via pub/sub acima, já que o cache é global). Deve ser
+  // chamado no `onApplied` do ChannelPricingRulesModal, assim que uma
+  // regra for salva — elimina a necessidade de reload de página para
+  // a calculadora refletir a nova regra (flat/tiered/brand).
+  // =====================
+  const refetchDbRules = useCallback(() => {
+    invalidateAndRefetchDbRules().catch(() => {
+      // Mantém dbRules atual em caso de erro no refetch.
+    });
   }, []);
 
   // =====================
@@ -313,5 +376,6 @@ export function useChannelPricing(
     precos,
     resetAll,
     resetManualState,
+    refetchDbRules,
   };
 }

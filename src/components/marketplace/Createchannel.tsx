@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchDistinctChannels } from "@/components/marketplace/hooks/usemarketplace";
 import ChannelPricingRulesModal from "@/components/marketplace/Channelpricingrulesmodal";
+import { invalidateAndRefetchDbRules } from "@/components/costs/hooks/usechannelpricing";
 
 // Lojas base cujos anúncios serão duplicados para o novo canal.
 const SOURCE_STORES = ["Pikot Shop", "Sóbaquetas"] as const;
@@ -811,6 +812,12 @@ export default function CreateChannelModal({
         onOpenChange={setOpenPricingRulesModal}
         channel={selectedChannelForRules ?? ""}
         onApplied={() => {
+          // ← NOVO: invalida o cache global de dbRules e notifica
+          // qualquer instância de useChannelPricing já montada (ex: a
+          // calculadora aberta em outra aba/tela), eliminando a
+          // necessidade de reload de página para a nova regra
+          // (flat/tiered/brand) surtir efeito.
+          invalidateAndRefetchDbRules();
           onSuccess?.();
         }}
       />

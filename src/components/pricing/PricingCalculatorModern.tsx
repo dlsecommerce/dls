@@ -308,6 +308,7 @@ export default function PricingCalculatorModern() {
     precos,
     resetAll: resetChannelsAll,
     resetManualState,
+    refetchDbRules, // ← NOVO: permite invalidar/recarregar as regras de banco (flat/tiered/brand) sem precisar de reload de página, assim que o modal de regras salvar algo novo.
   } = useChannelPricing(produtoMarca, calcularPreco);
 
   // =====================
@@ -1132,6 +1133,7 @@ export default function PricingCalculatorModern() {
               clicks={clicks}
               statusAcrescimo={statusAcrescimo}
               syncDescontoFromLoja={syncDescontoFromLoja}
+              refetchDbRules={refetchDbRules} // ← NOVO: repassado pra section, que deve encaminhar pro onApplied do ChannelPricingRulesModal (onde quer que ele esteja renderizado).
             />
           </div>
         </div>
