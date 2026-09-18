@@ -111,6 +111,18 @@ function hasFilledValue(sub?: BrandListingSubRule): boolean {
   );
 }
 
+// A mesma checagem, usada para decidir se o bloco Clássico/Premium
+// GERAL (listing_type_rules) tem valor real preenchido em pelo menos
+// um dos dois listing types — evita enviar um objeto "vazio" quando o
+// checkbox está marcado mas nenhum campo foi preenchido.
+function hasFilledListingType(rule: ListingTypeRule): boolean {
+  return (
+    rule.rate.trim() !== "" ||
+    rule.fixedFee.trim() !== "" ||
+    rule.frete.trim() !== ""
+  );
+}
+
 const modeTabClass = (active: boolean) => `
   flex-1 flex items-center justify-center gap-1.5 h-9 text-[11.5px] font-medium
   border transition-colors cursor-pointer
@@ -252,6 +264,10 @@ export default function ChannelPricingRulesModal({
             if (anyBrandCondition) setUseConditionBrand(true);
           }
 
+          // O bloco Clássico/Premium GERAL (listing_type_rules) agora é
+          // uma camada independente de pricing_mode — é carregado e
+          // exibido sempre que existir no banco, não importa se o canal
+          // está em "flat", "tiered" ou "brand".
           if (marketplaceRule.listing_type_rules) {
             setUseConditionFlat(true);
             const lc = marketplaceRule.listing_type_rules.classico;
@@ -387,21 +403,49 @@ export default function ChannelPricingRulesModal({
           });
       }
 
-      if (channelIsML && useConditionFlat && pricingMode !== "brand") {
-        payload.listing_type_rules = {
-          classico: {
-            commission_rate: parseValue(classico.rate) / 100,
-            fixed_fee: parseValue(classico.fixedFee),
-            frete: classico.frete !== "" ? parseValue(classico.frete) : null,
-            frete_mode: classico.freteMode,
-          },
-          premium: {
-            commission_rate: parseValue(premium.rate) / 100,
-            fixed_fee: parseValue(premium.fixedFee),
-            frete: premium.frete !== "" ? parseValue(premium.frete) : null,
-            frete_mode: premium.freteMode,
-          },
-        };
+      // =====================
+      // FIX: listing_type_rules (Clássico/Premium GERAL) agora é uma
+      // camada INDEPENDENTE de pricing_mode — pode coexistir com "flat",
+      // "tiered" OU "brand" (ver resolveRuleForChannel/calcularComissaoCanal,
+      // que já a checam em prioridade 2, antes do modo selecionado).
+      //
+      // Antes, a condição `pricingMode !== "brand"` bloqueava o envio
+      // deste campo sempre que o usuário estava configurando marca ou
+      // faixa de preço — e como saveMarketplaceChannelRule fazia upsert
+      // de substituição total, isso APAGAVA um listing_type_rules que
+      // já existia no banco (configurado anteriormente no modo "flat").
+      //
+      // Agora: sempre que useConditionFlat estiver marcado E houver
+      // algum valor preenchido em classico OU premium, o campo é enviado
+      // — independente do pricingMode ativo.
+      //
+      // Se o usuário desmarcar o checkbox, enviamos `null` explicitamente
+      // para remover a regra de forma intencional (ver hook, que só
+      // preserva o valor antigo quando o payload OMITE a chave, nunca
+      // quando ela vem null).
+      // =====================
+      if (channelIsML) {
+        if (
+          useConditionFlat &&
+          (hasFilledListingType(classico) || hasFilledListingType(premium))
+        ) {
+          payload.listing_type_rules = {
+            classico: {
+              commission_rate: parseValue(classico.rate) / 100,
+              fixed_fee: parseValue(classico.fixedFee),
+              frete: classico.frete !== "" ? parseValue(classico.frete) : null,
+              frete_mode: classico.freteMode,
+            },
+            premium: {
+              commission_rate: parseValue(premium.rate) / 100,
+              fixed_fee: parseValue(premium.fixedFee),
+              frete: premium.frete !== "" ? parseValue(premium.frete) : null,
+              frete_mode: premium.freteMode,
+            },
+          };
+        } else if (!useConditionFlat) {
+          payload.listing_type_rules = null;
+        }
       }
 
       await saveMarketplaceChannelRule(payload as any);
@@ -830,7 +874,15 @@ export default function ChannelPricingRulesModal({
                 </div>
               )}
 
-              {channelIsML && pricingMode !== "brand" && (
+              {/*
+                FIX: removida a restrição `pricingMode !== "brand"` — o
+                bloco de Clássico/Premium GERAL agora é sempre visível
+                para canais Mercado Livre, independente do modo de
+                comissão selecionado (flat/tiered/brand). Essa condição
+                coexiste com qualquer modo (ver resolveRuleForChannel,
+                que já a resolve com prioridade 2, antes do modo).
+              */}
+              {channelIsML && (
                 <div className="mb-4 border border-neutral-900 p-3">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -977,7 +1029,7 @@ export default function ChannelPricingRulesModal({
 
                       <p className="text-[10px] text-neutral-600">
                         Se preenchida, essa regra tem prioridade sobre o modo de comissão e o frete geral
-                        selecionados acima.
+                        selecionados acima — em QUALQUER modo (Fixo, Por Preço ou Marca).
                       </p>
                     </div>
                   )}

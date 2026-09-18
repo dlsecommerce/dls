@@ -486,10 +486,18 @@ export async function loadMarketplaceChannelRule(
  *  - "brand": comissão por marca (brand_rules) + regra padrão (default_rule).
  *    Cada item de brand_rules pode opcionalmente carregar classico/premium
  *    (condição própria daquela marca) — tem prioridade sobre tudo o mais.
- * Além disso, canais do tipo Mercado Livre podem informar listing_type_rules
- * (Clássico/Premium GLOBAL), usado apenas nos modos "flat"/"tiered". No modo
- * "brand", listing_type_rules deve vir null — a condição vive dentro de cada
- * brand_rule (ver ChannelPricingRulesModal.handleSave).
+ *
+ * IMPORTANTE — listing_type_rules (Clássico/Premium GLOBAL) é uma camada
+ * INDEPENDENTE de pricing_mode: pode coexistir com "flat", "tiered" ou
+ * "brand" (ver calcularComissaoCanal/calcularFreteCanal, que a checam em
+ * prioridade 2, antes do modo selecionado). Por isso este save faz MERGE
+ * com o registro existente em vez de substituir a linha inteira: cada
+ * bloco (commission_tiers, default_rule, brand_rules, listing_type_rules)
+ * só é sobrescrito quando o `payload` o envia explicitamente (!== undefined).
+ * Isso evita que salvar no modo "brand" ou "tiered" apague um
+ * listing_type_rules configurado anteriormente no modo "flat" (e vice-versa).
+ * Para REMOVER um bloco intencionalmente, envie-o como `null` explicitamente
+ * (nunca omita a chave do payload por estar em outro modo).
  */
 export async function saveMarketplaceChannelRule(payload: {
   channel: string;
@@ -497,32 +505,56 @@ export async function saveMarketplaceChannelRule(payload: {
   comissao: number;
   frete: number;
   freteMode: "fixed" | "percent";
-  commission_tiers?: PriceTierPayload[];
-  default_rule?: { commission_rate: number; fixed_fee: number };
-  brand_rules?: BrandRulePayload[];
+  commission_tiers?: PriceTierPayload[] | null;
+  default_rule?: { commission_rate: number; fixed_fee: number } | null;
+  brand_rules?: BrandRulePayload[] | null;
   listing_type_rules?: {
     classico: ListingTypeRulePayload;
     premium: ListingTypeRulePayload;
   } | null;
 }) {
+  // Carrega o registro atual — necessário para preservar blocos que este
+  // salvamento específico não está enviando (ex: listing_type_rules
+  // configurado no modo "flat" deve sobreviver a um save feito no modo
+  // "brand" ou "tiered", já que agora essas camadas coexistem).
+  const { data: existing, error: fetchError } = await supabase
+    .schema(SCHEMA)
+    .from("marketplace_channel_rules")
+    .select("*")
+    .eq("channel", payload.channel)
+    .maybeSingle();
+
+  if (fetchError) throw fetchError;
+
+  const mergedRow = {
+    channel: payload.channel,
+    pricing_mode: payload.pricing_mode,
+    comissao: payload.comissao,
+    frete: payload.frete,
+    frete_mode: payload.freteMode,
+    commission_tiers:
+      payload.commission_tiers !== undefined
+        ? payload.commission_tiers
+        : existing?.commission_tiers ?? null,
+    default_rule:
+      payload.default_rule !== undefined
+        ? payload.default_rule
+        : existing?.default_rule ?? null,
+    brand_rules:
+      payload.brand_rules !== undefined
+        ? payload.brand_rules
+        : existing?.brand_rules ?? null,
+    listing_type_rules:
+      payload.listing_type_rules !== undefined
+        ? payload.listing_type_rules
+        : existing?.listing_type_rules ?? null,
+    updated_at: new Date().toISOString(),
+  };
+
   const { data, error } = await supabase
     .schema(SCHEMA)
     .from("marketplace_channel_rules")
-    .upsert(
-      {
-        channel: payload.channel,
-        pricing_mode: payload.pricing_mode,
-        comissao: payload.comissao,
-        frete: payload.frete,
-        frete_mode: payload.freteMode,
-        commission_tiers: payload.commission_tiers ?? null,
-        default_rule: payload.default_rule ?? null,
-        brand_rules: payload.brand_rules ?? null,
-        listing_type_rules: payload.listing_type_rules ?? null,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "channel" }
-    )
+    .upsert(mergedRow, { onConflict: "channel" })
     .select()
     .single();
 
@@ -540,8 +572,8 @@ export async function saveMarketplaceChannelRule(payload: {
  *   1) Condição por marca (brand_rules[].classico/premium) — se o
  *      pricing_mode for "brand" e a marca do produto tiver essa condição
  *      preenchida, ela vence tudo.
- *   2) Condição (Mercado Livre) global — listing_type_rules, só relevante
- *      fora do modo "brand" (no modo "brand" essa chave vem null).
+ *   2) Condição (Mercado Livre) global — listing_type_rules, agora pode
+ *      coexistir com QUALQUER pricing_mode (flat/tiered/brand).
  *   3) Modo selecionado (tiered/brand sem condição).
  *   4) Fallback flat.
  * Retorna o valor em R$ da comissão sobre o preço informado.
