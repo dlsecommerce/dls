@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { usePrecificacao } from "@/hooks/usePrecificacao";
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx-js-style";
