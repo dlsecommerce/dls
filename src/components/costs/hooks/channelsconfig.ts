@@ -76,7 +76,7 @@ export const CHANNELS: ChannelDef[] = [
     ],
     hasBrandOverrides: true,
     allowManualComissaoFrete: true,
-    sharesEmbalagem: false,
+    sharesEmbalagem: true, // ✅ CORRIGIDO — antes: false (impedia espelhamento do modo Fixo)
   },
   {
     key: "magalu",
