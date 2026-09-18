@@ -591,6 +591,7 @@ export default function PricingCalculatorModern() {
     packingCost?: number,
     marca?: string
   ) => {
+    console.log("🔍 DEBUG:", { codigo, custo, produto, packingCost, marca });
     const novo = [...composicao];
 
     novo[idx] = {
