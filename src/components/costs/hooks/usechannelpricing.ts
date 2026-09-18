@@ -189,7 +189,9 @@ export function useChannelPricing(
   // não da soma dos itens dentro dele.
   //
   // - Canal com manualFlags[key].embalagem = true → pulado, preserva
-  //   o valor digitado pelo usuário.
+  //   o valor digitado pelo usuário (incluindo "0" — a decisão de
+  //   marcar/desmarcar essa flag é feita nos handlers do componente
+  //   pai, PricingCalculatorModern, não aqui).
   // - Caso contrário → aplica EMBALAGEM_PADRAO.
   //
   // Segue o mesmo padrão do engine de comissão/frete: 1 único efeito,

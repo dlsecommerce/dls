@@ -33,9 +33,9 @@ type Sugestao = {
 
 type TipoBuscaProduto = "codigo" | "descricao";
 
-// Termos com menos de 2 caracteres geram queries `ilike %x%` muito
-// genéricas (batem em quase toda a tabela) — sem ganho de UX real,
-// só carga desnecessária no banco. Abaixo disso, não busca.
+// Termos com menos de 2 caracteres geram queries muito genéricas
+// (batem em quase toda a tabela) — sem ganho de UX real, só carga
+// desnecessária no banco. Abaixo disso, não busca.
 const MIN_CHARS_BUSCA = 2;
 
 const toInternal = (v: string): string => {
@@ -121,9 +121,6 @@ const mapResultados = (data: any[] | null): Sugestao[] =>
 /**
  * Ordena os resultados de uma busca por relevância em relação ao termo
  * e à coluna pesquisada: match exato > começa com o termo > contém o termo.
- * Usado para transformar 1 única query `ilike` (%termo%) em um ranking
- * equivalente ao que antes exigia até 3 requisições sequenciais
- * (exact -> starts -> partial) ao banco.
  */
 function ordenarPorRelevancia<T extends { codigo: string; produto?: string }>(
   lista: T[],
@@ -143,6 +140,48 @@ function ordenarPorRelevancia<T extends { codigo: string; produto?: string }>(
   };
 
   return [...lista].sort((a, b) => score(a) - score(b));
+}
+
+/**
+ * Busca otimizada em 2 estágios contra uma coluna específica.
+ * -----------------------------------------------------------------
+ * ESTÁGIO 1 (rápido, usa índice B-tree/trigram): `ilike 'termo%'`
+ * — prefixo. A maioria das buscas por código/produto é digitada do
+ * início, então isso resolve quase sempre já na 1ª consulta e é
+ * MUITO mais rápido que `%termo%` (que força scan completo sem
+ * índice adequado).
+ *
+ * ESTÁGIO 2 (fallback, só dispara se o estágio 1 não achar nada):
+ * `ilike '%termo%'` — contém, cobre o caso de busca por termo no
+ * meio da string (ex: parte do nome do produto).
+ *
+ * Ambos os estágios respeitam o `AbortSignal` recebido.
+ */
+async function buscarComPrefixoEFallback(
+  coluna: string,
+  raw: string,
+  limit: number,
+  signal: AbortSignal
+): Promise<{ data: any[] | null; error: any }> {
+  const prefixResult = await supabase
+    .schema("newsystem")
+    .from("costs")
+    .select(SELECT_COLS)
+    .ilike(coluna, `${raw}%`)
+    .limit(limit)
+    .abortSignal(signal);
+
+  if (prefixResult.error) return prefixResult;
+  if (prefixResult.data && prefixResult.data.length > 0) return prefixResult;
+
+  // Nada por prefixo — tenta "contém" como fallback.
+  return supabase
+    .schema("newsystem")
+    .from("costs")
+    .select(SELECT_COLS)
+    .ilike(coluna, `%${raw}%`)
+    .limit(limit)
+    .abortSignal(signal);
 }
 
 export default function PricingCalculatorModern() {
@@ -221,13 +260,6 @@ export default function PricingCalculatorModern() {
 
   // =====================
   // Cálculo de preço (usa composicao do escopo do componente)
-  // -----------------------------------------------------------------
-  // Embalagem SAIU do modo "banco" — não é mais somada por item da
-  // composição. Um anúncio com múltiplos itens tem UM único pacote de
-  // envio, então embalagem só pode ser Fixa (EMBALAGEM_PADRAO) ou
-  // Manual (editada pelo usuário). Multiplicar packaging_cost por
-  // item*quantidade estava inflando o custo em anúncios com vários
-  // produtos na composição.
   // =====================
   const calcularPreco = useCallback(
     (dados: Calculo) => {
@@ -264,8 +296,7 @@ export default function PricingCalculatorModern() {
   );
 
   // =====================
-  // Motor único de canais — substitui os 6 useState<Calculo>, 12
-  // flags manuais e 6 useEffect de regra automática.
+  // Motor único de canais
   // =====================
   const {
     calculos,
@@ -280,13 +311,7 @@ export default function PricingCalculatorModern() {
   } = useChannelPricing(produtoMarca, calcularPreco);
 
   // =====================
-  // calcularPrecoLojaItem (usado só na exportação do Excel, coluna
-  // "Preço de Venda" por linha da composição).
-  // -----------------------------------------------------------------
-  // Embalagem passa a ser aplicada UMA ÚNICA VEZ (valor global do
-  // canal Loja: fixo ou manual), nunca mais por item/quantidade —
-  // reflete que o custo de embalagem é por pacote/anúncio, não por
-  // unidade dentro da composição.
+  // calcularPrecoLojaItem (usado só na exportação do Excel)
   // =====================
   const calcularPrecoLojaItem = (
     custoUnitario: number,
@@ -374,10 +399,6 @@ export default function PricingCalculatorModern() {
 
   // =====================
   // Fechar sugestões da composição ao clicar fora
-  // -----------------------------------------------------------------
-  // Usa `sugestoesRef` em vez de `sugestoes` nas deps — evita recriar
-  // o listener no DOM a cada tecla digitada (sugestoes muda em toda
-  // busca), mantendo o handler sempre com o valor mais recente via ref.
   // =====================
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -460,20 +481,9 @@ export default function PricingCalculatorModern() {
   const ultimaBuscaRef = useRef("");
 
   /**
-   * ANTES: até 3 requisições sequenciais ao banco (exact -> starts ->
-   * partial), cada uma esperando a anterior terminar para decidir se
-   * dispara a próxima. No pior caso (termo raro, sem match exato nem
-   * por prefixo), o usuário esperava 3 round-trips em cascata.
-   *
-   * AGORA: 1 única requisição com `ilike %termo%` (superset de todos
-   * os casos anteriores), e o ranking exact > prefixo > contém é feito
-   * em memória no cliente (instantâneo) via `ordenarPorRelevancia`.
-   *
-   * Além disso: requisição anterior é cancelada via AbortController
-   * quando uma nova busca é disparada (digitação rápida não deixa N
-   * requisições completas rodando em paralelo no banco), e termos com
-   * menos de MIN_CHARS_BUSCA caracteres não disparam busca (evita
-   * queries `%x%` genéricas demais).
+   * Busca de sugestões da COMPOSIÇÃO — usa `buscarComPrefixoEFallback`
+   * (estágio 1 = prefixo indexado e instantâneo, estágio 2 = contém,
+   * só quando o prefixo não retorna nada).
    */
   const buscarSugestoes = async (termo: string, idx: number) => {
     const raw = termo.trim();
@@ -488,13 +498,12 @@ export default function PricingCalculatorModern() {
     const controller = new AbortController();
     buscaAbortControllerRef.current = controller;
 
-    const { data, error } = await supabase
-      .schema("newsystem")
-      .from("costs")
-      .select(SELECT_COLS)
-      .ilike("code", `%${raw}%`)
-      .limit(15)
-      .abortSignal(controller.signal);
+    const { data, error } = await buscarComPrefixoEFallback(
+      "code",
+      raw,
+      15,
+      controller.signal
+    );
 
     if (ultimaBuscaRef.current !== raw) return;
     if (error) return; // inclui abort — ignorado silenciosamente
@@ -510,10 +519,16 @@ export default function PricingCalculatorModern() {
     setIndiceSelecionado(0);
   };
 
+  // Debounce reduzido de 120ms -> 60ms: com busca por prefixo indexado
+  // a query é rápida o suficiente pra não precisar de tanta espera.
   const buscarSugestoesDebounced = useRef(
-    debounce(buscarSugestoes, 120)
+    debounce(buscarSugestoes, 60)
   ).current;
 
+  /**
+   * Busca de sugestões do PRODUTO — mesmo padrão de 2 estágios,
+   * aplicado tanto pra busca por código quanto por descrição.
+   */
   const buscarSugestoesProduto = async (
     termo: string,
     tipo: TipoBuscaProduto
@@ -535,13 +550,12 @@ export default function PricingCalculatorModern() {
     const controller = new AbortController();
     buscaProdutoAbortControllerRef.current = controller;
 
-    const { data, error } = await supabase
-      .schema("newsystem")
-      .from("costs")
-      .select(SELECT_COLS)
-      .ilike(coluna, `%${raw}%`)
-      .limit(20)
-      .abortSignal(controller.signal);
+    const { data, error } = await buscarComPrefixoEFallback(
+      coluna,
+      raw,
+      20,
+      controller.signal
+    );
 
     if (ultimaBuscaProdutoRef.current !== buscaAtual) return;
     if (error) return; // inclui abort — ignorado silenciosamente
@@ -558,7 +572,7 @@ export default function PricingCalculatorModern() {
   };
 
   const buscarSugestoesProdutoDebounced = useRef(
-    debounce(buscarSugestoesProduto, 120)
+    debounce(buscarSugestoesProduto, 60)
   ).current;
 
   // Cancela debounces pendentes e requisições em voo ao desmontar o
@@ -848,20 +862,40 @@ export default function PricingCalculatorModern() {
   // Embalagem: canais com sharesEmbalagem=true recebem o valor
   // global (editado pela Loja). Canais com sharesEmbalagem=false
   // (ex: Shopee) têm campo próprio e travam manualmente ao editar.
+  // -----------------------------------------------------------------
+  // FIX: qualquer edição — incluindo "0" — precisa marcar
+  // manualFlags[...].embalagem = true. Sem isso, o engine de
+  // embalagem (useChannelPricing) vê a flag ainda em "false" e
+  // sobrescreve o "0" digitado de volta pro valor fixo
+  // (EMBALAGEM_PADRAO) no próximo ciclo de render — por isso o
+  // usuário "não conseguia" deixar o campo em 0.
   // =====================
   const handleEmbalagemChangeShared = (raw: string) => {
     const value = toInternal(raw);
 
     CHANNELS.forEach((def) => {
       if (!def.sharesEmbalagem) return;
-      if (manualFlags[def.key].embalagem) return;
 
+      setManualFlag(def.key, "embalagem", true);
       setCalculo(def.key, (prev) => ({ ...prev, embalagem: value }));
     });
   };
 
   const handleEmbalagemBlurShared = (raw: string) => {
-    handleEmbalagemChangeShared(raw);
+    const value = toInternal(raw || "");
+
+    CHANNELS.forEach((def) => {
+      if (!def.sharesEmbalagem) return;
+
+      if (!value) {
+        // Campo ficou vazio no blur → volta pro modo automático (fixo).
+        setManualFlag(def.key, "embalagem", false);
+      } else {
+        setManualFlag(def.key, "embalagem", true);
+      }
+
+      setCalculo(def.key, (prev) => ({ ...prev, embalagem: value }));
+    });
   };
 
   const handleEmbalagemChangeChannel = (key: ChannelKey, raw: string) => {
@@ -883,11 +917,6 @@ export default function PricingCalculatorModern() {
 
   // =====================
   // Limpar tudo
-  // -----------------------------------------------------------------
-  // Refatorado: side effects saíram de dentro do updater de setClicks
-  // (que deve permanecer puro, já que updaters podem rodar mais de uma
-  // vez em cenários de concorrência do React 18). `clicks` já está
-  // disponível no closure do render atual.
   // =====================
   const [isClearing, setIsClearing] = useState(false);
   const [clicks, setClicks] = useState(0);
