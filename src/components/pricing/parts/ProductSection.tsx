@@ -5,6 +5,10 @@ import { Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SuggestionDropdown } from "./SuggestionDropdown";
+import { AnnounceRateSearch } from "./Announceratesearch";
+import type { ChannelKey } from "@/components/costs/hooks/channelsconfig";
+import type { Calculo } from "../PricingCalculatorModern";
+import type { ManualFlags } from "@/components/costs/hooks/usechannelpricing";
 
 type SugestaoProduto = {
   codigo: string;
@@ -47,6 +51,19 @@ type ProductSectionProps = {
 
   onHoverProdutoIndex?: (index: number) => void;
   onCloseSugestoesProduto?: () => void;
+
+  // ✅ NOVO — usados pelo AnnounceRateSearch para puxar comissão/frete
+  // de ML Clássico/Premium a partir de um anúncio já existente.
+  store: string;
+  setCalculo: (
+    key: ChannelKey,
+    updater: (prev: Calculo) => Calculo
+  ) => void;
+  setManualFlag: (
+    key: ChannelKey,
+    field: keyof ManualFlags,
+    value: boolean
+  ) => void;
 };
 
 export const ProductSection: React.FC<ProductSectionProps> = ({
@@ -68,6 +85,10 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
 
   onHoverProdutoIndex,
   onCloseSugestoesProduto,
+
+  store,
+  setCalculo,
+  setManualFlag,
 }) => {
   const fallbackListaRef = React.useRef<HTMLDivElement>(null);
   const dropdownRef = listaProdutoRef || fallbackListaRef;
@@ -288,6 +309,14 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
             anchorRef={descricaoWrapperRef}
           />
         </div>
+
+        {/* ✅ NOVO — busca de anúncio pra puxar comissão/frete de
+            ML Clássico/Premium direto, sem digitar manualmente. */}
+        <AnnounceRateSearch
+          store={store}
+          setCalculo={setCalculo}
+          setManualFlag={setManualFlag}
+        />
       </div>
     </section>
   );

@@ -13,7 +13,6 @@ import {
 import { ClearAndDownloadActions } from "./ClearAndDownloadActions";
 import { AcrescimosSection } from "./AcrescimosSection";
 import { AnimatedNumber } from "./AnimatedNumber";
-import { AnnounceRateSearch } from "./Announceratesearch";
 import type { Calculo } from "../PricingCalculatorModern";
 import { CHANNELS, getChannelDef } from "@/components/costs/hooks/channelsconfig";
 import type { ChannelKey } from "@/components/costs/hooks/channelsconfig";
@@ -104,7 +103,6 @@ const CHANNEL_VISUAL: Record<ChannelKey, ChannelVisual> = {
 };
 
 const STORAGE_KEY = "pricing.visibleBlocks.v6";
-const EMPRESA_STORAGE_KEY = "pricing.empresaSelecionada.v1";
 
 const fields: Array<{
   key: keyof Calculo;
@@ -355,6 +353,11 @@ type PriceCalculationSectionProps = {
   syncDescontoFromLoja: (descontoInternal: string) => void;
 
   refetchDbRules?: () => void;
+
+  // ✅ NOVO — empresa/loja ativa, controlada pelo componente pai
+  // (PricingCalculatorModern), compartilhada com ProductSection.
+  empresa: Empresa;
+  setEmpresa: (value: Empresa) => void;
 };
 
 type ChannelRow = {
@@ -407,6 +410,9 @@ export const PriceCalculationSection: React.FC<
   syncDescontoFromLoja,
 
   refetchDbRules,
+
+  empresa,
+  setEmpresa,
 }) => {
   const defaultVisible: Record<ChannelKey, boolean> = React.useMemo(
     () =>
@@ -425,12 +431,10 @@ export const PriceCalculationSection: React.FC<
     React.useState<ChannelKey | null>(null);
 
   // ---- Seletor de empresa (Pikot Shop / Sóbaquetas) ----
-  const [empresa, setEmpresa] = React.useState<Empresa>("pikot");
+  // ✅ `empresa`/`setEmpresa` agora vêm via props do componente pai —
+  // removido o useState local e os useEffects de localStorage, que
+  // ficaram centralizados em PricingCalculatorModern.
   const [isEmpresaOpen, setIsEmpresaOpen] = React.useState(false);
-
-  // ✅ NOVO — nome exato de `store` gravado no banco, derivado do
-  // seletor de empresa já existente. Usado pelo AnnounceRateSearch.
-  const storeAtual = empresa === "pikot" ? "Pikot Shop" : "Sóbaquetas";
 
   const pikotSnapshotRef = React.useRef<Record<
     ChannelKey,
@@ -464,31 +468,18 @@ export const PriceCalculationSection: React.FC<
     [setCalculo, manualFlags]
   );
 
+  // Reaplica os overrides no mount, pois os calculos são
+  // inicializados sempre com valores padrão do Pikot Shop,
+  // independente da `empresa` já resolvida (via localStorage) no pai.
+  const didApplyInitialOverridesRef = React.useRef(false);
+
   React.useEffect(() => {
-    try {
-      const raw = localStorage.getItem(EMPRESA_STORAGE_KEY);
+    if (didApplyInitialOverridesRef.current) return;
+    didApplyInitialOverridesRef.current = true;
 
-      if (raw === "pikot" || raw === "sobaquetas") {
-        setEmpresa(raw);
-
-        // Reaplica os overrides no mount, pois os calculos são
-        // inicializados sempre com valores padrão do Pikot Shop,
-        // independente do que está salvo no localStorage.
-        applyEmpresaOverrides(raw);
-      }
-    } catch {
-      // Ignora erros de acesso ao localStorage.
-    }
+    applyEmpresaOverrides(empresa);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  React.useEffect(() => {
-    try {
-      localStorage.setItem(EMPRESA_STORAGE_KEY, empresa);
-    } catch {
-      // Ignora erros de acesso ao localStorage.
-    }
-  }, [empresa]);
 
   const handleSelectEmpresa = (next: Empresa) => {
     if (next === empresa) {
@@ -1098,14 +1089,6 @@ export const PriceCalculationSection: React.FC<
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* ✅ NOVO — busca de anúncio pra puxar comissão/frete de
-            ML Clássico/Premium direto, sem digitar manualmente. */}
-        <AnnounceRateSearch
-          store={storeAtual}
-          setCalculo={setCalculo}
-          setManualFlag={setManualFlag}
-        />
 
         <div className="overflow-hidden rounded border border-white/10">
           <div className="hidden grid-cols-[220px_repeat(7,minmax(92px,1fr))_170px] border-b border-white/10 bg-[#181818] lg:grid">

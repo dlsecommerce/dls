@@ -33,6 +33,12 @@ type Sugestao = {
 
 type TipoBuscaProduto = "codigo" | "descricao";
 
+// ✅ NOVO — empresa/loja ativa, usada tanto pelas regras de imposto
+// (PriceCalculationSection) quanto pela busca de anúncios ML
+// (ProductSection). Movido pra este nível pra ser compartilhado.
+type Empresa = "pikot" | "sobaquetas";
+const EMPRESA_STORAGE_KEY = "pricing.empresaSelecionada.v1";
+
 // Termos com menos de 2 caracteres geram queries muito genéricas
 // (batem em quase toda a tabela) — sem ganho de UX real, só carga
 // desnecessária no banco. Abaixo disso, não busca.
@@ -202,6 +208,34 @@ export default function PricingCalculatorModern() {
   const [produtoCodigo, setProdutoCodigo] = useState("");
   const [produtoDescricao, setProdutoDescricao] = useState("");
   const [produtoMarca, setProdutoMarca] = useState("");
+
+  // =====================
+  // ✅ NOVO — Empresa/loja ativa (Pikot Shop / Sóbaquetas).
+  // Movido do PriceCalculationSection pra este nível, pois agora
+  // é consumido também pelo ProductSection (busca de anúncios ML).
+  // =====================
+  const [empresa, setEmpresa] = useState<Empresa>("pikot");
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(EMPRESA_STORAGE_KEY);
+      if (raw === "pikot" || raw === "sobaquetas") {
+        setEmpresa(raw);
+      }
+    } catch {
+      // Ignora erros de acesso ao localStorage.
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(EMPRESA_STORAGE_KEY, empresa);
+    } catch {
+      // Ignora erros de acesso ao localStorage.
+    }
+  }, [empresa]);
+
+  const storeAtual = empresa === "pikot" ? "Pikot Shop" : "Sóbaquetas";
 
   // =====================
   // Sugestões do Produto
@@ -1074,6 +1108,9 @@ export default function PricingCalculatorModern() {
               handleProdutoSugestoesKeys={handleProdutoSugestoesKeys}
               selecionarProdutoSugestao={selecionarProdutoSugestao}
               onAdicionarProduto={adicionarProdutoManualNaComposicao}
+              store={storeAtual}
+              setCalculo={setCalculo}
+              setManualFlag={setManualFlag}
             />
 
             <CostComposition
@@ -1127,6 +1164,8 @@ export default function PricingCalculatorModern() {
               statusAcrescimo={statusAcrescimo}
               syncDescontoFromLoja={syncDescontoFromLoja}
               refetchDbRules={refetchDbRules} // ← NOVO: repassado pra section, que deve encaminhar pro onApplied do ChannelPricingRulesModal (onde quer que ele esteja renderizado).
+              empresa={empresa}
+              setEmpresa={setEmpresa}
             />
           </div>
         </div>
