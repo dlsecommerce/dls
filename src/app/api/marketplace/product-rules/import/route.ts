@@ -94,19 +94,64 @@ export async function POST(req: Request) {
       );
     }
 
-    // upsert em lote — depende do índice único parcial
-    // marketplace_product_rules_unique_active (channel, store, id_bling)
-    // WHERE deleted_at IS NULL, já existente na tabela.
-    const { error: upsertError } = await supabaseAdmin
-      .schema(SCHEMA)
-      .from("marketplace_product_rules")
-      .upsert(rowsToUpsert, { onConflict: "channel,store,id_bling" });
+    // O índice único (channel, store, id_bling) é PARCIAL
+    // (WHERE deleted_at IS NULL) — upsert com onConflict não funciona
+    // com índices parciais via PostgREST. Fazemos select -> update ou
+    // insert manualmente, linha por linha.
+    const upsertErrors: string[] = [];
 
-    if (upsertError) throw upsertError;
+    for (const r of rowsToUpsert) {
+      const { data: existing, error: selectError } = await supabaseAdmin
+        .schema(SCHEMA)
+        .from("marketplace_product_rules")
+        .select("id")
+        .eq("channel", r.channel)
+        .eq("store", r.store)
+        .eq("id_bling", r.id_bling)
+        .is("deleted_at", null)
+        .maybeSingle();
 
-    // Dispara recálculo para cada produto afetado
+      if (selectError) {
+        upsertErrors.push(`${r.channel}/${r.store}/${r.id_bling}: ${selectError.message}`);
+        continue;
+      }
+
+      if (existing?.id) {
+        const { error: updateError } = await supabaseAdmin
+          .schema(SCHEMA)
+          .from("marketplace_product_rules")
+          .update(r)
+          .eq("id", existing.id);
+
+        if (updateError) {
+          upsertErrors.push(`${r.channel}/${r.store}/${r.id_bling}: ${updateError.message}`);
+        }
+      } else {
+        const { error: insertError } = await supabaseAdmin
+          .schema(SCHEMA)
+          .from("marketplace_product_rules")
+          .insert(r);
+
+        if (insertError) {
+          upsertErrors.push(`${r.channel}/${r.store}/${r.id_bling}: ${insertError.message}`);
+        }
+      }
+    }
+
+    if (upsertErrors.length === rowsToUpsert.length) {
+      // Todas as linhas falharam
+      return NextResponse.json(
+        { error: "Erro ao salvar as regras.", details: upsertErrors },
+        { status: 500 }
+      );
+    }
+
+    // Dispara recálculo para cada produto que foi salvo com sucesso
     const recalcErrors: string[] = [];
     for (const r of rowsToUpsert) {
+      const failedKey = `${r.channel}/${r.store}/${r.id_bling}`;
+      if (upsertErrors.some((e) => e.startsWith(failedKey))) continue;
+
       const { error: rpcError } = await supabaseAdmin
         .schema(SCHEMA)
         .rpc("recalc_product_pricing", {
@@ -115,14 +160,16 @@ export async function POST(req: Request) {
           p_id_bling: r.id_bling,
         });
       if (rpcError) {
-        recalcErrors.push(`${r.channel}/${r.store}/${r.id_bling}: ${rpcError.message}`);
+        recalcErrors.push(`${failedKey}: ${rpcError.message}`);
       }
     }
 
+    const allErrors = [...upsertErrors, ...(recalcErrors.length ? recalcErrors : [])];
+
     return NextResponse.json({
       success: true,
-      updatedProducts: rowsToUpsert.length,
-      errors: recalcErrors.length ? recalcErrors : undefined,
+      updatedProducts: rowsToUpsert.length - upsertErrors.length,
+      errors: allErrors.length ? allErrors : undefined,
     });
   } catch (err: any) {
     console.error("Erro ao importar regras por produto:", err);

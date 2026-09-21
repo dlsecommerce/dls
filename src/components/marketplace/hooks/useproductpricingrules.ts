@@ -44,9 +44,12 @@ export async function loadProductPricingRule(params: {
 }
 
 /**
- * Cria ou atualiza (upsert) a regra específica de um produto.
- * Depende do índice único parcial (channel, store, id_bling) WHERE
- * deleted_at IS NULL, já existente em marketplace_product_rules.
+ * Cria ou atualiza a regra específica de um produto.
+ *
+ * OBS: o índice único (channel, store, id_bling) na tabela é PARCIAL
+ * (WHERE deleted_at IS NULL). O Postgres não permite inferir
+ * ON CONFLICT a partir de índices parciais via upsert do PostgREST,
+ * então fazemos select -> update ou insert manualmente.
  */
 export async function saveProductPricingRule(
   payload: ProductPricingRule
@@ -68,21 +71,53 @@ export async function saveProductPricingRule(
     updated_at: new Date().toISOString(),
   };
 
-  const { data, error } = await supabase
+  const { data: existing, error: selectError } = await supabase
     .schema(SCHEMA)
     .from("marketplace_product_rules")
-    .upsert(row, { onConflict: "channel,store,id_bling" })
-    .select()
-    .single();
+    .select("id")
+    .eq("channel", row.channel)
+    .eq("store", row.store)
+    .eq("id_bling", row.id_bling)
+    .is("deleted_at", null)
+    .maybeSingle();
 
-  if (error) throw error;
+  if (selectError) throw selectError;
+
+  let data: any;
+
+  if (existing?.id) {
+    const { data: updated, error: updateError } = await supabase
+      .schema(SCHEMA)
+      .from("marketplace_product_rules")
+      .update(row)
+      .eq("id", existing.id)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+    data = updated;
+  } else {
+    const { data: inserted, error: insertError } = await supabase
+      .schema(SCHEMA)
+      .from("marketplace_product_rules")
+      .insert(row)
+      .select()
+      .single();
+
+    if (insertError) throw insertError;
+    data = inserted;
+  }
 
   // Dispara recálculo apenas deste produto
-  await supabase.schema(SCHEMA).rpc("recalc_product_pricing", {
-    p_channel: payload.channel,
-    p_store: payload.store,
-    p_id_bling: payload.id_bling,
-  });
+  const { error: rpcError } = await supabase
+    .schema(SCHEMA)
+    .rpc("recalc_product_pricing", {
+      p_channel: payload.channel,
+      p_store: payload.store,
+      p_id_bling: payload.id_bling,
+    });
+
+  if (rpcError) throw rpcError;
 
   return data as ProductPricingRule;
 }
@@ -107,9 +142,13 @@ export async function deleteProductPricingRule(params: {
 
   if (error) throw error;
 
-  await supabase.schema(SCHEMA).rpc("recalc_product_pricing", {
-    p_channel: params.channel,
-    p_store: params.store,
-    p_id_bling: params.id_bling,
-  });
+  const { error: rpcError } = await supabase
+    .schema(SCHEMA)
+    .rpc("recalc_product_pricing", {
+      p_channel: params.channel,
+      p_store: params.store,
+      p_id_bling: params.id_bling,
+    });
+
+  if (rpcError) throw rpcError;
 }
