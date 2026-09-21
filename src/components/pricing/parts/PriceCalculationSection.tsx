@@ -13,6 +13,7 @@ import {
 import { ClearAndDownloadActions } from "./ClearAndDownloadActions";
 import { AcrescimosSection } from "./AcrescimosSection";
 import { AnimatedNumber } from "./AnimatedNumber";
+import { AnnounceRateSearch } from "./Announceratesearch";
 import type { Calculo } from "../PricingCalculatorModern";
 import { CHANNELS, getChannelDef } from "@/components/costs/hooks/channelsconfig";
 import type { ChannelKey } from "@/components/costs/hooks/channelsconfig";
@@ -288,10 +289,6 @@ const FieldInput = React.memo(
     );
   },
   (prev, next) => {
-    // Comparador manual: `isEditing` sempre é a mesma função (definida
-    // no componente pai raiz, PricingCalculatorModern), mas o valor
-    // que ela retorna PARA ESTE campo pode ter mudado — precisamos
-    // recalcular na comparação, não só comparar identidade de função.
     return (
       prev.value === next.value &&
       prev.fieldKey === next.fieldKey &&
@@ -356,6 +353,8 @@ type PriceCalculationSectionProps = {
   statusAcrescimo: any;
 
   syncDescontoFromLoja: (descontoInternal: string) => void;
+
+  refetchDbRules?: () => void;
 };
 
 type ChannelRow = {
@@ -406,6 +405,8 @@ export const PriceCalculationSection: React.FC<
   statusAcrescimo,
 
   syncDescontoFromLoja,
+
+  refetchDbRules,
 }) => {
   const defaultVisible: Record<ChannelKey, boolean> = React.useMemo(
     () =>
@@ -426,6 +427,10 @@ export const PriceCalculationSection: React.FC<
   // ---- Seletor de empresa (Pikot Shop / Sóbaquetas) ----
   const [empresa, setEmpresa] = React.useState<Empresa>("pikot");
   const [isEmpresaOpen, setIsEmpresaOpen] = React.useState(false);
+
+  // ✅ NOVO — nome exato de `store` gravado no banco, derivado do
+  // seletor de empresa já existente. Usado pelo AnnounceRateSearch.
+  const storeAtual = empresa === "pikot" ? "Pikot Shop" : "Sóbaquetas";
 
   const pikotSnapshotRef = React.useRef<Record<
     ChannelKey,
@@ -1093,6 +1098,14 @@ export const PriceCalculationSection: React.FC<
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* ✅ NOVO — busca de anúncio pra puxar comissão/frete de
+            ML Clássico/Premium direto, sem digitar manualmente. */}
+        <AnnounceRateSearch
+          store={storeAtual}
+          setCalculo={setCalculo}
+          setManualFlag={setManualFlag}
+        />
 
         <div className="overflow-hidden rounded border border-white/10">
           <div className="hidden grid-cols-[220px_repeat(7,minmax(92px,1fr))_170px] border-b border-white/10 bg-[#181818] lg:grid">
