@@ -17,6 +17,10 @@ type Props = {
   onOpenCreate: () => void | Promise<void>;
   onImportInclusao: (file: File) => void | Promise<void>;
   totalCount: number;
+  // Regras de Canal
+  exportingChannelRules?: boolean;
+  onExportChannelRules?: () => void | Promise<void>;
+  onImportChannelRules?: (file: File) => void | Promise<void>;
 };
 
 function ActionTextButton({
@@ -94,8 +98,12 @@ export default function MarketplaceActions({
   onOpenCreate,
   onImportInclusao,
   totalCount,
+  exportingChannelRules = false,
+  onExportChannelRules,
+  onImportChannelRules,
 }: Props) {
   const inputInclusaoRef = useRef<HTMLInputElement | null>(null);
+  const inputChannelRulesRef = useRef<HTMLInputElement | null>(null);
 
   const [hydrated, setHydrated] = useState(false);
   const [showMoreOptions, setShowMoreOptions] = useState(true);
@@ -142,6 +150,14 @@ export default function MarketplaceActions({
         accept=".xlsx,.csv"
         aria-label="Importar preços"
         onChange={handleFileChange(onImportInclusao)}
+      />
+      <input
+        type="file"
+        ref={inputChannelRulesRef}
+        className="hidden"
+        accept=".xlsx,.csv"
+        aria-label="Importar regras de canal"
+        onChange={handleFileChange((file) => onImportChannelRules?.(file))}
       />
 
       <div className="space-y-1.5">
@@ -192,6 +208,25 @@ export default function MarketplaceActions({
                 icon={<Upload className="h-4 w-4" />}
                 label="Importar preços"
                 onClick={() => triggerFileInput(inputInclusaoRef)}
+              />
+
+              <div className="my-1 border-t border-neutral-900" />
+
+              <div className="mb-1 px-2.5 pt-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-neutral-500">
+                Regras de Canal
+              </div>
+
+              <ActionTextButton
+                icon={<Download className="h-4 w-4" />}
+                label="Exportar regras de canal"
+                onClick={() => onExportChannelRules?.()}
+                disabled={exportingChannelRules || !onExportChannelRules}
+              />
+              <ActionTextButton
+                icon={<Upload className="h-4 w-4" />}
+                label="Importar regras de canal"
+                onClick={() => triggerFileInput(inputChannelRulesRef)}
+                disabled={!onImportChannelRules}
               />
             </div>
           )}

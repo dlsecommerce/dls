@@ -34,6 +34,7 @@ import {
 } from "@/components/marketplace/hooks/usemarketplace";
 
 import { useMarketplaceImportExport } from "@/components/marketplace/hooks/Exportmarketplace";
+import { useChannelRulesImportExport } from "@/components/marketplace/hooks/usechannelrulesimportexport";
 
 const MODELO_URL = "/templates/marketplace_modelo.xlsx";
 
@@ -341,6 +342,19 @@ export default function Marketplace() {
     selectedRows.map((r) => r.id)
   );
 
+  // ── Regras de Canal (export/import) ──────────────────────────────
+  const {
+    exportingChannelRules,
+    handleExportChannelRules,
+    handleImportChannelRules,
+  } = useChannelRulesImportExport();
+
+  const onImportChannelRules = async (file: File) => {
+    await handleImportChannelRules(file, async () => {
+      await refetch();
+    });
+  };
+
   const handleExport = async () => {
     setExporting(true);
     setExportProgressOpen(true);
@@ -587,10 +601,11 @@ export default function Marketplace() {
               exporting={exporting}
               handleExport={handleExport}
               onOpenCreate={openCreateModal}
-              onExportModelo={handleExportModelo}
               onImportInclusao={handleImportInclusao}
-              onImportAlteracao={handleImportAlteracao}
               totalCount={totalCount}
+              exportingChannelRules={exportingChannelRules}
+              onExportChannelRules={handleExportChannelRules}
+              onImportChannelRules={onImportChannelRules}
             />
           </div>
         </aside>
@@ -694,19 +709,20 @@ export default function Marketplace() {
                   setOpenActionsMobile(false);
                   openCreateModal();
                 }}
-                onExportModelo={() => {
-                  setOpenActionsMobile(false);
-                  handleExportModelo();
-                }}
                 onImportInclusao={(file) => {
                   setOpenActionsMobile(false);
                   handleImportInclusao(file);
                 }}
-                onImportAlteracao={(file) => {
-                  setOpenActionsMobile(false);
-                  handleImportAlteracao(file);
-                }}
                 totalCount={totalCount}
+                exportingChannelRules={exportingChannelRules}
+                onExportChannelRules={() => {
+                  setOpenActionsMobile(false);
+                  handleExportChannelRules();
+                }}
+                onImportChannelRules={(file) => {
+                  setOpenActionsMobile(false);
+                  onImportChannelRules(file);
+                }}
               />
             </div>
           </div>
