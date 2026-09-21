@@ -11,6 +11,7 @@ import {
   CopyIcon,
   Pencil as EditIcon,
   PackageSearch,
+  Tag as TagIcon,
 } from "lucide-react";
 import { Marketplace } from "@/components/marketplace/hooks/types";
 import MarketplaceHeaderBar from "@/components/marketplace/Marketplaceheader";
@@ -18,7 +19,7 @@ import MarketplaceHeaderBar from "@/components/marketplace/Marketplaceheader";
 const COLUMN_COUNT = 8;
 
 // checkbox, id_bling, loja, canal, referência, produto (flex), marca, ações
-const COL_WIDTHS = [48, 130, 130, 120, 130, 0, 120, 110];
+const COL_WIDTHS = [48, 130, 130, 120, 130, 0, 120, 140];
 
 function ColGroup() {
   return (
@@ -38,6 +39,7 @@ type Props = {
   copiedId: string | null;
   handleCopy: (text: string, key: string) => void;
   openEdit: (row: Marketplace) => void;
+  openProductRules: (row: Marketplace) => void;
 
   // Props do header (repassadas para MarketplaceHeaderBar)
   allSelected: boolean;
@@ -77,6 +79,9 @@ function NewBadge() {
     </span>
   );
 }
+
+const isMercadoLivre = (channel?: string) =>
+  (channel ?? "").trim().toLocaleLowerCase("pt-BR").includes("mercado livre");
 
 function IconBtn({
   onClick,
@@ -200,6 +205,7 @@ const MarketplaceTableRow = React.memo(
     copiedId,
     handleCopy,
     openEdit,
+    openProductRules,
     onToggle,
   }: {
     row: Marketplace;
@@ -208,9 +214,11 @@ const MarketplaceTableRow = React.memo(
     copiedId: string | null;
     handleCopy: (text: string, key: string) => void;
     openEdit: (row: Marketplace) => void;
+    openProductRules: (row: Marketplace) => void;
     onToggle: (row: Marketplace, checked: boolean) => void;
   }) {
     const showNewBadge = isRecent((row as any)?.created_at);
+    const showProductRuleBtn = isMercadoLivre(row.channel);
 
     return (
       <TableRow
@@ -293,6 +301,14 @@ const MarketplaceTableRow = React.memo(
             <IconBtn label={`Editar ${row.product}`} onClick={() => openEdit(row)}>
               <EditIcon className="h-3.5 w-3.5" />
             </IconBtn>
+            {showProductRuleBtn && (
+              <IconBtn
+                label={`Regra específica de ${row.product}`}
+                onClick={() => openProductRules(row)}
+              >
+                <TagIcon className="h-3.5 w-3.5" />
+              </IconBtn>
+            )}
           </div>
         </TableCell>
       </TableRow>
@@ -312,6 +328,7 @@ export default function MarketplaceDataTable({
   copiedId,
   handleCopy,
   openEdit,
+  openProductRules,
   allSelected,
   situacao,
   appliedSituacao,
@@ -365,6 +382,7 @@ export default function MarketplaceDataTable({
           rows.map((m, i) => {
             const isSelected = selectedKeys.has(getRowKey(m));
             const showNewBadge = isRecent((m as any)?.created_at);
+            const showProductRuleBtn = isMercadoLivre(m.channel);
 
             return (
               <div
@@ -419,6 +437,14 @@ export default function MarketplaceDataTable({
                   <IconBtn label={`Editar ${m.product}`} onClick={() => openEdit(m)}>
                     <EditIcon className="h-3.5 w-3.5" />
                   </IconBtn>
+                  {showProductRuleBtn && (
+                    <IconBtn
+                      label={`Regra específica de ${m.product}`}
+                      onClick={() => openProductRules(m)}
+                    >
+                      <TagIcon className="h-3.5 w-3.5" />
+                    </IconBtn>
+                  )}
                 </div>
               </div>
             );
@@ -463,6 +489,7 @@ export default function MarketplaceDataTable({
                     copiedId={copiedId}
                     handleCopy={handleCopy}
                     openEdit={openEdit}
+                    openProductRules={openProductRules}
                     onToggle={toggleSelectedRow}
                   />
                 ))

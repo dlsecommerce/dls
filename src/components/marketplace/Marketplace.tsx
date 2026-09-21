@@ -13,8 +13,11 @@ import ConfirmImportModal, { RowError } from "@/components/marketplace/Confirmim
 import { Controls } from "@/components/marketplace/Controls";
 import ExportProgressToast from "@/components/marketplace/Exportprogresstoast";
 import ImportProgressToast from "@/components/marketplace/Importprogresstoast";
+import ExportProgressToastChannelRules from "@/components/marketplace/Exportprogresstoast";
+import ImportProgressToastChannelRules from "@/components/marketplace/Importprogresstoast";
 import CreateChannelModal from "@/components/marketplace/Createchannel";
 import MarketplacePricingModal from "@/components/marketplace/edit/Compositionmodal";
+import ProductPricingRulesModal from "@/components/marketplace/Productpricingrulesmodal";
 
 import {
   Marketplace as MarketplaceRow,
@@ -35,6 +38,7 @@ import {
 
 import { useMarketplaceImportExport } from "@/components/marketplace/hooks/Exportmarketplace";
 import { useChannelRulesImportExport } from "@/components/marketplace/hooks/usechannelrulesimportexport";
+import { useProductRulesImportExport } from "@/components/marketplace/hooks/useproductrulesimportexport";
 
 const MODELO_URL = "/templates/marketplace_modelo.xlsx";
 
@@ -345,12 +349,41 @@ export default function Marketplace() {
   // ── Regras de Canal (export/import) ──────────────────────────────
   const {
     exportingChannelRules,
+    exportProgressOpen: exportChannelRulesProgressOpen,
+    exportProgress: exportChannelRulesProgress,
     handleExportChannelRules,
+    closeExportProgress: closeExportChannelRulesProgress,
+
+    importingChannelRules,
+    importProgressOpen: importChannelRulesProgressOpen,
+    importProgress: importChannelRulesProgress,
     handleImportChannelRules,
+    closeImportProgress: closeImportChannelRulesProgress,
   } = useChannelRulesImportExport();
 
   const onImportChannelRules = async (file: File) => {
     await handleImportChannelRules(file, async () => {
+      await refetch();
+    });
+  };
+
+  // ── Regras por Produto (export/import) ────────────────────────────
+  const {
+    exportingProductRules,
+    exportProgressOpen: exportProductRulesProgressOpen,
+    exportProgress: exportProductRulesProgress,
+    handleExportProductRules,
+    closeExportProgress: closeExportProductRulesProgress,
+
+    importingProductRules,
+    importProgressOpen: importProductRulesProgressOpen,
+    importProgress: importProductRulesProgress,
+    handleImportProductRules,
+    closeImportProgress: closeImportProductRulesProgress,
+  } = useProductRulesImportExport();
+
+  const onImportProductRules = async (file: File) => {
+    await handleImportProductRules(file, async () => {
       await refetch();
     });
   };
@@ -497,6 +530,20 @@ export default function Marketplace() {
     syncFiltersToUrl({ ...appliedFilters, situacao: value }, appliedBrands);
   };
 
+  // ── Modal de Regra específica do Produto ───────────────────────────
+  const [productRulesRow, setProductRulesRow] = React.useState<MarketplaceRow | null>(
+    null
+  );
+  const isProductRulesOpen = productRulesRow !== null;
+
+  const openProductRulesModal = React.useCallback((row: MarketplaceRow) => {
+    setProductRulesRow(row);
+  }, []);
+
+  const closeProductRulesModal = React.useCallback((open: boolean) => {
+    if (!open) setProductRulesRow(null);
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#050505] text-neutral-200 selection:bg-[#1a8ceb]/20">
       <div className="flex min-h-screen flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_280px]">
@@ -558,6 +605,7 @@ export default function Marketplace() {
                 copiedId={copiedId}
                 handleCopy={handleCopy}
                 openEdit={openEditModal}
+                openProductRules={openProductRulesModal}
                 allSelected={allSelected}
                 situacao={filters.situacao}
                 appliedSituacao={appliedFilters.situacao}
@@ -606,6 +654,9 @@ export default function Marketplace() {
               exportingChannelRules={exportingChannelRules}
               onExportChannelRules={handleExportChannelRules}
               onImportChannelRules={onImportChannelRules}
+              exportingProductRules={exportingProductRules}
+              onExportProductRules={handleExportProductRules}
+              onImportProductRules={onImportProductRules}
             />
           </div>
         </aside>
@@ -723,6 +774,15 @@ export default function Marketplace() {
                   setOpenActionsMobile(false);
                   onImportChannelRules(file);
                 }}
+                exportingProductRules={exportingProductRules}
+                onExportProductRules={() => {
+                  setOpenActionsMobile(false);
+                  handleExportProductRules();
+                }}
+                onImportProductRules={(file) => {
+                  setOpenActionsMobile(false);
+                  onImportProductRules(file);
+                }}
               />
             </div>
           </div>
@@ -766,6 +826,31 @@ export default function Marketplace() {
         onClose={() => setImportProgressOpen(false)}
       />
 
+      <ExportProgressToastChannelRules
+        open={exportChannelRulesProgressOpen}
+        percent={Math.round(exportChannelRulesProgress)}
+        onClose={closeExportChannelRulesProgress}
+      />
+
+      <ImportProgressToastChannelRules
+        open={importChannelRulesProgressOpen}
+        percent={Math.round(importChannelRulesProgress)}
+        onClose={closeImportChannelRulesProgress}
+      />
+
+      {/* Regras por Produto — reaproveita os mesmos componentes de toast */}
+      <ExportProgressToastChannelRules
+        open={exportProductRulesProgressOpen}
+        percent={Math.round(exportProductRulesProgress)}
+        onClose={closeExportProductRulesProgress}
+      />
+
+      <ImportProgressToastChannelRules
+        open={importProductRulesProgressOpen}
+        percent={Math.round(importProductRulesProgress)}
+        onClose={closeImportProductRulesProgress}
+      />
+
       <CreateChannelModal
         open={openCreateChannel}
         onClose={() => setOpenCreateChannel(false)}
@@ -781,6 +866,19 @@ export default function Marketplace() {
         marketplaceId={editId}
         onSuccess={refetch}
       />
+
+      {productRulesRow && (
+        <ProductPricingRulesModal
+          open={isProductRulesOpen}
+          onOpenChange={closeProductRulesModal}
+          channel={productRulesRow.channel}
+          store={productRulesRow.store}
+          idBling={String((productRulesRow as any).id_bling ?? "")}
+          referencia={(productRulesRow as any).reference}
+          brand={(productRulesRow as any).mark}
+          onApplied={refetch}
+        />
+      )}
     </div>
   );
 }

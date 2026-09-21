@@ -21,6 +21,10 @@ type Props = {
   exportingChannelRules?: boolean;
   onExportChannelRules?: () => void | Promise<void>;
   onImportChannelRules?: (file: File) => void | Promise<void>;
+  // Regras por Produto
+  exportingProductRules?: boolean;
+  onExportProductRules?: () => void | Promise<void>;
+  onImportProductRules?: (file: File) => void | Promise<void>;
 };
 
 function ActionTextButton({
@@ -101,9 +105,13 @@ export default function MarketplaceActions({
   exportingChannelRules = false,
   onExportChannelRules,
   onImportChannelRules,
+  exportingProductRules = false,
+  onExportProductRules,
+  onImportProductRules,
 }: Props) {
   const inputInclusaoRef = useRef<HTMLInputElement | null>(null);
   const inputChannelRulesRef = useRef<HTMLInputElement | null>(null);
+  const inputProductRulesRef = useRef<HTMLInputElement | null>(null);
 
   const [hydrated, setHydrated] = useState(false);
   const [showMoreOptions, setShowMoreOptions] = useState(true);
@@ -158,6 +166,14 @@ export default function MarketplaceActions({
         accept=".xlsx,.csv"
         aria-label="Importar regras de canal"
         onChange={handleFileChange((file) => onImportChannelRules?.(file))}
+      />
+      <input
+        type="file"
+        ref={inputProductRulesRef}
+        className="hidden"
+        accept=".xlsx,.csv"
+        aria-label="Importar regras por produto"
+        onChange={handleFileChange((file) => onImportProductRules?.(file))}
       />
 
       <div className="space-y-1.5">
@@ -227,6 +243,25 @@ export default function MarketplaceActions({
                 label="Importar regras de canal"
                 onClick={() => triggerFileInput(inputChannelRulesRef)}
                 disabled={!onImportChannelRules}
+              />
+
+              <div className="my-1 border-t border-neutral-900" />
+
+              <div className="mb-1 px-2.5 pt-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-neutral-500">
+                Regras por Produto
+              </div>
+
+              <ActionTextButton
+                icon={<Download className="h-4 w-4" />}
+                label="Exportar regras por produto"
+                onClick={() => onExportProductRules?.()}
+                disabled={exportingProductRules || !onExportProductRules}
+              />
+              <ActionTextButton
+                icon={<Upload className="h-4 w-4" />}
+                label="Importar regras por produto"
+                onClick={() => triggerFileInput(inputProductRulesRef)}
+                disabled={!onImportProductRules}
               />
             </div>
           )}
