@@ -11,7 +11,7 @@ import {
   CopyIcon,
   Pencil as EditIcon,
   PackageSearch,
-  Tag as TagIcon,
+  GripVertical,
 } from "lucide-react";
 import { Marketplace } from "@/components/marketplace/hooks/types";
 import MarketplaceHeaderBar from "@/components/marketplace/Marketplaceheader";
@@ -306,7 +306,7 @@ const MarketplaceTableRow = React.memo(
                 label={`Regra específica de ${row.product}`}
                 onClick={() => openProductRules(row)}
               >
-                <TagIcon className="h-3.5 w-3.5" />
+                <GripVertical className="h-3.5 w-3.5" />
               </IconBtn>
             )}
           </div>
@@ -442,7 +442,7 @@ export default function MarketplaceDataTable({
                       label={`Regra específica de ${m.product}`}
                       onClick={() => openProductRules(m)}
                     >
-                      <TagIcon className="h-3.5 w-3.5" />
+                      <GripVertical className="h-3.5 w-3.5" />
                     </IconBtn>
                   )}
                 </div>
