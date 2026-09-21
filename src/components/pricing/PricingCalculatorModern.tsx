@@ -1,1136 +1,1289 @@
-"use client";
-
-import React, { useEffect, useState, useRef, useCallback } from "react";
-import { usePrecificacao } from "@/hooks/usePrecificacao";
-import { saveAs } from "file-saver";
-import * as XLSX from "xlsx-js-style";
-import { supabase } from "@/integrations/supabase/client";
-import { createNotification } from "@/lib/createNotification";
-
-import { ProductSection } from "./parts/ProductSection";
-import { CostComposition } from "./parts/CostComposition";
-import { PriceCalculationSection } from "./parts/PriceCalculationSection";
-import { CHANNELS, EMBALAGEM_PADRAO } from "@/components/costs/hooks/channelsconfig";
+import React from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  Store,
+  ShoppingBag,
+  Handshake,
+  Check,
+  X,
+  Copy,
+  CheckCheck,
+  ArrowUpCircle,
+} from "lucide-react";
+import { ClearAndDownloadActions } from "./ClearAndDownloadActions";
+import { AcrescimosSection } from "./AcrescimosSection";
+import { AnimatedNumber } from "./AnimatedNumber";
+import { AnnounceRateSearch } from "./AnnounceRateSearch";
+import type { Calculo } from "../PricingCalculatorModern";
+import { CHANNELS, getChannelDef } from "@/components/costs/hooks/channelsconfig";
 import type { ChannelKey } from "@/components/costs/hooks/channelsconfig";
-import { useChannelPricing } from "@/components/costs/hooks/usechannelpricing";
+import type { BrandOverrides, ManualFlags } from "@/components/costs/hooks/usechannelpricing";
 
-export type Calculo = {
-  desconto: string;
-  imposto: string;
-  margem: string;
-  frete: string;
-  comissao: string;
-  marketing: string;
-  embalagem?: string;
-};
-
-type Sugestao = {
-  codigo: string;
-  custo: number;
-  produto?: string;
-  marca?: string;
-};
-
-type TipoBuscaProduto = "codigo" | "descricao";
-
-// Termos com menos de 2 caracteres geram queries muito genéricas
-// (batem em quase toda a tabela) — sem ganho de UX real, só carga
-// desnecessária no banco. Abaixo disso, não busca.
-const MIN_CHARS_BUSCA = 2;
-
-// Cache de buscas recentes: evita repetir a mesma query se o usuário
-// digitar/apagar e voltar ao mesmo termo dentro do TTL.
-const CACHE_TTL_MS = 30_000;
-
-const toInternal = (v: string): string => {
-  if (!v) return "";
-
-  let s = v.replace(/\s+/g, "");
-
-  if (s.includes(",")) {
-    s = s.replace(/\./g, "").replace(",", ".");
-  }
-
-  s = s.replace(/[^\d.-]/g, "");
-
-  const parts = s.split(".");
-
-  if (parts.length > 2) {
-    s = parts.shift()! + "." + parts.join("");
-  }
-
-  return s;
-};
-
-const toDisplay = (v: string): string => {
-  if (!v) return "";
-
-  const num = Number(v);
-
-  if (!isFinite(num)) return v;
-
-  return num.toLocaleString("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-};
-
-function debounce<T extends (...args: any[]) => any>(fn: T, delay: number) {
-  let timer: ReturnType<typeof setTimeout>;
-
-  const debounced = (...args: Parameters<T>) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), delay);
-  };
-
-  debounced.cancel = () => clearTimeout(timer);
-
-  return debounced as T & { cancel: () => void };
-}
-
-function resolveMarcaAtiva(composicao: any[]): string {
-  const item = composicao.find((i: any) => String(i?.marca || "").trim());
-  return item?.marca || "";
-}
-
-// Mapeia preço/frete calculado de cada canal para os campos legados
-// consumidos por `acrescimos` (mantido para não quebrar consumidores externos).
-const ACRESCIMO_PRICE_FIELD: Record<ChannelKey, string> = {
-  loja: "precoLoja",
-  shopee: "precoShopee",
-  magalu: "precoMagalu",
-  mlClassico: "precoMercadoLivreClassico",
-  mlPremium: "precoMercadoLivrePremium",
-  tiktok: "precoTiktok",
-};
-
-const ACRESCIMO_FRETE_FIELD: Partial<Record<ChannelKey, string>> = {
-  mlClassico: "freteMercadoLivreClassico",
-  mlPremium: "freteMercadoLivrePremium",
-};
-
-const mapResultados = (data: any[] | null): Sugestao[] =>
-  data?.map((item) => ({
-    codigo: item.code,
-    custo: Number(item.current_cost) || 0,
-    produto: item.product || "",
-    marca: item.mark || "",
-  })) || [];
+type Empresa = "pikot" | "sobaquetas";
 
 // =====================
-// Cache client-side de buscas recentes (Map em módulo — sobrevive
-// entre re-renders, é limpo naturalmente pelo TTL).
+// Único ponto "hardcoded" que resta: identidade visual por canal.
+// Para adicionar canal novo: 1 entrada aqui + 1 objeto em
+// channelsConfig.ts. Nada mais precisa mudar neste arquivo.
 // =====================
-type CacheEntry = { data: Sugestao[]; ts: number };
-const searchCacheRef = { current: new Map<string, CacheEntry>() };
+const MagaluLogo = () => {
+  return (
+    <span className="select-none text-[10px] font-black leading-none tracking-tight text-white">
+      Magalu
+    </span>
+  );
+};
 
-function getCached(cacheKey: string): Sugestao[] | null {
-  const entry = searchCacheRef.current.get(cacheKey);
-  if (!entry) return null;
-  if (Date.now() - entry.ts > CACHE_TTL_MS) {
-    searchCacheRef.current.delete(cacheKey);
-    return null;
-  }
-  return entry.data;
-}
+const TiktokLogo = ({ className }: { className?: string }) => {
+  return (
+    <svg
+      viewBox="0 0 48 48"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+    >
+      <path
+        fill="currentColor"
+        d="M33.5 6.5c1.4 3.6 4.4 6.4 8.1 7.2v6.4c-2.9 0-5.7-.8-8.1-2.2v13.4c0 6.9-5.6 12.6-12.5 12.6S8.5 37.2 8.5 30.3c0-6.5 5.1-11.9 11.5-12.5v6.5c-2.9.6-5 3.1-5 6.1 0 3.4 2.7 6.1 6.1 6.1s6.1-2.7 6.1-6.1V4h6.3c0 .9.1 1.7.3 2.5Z"
+      />
+    </svg>
+  );
+};
 
-function setCached(cacheKey: string, data: Sugestao[]) {
-  searchCacheRef.current.set(cacheKey, { data, ts: Date.now() });
-}
+type ChannelVisual = {
+  icon: React.ReactNode;
+  iconClassName: string;
+  dotClassName: string;
+  priceClassName: string;
+  shortLabel: string;
+};
+
+const CHANNEL_VISUAL: Record<ChannelKey, ChannelVisual> = {
+  loja: {
+    icon: <Store className="h-5 w-5 text-[#1a8ceb]" />,
+    iconClassName: "border-[#1a8ceb]/35 bg-[#1a8ceb]/15",
+    dotClassName: "bg-[#1a8ceb]",
+    priceClassName: "text-neutral-100",
+    shortLabel: "Loja",
+  },
+  shopee: {
+    icon: <ShoppingBag className="h-5 w-5 text-white" />,
+    iconClassName: "border-orange-500/30 bg-orange-500",
+    dotClassName: "bg-orange-500",
+    priceClassName: "text-orange-400",
+    shortLabel: "Shopee",
+  },
+  magalu: {
+    icon: <MagaluLogo />,
+    iconClassName: "border-[#1a8ceb]/40 bg-[#1a8ceb]",
+    dotClassName: "bg-[#1a8ceb]",
+    priceClassName: "text-[#1a8ceb]",
+    shortLabel: "Magalu",
+  },
+  mlClassico: {
+    icon: <Handshake className="h-5 w-5 text-white" />,
+    iconClassName: "border-yellow-500/30 bg-yellow-500/80",
+    dotClassName: "bg-yellow-500",
+    priceClassName: "text-yellow-400",
+    shortLabel: "Clássico",
+  },
+  mlPremium: {
+    icon: <Handshake className="h-5 w-5 text-white" />,
+    iconClassName: "border-yellow-500/30 bg-yellow-500/80",
+    dotClassName: "bg-yellow-500",
+    priceClassName: "text-yellow-400",
+    shortLabel: "Premium",
+  },
+  tiktok: {
+    icon: <TiktokLogo className="h-5 w-5 text-white" />,
+    iconClassName: "border-white/20 bg-black",
+    dotClassName: "bg-white",
+    priceClassName: "text-white",
+    shortLabel: "TikTok",
+  },
+};
+
+const STORAGE_KEY = "pricing.visibleBlocks.v6";
+const EMPRESA_STORAGE_KEY = "pricing.empresaSelecionada.v1";
+
+const fields: Array<{
+  key: keyof Calculo;
+  label: string;
+  suffix?: string;
+  unit: string;
+}> = [
+  { key: "desconto", label: "Desconto", suffix: "%", unit: "(%)" },
+  { key: "embalagem", label: "Embalagem", suffix: "R$", unit: "(R$)" },
+  { key: "frete", label: "Frete", suffix: "R$", unit: "(R$)" },
+  { key: "imposto", label: "Imposto", suffix: "%", unit: "(%)" },
+  { key: "comissao", label: "Comissão", suffix: "%", unit: "(%)" },
+  { key: "margem", label: "Margem de Lucro", suffix: "%", unit: "(%)" },
+  { key: "marketing", label: "Marketing", suffix: "%", unit: "(%)" },
+];
 
 /**
- * Busca otimizada via RPC `search_costs_column` (Postgres function
- * com índice trigram/GIN — ver migration `20260918_optimize_costs_search.sql`).
+ * FIX (bug do "0" sendo tratado como vazio em TODOS os campos):
  * -----------------------------------------------------------------
- * Substitui o antigo esquema de 2 estágios (prefixo + fallback
- * "contém"), que fazia até 2 round-trips ao banco por busca. Agora,
- * com índice trigram, uma única chamada cobre prefixo, "contém" e
- * ranking por similaridade (útil até para erro de digitação).
+ * A versão anterior (`isEmptyOrZero`) considerava `numberValue === 0`
+ * como "vazio" — isso fazia com que digitar "0" em QUALQUER campo
+ * (desconto, imposto, margem, frete, comissão, marketing) desligasse
+ * a flag manual (`setManualFlag`/`brandOverrides.setEdited(..., false)`)
+ * no blur, mesmo o usuário tendo digitado algo válido. Resultado: o
+ * engine automático (banco/regra de marca/brand override) assumia o
+ * controle de volta e sobrescrevia o "0" digitado no próximo ciclo.
  *
- * Resultado é cacheado por até `CACHE_TTL_MS` para evitar reconsultas
- * quando o usuário digita/apaga e volta ao mesmo termo rapidamente.
+ * `isEmpty` só considera vazio quando a STRING está realmente vazia
+ * (ou não é um número válido) — nunca quando o valor numérico é zero.
+ * "0" agora é tratado como qualquer outro valor manual: liga a flag
+ * no onChange, mantém a flag ligada no onBlur (nunca desliga por ser
+ * zero). Sem conflito com o modo "banco": a flag continua sendo a
+ * ÚNICA fonte de verdade consultada pelos engines automáticos — só
+ * desliga quando o campo fica de fato vazio (usuário apagou tudo).
  */
-async function buscarPorColuna(
-  coluna: "code" | "product" | "mark",
-  raw: string,
-  limit: number,
-  signal: AbortSignal
-): Promise<{ data: any[] | null; error: any }> {
-  const cacheKey = `${coluna}:${raw}:${limit}`;
-  const cached = getCached(cacheKey);
+const isEmpty = (value: string) => {
+  const normalized = (value || "").trim();
 
-  if (cached) {
-    return {
-      data: cached.map((s) => ({
-        code: s.codigo,
-        current_cost: s.custo,
-        product: s.produto,
-        mark: s.marca,
-      })),
-      error: null,
-    };
-  }
+  if (normalized === "") return true;
 
-  const { data, error } = await supabase
-    .schema("newsystem")
-    .rpc("search_costs_column", {
-      p_column: coluna,
-      p_term: raw,
-      p_limit: limit,
-    })
-    .abortSignal(signal);
+  return !isFinite(Number(normalized));
+};
 
-  if (!error && data) {
-    setCached(cacheKey, mapResultados(data));
-  }
-
-  return { data, error };
-}
-
-export default function PricingCalculatorModern() {
-  const {
-    composicao,
-    setComposicao,
-    acrescimos,
-    setAcrescimos,
-    custoTotal,
-    statusAcrescimo,
-    adicionarItem,
-    removerItem,
-  } = usePrecificacao();
-
-  const [produtoCodigo, setProdutoCodigo] = useState("");
-  const [produtoDescricao, setProdutoDescricao] = useState("");
-  const [produtoMarca, setProdutoMarca] = useState("");
-
-  // =====================
-  // Sugestões do Produto
-  // =====================
-  const [sugestoesProduto, setSugestoesProduto] = useState<Sugestao[]>([]);
-  const [produtoSugestaoAtiva, setProdutoSugestaoAtiva] = useState(false);
-  const [indiceProdutoSelecionado, setIndiceProdutoSelecionado] = useState(-1);
-
-  const listaProdutoRef = useRef<HTMLDivElement>(null);
-  const ultimaBuscaProdutoRef = useRef("");
-
-  // =====================
-  // Sugestões Supabase da Composição
-  // =====================
-  const [sugestoes, setSugestoes] = useState<Sugestao[]>([]);
-  const [campoAtivo, setCampoAtivo] = useState<number | null>(null);
-  const [indiceSelecionado, setIndiceSelecionado] = useState<number>(-1);
-
-  // Refs voláteis usadas dentro dos listeners de "clicar fora" — evita
-  // recriar os listeners (removeEventListener + addEventListener) a
-  // cada tecla digitada, já que `sugestoes` muda em toda busca.
-  const sugestoesRef = useRef(sugestoes);
-  sugestoesRef.current = sugestoes;
-
-  const listaRef = useRef<HTMLDivElement>(null);
-  const inputRefs = useRef<HTMLInputElement[][]>([]);
-  const acrescimosRefs = useRef<HTMLInputElement[]>([]);
-
-  // AbortControllers para cancelar requisições de busca em voo quando
-  // uma nova busca é disparada (digitação rápida) — evita que N
-  // requisições completas rodem em paralelo no banco.
-  const buscaAbortControllerRef = useRef<AbortController | null>(null);
-  const buscaProdutoAbortControllerRef = useRef<AbortController | null>(null);
-
-  // Refs de navegação por canal — Record<ChannelKey, ref>, substitui
-  // os 6 useRef individuais.
-  const channelRefsMapRef = useRef<Record<ChannelKey, HTMLInputElement[]>>(
-    Object.fromEntries(CHANNELS.map((c) => [c.key, []])) as Record<
-      ChannelKey,
-      HTMLInputElement[]
+const ChannelIcon = ({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className: string;
+}) => {
+  return (
+    <div
+      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border shadow-sm ${className}`}
     >
+      {children}
+    </div>
   );
+};
 
-  // =====================
-  // Controle de edição
-  // =====================
-  const [editingFields, setEditingFields] = useState<Set<string>>(new Set());
+type FieldInputProps = {
+  value: string | undefined;
+  fieldKey: keyof Calculo;
+  editingKey: string;
+  suffix?: string;
+  inputRef: (element: HTMLInputElement | null) => void;
+  navIndex: number;
+  totalFields: number;
+  refs: React.MutableRefObject<HTMLInputElement[]>;
+  onChange: (key: keyof Calculo, value: string) => void;
+  onBlur: (key: keyof Calculo, value: string) => void;
+  isEditing: (key: string) => boolean;
+  setEditing: (key: string, editing: boolean) => void;
+  toDisplay: (value: string) => string;
+  toInternal: (value: string) => string;
+  handleLinearNav: (
+    event: React.KeyboardEvent<HTMLInputElement>,
+    index: number,
+    refs: React.MutableRefObject<HTMLInputElement[]>,
+    total: number
+  ) => void;
+};
 
-  const setEditing = (key: string, editing: boolean) => {
-    setEditingFields((prev) => {
-      const next = new Set(prev);
-      if (editing) next.add(key);
-      else next.delete(key);
-      return next;
-    });
-  };
+/**
+ * Memoizado: com 6 canais x 7 campos = 42 instâncias deste componente,
+ * digitar em UM campo não pode mais forçar re-render dos outros 41.
+ *
+ * O comparador customizado ignora `isEditing`/`setEditing`/`toDisplay`/
+ * `toInternal`/`handleLinearNav`/`onChange`/`onBlur` na comparação de
+ * função (assumindo que agora são estáveis via useCallback no pai) e
+ * compara apenas os valores que de fato mudam a renderização deste
+ * campo específico: `value` e o estado de edição do PRÓPRIO campo.
+ *
+ * -----------------------------------------------------------------
+ * BUFFER LOCAL (correção do "input volta ao digitar"):
+ * -----------------------------------------------------------------
+ * Enquanto o campo está em foco, o valor exibido vem de um state
+ * interno (`localValue`), NÃO do `value` vindo de fora. Isso existe
+ * porque múltiplos useEffects no hook pai (engine de comissão/frete,
+ * engine de embalagem, brand overrides — um por canal) podem disparar
+ * entre uma tecla digitada e outra, sobrescrevendo `calculos[key]`
+ * antes da flag manual "vencer a corrida". Sem o buffer, o campo
+ * controlado exibia esse valor sobrescrito e "revertia" visualmente
+ * enquanto o usuário digitava.
+ *
+ * O buffer só é resincronizado com o valor externo quando o campo
+ * NÃO está em edição (troca de canal, reset, regra automática
+ * aplicada sem o usuário estar com foco ali). No blur, o valor final
+ * já foi propagado pro estado externo normalmente via onChange/onBlur.
+ */
+const FieldInput = React.memo(
+  ({
+    value,
+    fieldKey,
+    editingKey,
+    suffix,
+    inputRef,
+    navIndex,
+    totalFields,
+    refs,
+    onChange,
+    onBlur,
+    isEditing,
+    setEditing,
+    toDisplay,
+    toInternal,
+    handleLinearNav,
+  }: FieldInputProps) => {
+    const rawValue = value || "";
+    const editing = isEditing(editingKey);
 
-  const isEditing = (key: string) => editingFields.has(key);
+    const [localValue, setLocalValue] = React.useState(rawValue);
 
-  // =====================
-  // Cálculo de preço (usa composicao do escopo do componente)
-  // =====================
-  const calcularPreco = useCallback(
-    (dados: Calculo) => {
-      const custo = composicao.reduce(
-        (sum, item) =>
-          sum +
-          (parseFloat(item.custo) || 0) * (parseFloat(item.quantidade) || 0),
-        0
-      );
-
-      const desconto = (parseFloat(dados.desconto) || 0) / 100;
-      const imposto = (parseFloat(dados.imposto) || 0) / 100;
-      const margem = (parseFloat(dados.margem) || 0) / 100;
-      const comissao = (parseFloat(dados.comissao) || 0) / 100;
-      const marketing = (parseFloat(dados.marketing) || 0) / 100;
-      const frete = parseFloat(dados.frete) || 0;
-
-      const embalagemManual = parseFloat(dados.embalagem || "");
-
-      const embalagem =
-        !isNaN(embalagemManual) && dados.embalagem
-          ? embalagemManual
-          : parseFloat(EMBALAGEM_PADRAO);
-
-      const custoLiquido = custo * (1 - desconto);
-      const divisor = 1 - (imposto + margem + comissao + marketing);
-
-      const preco =
-        divisor > 0 ? (custoLiquido + frete + embalagem) / divisor : 0;
-
-      return isFinite(preco) ? preco : 0;
-    },
-    [composicao]
-  );
-
-  // =====================
-  // Motor único de canais
-  // =====================
-  const {
-    calculos,
-    setCalculo,
-    setCalculos,
-    manualFlags,
-    setManualFlag,
-    brandOverrides,
-    precos,
-    resetAll: resetChannelsAll,
-    resetManualState,
-    refetchDbRules, // ← NOVO: permite invalidar/recarregar as regras de banco (flat/tiered/brand) sem precisar de reload de página, assim que o modal de regras salvar algo novo.
-  } = useChannelPricing(produtoMarca, calcularPreco);
-
-  // =====================
-  // calcularPrecoLojaItem (usado só na exportação do Excel)
-  // =====================
-  const calcularPrecoLojaItem = (
-    custoUnitario: number,
-    quantidade: number
-  ) => {
-    const calculoLoja = calculos.loja;
-    const custoItem = custoUnitario * quantidade;
-
-    const desconto = (parseFloat(toInternal(calculoLoja.desconto)) || 0) / 100;
-    const imposto = (parseFloat(toInternal(calculoLoja.imposto)) || 0) / 100;
-    const margem = (parseFloat(toInternal(calculoLoja.margem)) || 0) / 100;
-    const comissao = (parseFloat(toInternal(calculoLoja.comissao)) || 0) / 100;
-    const marketing =
-      (parseFloat(toInternal(calculoLoja.marketing)) || 0) / 100;
-    const frete = parseFloat(toInternal(calculoLoja.frete)) || 0;
-
-    const embalagemManual = parseFloat(
-      toInternal(calculoLoja.embalagem || "")
-    );
-
-    const embalagem =
-      !isNaN(embalagemManual) && calculoLoja.embalagem
-        ? embalagemManual
-        : parseFloat(EMBALAGEM_PADRAO);
-
-    const custoLiquido = custoItem * (1 - desconto);
-    const divisor = 1 - (imposto + margem + comissao + marketing);
-
-    const preco =
-      divisor > 0 ? (custoLiquido + frete + embalagem) / divisor : 0;
-
-    return isFinite(preco) ? preco : 0;
-  };
-
-  // =====================
-  // Reset da trava manual a cada alteração na composição ou marca.
-  // =====================
-  const isFirstRenderComposicaoRef = useRef(true);
-  const lastComposicaoSnapshotRef = useRef<string>("");
-
-  useEffect(() => {
-    const snapshot = JSON.stringify({
-      itens: composicao.map((item: any) => ({
-        codigo: item.codigo,
-        custo: item.custo,
-        quantidade: item.quantidade,
-        marca: item.marca,
-      })),
-      marca: produtoMarca,
-    });
-
-    if (isFirstRenderComposicaoRef.current) {
-      isFirstRenderComposicaoRef.current = false;
-      lastComposicaoSnapshotRef.current = snapshot;
-      return;
-    }
-
-    if (snapshot !== lastComposicaoSnapshotRef.current) {
-      lastComposicaoSnapshotRef.current = snapshot;
-      resetManualState();
-    }
-  }, [composicao, produtoMarca, resetManualState]);
-
-  // =====================
-  // Sincroniza acrescimos (preços/fretes calculados) para consumo
-  // externo, mantendo os nomes de campo legados.
-  // =====================
-  useEffect(() => {
-    setAcrescimos((prev: any) => {
-      const next = { ...prev };
-
-      CHANNELS.forEach((def) => {
-        next[ACRESCIMO_PRICE_FIELD[def.key]] = precos[def.key].toFixed(2);
-
-        const freteField = ACRESCIMO_FRETE_FIELD[def.key];
-        if (freteField) {
-          next[freteField] = calculos[def.key].frete || "0";
-        }
-      });
-
-      return next;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [precos, calculos.mlClassico.frete, calculos.mlPremium.frete, setAcrescimos]);
-
-  // =====================
-  // Fechar sugestões da composição ao clicar fora
-  // =====================
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (campoAtivo === null) return;
-
-      const listaEl = listaRef.current;
-      const inputEl = inputRefs.current[campoAtivo]?.[0];
-      const target = e.target as Node;
-
-      const clickDentroLista = Boolean(listaEl && listaEl.contains(target));
-      const clickNoInputAtivo = Boolean(inputEl && inputEl.contains(target));
-
-      if (!clickDentroLista && !clickNoInputAtivo) {
-        const sugestoesAtuais = sugestoesRef.current;
-
-        if (sugestoesAtuais.length > 0) {
-          const sugestao = sugestoesAtuais[0];
-
-          confirmarSugestaoPrimeira(
-            campoAtivo,
-            sugestao.codigo,
-            sugestao.custo,
-            sugestao.produto,
-            sugestao.marca
-          );
-        }
-
-        setSugestoes([]);
-        setCampoAtivo(null);
-        setIndiceSelecionado(-1);
-        inputEl?.blur();
+    React.useEffect(() => {
+      if (!editing) {
+        setLocalValue(rawValue);
       }
-    };
+    }, [rawValue, editing]);
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [campoAtivo]);
+    const displayValue = editing ? localValue : toDisplay(rawValue);
 
-  // =====================
-  // Fechar sugestões do produto ao clicar fora
-  // =====================
-  useEffect(() => {
-    const handleClickOutsideProduto = (e: MouseEvent) => {
-      if (!produtoSugestaoAtiva) return;
-
-      const listaEl = listaProdutoRef.current;
-      const target = e.target as Node;
-      const clickDentroLista = Boolean(listaEl && listaEl.contains(target));
-
-      if (!clickDentroLista) {
-        setProdutoSugestaoAtiva(false);
-        setIndiceProdutoSelecionado(-1);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutsideProduto);
-    return () =>
-      document.removeEventListener("mousedown", handleClickOutsideProduto);
-  }, [produtoSugestaoAtiva]);
-
-  useEffect(() => {
-    if (listaRef.current && indiceSelecionado >= 0) {
-      const element = listaRef.current.children[
-        indiceSelecionado
-      ] as HTMLElement;
-      element?.scrollIntoView({ block: "nearest" });
-    }
-  }, [indiceSelecionado]);
-
-  useEffect(() => {
-    if (listaProdutoRef.current && indiceProdutoSelecionado >= 0) {
-      const element = listaProdutoRef.current.children[
-        indiceProdutoSelecionado
-      ] as HTMLElement;
-      element?.scrollIntoView({ block: "nearest" });
-    }
-  }, [indiceProdutoSelecionado]);
-
-  const ultimaBuscaRef = useRef("");
-
-  /**
-   * Busca de sugestões da COMPOSIÇÃO — via RPC `search_costs_column`
-   * (índice trigram/GIN, ranking por similaridade feito no banco).
-   * Já retorna ordenado, sem necessidade de reordenar no client.
-   */
-  const buscarSugestoes = async (termo: string, idx: number) => {
-    const raw = termo.trim();
-    ultimaBuscaRef.current = raw;
-
-    if (!raw || raw.length < MIN_CHARS_BUSCA) {
-      setSugestoes([]);
-      return;
-    }
-
-    buscaAbortControllerRef.current?.abort();
-    const controller = new AbortController();
-    buscaAbortControllerRef.current = controller;
-
-    const { data, error } = await buscarPorColuna(
-      "code",
-      raw,
-      5,
-      controller.signal
-    );
-
-    if (ultimaBuscaRef.current !== raw) return;
-    if (error) return; // inclui abort — ignorado silenciosamente
-
-    setCampoAtivo(idx);
-    setSugestoes(mapResultados(data));
-    setIndiceSelecionado(0);
-  };
-
-  // Debounce reduzido de 120ms -> 60ms: com busca via índice trigram
-  // a query é rápida o suficiente pra não precisar de tanta espera.
-  const buscarSugestoesDebounced = useRef(
-    debounce(buscarSugestoes, 60)
-  ).current;
-
-  /**
-   * Busca de sugestões do PRODUTO — mesmo padrão via RPC, aplicado
-   * tanto pra busca por código quanto por descrição.
-   */
-  const buscarSugestoesProduto = async (
-    termo: string,
-    tipo: TipoBuscaProduto
-  ) => {
-    const raw = termo.trim();
-    const buscaAtual = `${tipo}:${raw}`;
-    ultimaBuscaProdutoRef.current = buscaAtual;
-
-    if (!raw || raw.length < MIN_CHARS_BUSCA) {
-      setSugestoesProduto([]);
-      setProdutoSugestaoAtiva(false);
-      setIndiceProdutoSelecionado(-1);
-      return;
-    }
-
-    const coluna = tipo === "codigo" ? "code" : "product";
-
-    buscaProdutoAbortControllerRef.current?.abort();
-    const controller = new AbortController();
-    buscaProdutoAbortControllerRef.current = controller;
-
-    const { data, error } = await buscarPorColuna(
-      coluna,
-      raw,
-      8,
-      controller.signal
-    );
-
-    if (ultimaBuscaProdutoRef.current !== buscaAtual) return;
-    if (error) return; // inclui abort — ignorado silenciosamente
-
-    const lista = mapResultados(data);
-
-    setSugestoesProduto(lista);
-    setProdutoSugestaoAtiva(lista.length > 0);
-    setIndiceProdutoSelecionado(lista.length > 0 ? 0 : -1);
-  };
-
-  const buscarSugestoesProdutoDebounced = useRef(
-    debounce(buscarSugestoesProduto, 60)
-  ).current;
-
-  // Cancela debounces pendentes e requisições em voo ao desmontar o
-  // componente — evita setState em componente desmontado.
-  useEffect(() => {
-    return () => {
-      buscarSugestoesDebounced.cancel();
-      buscarSugestoesProdutoDebounced.cancel();
-      buscaAbortControllerRef.current?.abort();
-      buscaProdutoAbortControllerRef.current?.abort();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const confirmarSugestaoPrimeira = (
-    idx: number,
-    codigo: string,
-    custo: number,
-    produto?: string,
-    marca?: string
-  ) => {
-    const novo = [...composicao];
-
-    novo[idx] = {
-      ...novo[idx],
-      codigo,
-      produto: produto || novo[idx]?.produto || "",
-      descricao: produto || novo[idx]?.descricao || "",
-      custo: (Number(custo) || 0).toFixed(2),
-      marca: marca !== undefined ? marca : novo[idx]?.marca || "",
-      quantidade: novo[idx]?.quantidade || "1",
-    };
-
-    setComposicao(novo);
-
-    const marcaAtiva = resolveMarcaAtiva(novo);
-    setProdutoMarca(marcaAtiva);
-  };
-
-  const selecionarSugestao = (
-    codigo: string,
-    custo: number,
-    idx: number,
-    produto?: string,
-    marca?: string
-  ) => {
-    confirmarSugestaoPrimeira(idx, codigo, custo, produto, marca);
-
-    setSugestoes([]);
-    setCampoAtivo(null);
-    setIndiceSelecionado(-1);
-
-    setTimeout(() => {
-      inputRefs.current[idx]?.[0]?.focus();
-    }, 50);
-  };
-
-  const isLinhaVazia = (item: any) => {
     return (
-      !String(item?.codigo || "").trim() &&
-      !String(item?.produto || "").trim() &&
-      !String(item?.descricao || "").trim() &&
-      !String(item?.custo || "").trim()
+      <div className="mx-auto flex h-10 w-full max-w-[96px] items-center rounded border border-white/10 bg-[#070707] px-2 transition focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+        <input
+          ref={inputRef}
+          value={displayValue}
+          inputMode="decimal"
+          onFocus={() => {
+            setLocalValue(rawValue);
+            setEditing(editingKey, true);
+          }}
+          onBlur={(event) => {
+            setEditing(editingKey, false);
+
+            const internalValue = toInternal(event.target.value);
+
+            onBlur(fieldKey, internalValue);
+          }}
+          onChange={(event) => {
+            setLocalValue(event.target.value);
+
+            const internalValue = toInternal(event.target.value);
+
+            onChange(fieldKey, internalValue);
+          }}
+          onKeyDown={(event) =>
+            handleLinearNav(event, navIndex, refs, totalFields)
+          }
+          className="
+            h-full w-full min-w-0 bg-transparent text-center text-sm font-semibold text-white
+            outline-none placeholder:text-white/20
+            focus:outline-none focus:ring-0
+            focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0
+          "
+        />
+
+        {suffix && (
+          <span className="ml-1 shrink-0 text-xs font-semibold text-white/45">
+            {suffix}
+          </span>
+        )}
+      </div>
     );
-  };
+  },
+  (prev, next) => {
+    return (
+      prev.value === next.value &&
+      prev.fieldKey === next.fieldKey &&
+      prev.editingKey === next.editingKey &&
+      prev.suffix === next.suffix &&
+      prev.navIndex === next.navIndex &&
+      prev.totalFields === next.totalFields &&
+      prev.isEditing(prev.editingKey) === next.isEditing(next.editingKey)
+    );
+  }
+);
 
-  const limparProdutoBusca = () => {
-    setProdutoCodigo("");
-    setProdutoDescricao("");
-    setSugestoesProduto([]);
-    setProdutoSugestaoAtiva(false);
-    setIndiceProdutoSelecionado(-1);
-  };
+FieldInput.displayName = "FieldInput";
 
-  const selecionarProdutoSugestao = (
-    codigo: string,
-    custo: number,
-    produto?: string,
-    marca?: string
-  ) => {
-    setComposicao((prev: any[]) => {
-      const novoItem = {
-        codigo,
-        produto: produto || "",
-        descricao: produto || "",
-        quantidade: "1",
-        custo: (Number(custo) || 0).toFixed(2),
-        marca: marca || "",
-      };
+type PriceCalculationSectionProps = {
+  calculos: Record<ChannelKey, Calculo>;
+  precos: Record<ChannelKey, number>;
 
-      const indexVazio = prev.findIndex(isLinhaVazia);
-      let novo: any[];
+  manualFlags: Record<ChannelKey, ManualFlags>;
+  setManualFlag: (
+    key: ChannelKey,
+    field: keyof ManualFlags,
+    value: boolean
+  ) => void;
 
-      if (indexVazio >= 0) {
-        novo = [...prev];
-        novo[indexVazio] = { ...novo[indexVazio], ...novoItem };
-      } else {
-        novo = [...prev, novoItem];
-      }
+  brandOverrides: Record<ChannelKey, BrandOverrides>;
 
-      const marcaAtiva = resolveMarcaAtiva(novo);
-      setProdutoMarca(marcaAtiva);
+  setCalculo: (
+    key: ChannelKey,
+    updater: (prev: Calculo) => Calculo
+  ) => void;
 
-      return novo;
-    });
+  channelRefsMap: Record<ChannelKey, HTMLInputElement[]>;
 
-    limparProdutoBusca();
-  };
+  acrescimos: any;
+  setAcrescimos: (value: any) => void;
 
-  const adicionarProdutoManualNaComposicao = () => {
-    const codigo = produtoCodigo.trim();
-    const descricao = produtoDescricao.trim();
+  isEditing: (key: string) => boolean;
+  setEditing: (key: string, editing: boolean) => void;
+  toDisplay: (v: string) => string;
+  toInternal: (v: string) => string;
 
-    if (!codigo && !descricao) return;
-
-    setComposicao((prev: any[]) => {
-      const novoItem = {
-        codigo: codigo || "Produto sem código",
-        produto: descricao,
-        descricao,
-        quantidade: "1",
-        custo: "0",
-        marca: "",
-      };
-
-      const indexVazio = prev.findIndex(isLinhaVazia);
-
-      if (indexVazio >= 0) {
-        const novo = [...prev];
-        novo[indexVazio] = { ...novo[indexVazio], ...novoItem };
-        return novo;
-      }
-
-      return [...prev, novoItem];
-    });
-
-    limparProdutoBusca();
-  };
-
-  const handleSugestoesKeys = (
-    e: React.KeyboardEvent<HTMLInputElement>,
-    idx: number
-  ) => {
-    if (!sugestoes.length) return;
-
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setIndiceSelecionado((prev) =>
-        prev < sugestoes.length - 1 ? prev + 1 : 0
-      );
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setIndiceSelecionado((prev) =>
-        prev > 0 ? prev - 1 : sugestoes.length - 1
-      );
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      const index = indiceSelecionado >= 0 ? indiceSelecionado : 0;
-      const sugestao = sugestoes[index];
-
-      selecionarSugestao(
-        sugestao.codigo,
-        sugestao.custo,
-        idx,
-        sugestao.produto,
-        sugestao.marca
-      );
-    } else if (e.key === "Tab") {
-      e.preventDefault();
-      const index = indiceSelecionado >= 0 ? indiceSelecionado : 0;
-      const sugestao = sugestoes[index];
-
-      confirmarSugestaoPrimeira(
-        idx,
-        sugestao.codigo,
-        sugestao.custo,
-        sugestao.produto,
-        sugestao.marca
-      );
-
-      setSugestoes([]);
-      setCampoAtivo(null);
-      setIndiceSelecionado(-1);
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      setSugestoes([]);
-      setCampoAtivo(null);
-      setIndiceSelecionado(-1);
-    }
-  };
-
-  const handleProdutoSugestoesKeys = (
-    e: React.KeyboardEvent<HTMLInputElement>
-  ) => {
-    if (!sugestoesProduto.length || !produtoSugestaoAtiva) return;
-
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setIndiceProdutoSelecionado((prev) =>
-        prev < sugestoesProduto.length - 1 ? prev + 1 : 0
-      );
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setIndiceProdutoSelecionado((prev) =>
-        prev > 0 ? prev - 1 : sugestoesProduto.length - 1
-      );
-    } else if (e.key === "Enter" || e.key === "Tab") {
-      e.preventDefault();
-      const index =
-        indiceProdutoSelecionado >= 0 ? indiceProdutoSelecionado : 0;
-      const item = sugestoesProduto[index];
-
-      if (item) {
-        selecionarProdutoSugestao(
-          item.codigo,
-          item.custo,
-          item.produto,
-          item.marca
-        );
-      }
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      limparProdutoBusca();
-    }
-  };
-
-  const handleGridNav = (
-    e: React.KeyboardEvent<HTMLInputElement>,
-    row: number,
-    col: number
-  ) => {
-    if (sugestoes.length && campoAtivo === row) return;
-
-    const totalRows = composicao.length;
-
-    const goNext = () => {
-      const nextRow = row + 1 < totalRows ? row + 1 : 0;
-      inputRefs.current[nextRow]?.[col]?.focus();
-    };
-
-    const goPrev = () => {
-      const prevRow = row - 1 >= 0 ? row - 1 : totalRows - 1;
-      inputRefs.current[prevRow]?.[col]?.focus();
-    };
-
-    if (e.key === "ArrowDown" || e.key === "Enter") {
-      e.preventDefault();
-      goNext();
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      goPrev();
-    }
-  };
-
-  const handleLinearNav = (
+  handleLinearNav: (
     e: React.KeyboardEvent<HTMLInputElement>,
     index: number,
     refs: React.MutableRefObject<HTMLInputElement[]>,
     total: number
-  ) => {
-    const next = () => refs.current[(index + 1) % total]?.focus();
-    const prev = () => refs.current[(index - 1 + total) % total]?.focus();
+  ) => void;
 
-    if (
-      e.key === "ArrowDown" ||
-      e.key === "Enter" ||
-      (e.key === "Tab" && !e.shiftKey)
-    ) {
-      e.preventDefault();
-      next();
-    } else if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) {
-      e.preventDefault();
-      prev();
-    }
-  };
+  acrescimosRefs: React.MutableRefObject<HTMLInputElement[]>;
+
+  handleEmbalagemBlurShared: (raw: string) => void;
+  handleEmbalagemChangeShared: (raw: string) => void;
+  handleEmbalagemChangeChannel: (key: ChannelKey, raw: string) => void;
+  handleEmbalagemBlurChannel: (key: ChannelKey, raw: string) => void;
+
+  handleDownload: () => void;
+  handleClearAll: () => void;
+  isClearing: boolean;
+  clicks: number;
+
+  statusAcrescimo: any;
+
+  syncDescontoFromLoja: (descontoInternal: string) => void;
+
+  refetchDbRules?: () => void;
+};
+
+type ChannelRow = {
+  key: ChannelKey;
+  title: string;
+  subtitle: string;
+  visual: ChannelVisual;
+  state: Calculo;
+  preco: number;
+  refs: React.MutableRefObject<HTMLInputElement[]>;
+};
+
+export const PriceCalculationSection: React.FC<
+  PriceCalculationSectionProps
+> = ({
+  calculos,
+  precos,
+
+  manualFlags,
+  setManualFlag,
+
+  brandOverrides,
+
+  setCalculo,
+  channelRefsMap,
+
+  acrescimos,
+  setAcrescimos,
+
+  isEditing,
+  setEditing,
+  toDisplay,
+  toInternal,
+
+  handleLinearNav,
+  acrescimosRefs,
+
+  handleEmbalagemBlurShared,
+  handleEmbalagemChangeShared,
+  handleEmbalagemChangeChannel,
+  handleEmbalagemBlurChannel,
+
+  handleDownload,
+  handleClearAll,
+  isClearing,
+  clicks,
+
+  statusAcrescimo,
+
+  syncDescontoFromLoja,
+
+  refetchDbRules,
+}) => {
+  const defaultVisible: Record<ChannelKey, boolean> = React.useMemo(
+    () =>
+      Object.fromEntries(
+        CHANNELS.map((c) => [c.key, true])
+      ) as Record<ChannelKey, boolean>,
+    []
+  );
+
+  const [visible, setVisible] =
+    React.useState<Record<ChannelKey, boolean>>(defaultVisible);
+
+  const [isLayoutOpen, setIsLayoutOpen] = React.useState(false);
+
+  const [copiedKey, setCopiedKey] =
+    React.useState<ChannelKey | null>(null);
+
+  // ---- Seletor de empresa (Pikot Shop / Sóbaquetas) ----
+  const [empresa, setEmpresa] = React.useState<Empresa>("pikot");
+  const [isEmpresaOpen, setIsEmpresaOpen] = React.useState(false);
+
+  // ✅ NOVO — nome exato de `store` gravado no banco, derivado do
+  // seletor de empresa já existente. Usado pelo AnnounceRateSearch.
+  const storeAtual = empresa === "pikot" ? "Pikot Shop" : "Sóbaquetas";
+
+  const pikotSnapshotRef = React.useRef<Record<
+    ChannelKey,
+    Calculo
+  > | null>(null);
 
   // =====================
-  // Desconto: a Loja sempre dirige o desconto de todos os canais.
+  // Imposto é CONSTANTE FIXA por empresa — nunca vem de pricing_rules.
+  // 10% Sóbaquetas / 14% Pikot Shop. Respeita manualFlags.imposto:
+  // se o usuário já editou manualmente, a troca de empresa não
+  // sobrescreve o valor.
   // =====================
-  const syncDescontoFromLoja = (descontoInternal: string) => {
-    CHANNELS.forEach((def) => {
-      setCalculo(def.key, (prev) => ({ ...prev, desconto: descontoInternal }));
-    });
-  };
+  const applyEmpresaOverrides = React.useCallback(
+    (emp: Empresa) => {
+      const impostoFixo = emp === "sobaquetas" ? "10" : "14";
 
-  // =====================
-  // Embalagem: canais com sharesEmbalagem=true recebem o valor
-  // global (editado pela Loja). Canais com sharesEmbalagem=false
-  // (ex: Shopee) têm campo próprio e travam manualmente ao editar.
-  // -----------------------------------------------------------------
-  // FIX: qualquer edição — incluindo "0" — precisa marcar
-  // manualFlags[...].embalagem = true. Sem isso, o engine de
-  // embalagem (useChannelPricing) vê a flag ainda em "false" e
-  // sobrescreve o "0" digitado de volta pro valor fixo
-  // (EMBALAGEM_PADRAO) no próximo ciclo de render — por isso o
-  // usuário "não conseguia" deixar o campo em 0.
-  // =====================
-  const handleEmbalagemChangeShared = (raw: string) => {
-    const value = toInternal(raw);
+      CHANNELS.forEach((def) => {
+        setCalculo(def.key, (previous) => {
+          const jaEhManual = manualFlags[def.key]?.imposto;
 
-    CHANNELS.forEach((def) => {
-      if (!def.sharesEmbalagem) return;
+          return {
+            ...previous,
+            imposto: jaEhManual ? previous.imposto : impostoFixo,
+            ...(def.key === "loja" && emp === "sobaquetas"
+              ? { comissao: "0" }
+              : {}),
+          };
+        });
+      });
+    },
+    [setCalculo, manualFlags]
+  );
 
-      setManualFlag(def.key, "embalagem", true);
-      setCalculo(def.key, (prev) => ({ ...prev, embalagem: value }));
-    });
-  };
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem(EMPRESA_STORAGE_KEY);
 
-  const handleEmbalagemBlurShared = (raw: string) => {
-    const value = toInternal(raw || "");
+      if (raw === "pikot" || raw === "sobaquetas") {
+        setEmpresa(raw);
 
-    CHANNELS.forEach((def) => {
-      if (!def.sharesEmbalagem) return;
-
-      if (!value) {
-        // Campo ficou vazio no blur → volta pro modo automático (fixo).
-        setManualFlag(def.key, "embalagem", false);
-      } else {
-        setManualFlag(def.key, "embalagem", true);
+        // Reaplica os overrides no mount, pois os calculos são
+        // inicializados sempre com valores padrão do Pikot Shop,
+        // independente do que está salvo no localStorage.
+        applyEmpresaOverrides(raw);
       }
-
-      setCalculo(def.key, (prev) => ({ ...prev, embalagem: value }));
-    });
-  };
-
-  const handleEmbalagemChangeChannel = (key: ChannelKey, raw: string) => {
-    setManualFlag(key, "embalagem", true);
-
-    const value = toInternal(raw);
-    setCalculo(key, (prev) => ({ ...prev, embalagem: value }));
-  };
-
-  const handleEmbalagemBlurChannel = (key: ChannelKey, raw: string) => {
-    const internal = toInternal(raw || "");
-
-    if (!internal) {
-      setManualFlag(key, "embalagem", false);
+    } catch {
+      // Ignora erros de acesso ao localStorage.
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    setCalculo(key, (prev) => ({ ...prev, embalagem: internal }));
-  };
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(EMPRESA_STORAGE_KEY, empresa);
+    } catch {
+      // Ignora erros de acesso ao localStorage.
+    }
+  }, [empresa]);
 
-  // =====================
-  // Limpar tudo
-  // =====================
-  const [isClearing, setIsClearing] = useState(false);
-  const [clicks, setClicks] = useState(0);
-
-  const handleClearAll = () => {
-    const newCount = clicks + 1;
-    setClicks(newCount);
-
-    if (newCount >= 5) {
-      setIsClearing(true);
-      console.warn("Botão de limpar bloqueado após 5 cliques.");
+  const handleSelectEmpresa = (next: Empresa) => {
+    if (next === empresa) {
+      setIsEmpresaOpen(false);
       return;
     }
 
-    setIsClearing(true);
-    setComposicao([]);
+    if (next === "sobaquetas") {
+      pikotSnapshotRef.current = { ...calculos };
+    } else {
+      const snapshot = pikotSnapshotRef.current;
 
-    setProdutoCodigo("");
-    setProdutoDescricao("");
-    setProdutoMarca("");
-
-    setSugestoesProduto([]);
-    setProdutoSugestaoAtiva(false);
-    setIndiceProdutoSelecionado(-1);
-
-    resetChannelsAll();
-
-    setAcrescimos({
-      precoLoja: "",
-      precoShopee: "",
-      precoMagalu: "",
-      precoMercadoLivreClassico: "",
-      precoMercadoLivrePremium: "",
-      precoTiktok: "",
-      freteMercadoLivreClassico: "",
-      freteMercadoLivrePremium: "",
-      acrescimoClassico: 0,
-      acrescimoPremium: 0,
-    });
-
-    isFirstRenderComposicaoRef.current = true;
-    lastComposicaoSnapshotRef.current = "";
-
-    setTimeout(() => setIsClearing(false), 300);
-  };
-
-  useEffect(() => {
-    if (clicks === 0) return;
-    const timer = setTimeout(() => setClicks(0), 5000);
-    return () => clearTimeout(timer);
-  }, [clicks]);
-
-  const handleDownload = async () => {
-    const now = new Date();
-    const dataFormatada = now.toLocaleDateString("pt-BR").replace(/\//g, "-");
-
-    const horaFormatada = `${now
-      .getHours()
-      .toString()
-      .padStart(2, "0")}h${now.getMinutes().toString().padStart(2, "0")}m`;
-
-    const fileName = `PRECIFICACAO - ${dataFormatada}-${horaFormatada}.xlsx`;
-
-    const composicaoRows: (string | number)[][] = [
-      ["Composição de Custos"],
-      ["Gerado em", now.toLocaleString("pt-BR")],
-      [],
-      ["Código", "Descrição", "Quantidade", "Preço de Venda (R$)"],
-      ...composicao.map((item: any) => {
-        const custoUnitario = parseFloat(toInternal(item.custo)) || 0;
-        const quantidade = parseFloat(toInternal(item.quantidade)) || 0;
-
-        return [
-          item.codigo || "",
-          item.produto || item.descricao || "",
-          item.quantidade || "",
-          calcularPrecoLojaItem(custoUnitario, quantidade).toFixed(2),
-        ];
-      }),
-    ];
-
-    const composicaoSheet = XLSX.utils.aoa_to_sheet(composicaoRows);
-
-    const headerStyle = {
-      fill: {
-        type: "pattern",
-        patternType: "solid",
-        fgColor: { rgb: "1A8CEB" },
-      },
-      font: { bold: true, color: { rgb: "FFFFFF" }, sz: 11 },
-      border: {
-        top: { style: "thin", color: { rgb: "FFFFFF" } },
-        bottom: { style: "thin", color: { rgb: "FFFFFF" } },
-        left: { style: "thin", color: { rgb: "FFFFFF" } },
-        right: { style: "thin", color: { rgb: "FFFFFF" } },
-      },
-      alignment: { horizontal: "center", vertical: "center" },
-    } as const;
-
-    const applyHeaderStyle = (sheet: any, headerRow: number, cols: number) => {
-      const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-
-      for (let index = 0; index < cols; index++) {
-        const cellRef = `${letters[index]}${headerRow}`;
-        if (sheet[cellRef]) sheet[cellRef].s = headerStyle;
+      if (snapshot) {
+        CHANNELS.forEach((def) => {
+          setCalculo(def.key, () => snapshot[def.key]);
+        });
       }
-    };
+    }
 
-    applyHeaderStyle(composicaoSheet, 4, 4);
-
-    composicaoSheet["!cols"] = [
-      { wch: 24 },
-      { wch: 44 },
-      { wch: 16 },
-      { wch: 18 },
-    ];
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, composicaoSheet, "Composição");
-
-    const workbookOutput = XLSX.write(workbook, {
-      bookType: "xlsx",
-      type: "array",
-      cellStyles: true,
-    });
-
-    const blob = new Blob([workbookOutput], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-
-    saveAs(blob, fileName);
-
-    await createNotification({
-      title: "Precificação exportada",
-      message: `A planilha "${fileName}" foi exportada com ${composicao.length} item(ns) na composição.`,
-      action: "status",
-      entityType: "pricing_calculator_export",
-      link: "/dashboard/precificacao",
-    });
+    applyEmpresaOverrides(next);
+    setEmpresa(next);
+    setIsEmpresaOpen(false);
   };
+
+  const closeEmpresaOnOutside = React.useCallback(
+    (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+
+      if (!target) return;
+
+      if (target.closest?.("[data-empresa-dropdown]")) {
+        return;
+      }
+
+      setIsEmpresaOpen(false);
+    },
+    []
+  );
+
+  React.useEffect(() => {
+    if (!isEmpresaOpen) return;
+
+    window.addEventListener("mousedown", closeEmpresaOnOutside);
+
+    return () => {
+      window.removeEventListener("mousedown", closeEmpresaOnOutside);
+    };
+  }, [isEmpresaOpen, closeEmpresaOnOutside]);
+
+  const empresaColorClass =
+    empresa === "sobaquetas" ? "text-orange-400" : "text-[#1a8ceb]";
+  // ---- Fim seletor de empresa ----
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw) as Partial<
+        Record<ChannelKey, boolean>
+      >;
+
+      const next: Record<ChannelKey, boolean> = {
+        ...defaultVisible,
+        ...parsed,
+      };
+
+      const visibleCount = Object.values(next).filter(Boolean).length;
+
+      setVisible(
+        visibleCount === 0
+          ? {
+              ...next,
+              loja: true,
+            }
+          : next
+      );
+    } catch {
+      // Ignora erros de acesso ao localStorage.
+    }
+  }, [defaultVisible]);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(visible));
+    } catch {
+      // Ignora erros de acesso ao localStorage.
+    }
+  }, [visible]);
+
+  const ensureAtLeastOneVisible = React.useCallback(
+    (next: Record<ChannelKey, boolean>) => {
+      const visibleCount = Object.values(next).filter(Boolean).length;
+
+      if (visibleCount === 0) {
+        return {
+          ...next,
+          loja: true,
+        };
+      }
+
+      return next;
+    },
+    []
+  );
+
+  const hideBlock = React.useCallback(
+    (key: ChannelKey) => {
+      setVisible((previous) =>
+        ensureAtLeastOneVisible({
+          ...previous,
+          [key]: false,
+        })
+      );
+    },
+    [ensureAtLeastOneVisible]
+  );
+
+  const toggleBlock = (key: ChannelKey) => {
+    setVisible((previous) =>
+      ensureAtLeastOneVisible({
+        ...previous,
+        [key]: !previous[key],
+      })
+    );
+  };
+
+  const restore = React.useCallback((key: ChannelKey) => {
+    setVisible((previous) => ({
+      ...previous,
+      [key]: true,
+    }));
+  }, []);
+
+  const hiddenBlocks = React.useMemo(
+    () => CHANNELS.filter((c) => !visible[c.key]),
+    [visible]
+  );
+
+  const closeLayoutOnOutside = React.useCallback(
+    (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+
+      if (!target) return;
+
+      if (target.closest?.("[data-layout-dropdown]")) {
+        return;
+      }
+
+      setIsLayoutOpen(false);
+    },
+    []
+  );
+
+  React.useEffect(() => {
+    if (!isLayoutOpen) return;
+
+    window.addEventListener("mousedown", closeLayoutOnOutside);
+
+    return () => {
+      window.removeEventListener("mousedown", closeLayoutOnOutside);
+    };
+  }, [isLayoutOpen, closeLayoutOnOutside]);
+
+  // =====================
+  // Rows derivadas 100% de CHANNELS — canal novo aparece aqui
+  // automaticamente, sem editar este arquivo.
+  //
+  // Memoizado: sem isso, cada canal recebia um objeto NOVO de refs
+  // (`{ current: channelRefsMap[def.key] }`) a cada render, mesmo que
+  // `channelRefsMap` (a origem) seja estável durante toda a vida do
+  // componente. Isso gerava lixo de memória e invalidava a igualdade
+  // referencial de `row.refs` usada como prop em FieldInput/handleLinearNav.
+  // =====================
+  const rows: ChannelRow[] = React.useMemo(
+    () =>
+      CHANNELS.map((def) => ({
+        key: def.key,
+        title: def.title,
+        subtitle: def.subtitle,
+        visual: CHANNEL_VISUAL[def.key],
+        state: calculos[def.key],
+        preco: precos[def.key],
+        refs: {
+          current: channelRefsMap[def.key],
+        } as React.MutableRefObject<HTMLInputElement[]>,
+      })),
+    [calculos, precos, channelRefsMap]
+  );
+
+  const visibleRows = React.useMemo(
+    () => rows.filter((row) => visible[row.key]),
+    [rows, visible]
+  );
+
+  const totalFields = fields.length;
+
+  // =====================
+  // Handlers genéricos — substituem os blocos if/else por canal.
+  // Usam apenas as flags declaradas no ChannelDef.
+  //
+  // Imposto NÃO passa mais por brandOverrides: é constante fixa
+  // por empresa (10%/14%), controlada só por manualFlags.imposto.
+  //
+  // Desconto na Loja é caso especial: `syncDescontoFromLoja` propaga
+  // o valor pra TODOS os canais (não só a Loja), então a flag de
+  // "edição manual" precisa ser marcada em TODOS os canais também —
+  // senão o useEffect de usebrandpricingoverrides dos outros 5 canais
+  // roda de novo com `flags.desconto === false` e sobrescreve o valor
+  // sincronizado de volta pro default/regra de marca.
+  //
+  // Envolvidos em useCallback: são passados como props para os 42
+  // FieldInput (agora memoizados) — sem isso, o React.memo do
+  // FieldInput seria invalidado a cada render do componente pai.
+  // =====================
+  const handleChange = React.useCallback(
+    (row: ChannelRow, field: keyof Calculo, internalValue: string) => {
+      const def = getChannelDef(row.key);
+
+      if (field === "embalagem") {
+        if (def.sharesEmbalagem) {
+          handleEmbalagemChangeShared(internalValue);
+        } else {
+          handleEmbalagemChangeChannel(row.key, internalValue);
+        }
+
+        return;
+      }
+
+      if (row.key === "loja" && field === "desconto") {
+        CHANNELS.forEach((c) => {
+          if (getChannelDef(c.key).hasBrandOverrides) {
+            brandOverrides[c.key].setEdited("desconto", true);
+          }
+        });
+        syncDescontoFromLoja(internalValue);
+        return;
+      }
+
+      if (
+        def.hasBrandOverrides &&
+        (field === "margem" || field === "marketing" || field === "desconto")
+      ) {
+        brandOverrides[row.key].setEdited(field, true);
+      }
+
+      if (field === "imposto") {
+        setManualFlag(row.key, "imposto", true);
+      }
+
+      if (def.allowManualComissaoFrete && field === "comissao") {
+        setManualFlag(row.key, "comissao", true);
+      }
+
+      if (def.allowManualComissaoFrete && field === "frete") {
+        setManualFlag(row.key, "frete", true);
+      }
+
+      setCalculo(row.key, (previous) => ({
+        ...previous,
+        [field]: internalValue,
+      }));
+    },
+    [
+      handleEmbalagemChangeShared,
+      handleEmbalagemChangeChannel,
+      syncDescontoFromLoja,
+      brandOverrides,
+      setManualFlag,
+      setCalculo,
+    ]
+  );
+
+  /**
+   * FIX aplicado aqui: todas as chamadas que decidem "desligar a flag
+   * manual" agora usam `isEmpty` em vez de `isEmptyOrZero`. "0" nunca
+   * mais desliga a flag — só desliga quando o campo fica realmente
+   * vazio (string "").
+   */
+  const handleBlur = React.useCallback(
+    (row: ChannelRow, field: keyof Calculo, internalValue: string) => {
+      const def = getChannelDef(row.key);
+
+      if (field === "embalagem") {
+        if (def.sharesEmbalagem) {
+          handleEmbalagemBlurShared(internalValue);
+        } else {
+          handleEmbalagemBlurChannel(row.key, internalValue);
+        }
+
+        return;
+      }
+
+      if (row.key === "loja" && field === "desconto") {
+        if (isEmpty(internalValue)) {
+          CHANNELS.forEach((c) => {
+            if (getChannelDef(c.key).hasBrandOverrides) {
+              brandOverrides[c.key].setEdited("desconto", false);
+            }
+          });
+        }
+        syncDescontoFromLoja(internalValue);
+        return;
+      }
+
+      if (
+        def.hasBrandOverrides &&
+        (field === "margem" || field === "marketing" || field === "desconto") &&
+        isEmpty(internalValue)
+      ) {
+        brandOverrides[row.key].setEdited(field, false);
+      }
+
+      if (field === "imposto" && isEmpty(internalValue)) {
+        setManualFlag(row.key, "imposto", false);
+      }
+
+      if (
+        def.allowManualComissaoFrete &&
+        field === "comissao" &&
+        isEmpty(internalValue)
+      ) {
+        setManualFlag(row.key, "comissao", false);
+      }
+
+      if (
+        def.allowManualComissaoFrete &&
+        field === "frete" &&
+        isEmpty(internalValue)
+      ) {
+        setManualFlag(row.key, "frete", false);
+      }
+
+      setCalculo(row.key, (previous) => ({
+        ...previous,
+        [field]: internalValue,
+      }));
+    },
+    [
+      handleEmbalagemBlurShared,
+      handleEmbalagemBlurChannel,
+      syncDescontoFromLoja,
+      brandOverrides,
+      setManualFlag,
+      setCalculo,
+    ]
+  );
+
+  const formatCopyValue = React.useCallback((value: number) => {
+    return Number(value || 0).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }, []);
+
+  const handleCopyPrice = React.useCallback(
+    async (row: ChannelRow) => {
+      const value = formatCopyValue(row.preco);
+
+      try {
+        await navigator.clipboard.writeText(value);
+
+        setCopiedKey(row.key);
+
+        setTimeout(() => {
+          setCopiedKey(null);
+        }, 1200);
+      } catch {
+        const textarea = document.createElement("textarea");
+
+        textarea.value = value;
+
+        document.body.appendChild(textarea);
+
+        textarea.select();
+
+        document.execCommand("copy");
+
+        document.body.removeChild(textarea);
+
+        setCopiedKey(row.key);
+
+        setTimeout(() => {
+          setCopiedKey(null);
+        }, 1200);
+      }
+    },
+    [formatCopyValue]
+  );
 
   return (
-    <div className="min-h-[100dvh] w-full overflow-x-hidden bg-gradient-to-br from-[#070707] via-[#0c0c0c] to-[#070707] px-3 pb-24 pt-4 sm:px-6 sm:pb-8 sm:pt-6 lg:px-8">
-      <div className="mx-auto w-full max-w-[1880px]">
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-          <div
-            className={`min-w-0 space-y-4 lg:col-span-3 ${
-              campoAtivo !== null || produtoSugestaoAtiva ? "z-[120]" : "z-0"
-            }`}
-          >
-            <ProductSection
-              codigo={produtoCodigo}
-              setCodigo={setProdutoCodigo}
-              descricao={produtoDescricao}
-              setDescricao={setProdutoDescricao}
-              sugestoesProduto={sugestoesProduto}
-              produtoSugestaoAtiva={produtoSugestaoAtiva}
-              indiceProdutoSelecionado={indiceProdutoSelecionado}
-              listaProdutoRef={listaProdutoRef}
-              buscarSugestoesProdutoDebounced={buscarSugestoesProdutoDebounced}
-              handleProdutoSugestoesKeys={handleProdutoSugestoesKeys}
-              selecionarProdutoSugestao={selecionarProdutoSugestao}
-              onAdicionarProduto={adicionarProdutoManualNaComposicao}
-            />
+    <div className="flex min-w-0 flex-col gap-4">
+      <section
+        data-layout-dropdown
+        data-empresa-dropdown
+        className="relative rounded border border-white/10 bg-[#151515] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.28)]"
+      >
+        <div className="relative mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#1a8ceb] text-xs font-bold text-white">
+              3.
+            </span>
 
-            <CostComposition
-              composicao={composicao}
-              setComposicao={setComposicao}
-              custoTotal={custoTotal}
-              adicionarItem={adicionarItem}
-              removerItem={removerItem}
-              sugestoes={sugestoes}
-              campoAtivo={campoAtivo}
-              indiceSelecionado={indiceSelecionado}
-              listaRef={listaRef}
-              inputRefs={inputRefs}
-              buscarSugestoesDebounced={buscarSugestoesDebounced}
-              handleSugestoesKeys={handleSugestoesKeys}
-              handleGridNav={handleGridNav}
-              selecionarSugestao={selecionarSugestao}
-              confirmarSugestaoPrimeira={confirmarSugestaoPrimeira}
-              isEditing={isEditing}
-              setEditing={setEditing}
-              toDisplay={toDisplay}
-              toInternal={toInternal}
-            />
+            <h2 className="text-base font-semibold text-white">
+              Preço de Venda por Canal
+            </h2>
           </div>
 
-          <div className="min-w-0 lg:col-span-9">
-            <PriceCalculationSection
-              calculos={calculos}
-              precos={precos}
-              manualFlags={manualFlags}
-              setManualFlag={setManualFlag}
-              brandOverrides={brandOverrides}
-              setCalculo={setCalculo}
-              channelRefsMap={channelRefsMapRef.current}
-              acrescimos={acrescimos}
-              setAcrescimos={setAcrescimos}
-              isEditing={isEditing}
-              setEditing={setEditing}
-              toDisplay={toDisplay}
-              toInternal={toInternal}
-              handleLinearNav={handleLinearNav}
-              acrescimosRefs={acrescimosRefs}
-              handleEmbalagemBlurShared={handleEmbalagemBlurShared}
-              handleEmbalagemChangeShared={handleEmbalagemChangeShared}
-              handleEmbalagemChangeChannel={handleEmbalagemChangeChannel}
-              handleEmbalagemBlurChannel={handleEmbalagemBlurChannel}
+          <div
+            className={[
+              "pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border bg-white/[0.03] px-3 py-1 sm:flex",
+              empresa === "sobaquetas"
+                ? "border-orange-400/20"
+                : "border-[#1a8ceb]/20",
+            ].join(" ")}
+          >
+            <span
+              className={[
+                "h-1.5 w-1.5 rounded-full",
+                empresa === "sobaquetas" ? "bg-orange-400" : "bg-[#1a8ceb]",
+              ].join(" ")}
+            />
+
+            <span
+              className={[
+                "text-[11px] font-semibold uppercase tracking-[0.14em]",
+                empresa === "sobaquetas" ? "text-orange-400" : "text-[#1a8ceb]",
+              ].join(" ")}
+            >
+              {empresa === "pikot" ? "Pikot Shop" : "Sóbaquetas"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <div className="relative mr-1" data-empresa-dropdown>
+              <button
+                type="button"
+                onClick={() =>
+                  setIsEmpresaOpen((current) => !current)
+                }
+                className={[
+                  "flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/10",
+                  empresaColorClass,
+                ].join(" ")}
+                title={
+                  empresa === "pikot" ? "Pikot Shop" : "Sóbaquetas"
+                }
+                aria-label="Selecionar loja / regras de taxas"
+              >
+                <Store className="h-4 w-4" />
+              </button>
+
+              <AnimatePresence>
+                {isEmpresaOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 6, scale: 0.98 }}
+                    transition={{ duration: 0.14 }}
+                    className="absolute right-0 top-10 z-50 w-52 rounded border border-white/10 bg-[#1c1c1c] p-1 shadow-xl"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleSelectEmpresa("pikot")}
+                      className={[
+                        "relative flex w-full cursor-pointer items-center justify-between rounded px-3 py-2 text-xs transition hover:bg-white/[0.06]",
+                        empresa === "pikot"
+                          ? "text-[#1a8ceb]"
+                          : "text-white/60",
+                      ].join(" ")}
+                    >
+                      <span className="flex items-center gap-2">
+                        {empresa === "pikot" && (
+                          <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-[#1a8ceb]" />
+                        )}
+                        Pikot Shop
+                      </span>
+
+                      {empresa === "pikot" && (
+                        <Check className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSelectEmpresa("sobaquetas")}
+                      className={[
+                        "relative flex w-full cursor-pointer items-center justify-between rounded px-3 py-2 text-xs transition hover:bg-white/[0.06]",
+                        empresa === "sobaquetas"
+                          ? "text-orange-400"
+                          : "text-white/60",
+                      ].join(" ")}
+                    >
+                      <span className="flex items-center gap-2">
+                        {empresa === "sobaquetas" && (
+                          <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-orange-400" />
+                        )}
+                        Sóbaquetas
+                      </span>
+
+                      {empresa === "sobaquetas" && (
+                        <Check className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+
+                    <div className="mt-1 border-t border-white/10 px-3 py-2 text-[10px] leading-snug text-white/40">
+                      Os impostos e comissões variam de acordo com a loja selecionada.
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <ClearAndDownloadActions
               handleDownload={handleDownload}
               handleClearAll={handleClearAll}
               isClearing={isClearing}
               clicks={clicks}
-              statusAcrescimo={statusAcrescimo}
-              syncDescontoFromLoja={syncDescontoFromLoja}
-              refetchDbRules={refetchDbRules} // ← NOVO: repassado pra section, que deve encaminhar pro onApplied do ChannelPricingRulesModal (onde quer que ele esteja renderizado).
+              onToggleLayout={() =>
+                setIsLayoutOpen((current) => !current)
+              }
             />
           </div>
         </div>
-      </div>
+
+        <AnimatePresence>
+          {isLayoutOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.98 }}
+              transition={{ duration: 0.14 }}
+              className="absolute right-4 top-14 z-50 w-full max-w-[280px] rounded border border-white/10 bg-[#1c1c1c] p-1.5 shadow-xl"
+            >
+              <div className="mb-2 flex items-center justify-between px-0.5">
+                <div className="text-xs font-semibold text-white/80">
+                  Ajustar layout
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsLayoutOpen(false)}
+                  className="cursor-pointer rounded p-1 transition hover:bg-white/10"
+                  title="Fechar ajuste de layout"
+                >
+                  <X className="h-4 w-4 text-white/70" />
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                {CHANNELS.map((def) => {
+                  const checked = visible[def.key];
+                  const visual = CHANNEL_VISUAL[def.key];
+
+                  return (
+                    <button
+                      key={def.key}
+                      type="button"
+                      onClick={() => toggleBlock(def.key)}
+                      className={[
+                        "flex h-10 cursor-pointer items-center justify-between rounded border border-white/10 px-2 transition",
+                        checked ? "bg-white/[0.06]" : "bg-white/[0.02]",
+                        "hover:bg-white/[0.09]",
+                      ].join(" ")}
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${visual.dotClassName}`}
+                        />
+
+                        <span className="truncate text-xs text-white/85">
+                          {def.title}
+                        </span>
+
+                        <span className="shrink-0 text-[10px] text-white/45">
+                          ({visual.shortLabel})
+                        </span>
+                      </div>
+
+                      <div
+                        className={[
+                          "flex h-6 w-6 shrink-0 items-center justify-center rounded border border-white/10",
+                          checked ? "bg-white/10" : "bg-transparent",
+                        ].join(" ")}
+                      >
+                        {checked && (
+                          <Check className="h-4 w-4 text-white/80" />
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setVisible(defaultVisible)}
+                className="mt-2 h-9 w-full cursor-pointer rounded border border-white/10 bg-white/[0.02] text-xs text-white/60 transition hover:bg-white/[0.08] hover:text-white/80"
+              >
+                Mostrar todos
+              </button>
+
+              <div className="mt-2 px-0.5 text-[10px] text-white/40">
+                Suas escolhas ficam salvas automaticamente.
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ✅ NOVO — busca de anúncio pra puxar comissão/frete de
+            ML Clássico/Premium direto, sem digitar manualmente. */}
+        <AnnounceRateSearch
+          store={storeAtual}
+          setCalculo={setCalculo}
+          setManualFlag={setManualFlag}
+        />
+
+        <div className="overflow-hidden rounded border border-white/10">
+          <div className="hidden grid-cols-[220px_repeat(7,minmax(92px,1fr))_170px] border-b border-white/10 bg-[#181818] lg:grid">
+            <div className="px-4 py-4 text-sm font-semibold text-white">
+              Canal
+            </div>
+
+            {fields.map((field) => (
+              <div
+                key={field.key}
+                className="px-2 py-4 text-center text-sm font-semibold text-white"
+              >
+                {field.label}
+
+                <div className="mt-1 text-xs text-white/55">
+                  {field.unit}
+                </div>
+              </div>
+            ))}
+
+            <div className="px-4 py-4 text-center text-sm font-semibold text-white">
+              Preço de Venda
+
+              <div className="mt-1 text-xs text-white/55">
+                Calculado (R$)
+              </div>
+            </div>
+          </div>
+
+          <div className="divide-y divide-white/10">
+            {visibleRows.map((row) => (
+              <div
+                key={row.key}
+                className="group/row grid grid-cols-1 gap-3 bg-[#151515] p-4 lg:grid-cols-[220px_repeat(7,minmax(92px,1fr))_170px] lg:items-center lg:gap-0 lg:p-0"
+              >
+                <div className="flex items-center justify-between gap-3 lg:px-4 lg:py-5">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <ChannelIcon className={row.visual.iconClassName}>
+                      {row.visual.icon}
+                    </ChannelIcon>
+
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-white">
+                        {row.title}
+                      </div>
+
+                      <div className="mt-0.5 truncate text-xs text-white/45">
+                        {row.subtitle}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => hideBlock(row.key)}
+                    className="flex h-7 w-7 cursor-pointer shrink-0 items-center justify-center rounded border border-white/10 bg-white/[0.03] text-white/40 opacity-0 transition hover:bg-white/[0.08] hover:text-white group-hover/row:opacity-100"
+                    title={`Ocultar ${row.title}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
+                {fields.map((field, index) => (
+                  <div
+                    key={`${row.key}-${field.key}`}
+                    className="lg:px-2 lg:py-5"
+                  >
+                    <div className="mb-1 text-xs font-medium text-white/45 lg:hidden">
+                      {field.label}
+                    </div>
+
+                    <FieldInput
+                      value={row.state[field.key]}
+                      fieldKey={field.key}
+                      editingKey={`${row.key}-${field.key}`}
+                      suffix={field.suffix}
+                      inputRef={(element) => {
+                        row.refs.current[index] = element!;
+                      }}
+                      navIndex={index}
+                      totalFields={totalFields}
+                      refs={row.refs}
+                      onChange={(key, value) =>
+                        handleChange(row, key, value)
+                      }
+                      onBlur={(key, value) => handleBlur(row, key, value)}
+                      isEditing={isEditing}
+                      setEditing={setEditing}
+                      toDisplay={toDisplay}
+                      toInternal={toInternal}
+                      handleLinearNav={handleLinearNav}
+                    />
+                  </div>
+                ))}
+
+                <div className="group/price flex items-center justify-between border-t border-white/10 pt-3 lg:border-t-0 lg:px-4 lg:py-5">
+                  <span className="text-xs font-medium text-white/45 lg:hidden">
+                    Preço de Venda
+                  </span>
+
+                  <div className="flex w-full items-center justify-end gap-1.5">
+                    <span
+                      className={`text-xl font-bold tabular-nums ${row.visual.priceClassName}`}
+                    >
+                      R${" "}
+                      <AnimatedNumber value={Number(row.preco || 0)} />
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCopyPrice(row)}
+                      className="flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-white/10 bg-white/[0.03] text-white/50 opacity-0 transition hover:bg-white/[0.08] hover:text-white group-hover/price:opacity-100"
+                      title="Copiar preço"
+                    >
+                      {copiedKey === row.key ? (
+                        <CheckCheck className="h-3.5 w-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <AnimatePresence>
+          {hiddenBlocks.length > 0 && (
+            <motion.div
+              layout
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.18 }}
+              className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded border border-white/10 bg-[#181818] px-3 py-2"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] text-white/50">Ocultos</span>
+
+                {hiddenBlocks.map((def) => (
+                  <button
+                    key={def.key}
+                    type="button"
+                    onClick={() => restore(def.key)}
+                    className="inline-flex h-8 cursor-pointer items-center gap-2 rounded border border-white/10 bg-white/[0.03] px-3 text-xs text-white/70 transition hover:bg-white/[0.08] hover:text-white"
+                    title={`Restaurar ${def.title}`}
+                  >
+                    <ArrowUpCircle className="h-4 w-4" />
+
+                    {CHANNEL_VISUAL[def.key].shortLabel}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setVisible(defaultVisible)}
+                className="h-8 cursor-pointer rounded border border-white/10 px-3 text-xs text-white/60 transition hover:bg-white/[0.05] hover:text-white"
+              >
+                Restaurar todos
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </section>
+
+      <AcrescimosSection
+        acrescimos={acrescimos}
+        setAcrescimos={setAcrescimos}
+        isEditing={isEditing}
+        setEditing={setEditing}
+        toDisplay={toDisplay}
+        toInternal={toInternal}
+        handleLinearNav={handleLinearNav}
+        acrescimosRefs={acrescimosRefs}
+        statusAcrescimo={statusAcrescimo}
+      />
     </div>
   );
-}
+};
