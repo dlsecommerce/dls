@@ -9,6 +9,7 @@ import {
 } from "@/components/marketplace/hooks/useannouncerates";
 import type { ChannelKey } from "@/components/costs/hooks/channelsconfig";
 import { toast } from "sonner";
+import { AnnounceSuggestionDropdown } from "./Announcesuggestiondropdown";
 
 type Props = {
   store: string; // "Pikot Shop" | "Sóbaquetas"
@@ -36,16 +37,19 @@ export const AnnounceRateSearch: React.FC<Props> = ({
   const [aberto, setAberto] = React.useState(false);
   const [buscando, setBuscando] = React.useState(false);
   const [aplicando, setAplicando] = React.useState<string | null>(null);
-  const [selecionado, setSelecionado] = React.useState<AnnounceRateSuggestion | null>(null);
+  const [indiceSelecionado, setIndiceSelecionado] = React.useState(-1);
 
   const abortRef = React.useRef<AbortController | null>(null);
   const wrapperRef = React.useRef<HTMLDivElement>(null);
+  const inputWrapperRef = React.useRef<HTMLDivElement>(null);
+  const listaRef = React.useRef<HTMLDivElement>(null);
 
   const buscar = React.useCallback(
     async (raw: string) => {
       if (raw.trim().length < 2) {
         setSugestoes([]);
         setAberto(false);
+        setIndiceSelecionado(-1);
         return;
       }
 
@@ -59,6 +63,7 @@ export const AnnounceRateSearch: React.FC<Props> = ({
 
       setSugestoes(result);
       setAberto(result.length > 0);
+      setIndiceSelecionado(-1);
     },
     [store]
   );
@@ -114,7 +119,6 @@ export const AnnounceRateSearch: React.FC<Props> = ({
       }
 
       if (aplicouAlgo) {
-        setSelecionado(item);
         setTermo("");
         toast.success(`Taxas de "${item.reference}" aplicadas ao Mercado Livre.`);
       } else {
@@ -127,19 +131,40 @@ export const AnnounceRateSearch: React.FC<Props> = ({
     }
   };
 
-  const limparSelecao = () => {
-    setSelecionado(null);
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!aberto || sugestoes.length === 0) return;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setIndiceSelecionado((prev) => (prev + 1) % sugestoes.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setIndiceSelecionado((prev) =>
+        prev <= 0 ? sugestoes.length - 1 : prev - 1
+      );
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (indiceSelecionado >= 0) {
+        aplicarAnuncio(sugestoes[indiceSelecionado]);
+      }
+    } else if (e.key === "Escape") {
+      setAberto(false);
+    }
   };
 
   return (
     <div ref={wrapperRef} className="relative">
-      <div className="flex items-center overflow-hidden rounded border border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
+      <div
+        ref={inputWrapperRef}
+        className="flex items-center overflow-hidden rounded border border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30"
+      >
         <input
           value={termo}
           onChange={(e) => {
             setTermo(e.target.value);
             buscarDebounced(e.target.value);
           }}
+          onKeyDown={handleKeyDown}
           placeholder="Buscar"
           className="h-10 flex-1 border-0 bg-transparent px-3 text-sm font-medium text-white outline-none placeholder:text-white/20 focus:outline-none focus:ring-0"
         />
@@ -151,48 +176,19 @@ export const AnnounceRateSearch: React.FC<Props> = ({
         )}
       </div>
 
-      {selecionado && (
-        <div className="mt-1.5 flex items-center justify-between rounded border border-[#1a8ceb]/30 bg-[#1a8ceb]/10 px-2.5 py-1.5 text-[11px] text-white/70">
-          <span className="truncate">
-            Taxas aplicadas de: <strong className="text-white">{selecionado.reference}</strong>
-          </span>
-          <button
-            type="button"
-            onClick={limparSelecao}
-            className="ml-2 shrink-0 text-white/40 hover:text-white"
-          >
-            ok
-          </button>
-        </div>
-      )}
-
-      {aberto && sugestoes.length > 0 && (
-        <div className="absolute left-0 top-full z-[100] mt-1 max-h-64 w-full overflow-y-auto rounded border border-white/10 bg-[#1c1c1c] shadow-2xl">
-          {sugestoes.map((item) => (
-            <button
-              key={item.announceId}
-              type="button"
-              disabled={aplicando === item.announceId}
-              onClick={() => aplicarAnuncio(item)}
-              className="flex w-full items-center justify-between gap-2 border-b border-white/5 px-3 py-2.5 text-left text-xs text-white/80 transition hover:bg-white/[0.06] disabled:opacity-50"
-            >
-              <div className="min-w-0">
-                <div className="truncate font-semibold text-white">
-                  {item.reference}
-                </div>
-                <div className="truncate text-white/45">
-                  {item.product}
-                  {item.mark ? ` · ${item.mark}` : ""}
-                </div>
-              </div>
-
-              {aplicando === item.announceId && (
-                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-              )}
-            </button>
-          ))}
-        </div>
-      )}
+      <AnnounceSuggestionDropdown
+        isActive={aberto}
+        sugestoes={sugestoes}
+        listaRef={listaRef}
+        indiceSelecionado={indiceSelecionado}
+        onSelect={aplicarAnuncio}
+        termoBusca={termo}
+        isLoading={buscando}
+        aplicandoId={aplicando}
+        onHoverIndex={setIndiceSelecionado}
+        onClose={() => setAberto(false)}
+        anchorRef={inputWrapperRef}
+      />
     </div>
   );
 };

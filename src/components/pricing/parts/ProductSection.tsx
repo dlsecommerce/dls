@@ -312,11 +312,17 @@ export const ProductSection: React.FC<ProductSectionProps> = ({
 
         {/* ✅ NOVO — busca de anúncio pra puxar comissão/frete de
             ML Clássico/Premium direto, sem digitar manualmente. */}
-        <AnnounceRateSearch
-          store={store}
-          setCalculo={setCalculo}
-          setManualFlag={setManualFlag}
-        />
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-white/50">
+            Anúncios
+          </label>
+
+          <AnnounceRateSearch
+            store={store}
+            setCalculo={setCalculo}
+            setManualFlag={setManualFlag}
+          />
+        </div>
       </div>
     </section>
   );
