@@ -54,7 +54,7 @@ export async function buscarAnunciosML(
   return result;
 }
 
-// ✅ NOVO — arredonda pra 2 casas decimais, evitando erro de ponto
+// ✅ arredonda pra 2 casas decimais, evitando erro de ponto
 // flutuante (ex: 0.15 * 100 = 15.000000000000002 em JS puro).
 // Sem isso, o valor exibido no input aparecia como "15,000..." em
 // vez de "15,00".
@@ -79,8 +79,9 @@ export async function buscarTaxasDoAnuncio(
   const rates: AnnounceRates = {};
 
   for (const row of data) {
+    // commission_rate já vem em formato percentual (ex: 11.50 = 11,50%)
     const entry = {
-      commissionRate: round2(Number(row.commission_rate) * 100),
+      commissionRate: round2(Number(row.commission_rate)),
       freight: round2(Number(row.freight)),
     };
 
