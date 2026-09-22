@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Search, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import {
   buscarAnunciosML,
   buscarTaxasDoAnuncio,
@@ -134,23 +134,21 @@ export const AnnounceRateSearch: React.FC<Props> = ({
   return (
     <div ref={wrapperRef} className="relative">
       <div className="flex items-center overflow-hidden rounded border border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
-        <div className="flex h-10 w-9 shrink-0 items-center justify-center text-white/30">
-          {buscando ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Search className="h-4 w-4" />
-          )}
-        </div>
-
         <input
           value={termo}
           onChange={(e) => {
             setTermo(e.target.value);
             buscarDebounced(e.target.value);
           }}
-          placeholder="Buscar por referência, produto ou ID Bling..."
-          className="h-10 flex-1 border-0 bg-transparent px-1 text-sm font-medium text-white outline-none placeholder:text-white/20 focus:outline-none focus:ring-0"
+          placeholder="Buscar"
+          className="h-10 flex-1 border-0 bg-transparent px-3 text-sm font-medium text-white outline-none placeholder:text-white/20 focus:outline-none focus:ring-0"
         />
+
+        {buscando && (
+          <div className="flex h-10 w-9 shrink-0 items-center justify-center text-white/30">
+            <Loader2 className="h-4 w-4 animate-spin" />
+          </div>
+        )}
       </div>
 
       {selecionado && (
