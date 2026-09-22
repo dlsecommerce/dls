@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Search, Loader2, Tag } from "lucide-react";
+import { Search, Loader2 } from "lucide-react";
 import {
   buscarAnunciosML,
   buscarTaxasDoAnuncio,
@@ -132,12 +132,7 @@ export const AnnounceRateSearch: React.FC<Props> = ({
   };
 
   return (
-    <div ref={wrapperRef} className="relative mb-4">
-      <label className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-white/50">
-        <Tag className="h-3 w-3" />
-        Puxar taxas de um anúncio (Mercado Livre)
-      </label>
-
+    <div ref={wrapperRef} className="relative">
       <div className="flex items-center overflow-hidden rounded border border-white/10 bg-[#070707] focus-within:border-[#1a8ceb]/70 focus-within:ring-1 focus-within:ring-[#1a8ceb]/30">
         <div className="flex h-10 w-9 shrink-0 items-center justify-center text-white/30">
           {buscando ? (

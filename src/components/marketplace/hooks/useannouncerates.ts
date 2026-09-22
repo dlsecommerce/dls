@@ -54,6 +54,12 @@ export async function buscarAnunciosML(
   return result;
 }
 
+// ✅ NOVO — arredonda pra 2 casas decimais, evitando erro de ponto
+// flutuante (ex: 0.15 * 100 = 15.000000000000002 em JS puro).
+// Sem isso, o valor exibido no input aparecia como "15,000..." em
+// vez de "15,00".
+const round2 = (value: number): number => Math.round(value * 100) / 100;
+
 /** Busca as taxas (clássico + premium) de um announce_id específico. */
 export async function buscarTaxasDoAnuncio(
   announceId: string,
@@ -74,8 +80,8 @@ export async function buscarTaxasDoAnuncio(
 
   for (const row of data) {
     const entry = {
-      commissionRate: Number(row.commission_rate) * 100,
-      freight: Number(row.freight),
+      commissionRate: round2(Number(row.commission_rate) * 100),
+      freight: round2(Number(row.freight)),
     };
 
     if (row.listing_type === "premium") rates.premium = entry;
