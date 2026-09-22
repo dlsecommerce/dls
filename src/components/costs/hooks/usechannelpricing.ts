@@ -354,17 +354,54 @@ export function useChannelPricing(
 
   // =====================
   // Reset de flags manuais + overrides de marca (chamado ao trocar
-  // produto/composição ou ao limpar tudo).
+  // produto/composição).
+  // -----------------------------------------------------------------
+  // FIX (conflito anúncio vs. regra de marca): este reset é disparado
+  // toda vez que a composição/produtoMarca muda (ver useEffect em
+  // PricingCalculatorModern.tsx). Antes, ele zerava TODAS as flags —
+  // incluindo `comissao`/`frete`, que o AnnounceRateSearch trava como
+  // manuais (manualFlags.comissao/frete = true) ao aplicar a taxa de
+  // um anúncio específico do Mercado Livre.
+  //
+  // Resultado do bug: usuário selecionava o anúncio (comissão/frete
+  // corretos) → adicionava um item de custo → este reset zerava as
+  // flags → o engine de regra automática (useEffect acima) voltava a
+  // sobrescrever comissão/frete com a regra da marca, mesmo sendo a
+  // mesma marca/produto.
+  //
+  // FIX: `comissao` e `frete` NÃO são mais resetados aqui. Eles só
+  // voltam ao modo automático via `resetAll` (botão "Limpar tudo") ou
+  // quando o próprio usuário decide destravar o campo manualmente.
+  // `embalagem` continua sendo resetado normalmente, pois seu ciclo de
+  // vida é por composição (não por anúncio).
   // =====================
   const resetManualState = useCallback(() => {
-    setManualFlagsState({ ...DEFAULT_MANUAL_FLAGS });
+    setManualFlagsState((prev) => {
+      const next = { ...prev };
+
+      for (const key of Object.keys(next) as ChannelKey[]) {
+        next[key] = {
+          ...next[key],
+          embalagem: false,
+          // comissao e frete preservados de propósito — ver comentário acima.
+        };
+      }
+
+      return next;
+    });
+
     CHANNELS.forEach((c) => brandOverrides[c.key].resetFlags());
   }, [brandOverrides]);
 
+  // =====================
+  // Reset total (botão "Limpar tudo") — aqui SIM zera comissao/frete,
+  // já que a intenção explícita do usuário é limpar toda a calculadora.
+  // =====================
   const resetAll = useCallback(() => {
     setCalculos({ ...RESET_CALCULOS });
-    resetManualState();
-  }, [resetManualState]);
+    setManualFlagsState({ ...DEFAULT_MANUAL_FLAGS });
+    CHANNELS.forEach((c) => brandOverrides[c.key].resetFlags());
+  }, [brandOverrides]);
 
   return {
     calculos,
