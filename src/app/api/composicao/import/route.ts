@@ -7,15 +7,9 @@ import { getPostgresClient } from "@/lib/postgres";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
-type ImportRow = {
-  "ID Bling"?: string | number;
-  Loja?: string;
-  Referência?: string;
-  Marca?: string;
-  "Código do Item"?: string | number;
-  Quantidade?: string | number;
-};
+type RawRow = Record<string, any>;
 
 type ResultadoLinha = {
   linha: number;
@@ -27,53 +21,74 @@ type ResultadoLinha = {
   motivo: string;
 };
 
+const MAX_REGISTROS = 5000;
+const MAX_FILE_SIZE_MB = 15;
+
 function getBearerToken(request: NextRequest): string | null {
   const authorization = request.headers.get("authorization");
-
-  if (!authorization) {
-    return null;
-  }
+  if (!authorization) return null;
 
   const [type, token] = authorization.split(" ");
-
-  if (type?.toLowerCase() !== "bearer" || !token?.trim()) {
-    return null;
-  }
+  if (type?.toLowerCase() !== "bearer" || !token?.trim()) return null;
 
   return token.trim();
 }
 
+function normalizeKey(key: string): string {
+  return key
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+const ID_BLING_ALIASES = ["id bling", "idbling", "id_bling"];
+const STORE_ALIASES = ["loja", "store"];
+const REFERENCE_ALIASES = ["referencia", "reference"];
+const MARK_ALIASES = ["marca", "mark"];
+const CODE_ALIASES = ["codigo do item", "codigo item", "code", "item_code"];
+const QUANTITY_ALIASES = ["quantidade", "amount", "qtd"];
+
+function findValue(normalized: Record<string, any>, aliases: string[]): string {
+  const key = aliases.find((a) => normalized[a] !== undefined);
+  return key ? String(normalized[key] ?? "").trim() : "";
+}
+
+function parseAmount(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === "") return null;
+
+  if (typeof raw === "number") {
+    return Number.isFinite(raw) && raw > 0 ? raw : null;
+  }
+
+  const normalized = String(raw).trim().replace(/\./g, "").replace(",", ".");
+  const parsed = Number(normalized);
+
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    /*
-     * 1. Obtém o token enviado pelo navegador.
-     */
+    // ---------- 1. Autenticação ----------
     const accessToken = getBearerToken(req);
 
     if (!accessToken) {
       return NextResponse.json(
-        {
-          error: "Usuário não autenticado. Entre novamente no sistema.",
-        },
+        { error: "Usuário não autenticado. Entre novamente no sistema." },
         { status: 401 }
       );
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-
     const supabaseKey =
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      throw new Error(
-        "As variáveis do Supabase não foram configuradas no servidor."
-      );
+      throw new Error("As variáveis do Supabase não foram configuradas no servidor.");
     }
 
-    /*
-     * 2. Valida o token diretamente no Supabase Auth.
-     */
     const authClient = createClient(supabaseUrl, supabaseKey, {
       auth: {
         persistSession: false,
@@ -82,96 +97,126 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       },
     });
 
-    const { data: userData, error: userError } =
-      await authClient.auth.getUser(accessToken);
+    const { data: userData, error: userError } = await authClient.auth.getUser(accessToken);
 
     if (userError || !userData.user) {
       return NextResponse.json(
-        {
-          error:
-            "Sua sessão não é válida ou expirou. Entre novamente no sistema.",
-        },
+        { error: "Sua sessão não é válida ou expirou. Entre novamente no sistema." },
         { status: 401 }
       );
     }
 
-    /*
-     * 3. Lê o arquivo enviado.
-     *
-     * Otimização: dense:true reduz uso de memória em planilhas
-     * grandes, e raw:true evita que a biblioteca formate/parseie
-     * valores antes da hora (ex: datas), que não usamos aqui.
-     */
+    // ---------- 2. Leitura do arquivo ----------
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
 
     if (!file) {
+      return NextResponse.json({ error: "Nenhum arquivo enviado." }, { status: 400 });
+    }
+
+    const fileSizeMb = file.size / (1024 * 1024);
+    if (fileSizeMb > MAX_FILE_SIZE_MB) {
       return NextResponse.json(
-        { error: "Nenhum arquivo enviado." },
+        { error: `O arquivo excede o limite de ${MAX_FILE_SIZE_MB}MB.` },
         { status: 400 }
       );
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const workbook = XLSX.read(buffer, {
-      type: "buffer",
-      dense: true,
-      cellDates: false,
-      cellText: false,
-    });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const raw = XLSX.utils.sheet_to_json<ImportRow>(sheet, { raw: true });
 
-    if (raw.length === 0) {
+    let workbook: XLSX.WorkBook;
+    try {
+      workbook = XLSX.read(buffer, {
+        type: "buffer",
+        dense: true,
+        cellDates: false,
+        cellText: false,
+      });
+    } catch {
       return NextResponse.json(
-        { error: "A planilha está vazia." },
+        { error: "Não foi possível ler o arquivo. Verifique se é um Excel válido (.xlsx)." },
         { status: 400 }
       );
     }
 
-    const MAX_REGISTROS = 5000;
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) {
+      return NextResponse.json({ error: "Nenhuma aba encontrada no arquivo." }, { status: 400 });
+    }
 
-    if (raw.length > MAX_REGISTROS) {
+    const sheet = workbook.Sheets[sheetName];
+    const raw = XLSX.utils.sheet_to_json<RawRow>(sheet, { raw: true, defval: "" });
+
+    // Remove linhas totalmente vazias (fantasmas do Excel)
+    const nonEmptyRaw = raw.filter((row) =>
+      Object.values(row).some((v) => String(v ?? "").trim() !== "")
+    );
+
+    if (nonEmptyRaw.length === 0) {
+      return NextResponse.json({ error: "A planilha está vazia." }, { status: 400 });
+    }
+
+    if (nonEmptyRaw.length > MAX_REGISTROS) {
       return NextResponse.json(
         {
-          error: `A importação não pode ultrapassar ${MAX_REGISTROS} linhas por vez.`,
+          error: `A importação não pode ultrapassar ${MAX_REGISTROS.toLocaleString(
+            "pt-BR"
+          )} linhas por vez (encontradas: ${nonEmptyRaw.length.toLocaleString("pt-BR")}).`,
         },
         { status: 400 }
       );
     }
 
-    /*
-     * 4. Monta os registros válidos para enviar ao banco.
-     *
-     * ID Bling agora é a chave usada para localizar o anúncio
-     * exato (evita duplicidade/erro de casamento por Loja+Referência).
-     *
-     * "Marca" é lida apenas como informação de apoio/conferência
-     * (não é usada para casamento nem enviada à função SQL, que
-     * localiza o anúncio pelo id_bling — a marca do anúncio já
-     * existe no banco e não deve ser sobrescrita por esta rotina).
-     *
-     * Linhas sem "ID Bling", "Código do Item" ou "Quantidade"
-     * são puladas aqui mesmo, sem gerar erro.
-     */
-    const skipped: number[] = [];
+    // ---------- 3. Normalização e validação linha a linha ----------
+    const skippedDetalhado: { linha: number; motivo: string }[] = [];
     const registros: Record<string, unknown>[] = [];
+    const chavesVistas = new Map<string, number>(); // id_bling+code -> primeira linha
 
-    for (let index = 0; index < raw.length; index++) {
-      const row = raw[index];
+    for (let index = 0; index < nonEmptyRaw.length; index++) {
+      const row = nonEmptyRaw[index];
       const excelLine = index + 2; // +1 header, +1 índice base 1
 
-      const idBling = String(row["ID Bling"] ?? "").trim();
-      const store = String(row["Loja"] ?? "").trim();
-      const reference = String(row["Referência"] ?? "").trim();
-      const mark = String(row["Marca"] ?? "").trim();
-      const code = String(row["Código do Item"] ?? "").trim();
-      const amountRaw = row["Quantidade"];
+      const normalized: Record<string, any> = {};
+      for (const key of Object.keys(row)) {
+        normalized[normalizeKey(key)] = row[key];
+      }
 
-      if (!idBling || !code || !amountRaw) {
-        skipped.push(excelLine);
+      const idBling = findValue(normalized, ID_BLING_ALIASES);
+      const store = findValue(normalized, STORE_ALIASES);
+      const reference = findValue(normalized, REFERENCE_ALIASES);
+      const mark = findValue(normalized, MARK_ALIASES);
+      const code = findValue(normalized, CODE_ALIASES);
+      const amountRawKey = QUANTITY_ALIASES.find((a) => normalized[a] !== undefined);
+      const amountRaw = amountRawKey ? normalized[amountRawKey] : undefined;
+
+      if (!idBling) {
+        skippedDetalhado.push({ linha: excelLine, motivo: "ID Bling não informado." });
         continue;
       }
+      if (!code) {
+        skippedDetalhado.push({ linha: excelLine, motivo: "Código do Item não informado." });
+        continue;
+      }
+
+      const amount = parseAmount(amountRaw);
+      if (amount === null) {
+        skippedDetalhado.push({
+          linha: excelLine,
+          motivo: `Quantidade inválida ("${amountRaw ?? ""}"). Deve ser um número maior que zero.`,
+        });
+        continue;
+      }
+
+      const chave = `${idBling}::${code}`;
+      const linhaAnterior = chavesVistas.get(chave);
+      if (linhaAnterior !== undefined) {
+        skippedDetalhado.push({
+          linha: excelLine,
+          motivo: `Duplicado da linha ${linhaAnterior} (mesmo ID Bling + Código do Item). Apenas a primeira ocorrência foi processada.`,
+        });
+        continue;
+      }
+      chavesVistas.set(chave, excelLine);
 
       registros.push({
         linha: excelLine,
@@ -180,26 +225,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         reference,
         mark,
         code,
-        amount: amountRaw,
+        amount,
       });
     }
 
     if (registros.length === 0) {
-      return NextResponse.json({
-        success: true,
-        processed: 0,
-        skipped: skipped.length,
-        errors: [],
-      });
+      return NextResponse.json(
+        {
+          success: false,
+          processed: 0,
+          skipped: skippedDetalhado.length,
+          skippedDetails: skippedDetalhado.slice(0, 200),
+          errors: [],
+          message:
+            "Nenhuma linha válida encontrada. Verifique se as colunas ID Bling, Código do Item e Quantidade estão preenchidas corretamente.",
+        },
+        { status: 400 }
+      );
     }
 
+    // ---------- 4. Execução no banco ----------
     const sql = getPostgresClient();
 
-    /*
-     * 5. Executa a função SQL (agora set-based, sem loop linha a
-     * linha) dentro de uma transação, com o contexto do usuário
-     * autenticado para respeitar RLS.
-     */
     const resultados = await sql.begin(async (transaction) => {
       const jwtClaims = JSON.stringify({
         sub: userData.user.id,
@@ -207,33 +254,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         email: userData.user.email ?? null,
       });
 
-      await transaction`
-        select set_config(
-          'request.jwt.claims',
-          ${jwtClaims},
-          true
-        )
-      `;
-
-      await transaction`
-        select set_config(
-          'request.jwt.claim.sub',
-          ${userData.user.id},
-          true
-        )
-      `;
-
-      await transaction`
-        select set_config(
-          'request.jwt.claim.role',
-          'authenticated',
-          true
-        )
-      `;
-
-      await transaction`
-        set local role authenticated
-      `;
+      await transaction`select set_config('request.jwt.claims', ${jwtClaims}, true)`;
+      await transaction`select set_config('request.jwt.claim.sub', ${userData.user.id}, true)`;
+      await transaction`select set_config('request.jwt.claim.role', 'authenticated', true)`;
+      await transaction`set local role authenticated`;
 
       const rows = await transaction<ResultadoLinha[]>`
         select *
@@ -245,17 +269,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const errors = resultados
       .filter((r) => r.status === "erro")
-      .map((r) => ({
-        linha: r.linha,
-        motivo: r.motivo,
-      }));
+      .map((r) => ({ linha: r.linha, id_bling: r.id_bling, code: r.code, motivo: r.motivo }));
 
     const processed = resultados.filter((r) => r.status === "ok").length;
+
+    console.info("[composicao/import] Importação concluída:", {
+      usuario: userData.user.email,
+      totalLinhasArquivo: nonEmptyRaw.length,
+      processadas: processed,
+      puladas: skippedDetalhado.length,
+      comErro: errors.length,
+    });
 
     return NextResponse.json({
       success: errors.length === 0,
       processed,
-      skipped: skipped.length,
+      skipped: skippedDetalhado.length,
+      skippedDetails: skippedDetalhado.slice(0, 200),
       errors,
     });
   } catch (error: unknown) {
@@ -281,9 +311,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json(
       {
-        error:
-          databaseError?.message ??
-          "Não foi possível importar as composições.",
+        error: databaseError?.message ?? "Não foi possível importar as composições.",
         code: databaseError?.code ?? null,
         detail: databaseError?.detail ?? null,
         hint: databaseError?.hint ?? null,
