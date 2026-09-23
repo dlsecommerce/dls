@@ -21,6 +21,8 @@ type ResultadoLinha = {
   motivo: string;
 };
 
+type ModoImportacaoComposicao = "merge" | "replace";
+
 const MAX_REGISTROS = 5000;
 const MAX_FILE_SIZE_MB = 15;
 
@@ -68,6 +70,20 @@ function parseAmount(raw: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+/**
+ * ✅ Modo de importação escolhido no ImportComposicaoModal:
+ *  - "merge"   → adiciona/atualiza itens da planilha, sem remover o
+ *                que já existia (comportamento padrão/seguro).
+ *  - "replace" → substitui totalmente a composição dos anúncios
+ *                presentes na planilha (itens não listados são
+ *                removidos). Ação destrutiva, exige confirmação no
+ *                modal antes de chegar aqui.
+ * Qualquer valor diferente de "replace" cai em "merge" (fail-safe).
+ */
+function parseMode(raw: FormDataEntryValue | null): ModoImportacaoComposicao {
+  return raw === "replace" ? "replace" : "merge";
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     // ---------- 1. Autenticação ----------
@@ -109,6 +125,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // ---------- 2. Leitura do arquivo ----------
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
+
+    // ✅ Modo de importação vindo do ImportComposicaoModal.
+    const mode = parseMode(formData.get("mode"));
 
     if (!file) {
       return NextResponse.json({ error: "Nenhum arquivo enviado." }, { status: 400 });
@@ -267,9 +286,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       // em vez de array, o que quebrava o jsonb_array_elements() na
       // função upsert_composition_lote com o erro:
       // "cannot extract elements from a scalar".
+      //
+      // ✅ `mode` é repassado como segundo argumento (p_mode) da RPC.
+      // "merge" mantém o comportamento antigo (upsert sem remover
+      // nada); "replace" faz a função remover, dentro dos anúncios
+      // presentes no lote, todo item de composição que não estiver
+      // sendo enviado agora.
       const rows = await transaction<ResultadoLinha[]>`
         select *
-        from newsystem.upsert_composition_lote(${transaction.json(registros)})
+        from newsystem.upsert_composition_lote(${transaction.json(registros)}, ${mode})
       `;
 
       return rows;
@@ -283,6 +308,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     console.info("[composicao/import] Importação concluída:", {
       usuario: userData.user.email,
+      modo: mode,
       totalLinhasArquivo: nonEmptyRaw.length,
       processadas: processed,
       puladas: skippedDetalhado.length,

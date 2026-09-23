@@ -10,6 +10,9 @@ import AnnounceFilters from "@/components/announce/Announcefilters";
 import AnnounceLocation from "@/components/announce/Announcelocation";
 import ConfirmDelete from "@/components/announce/Confirmdelete";
 import ConfirmImportModal, { RowError, ImportResult } from "@/components/announce/Confirmimport";
+import ImportComposicaoModal, {
+  ImportMode as ComposicaoImportMode,
+} from "@/components/announce/Importcomposicaomodal";
 import { Controls } from "@/components/announce/Controls";
 import ExportProgressToast from "@/components/announce/Exportprogresstoast";
 import ImportProgressToast from "@/components/announce/Importprogresstoast";
@@ -526,7 +529,33 @@ export default function Announce() {
   const [composicaoProgress, setComposicaoProgress] = React.useState(0);
   const [composicaoProgressCount, setComposicaoProgressCount] = React.useState(0);
 
-  const handleImportComposicao = async (file: File) => {
+  // ✅ NOVO — states do modal de confirmação (merge/replace) do
+  // import de composição. O arquivo escolhido pelo usuário é
+  // guardado aqui até a confirmação do modo no modal.
+  const [composicaoModalOpen, setComposicaoModalOpen] = React.useState(false);
+  const [pendingComposicaoFile, setPendingComposicaoFile] = React.useState<File | null>(
+    null
+  );
+
+  /**
+   * ✅ NOVO — dispara quando o usuário seleciona o arquivo de
+   * composição (no AnnounceActions). Não faz upload ainda: apenas
+   * guarda o arquivo e abre o modal de confirmação de modo
+   * (merge/replace).
+   */
+  const handleSelectComposicaoFile = (file: File) => {
+    setPendingComposicaoFile(file);
+    setComposicaoModalOpen(true);
+  };
+
+  /**
+   * Upload real da planilha de composição, agora recebendo o `mode`
+   * ("merge" | "replace") escolhido no ImportComposicaoModal.
+   */
+  const handleImportComposicao = async (
+    file: File,
+    mode: ComposicaoImportMode
+  ) => {
     setImportingComposicao(true);
     setComposicaoProgressOpen(true);
     setComposicaoProgress(0);
@@ -537,6 +566,7 @@ export default function Announce() {
 
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("mode", mode);
 
       // Progresso simulado: não há streaming real de linhas processadas
       // no endpoint atual (upload único + processamento no servidor).
@@ -576,7 +606,9 @@ export default function Announce() {
       if (result.processed > 0) {
         playImportSuccessSound();
         toastCustom.success(
-          `${result.processed} composição(ões) atualizada(s) com sucesso.`
+          mode === "replace"
+            ? `${result.processed} composição(ões) substituída(s) com sucesso.`
+            : `${result.processed} composição(ões) atualizada(s) com sucesso.`
         );
       }
 
@@ -598,6 +630,22 @@ export default function Announce() {
       setImportingComposicao(false);
       setTimeout(() => setComposicaoProgressOpen(false), 1500);
     }
+  };
+
+  /**
+   * ✅ NOVO — chamado quando o usuário confirma o modo no
+   * ImportComposicaoModal. Dispara o upload real e fecha o modal.
+   */
+  const handleConfirmImportComposicao = async (mode: ComposicaoImportMode) => {
+    if (!pendingComposicaoFile) {
+      setComposicaoModalOpen(false);
+      return;
+    }
+
+    await handleImportComposicao(pendingComposicaoFile, mode);
+
+    setComposicaoModalOpen(false);
+    setPendingComposicaoFile(null);
   };
 
   const [openImport, setOpenImport] = React.useState(false);
@@ -989,7 +1037,7 @@ export default function Announce() {
               onValidarComposicao={() => setOpenValidateAds(true)}
               onExportModeloComposicao={handleExportModeloComposicao}
               onExportComposicao={handleExportComposicao}
-              onImportComposicao={handleImportComposicao}
+              onImportComposicao={handleSelectComposicaoFile}
               totalCount={totalCount}
             />
           </div>
@@ -1116,7 +1164,7 @@ export default function Announce() {
                 }}
                 onImportComposicao={(file) => {
                   setOpenActionsMobile(false);
-                  handleImportComposicao(file);
+                  handleSelectComposicaoFile(file);
                 }}
                 totalCount={totalCount}
               />
@@ -1160,6 +1208,19 @@ export default function Announce() {
         onChannelsChange={setImportChannels}
         channelRowAssignments={importChannelRowAssignments}
         onChannelRowAssignmentsChange={setImportChannelRowAssignments}
+      />
+
+      {/* ✅ NOVO — modal de confirmação do modo de importação de
+          composição (merge/replace), aberto ao selecionar o arquivo. */}
+      <ImportComposicaoModal
+        open={composicaoModalOpen}
+        onOpenChange={(open) => {
+          setComposicaoModalOpen(open);
+          if (!open) setPendingComposicaoFile(null);
+        }}
+        onConfirm={handleConfirmImportComposicao}
+        loading={importingComposicao}
+        fileName={pendingComposicaoFile?.name}
       />
 
       <ExportProgressToast
