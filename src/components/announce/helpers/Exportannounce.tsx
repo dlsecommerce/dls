@@ -297,16 +297,16 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
  * são acumulados e remontados quando chega o evento "done".
  *
  * ✅ Suporta 2 modos, mutuamente exclusivos:
- *    - Seleção: se `ids` tiver itens, exporta SÓ essas linhas
- *      (ignora `store`).
+ *    - Seleção: se `ids` tiver itens, exporta SÓ essas linhas,
+ *      via POST (evita limite de tamanho de URL em seleções grandes).
  *    - Filtro: caso contrário, exporta pelo filtro de loja aplicado
- *      na tela (comportamento original, sem alterações).
+ *      na tela, via GET (comportamento original, sem alterações).
  */
 export async function exportAnnounceFromApi(
   options: {
     store?: string;
     format?: "xlsx" | "csv";
-    ids?: string[]; // ✅ NOVO — ids selecionados na tabela
+    ids?: string[]; // ✅ ids selecionados na tabela
     signal?: AbortSignal;
   } = {},
   onProgress?: ExportProgressCallback
@@ -319,23 +319,36 @@ export async function exportAnnounceFromApi(
 
   const accessToken = await ensureValidSession();
 
-  const params = new URLSearchParams();
+  let response: Response;
 
   if (isSelectionMode) {
-    params.set("ids", ids!.join(","));
-  } else if (store) {
-    params.set("store", store);
+    // ✅ Modo seleção — envia os IDs no body via POST.
+    // Evita o limite de ~8KB de tamanho de URL que quebrava a
+    // exportação sempre que muitos itens eram selecionados.
+    response = await fetch(`/api/announce/export`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ids, format }),
+      signal,
+    });
+  } else {
+    // Modo filtro/loja — continua via GET com querystring,
+    // sem risco de exceder o limite de tamanho.
+    const params = new URLSearchParams();
+    if (store) params.set("store", store);
+    params.set("format", format);
+
+    response = await fetch(`/api/announce/export?${params.toString()}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      signal,
+    });
   }
-
-  params.set("format", format);
-
-  const response = await fetch(`/api/announce/export?${params.toString()}`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
-    signal,
-  });
 
   if (!response.ok || !response.body) {
     const body = await response.json().catch(() => null);

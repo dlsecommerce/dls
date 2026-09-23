@@ -374,6 +374,13 @@ export default function Announce() {
   // Todas as chamadas usam fetch manual com Authorization: Bearer,
   // pois os endpoints /api/composicao/* exigem o token do Supabase
   // explicitamente no header (não usam cookies de sessão).
+  //
+  // ✅ Ambos os exports de composição agora respeitam o mesmo
+  // filtro/seleção aplicado na tabela de anúncios:
+  //   - Se houver linhas selecionadas → envia via POST { ids }
+  //     (evita limite de tamanho de URL).
+  //   - Caso contrário → envia via GET com querystring, usando
+  //     store / search / type / marks aplicados na tela.
   // ────────────────────────────────────────────────────────────
 
   const downloadBlob = (blob: Blob, filename: string) => {
@@ -394,12 +401,32 @@ export default function Announce() {
     try {
       const token = await getAccessToken();
 
-      const res = await fetch("/api/composicao/export-modelo", {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const hasSelection = selectedRows.length > 0;
+      const searchTerm = appliedFilters.codigo || appliedFilters.produto || undefined;
+
+      let res: Response;
+
+      if (hasSelection) {
+        res = await fetch("/api/composicao/export-modelo", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ ids: selectedRows.map((r) => r.id) }),
+        });
+      } else {
+        const params = new URLSearchParams();
+        if (storeValue) params.set("store", storeValue);
+        if (searchTerm) params.set("search", searchTerm);
+        params.set("type", TIPO_TO_FILTER_VALUE[appliedFilters.tipo] as string);
+        if (appliedBrands.length > 0) params.set("marks", appliedBrands.join(","));
+
+        res = await fetch(`/api/composicao/export-modelo?${params.toString()}`, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
 
       if (!res.ok) {
         throw new Error(
@@ -441,12 +468,32 @@ export default function Announce() {
 
       const token = await getAccessToken();
 
-      const res = await fetch("/api/composicao/export", {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const hasSelection = selectedRows.length > 0;
+      const searchTerm = appliedFilters.codigo || appliedFilters.produto || undefined;
+
+      let res: Response;
+
+      if (hasSelection) {
+        res = await fetch("/api/composicao/export", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ ids: selectedRows.map((r) => r.id) }),
+        });
+      } else {
+        const params = new URLSearchParams();
+        if (storeValue) params.set("store", storeValue);
+        if (searchTerm) params.set("search", searchTerm);
+        params.set("type", TIPO_TO_FILTER_VALUE[appliedFilters.tipo] as string);
+        if (appliedBrands.length > 0) params.set("marks", appliedBrands.join(","));
+
+        res = await fetch(`/api/composicao/export?${params.toString()}`, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
 
       setExportComposicaoProgress(70);
 

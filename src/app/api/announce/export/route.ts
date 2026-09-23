@@ -20,7 +20,7 @@ type AnnounceRow = {
 const PAGE_SIZE = 20_000;
 const MAX_LINHAS = 300_000; // trava de segurança contra export descontrolado
 const MAX_IDS_SELECAO = 300_000; // mesma trava aplicada ao modo seleção
-const BASE64_CHUNK_SIZE = 200_000; // ✅ NOVO — tamanho de cada pedaço do arquivo
+const BASE64_CHUNK_SIZE = 200_000; // tamanho de cada pedaço do arquivo
 
 // Cabeçalhos traduzidos para português, na ordem das colunas do banco.
 const HEADERS_PT = ["Loja", "ID Bling", "Referência", "Produto", "Marca", "Código ID"];
@@ -159,7 +159,31 @@ function parseIdsParam(searchParams: URLSearchParams): string[] | null {
   return ids.length > 0 ? ids : null;
 }
 
-export async function GET(request: NextRequest): Promise<Response> {
+/**
+ * Normaliza o array de IDs recebido no body de uma requisição POST.
+ * Retorna null se estiver ausente/vazio ou não for um array de strings.
+ */
+function normalizeIdsBody(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+
+  const ids = value
+    .map((id) => (typeof id === "string" ? id.trim() : ""))
+    .filter(Boolean);
+
+  return ids.length > 0 ? ids : null;
+}
+
+/**
+ * Núcleo compartilhado da exportação. Recebe os parâmetros já
+ * extraídos (independente de terem vindo de querystring no GET ou
+ * de JSON no body no POST) e devolve o Response de streaming NDJSON.
+ */
+async function handleExport(
+  request: NextRequest,
+  params: { store: string | null; format: string; selectedIds: string[] | null }
+): Promise<Response> {
+  const { store, format, selectedIds } = params;
+
   /*
    * 1. Obtém e valida o token antes de abrir o stream — se falhar,
    * retorna erro comum em JSON (sem streaming).
@@ -211,13 +235,8 @@ export async function GET(request: NextRequest): Promise<Response> {
     );
   }
 
-  const { searchParams } = new URL(request.url);
-  const store = searchParams.get("store")?.trim() || null;
-  const format = (searchParams.get("format") ?? "xlsx").toLowerCase();
-
   // ✅ modo seleção — se vierem IDs, ignora completamente o filtro
   // de loja e exporta apenas os registros selecionados na tabela.
-  const selectedIds = parseIdsParam(searchParams);
   const isSelectionMode = selectedIds !== null;
 
   if (isSelectionMode && selectedIds.length > MAX_IDS_SELECAO) {
@@ -469,9 +488,9 @@ export async function GET(request: NextRequest): Promise<Response> {
       await sendLine(writer, encoder, { type: "progress", percent: 90 });
 
       // ============================================================
-      // ✅ NOVO: envia o arquivo em pedaços (chunks) de base64, em vez
-      // de um único payload gigante. Evita travar o event loop e picos
-      // de memória em exports grandes (100k-300k linhas).
+      // Envia o arquivo em pedaços (chunks) de base64, em vez de um
+      // único payload gigante. Evita travar o event loop e picos de
+      // memória em exports grandes (100k-300k linhas).
       // ============================================================
       const fileBase64 = buffer.toString("base64");
       const totalChunks = Math.ceil(fileBase64.length / BASE64_CHUNK_SIZE);
@@ -563,4 +582,56 @@ export async function GET(request: NextRequest): Promise<Response> {
       "Transfer-Encoding": "chunked",
     },
   });
+}
+
+/**
+ * Mantido para exportação por filtro/loja (comportamento original).
+ * Não deve ser usado para envio de listas grandes de IDs — nesse
+ * caso, use POST (evita o limite de tamanho de URL/querystring).
+ */
+export async function GET(request: NextRequest): Promise<Response> {
+  const { searchParams } = new URL(request.url);
+  const store = searchParams.get("store")?.trim() || null;
+  const format = (searchParams.get("format") ?? "xlsx").toLowerCase();
+  const selectedIds = parseIdsParam(searchParams);
+
+  return handleExport(request, { store, format, selectedIds });
+}
+
+/**
+ * ✅ NOVO — usado para exportação por seleção de IDs na tabela.
+ * Recebe os IDs no corpo JSON em vez de querystring, evitando o
+ * erro 414 (Request-URI Too Long) quando há muitos itens
+ * selecionados (centenas/milhares de UUIDs).
+ *
+ * Body esperado: { ids: string[], format?: "xlsx" | "csv" }
+ */
+export async function POST(request: NextRequest): Promise<Response> {
+  let body: { ids?: unknown; format?: unknown; store?: unknown } = {};
+
+  try {
+    body = await request.json();
+  } catch {
+    return new Response(
+      JSON.stringify({ error: "Corpo da requisição inválido. Esperado JSON." }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  const selectedIds = normalizeIdsBody(body.ids);
+
+  if (!selectedIds) {
+    return new Response(
+      JSON.stringify({
+        error: 'O campo "ids" é obrigatório e deve conter ao menos 1 item.',
+      }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  const format =
+    typeof body.format === "string" ? body.format.toLowerCase() : "xlsx";
+  const store = typeof body.store === "string" ? body.store.trim() || null : null;
+
+  return handleExport(request, { store, format, selectedIds });
 }

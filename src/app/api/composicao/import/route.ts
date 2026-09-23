@@ -259,9 +259,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       await transaction`select set_config('request.jwt.claim.role', 'authenticated', true)`;
       await transaction`set local role authenticated`;
 
+      // ✅ FIX: removido o JSON.stringify manual. Passar o array de
+      // objetos diretamente para o driver, deixando-o serializar como
+      // jsonb. O bug anterior (JSON.stringify(registros) + ::jsonb)
+      // causava DUPLA serialização — a lib serializava a string já
+      // stringificada de novo, virando um jsonb do tipo string escalar
+      // em vez de array, o que quebrava o jsonb_array_elements() na
+      // função upsert_composition_lote com o erro:
+      // "cannot extract elements from a scalar".
       const rows = await transaction<ResultadoLinha[]>`
         select *
-        from newsystem.upsert_composition_lote(${JSON.stringify(registros)}::jsonb)
+        from newsystem.upsert_composition_lote(${transaction.json(registros)})
       `;
 
       return rows;
