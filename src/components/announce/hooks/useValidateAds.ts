@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 export function useValidateAds() {
   const [file, setFile] = useState<File | null>(null);
@@ -23,11 +24,20 @@ export function useValidateAds() {
     setSuccess(false);
 
     try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !sessionData.session) {
+        throw new Error("Sessão expirada. Faça login novamente.");
+      }
+
       const formData = new FormData();
       formData.append("file", file);
 
       const res = await fetch("/api/planilha/validate-ads", {
         method: "POST",
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
         body: formData,
       });
 
@@ -36,7 +46,6 @@ export function useValidateAds() {
         throw new Error(data?.error ?? "Erro ao validar a planilha.");
       }
 
-      // Extrai o nome do arquivo enviado pelo servidor (se disponível)
       const disposition = res.headers.get("Content-Disposition");
       const match = disposition?.match(/filename="?([^"]+)"?/);
       const filename = match?.[1]

@@ -4,11 +4,15 @@ import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import { createClient } from '@supabase/supabase-js';
 
+export const maxDuration = 300; // ajuste para 800 se estiver no plano Pro/Enterprise
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
   { db: { schema: 'newsystem' } }
 );
+
+const MAX_ROWS = 100000;
 
 interface InputRow {
   store: string;
@@ -80,7 +84,12 @@ function matchKey(store: string, reference: string): string {
   return `${store}::${reference}`;
 }
 
-// ---------- Paleta de cores ----------
+function normMatchKey(store: string, reference: string): string {
+  const normStore = store.trim().toUpperCase();
+  const normReference = reference.replace(/\s/g, '').toUpperCase();
+  return `${normStore}::${normReference}`;
+}
+
 const COLORS = {
   headerBlue: 'FF1A8CEB',
   headerRed: 'FFC0392B',
@@ -124,6 +133,28 @@ function formatBRL(value: number | null): string {
 
 export async function POST(req: NextRequest) {
   try {
+    // ---------- Autenticação ----------
+    const authHeader = req.headers.get('authorization');
+    const token = authHeader?.replace('Bearer ', '');
+
+    if (!token) {
+      return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+    }
+
+    const supabaseAuth = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+    const {
+      data: { user },
+      error: authError,
+    } = await supabaseAuth.auth.getUser(token);
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Sessão inválida ou expirada.' }, { status: 401 });
+    }
+
+    // ---------- Leitura do arquivo ----------
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
 
@@ -141,14 +172,12 @@ export async function POST(req: NextRequest) {
 
     const sheet = workbook.Sheets[sheetName];
 
-    // ---------- Lê e normaliza as linhas ----------
     const rawRows: RawRow[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
     if (!rawRows.length) {
       return NextResponse.json({ error: 'Planilha vazia ou formato inválido.' }, { status: 400 });
     }
 
-    // Remove linhas "fantasmas" totalmente vazias (comuns no final de exportações Excel)
     const nonEmptyRawRows = rawRows.filter((raw) =>
       Object.values(raw).some((v) => String(v ?? '').trim() !== '')
     );
@@ -157,13 +186,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Planilha vazia ou formato inválido.' }, { status: 400 });
     }
 
+    if (nonEmptyRawRows.length > MAX_ROWS) {
+      return NextResponse.json(
+        {
+          error: `A planilha excede o limite de ${MAX_ROWS.toLocaleString(
+            'pt-BR'
+          )} linhas (encontradas: ${nonEmptyRawRows.length.toLocaleString(
+            'pt-BR'
+          )}). Divida em arquivos menores para evitar timeout no processamento.`,
+        },
+        { status: 400 }
+      );
+    }
+
     const rows: InputRow[] = nonEmptyRawRows.map(mapRow);
 
-    // ---------- Validação com identificação das linhas problemáticas ----------
     const invalidRows: number[] = [];
     rows.forEach((r, index) => {
       if (!r.store || !r.reference) {
-        invalidRows.push(index + 2); // +2 = compensar header (linha 1) e index 0-based
+        invalidRows.push(index + 2);
       }
     });
 
@@ -183,12 +224,36 @@ export async function POST(req: NextRequest) {
       idBlingMap.set(matchKey(r.store, r.reference), r.id_bling);
     }
 
-    const registros = rows.map((r) => ({
+    // ---------- Detecção de duplicatas ----------
+    const contagemPorChave = new Map<string, number>();
+    rows.forEach((r) => {
+      const key = normMatchKey(r.store, r.reference);
+      contagemPorChave.set(key, (contagemPorChave.get(key) ?? 0) + 1);
+    });
+    const chavesDuplicadas = Array.from(contagemPorChave.entries()).filter(([, count]) => count > 1);
+
+    if (chavesDuplicadas.length > 0) {
+      console.warn(
+        `[validate-ads] ${chavesDuplicadas.length} combinação(ões) loja/referência duplicada(s) na planilha:`,
+        chavesDuplicadas.slice(0, 50).map(([k, c]) => `${k} (x${c})`)
+      );
+    }
+
+    const registrosUnicosMap = new Map<string, InputRow>();
+    rows.forEach((r) => {
+      const key = normMatchKey(r.store, r.reference);
+      if (!registrosUnicosMap.has(key)) {
+        registrosUnicosMap.set(key, r);
+      }
+    });
+    const registrosUnicos = Array.from(registrosUnicosMap.values());
+
+    const registros = registrosUnicos.map((r) => ({
       store: r.store,
       reference: r.reference,
     }));
 
-    const registrosComBling = rows.map((r) => ({
+    const registrosComBling = registrosUnicos.map((r) => ({
       store: r.store,
       reference: r.reference,
       id_bling: r.id_bling,
@@ -225,11 +290,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = (mainResult.data ?? []) as ResultRow[];
+    const rawResult = (mainResult.data ?? []) as ResultRow[];
     const items = (itemsResult.data ?? []) as ItemRow[];
-    const existence = (existenceResult.data ?? []) as ExistenceRow[];
+    const rawExistence = (existenceResult.data ?? []) as ExistenceRow[];
 
-    if (!Array.isArray(result) || result.length === 0) {
+    if (!Array.isArray(rawResult) || rawResult.length === 0) {
       return NextResponse.json(
         {
           error:
@@ -239,7 +304,57 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ---------- Totais para a aba Resumo ----------
+    // ---------- Reconciliação 1:1 ----------
+    const resultMap = new Map<string, ResultRow>();
+    rawResult.forEach((r) => resultMap.set(normMatchKey(r.store, r.reference), r));
+
+    const existenceMap = new Map<string, ExistenceRow>();
+    rawExistence.forEach((e) => existenceMap.set(normMatchKey(e.store, e.reference), e));
+
+    const result: ResultRow[] = registrosUnicos.map((r) => {
+      const key = normMatchKey(r.store, r.reference);
+      const found = resultMap.get(key);
+      if (found) return found;
+
+      return {
+        store: r.store,
+        reference: r.reference,
+        ja_esta_ativo: '-',
+        status: 'Anúncio não validado',
+        total_itens: null,
+        itens_sem_custo: null,
+        observacao:
+          'Combinação loja/referência não retornada pela validação. Verifique grafia exata no banco.',
+      };
+    });
+
+    const existence: ExistenceRow[] = registrosUnicos.map((r) => {
+      const key = normMatchKey(r.store, r.reference);
+      const found = existenceMap.get(key);
+      if (found) return found;
+
+      return {
+        store: r.store,
+        reference: r.reference,
+        id_bling: r.id_bling,
+        existe: 'Não',
+        ativo: null,
+        observacao: 'Nenhum retorno da RPC para esta linha — possível erro de grafia ou falha na consulta.',
+      };
+    });
+
+    if (result.length !== registrosUnicos.length) {
+      console.warn(
+        `[validate-ads] Divergência de contagem (Validação): ${registrosUnicos.length} únicas enviadas, ${result.length} no resultado final.`
+      );
+    }
+    if (existence.length !== registrosUnicos.length) {
+      console.warn(
+        `[validate-ads] Divergência de contagem (Existência): ${registrosUnicos.length} únicas enviadas, ${existence.length} no resultado final.`
+      );
+    }
+
+    // ---------- Totais ----------
     const totalAnuncios = result.length;
     const totalOk = result.filter((r) => getCategory(r) === 'sucesso').length;
     const totalAtencao = result.filter((r) => getCategory(r) === 'atencao').length;
@@ -248,14 +363,14 @@ export async function POST(req: NextRequest) {
     const totalItensProblema = items.length;
     const totalExistentes = existence.filter((e) => e.existe === 'Sim').length;
     const totalNaoExistentes = existence.filter((e) => e.existe === 'Não').length;
+    const totalDuplicadas = chavesDuplicadas.length;
 
     // ---------- Workbook ----------
     const outWorkbook = new ExcelJS.Workbook();
     outWorkbook.creator = 'Validação de Composição';
     outWorkbook.created = new Date();
-    // =====================================================
+
     // ABA 1: RESUMO
-    // =====================================================
     const resumoSheet = outWorkbook.addWorksheet('Resumo');
     resumoSheet.columns = [
       { key: 'label', width: 40 },
@@ -272,6 +387,18 @@ export async function POST(req: NextRequest) {
     const dataGeracaoRow = resumoSheet.addRow(['Data de geração', new Date().toLocaleString('pt-BR')]);
     dataGeracaoRow.getCell(1).font = { italic: true, color: { argb: 'FF666666' } };
     resumoSheet.addRow([]);
+
+    if (totalDuplicadas > 0) {
+      const dupRow = resumoSheet.addRow([
+        '⚠ Linhas duplicadas na planilha original (mesma loja/referência)',
+        totalDuplicadas,
+      ]);
+      dupRow.getCell(1).font = { bold: true };
+      dupRow.getCell(2).fill = fill(COLORS.headerOrange);
+      dupRow.getCell(2).font = { bold: true, color: { argb: COLORS.white } };
+      dupRow.getCell(2).alignment = { horizontal: 'center' };
+      resumoSheet.addRow([]);
+    }
 
     const existenciaHeaderRow = resumoSheet.addRow(['Existência do Anúncio (via ID Bling)', '']);
     existenciaHeaderRow.font = { bold: true, italic: true };
@@ -330,9 +457,7 @@ export async function POST(req: NextRequest) {
     });
     resumoSheet.getColumn(2).width = 60;
 
-    // =====================================================
-    // ABA 2: EXISTÊNCIA DO ANÚNCIO (via ID Bling)
-    // =====================================================
+    // ABA 2: EXISTÊNCIA DO ANÚNCIO
     const existenceSheet = outWorkbook.addWorksheet('Existência do Anúncio');
 
     existenceSheet.columns = [
@@ -387,9 +512,7 @@ export async function POST(req: NextRequest) {
     };
     existenceSheet.views = [{ state: 'frozen', xSplit: 3, ySplit: 1 }];
 
-    // =====================================================
-    // ABA 3: VALIDAÇÃO (composição de custos)
-    // =====================================================
+    // ABA 3: VALIDAÇÃO
     const outSheet = outWorkbook.addWorksheet('Validação');
 
     outSheet.columns = [
@@ -472,9 +595,7 @@ export async function POST(req: NextRequest) {
 
     outSheet.views = [{ state: 'frozen', xSplit: 3, ySplit: 1 }];
 
-    // =====================================================
-    // ABA 4: ITENS COM PROBLEMA (detalhado)
-    // =====================================================
+    // ABA 4: ITENS COM PROBLEMA
     const itemsSheet = outWorkbook.addWorksheet('Itens com Problema');
 
     itemsSheet.columns = [
