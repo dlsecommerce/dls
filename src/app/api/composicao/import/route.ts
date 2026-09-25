@@ -70,26 +70,23 @@ function parseAmount(raw: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-/**
- * ✅ Modo de importação escolhido no ImportComposicaoModal:
- *  - "merge"   → adiciona/atualiza itens da planilha, sem remover o
- *                que já existia (comportamento padrão/seguro).
- *  - "replace" → substitui totalmente a composição dos anúncios
- *                presentes na planilha (itens não listados são
- *                removidos). Ação destrutiva, exige confirmação no
- *                modal antes de chegar aqui.
- * Qualquer valor diferente de "replace" cai em "merge" (fail-safe).
- */
 function parseMode(raw: FormDataEntryValue | null): ModoImportacaoComposicao {
   return raw === "replace" ? "replace" : "merge";
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // ✅ LOG: id único por requisição, facilita rastrear no console
+  // quando há importações concorrentes/paralelas.
+  const requestId = Math.random().toString(36).slice(2, 8);
+  const logPrefix = `[composicao/import:${requestId}]`;
+  const startedAt = Date.now();
+
   try {
     // ---------- 1. Autenticação ----------
     const accessToken = getBearerToken(req);
 
     if (!accessToken) {
+      console.warn(`${logPrefix} Sem token Bearer no header Authorization.`);
       return NextResponse.json(
         { error: "Usuário não autenticado. Entre novamente no sistema." },
         { status: 401 }
@@ -116,25 +113,36 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const { data: userData, error: userError } = await authClient.auth.getUser(accessToken);
 
     if (userError || !userData.user) {
+      console.warn(`${logPrefix} Token inválido/expirado:`, userError?.message);
       return NextResponse.json(
         { error: "Sua sessão não é válida ou expirou. Entre novamente no sistema." },
         { status: 401 }
       );
     }
 
+    console.info(`${logPrefix} Usuário autenticado:`, userData.user.email);
+
     // ---------- 2. Leitura do arquivo ----------
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
-
-    // ✅ Modo de importação vindo do ImportComposicaoModal.
     const mode = parseMode(formData.get("mode"));
 
+    console.info(`${logPrefix} Modo de importação:`, mode);
+
     if (!file) {
+      console.warn(`${logPrefix} Nenhum arquivo no FormData.`);
       return NextResponse.json({ error: "Nenhum arquivo enviado." }, { status: 400 });
     }
 
+    console.info(`${logPrefix} Arquivo recebido:`, {
+      nome: file.name,
+      tamanhoBytes: file.size,
+      tipo: file.type,
+    });
+
     const fileSizeMb = file.size / (1024 * 1024);
     if (fileSizeMb > MAX_FILE_SIZE_MB) {
+      console.warn(`${logPrefix} Arquivo excede limite:`, fileSizeMb.toFixed(2), "MB");
       return NextResponse.json(
         { error: `O arquivo excede o limite de ${MAX_FILE_SIZE_MB}MB.` },
         { status: 400 }
@@ -151,7 +159,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         cellDates: false,
         cellText: false,
       });
-    } catch {
+    } catch (readError) {
+      console.error(`${logPrefix} Falha ao parsear o Excel:`, readError);
       return NextResponse.json(
         { error: "Não foi possível ler o arquivo. Verifique se é um Excel válido (.xlsx)." },
         { status: 400 }
@@ -159,6 +168,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     const sheetName = workbook.SheetNames[0];
+    console.info(`${logPrefix} Abas encontradas:`, workbook.SheetNames);
+
     if (!sheetName) {
       return NextResponse.json({ error: "Nenhuma aba encontrada no arquivo." }, { status: 400 });
     }
@@ -166,16 +177,31 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const sheet = workbook.Sheets[sheetName];
     const raw = XLSX.utils.sheet_to_json<RawRow>(sheet, { raw: true, defval: "" });
 
-    // Remove linhas totalmente vazias (fantasmas do Excel)
+    // ✅ LOG: cabeçalhos reais encontrados na planilha — essencial
+    // pra detectar nome de coluna diferente do esperado.
+    if (raw.length > 0) {
+      console.info(`${logPrefix} Colunas detectadas na planilha:`, Object.keys(raw[0]));
+      console.info(`${logPrefix} Primeira linha (amostra bruta):`, raw[0]);
+    }
+
     const nonEmptyRaw = raw.filter((row) =>
       Object.values(row).some((v) => String(v ?? "").trim() !== "")
     );
+
+    console.info(`${logPrefix} Total de linhas lidas (raw):`, raw.length);
+    console.info(`${logPrefix} Total de linhas não-vazias:`, nonEmptyRaw.length);
 
     if (nonEmptyRaw.length === 0) {
       return NextResponse.json({ error: "A planilha está vazia." }, { status: 400 });
     }
 
     if (nonEmptyRaw.length > MAX_REGISTROS) {
+      console.warn(
+        `${logPrefix} Excedeu MAX_REGISTROS:`,
+        nonEmptyRaw.length,
+        ">",
+        MAX_REGISTROS
+      );
       return NextResponse.json(
         {
           error: `A importação não pode ultrapassar ${MAX_REGISTROS.toLocaleString(
@@ -189,11 +215,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // ---------- 3. Normalização e validação linha a linha ----------
     const skippedDetalhado: { linha: number; motivo: string }[] = [];
     const registros: Record<string, unknown>[] = [];
-    const chavesVistas = new Map<string, number>(); // id_bling+code -> primeira linha
+    const chavesVistas = new Map<string, number>();
 
     for (let index = 0; index < nonEmptyRaw.length; index++) {
       const row = nonEmptyRaw[index];
-      const excelLine = index + 2; // +1 header, +1 índice base 1
+      const excelLine = index + 2;
 
       const normalized: Record<string, any> = {};
       for (const key of Object.keys(row)) {
@@ -248,7 +274,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       });
     }
 
+    console.info(`${logPrefix} Registros válidos montados:`, registros.length);
+    console.info(`${logPrefix} Linhas puladas:`, skippedDetalhado.length);
+
+    // ✅ LOG: motivo agregado das linhas puladas (top 5 motivos mais
+    // comuns), pra rapidamente saber se o problema é sistemático.
+    if (skippedDetalhado.length > 0) {
+      const motivosAgrupados = skippedDetalhado.reduce<Record<string, number>>((acc, item) => {
+        const chaveMotivo = item.motivo.split("(")[0].trim();
+        acc[chaveMotivo] = (acc[chaveMotivo] ?? 0) + 1;
+        return acc;
+      }, {});
+      console.info(`${logPrefix} Motivos de linhas puladas (agrupado):`, motivosAgrupados);
+      console.info(`${logPrefix} Amostra de linhas puladas (até 5):`, skippedDetalhado.slice(0, 5));
+    }
+
+    // ✅ LOG: amostra dos primeiros registros que serão enviados ao
+    // banco — confirma se id_bling/code/amount vieram corretos.
+    if (registros.length > 0) {
+      console.info(`${logPrefix} Amostra de registros enviados ao banco (até 3):`, registros.slice(0, 3));
+    }
+
     if (registros.length === 0) {
+      console.warn(`${logPrefix} Nenhuma linha válida após normalização.`);
       return NextResponse.json(
         {
           success: false,
@@ -266,6 +314,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // ---------- 4. Execução no banco ----------
     const sql = getPostgresClient();
 
+    console.info(`${logPrefix} Iniciando transação SQL com`, registros.length, "registros.");
+
     const resultados = await sql.begin(async (transaction) => {
       const jwtClaims = JSON.stringify({
         sub: userData.user.id,
@@ -278,20 +328,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       await transaction`select set_config('request.jwt.claim.role', 'authenticated', true)`;
       await transaction`set local role authenticated`;
 
-      // ✅ FIX: removido o JSON.stringify manual. Passar o array de
-      // objetos diretamente para o driver, deixando-o serializar como
-      // jsonb. O bug anterior (JSON.stringify(registros) + ::jsonb)
-      // causava DUPLA serialização — a lib serializava a string já
-      // stringificada de novo, virando um jsonb do tipo string escalar
-      // em vez de array, o que quebrava o jsonb_array_elements() na
-      // função upsert_composition_lote com o erro:
-      // "cannot extract elements from a scalar".
-      //
-      // ✅ `mode` é repassado como segundo argumento (p_mode) da RPC.
-      // "merge" mantém o comportamento antigo (upsert sem remover
-      // nada); "replace" faz a função remover, dentro dos anúncios
-      // presentes no lote, todo item de composição que não estiver
-      // sendo enviado agora.
       const rows = await transaction<ResultadoLinha[]>`
         select *
         from newsystem.upsert_composition_lote(${transaction.json(registros)}, ${mode})
@@ -300,19 +336,36 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return rows;
     });
 
+    console.info(`${logPrefix} Retorno do banco: ${resultados.length} linhas processadas.`);
+
     const errors = resultados
       .filter((r) => r.status === "erro")
       .map((r) => ({ linha: r.linha, id_bling: r.id_bling, code: r.code, motivo: r.motivo }));
 
     const processed = resultados.filter((r) => r.status === "ok").length;
 
-    console.info("[composicao/import] Importação concluída:", {
+    // ✅ LOG: motivos agregados dos erros de banco (top motivos),
+    // mesmo raciocínio de agrupamento do skip.
+    if (errors.length > 0) {
+      const motivosErroAgrupados = errors.reduce<Record<string, number>>((acc, item) => {
+        const chaveMotivo = item.motivo.split("(")[0].trim();
+        acc[chaveMotivo] = (acc[chaveMotivo] ?? 0) + 1;
+        return acc;
+      }, {});
+      console.warn(`${logPrefix} Motivos de erro no banco (agrupado):`, motivosErroAgrupados);
+      console.warn(`${logPrefix} Amostra de erros de banco (até 5):`, errors.slice(0, 5));
+    }
+
+    const duracaoMs = Date.now() - startedAt;
+
+    console.info(`${logPrefix} Importação concluída:`, {
       usuario: userData.user.email,
       modo: mode,
       totalLinhasArquivo: nonEmptyRaw.length,
       processadas: processed,
       puladas: skippedDetalhado.length,
       comErro: errors.length,
+      duracaoMs,
     });
 
     return NextResponse.json({
@@ -332,7 +385,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       where?: string;
     };
 
-    console.error("Erro na importação de composições:", {
+    const duracaoMs = Date.now() - startedAt;
+
+    console.error(`${logPrefix} Erro fatal na importação (após ${duracaoMs}ms):`, {
       name: databaseError?.name ?? null,
       message: databaseError?.message ?? null,
       code: databaseError?.code ?? null,
