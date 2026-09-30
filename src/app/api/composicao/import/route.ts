@@ -21,6 +21,15 @@ type ResultadoLinha = {
   motivo: string;
 };
 
+type SkippedDetalhe = {
+  linha: number;
+  id_bling: string;
+  store: string;
+  reference: string;
+  code: string;
+  motivo: string;
+};
+
 type ModoImportacaoComposicao = "merge" | "replace";
 
 const MAX_REGISTROS = 5000;
@@ -213,7 +222,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     // ---------- 3. Normalização e validação linha a linha ----------
-    const skippedDetalhado: { linha: number; motivo: string }[] = [];
+    // ✅ Cada item registra os identificadores da linha (id_bling, store,
+    // reference, code) além do motivo — permite ao frontend montar uma
+    // tabela detalhada "linha X da planilha falhou por Y", sem precisar
+    // adivinhar nada a partir de um erro genérico.
+    const skippedDetalhado: SkippedDetalhe[] = [];
     const registros: Record<string, unknown>[] = [];
     const chavesVistas = new Map<string, number>();
 
@@ -235,11 +248,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const amountRaw = amountRawKey ? normalized[amountRawKey] : undefined;
 
       if (!idBling) {
-        skippedDetalhado.push({ linha: excelLine, motivo: "ID Bling não informado." });
+        skippedDetalhado.push({
+          linha: excelLine,
+          id_bling: "",
+          store,
+          reference,
+          code,
+          motivo: "ID Bling não informado.",
+        });
         continue;
       }
       if (!code) {
-        skippedDetalhado.push({ linha: excelLine, motivo: "Código do Item não informado." });
+        skippedDetalhado.push({
+          linha: excelLine,
+          id_bling: idBling,
+          store,
+          reference,
+          code: "",
+          motivo: "Código do Item não informado.",
+        });
         continue;
       }
 
@@ -247,6 +274,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (amount === null) {
         skippedDetalhado.push({
           linha: excelLine,
+          id_bling: idBling,
+          store,
+          reference,
+          code,
           motivo: `Quantidade inválida ("${amountRaw ?? ""}"). Deve ser um número maior que zero.`,
         });
         continue;
@@ -257,6 +288,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (linhaAnterior !== undefined) {
         skippedDetalhado.push({
           linha: excelLine,
+          id_bling: idBling,
+          store,
+          reference,
+          code,
           motivo: `Duplicado da linha ${linhaAnterior} (mesmo ID Bling + Código do Item). Apenas a primeira ocorrência foi processada.`,
         });
         continue;
@@ -277,7 +312,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     console.info(`${logPrefix} Registros válidos montados:`, registros.length);
     console.info(`${logPrefix} Linhas puladas:`, skippedDetalhado.length);
 
-    // ✅ LOG: motivo agregado das linhas puladas (top 5 motivos mais
+    // ✅ LOG: motivo agregado das linhas puladas (top motivos mais
     // comuns), pra rapidamente saber se o problema é sistemático.
     if (skippedDetalhado.length > 0) {
       const motivosAgrupados = skippedDetalhado.reduce<Record<string, number>>((acc, item) => {
@@ -286,13 +321,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         return acc;
       }, {});
       console.info(`${logPrefix} Motivos de linhas puladas (agrupado):`, motivosAgrupados);
-      console.info(`${logPrefix} Amostra de linhas puladas (até 5):`, skippedDetalhado.slice(0, 5));
+      console.info(
+        `${logPrefix} Amostra de linhas puladas (até 5):`,
+        skippedDetalhado.slice(0, 5)
+      );
     }
 
     // ✅ LOG: amostra dos primeiros registros que serão enviados ao
     // banco — confirma se id_bling/code/amount vieram corretos.
     if (registros.length > 0) {
-      console.info(`${logPrefix} Amostra de registros enviados ao banco (até 3):`, registros.slice(0, 3));
+      console.info(
+        `${logPrefix} Amostra de registros enviados ao banco (até 3):`,
+        registros.slice(0, 3)
+      );
     }
 
     if (registros.length === 0) {
@@ -302,7 +343,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           success: false,
           processed: 0,
           skipped: skippedDetalhado.length,
-          skippedDetails: skippedDetalhado.slice(0, 200),
+          // ✅ Sem slice — devolve todas as linhas rejeitadas, com
+          // todos os identificadores, pro frontend montar a tabela
+          // detalhada completa.
+          skippedDetails: skippedDetalhado,
           errors: [],
           message:
             "Nenhuma linha válida encontrada. Verifique se as colunas ID Bling, Código do Item e Quantidade estão preenchidas corretamente.",
@@ -338,9 +382,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     console.info(`${logPrefix} Retorno do banco: ${resultados.length} linhas processadas.`);
 
+    // ✅ Mantém store e reference no erro do banco, além de id_bling e
+    // code — a função upsert_composition_lote já devolve todos esses
+    // campos, então só precisamos parar de descartá-los aqui.
     const errors = resultados
       .filter((r) => r.status === "erro")
-      .map((r) => ({ linha: r.linha, id_bling: r.id_bling, code: r.code, motivo: r.motivo }));
+      .map((r) => ({
+        linha: r.linha,
+        id_bling: r.id_bling,
+        store: r.store,
+        reference: r.reference,
+        code: r.code,
+        motivo: r.motivo,
+      }));
 
     const processed = resultados.filter((r) => r.status === "ok").length;
 
@@ -372,7 +426,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       success: errors.length === 0,
       processed,
       skipped: skippedDetalhado.length,
-      skippedDetails: skippedDetalhado.slice(0, 200),
+      // ✅ Sem slice — todas as linhas rejeitadas na validação, com
+      // todos os identificadores da linha original da planilha.
+      skippedDetails: skippedDetalhado,
+      // ✅ Todas as linhas que falharam no upsert do banco, com
+      // id_bling, store, reference, code e motivo.
       errors,
     });
   } catch (error: unknown) {
