@@ -14,6 +14,8 @@ const COL = {
 
 const COLOR_BLUE = "FF1A8CEB";
 const COLOR_GREEN = "FF5CFF8D";
+const COLOR_RED = "FFFFC7CE";
+const COLOR_RED_FONT = "FF9C0006";
 const COLOR_MARGIN_OK = "FFC6EFCE";
 const COLOR_MARGIN_OK_FONT = "FF006100";
 const BLUE_COLS = [1, 2, 3, 4, 5, 6, 7];
@@ -27,9 +29,8 @@ function getSupabaseServer(accessToken: string) {
   );
 }
 
-// ✅ Helper para gerar a chave composta aid+store+channel,
-// evitando colisão quando o mesmo announce_id aparece em
-// múltiplas lojas/canais dentro do mesmo lote de exportação.
+// Chave composta aid+store+channel, evitando colisão quando o mesmo
+// announce_id aparece em múltiplas lojas/canais dentro do mesmo lote.
 function resolveKey(announceId: string, store: string, channel: string) {
   return `${announceId}::${store}::${channel}`;
 }
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest) {
 
         // ============================================================
         // Resolve em lote: imposto, marketing, desconto, margem mínima,
-        // comissão, taxa fixa, frete% e frete fixo por anúncio
+        // margem efetiva, comissão, taxa fixa, frete% e frete fixo
         // ============================================================
         const { data: resolved, error: resolveError } = await supabase
           .schema("newsystem")
@@ -122,12 +123,9 @@ export async function POST(req: NextRequest) {
 
         if (resolveError) throw new Error(resolveError.message);
 
-        // ✅ FIX: chave composta (announce_id + store + channel) em vez de
-        // apenas announce_id. Antes, quando o mesmo produto (announce_id)
-        // estava anunciado em múltiplos canais/lojas, o Map sobrescrevia
-        // as entradas anteriores e todas as linhas passavam a usar a
-        // regra de precificação de UM canal só — misturando comissões
-        // entre Shopee, ML, Amazon etc. na exportação "Todos os dados".
+        // Chave composta (announce_id + store + channel) em vez de apenas
+        // announce_id, para não misturar regras entre canais/lojas distintos
+        // quando o mesmo produto está anunciado em múltiplos lugares.
         const resolvedMap = new Map(
           (resolved ?? []).map((r: any) => [
             resolveKey(r.announce_id, r.store, r.channel),
@@ -187,58 +185,68 @@ export async function POST(req: NextRequest) {
         sheet.getColumn(COL.COMISSAO).numFmt = '0.00 " %"';
         sheet.getColumn(COL.MARGEM).numFmt = '0.00 " %"';
 
-        // ✅ Intervalo de progresso ajustado para volumes maiores (menos overhead)
         const progressStep = total > 20000 ? 5000 : 1000;
 
         for (let i = 0; i < total; i++) {
           const row = data[i];
 
-          // ✅ FIX: busca usando a chave composta, garantindo que a regra
-          // aplicada seja exatamente a do canal/loja daquela linha.
           const res: any =
             resolvedMap.get(resolveKey(row.announce_id, row.store, row.channel)) ?? null;
 
-          const costLiquido = res?.cost_liquido ?? row.current_cost ?? 0;
+          // ✅ FIX (produto sem composição / erro de cálculo): sinaliza a
+          // linha em vez de calcular com dados zerados/errados.
+          if (res?.has_error) {
+            const excelRow = sheet.addRow([
+              row.id || "", row.store || "", row.channel || "", row.id_bling || "",
+              row.reference || "", row.product || "", row.mark || "", "",
+              0, 0, 0, "", 0, null, 0,
+            ]);
+            excelRow.getCell(COL.PRECO_VENDA).value = "ERRO: " + (res.error_message || "Falha no cálculo");
+            excelRow.eachCell((cell) => {
+              cell.alignment = { horizontal: "center", vertical: "middle" };
+              cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_RED } };
+              cell.font = { color: { argb: COLOR_RED_FONT } };
+            });
+            excelRow.commit();
+
+            if (i % progressStep === 0 || i === total - 1) {
+              sendProgress(8 + Math.round((i / total) * 82), i + 1, total);
+              await new Promise((r) => setTimeout(r, 0));
+            }
+            continue;
+          }
+
+          const costLiquido = res?.cost_liquido ?? 0;
           const tax = res?.tax ?? 0;
           const marketing = res?.marketing ?? 0;
           const freteRate = res?.frete_rate ?? 0;
           const freteFixed = res?.frete_fixed ?? 0;
           const fixedFee = res?.fixed_fee ?? 0;
-          const marginMin = res?.margin_min ?? 0;
-          const commissionRate = res?.commission_rate
-            ? res.commission_rate * 100
-            : row.commission_rate ?? 0;
 
-          const marginInicial =
-            row.profit_margin && row.profit_margin !== 0
-              ? row.profit_margin
-              : marginMin;
-
-          const freteInicial =
-            freteFixed && freteFixed !== 0 ? freteFixed : row.freight ?? 0;
+          // ✅ FIX: nunca cair no valor antigo (stale) da tabela marketplace.
+          // Sempre usar o valor resolvido pelo banco (mesma fonte da tela).
+          const commissionRate = res ? res.commission_rate * 100 : 0;
+          const marginInicial = res ? res.effective_margin : 0;
+          const freteInicial = freteFixed;
 
           const excelRow = sheet.addRow([
             row.id || "", row.store || "", row.channel || "", row.id_bling || "",
             row.reference || "", row.product || "", row.mark || "", "",
             commissionRate, freteInicial, marginInicial, "",
-            costLiquido, null, marginMin,
+            costLiquido, null, res?.margin_min ?? 0,
           ]);
 
           const rn = excelRow.number;
 
-          // ✅ CORRIGIDO: Frete (J) e Taxa Fixa agora entram DENTRO do
-          // numerador, junto com o Custo (M), em vez de serem somados
-          // depois da divisão. Antes, o frete e a taxa fixa não recebiam
-          // o markup dos percentuais (imposto, marketing, comissão,
-          // margem), fazendo o vendedor "engolir" essa diferença. Agora
-          // (Custo+Frete+TaxaFixa) é dividido pelo fator, garantindo que
-          // o Preço de Venda recupere 100% dos custos + todos os
-          // percentuais cobrados sobre o valor total da venda.
+          // ✅ FIX: Frete fixo e taxa fixa somados FORA da divisão, igual à
+          // fórmula do banco (fn_calc_marketplace_price_full). Apenas o
+          // frete percentual (freteRate) entra no divisor.
           const constPart = (tax + marketing + freteRate).toFixed(6);
           const fixedFeeStr = fixedFee.toFixed(2);
+          const freteFixedStr = freteFixed.toFixed(2);
 
           excelRow.getCell(COL.PRECO_VENDA).value = {
-            formula: `ROUND((M${rn}+J${rn}+${fixedFeeStr})/(1-(${constPart}+I${rn}/100+K${rn}/100)),2)`,
+            formula: `ROUND(M${rn}/(1-(${constPart}+I${rn}/100+K${rn}/100))+${fixedFeeStr}+${freteFixedStr},2)`,
           };
 
           excelRow.eachCell((cell) => {
@@ -253,10 +261,6 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // ============================================================
-        // Regra de conditional formatting para toda a coluna K,
-        // comparando com a coluna oculta O (relativo, ajusta linha a linha)
-        // ============================================================
         sheet.addConditionalFormatting({
           ref: `K2:K${total + 1}`,
           rules: [
