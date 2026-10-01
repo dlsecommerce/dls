@@ -2,11 +2,16 @@
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import { createNotification } from "@/lib/createNotification";
+import type { RowError } from "@/components/announce/Confirmimport";
 
 export type ImportResult = {
   data: any[];
   warnings: string[];
   errors?: string[];
+  // ✅ NOVO — versão estruturada dos erros, usada pelo
+  // ConfirmImportModal para montar a tabela de detalhamento
+  // (linha, ID Bling, loja, referência, motivo).
+  rowErrors?: RowError[];
   fileName: string;
   importados?: number;
   errosCount?: number;
@@ -121,7 +126,13 @@ const CANAL_ALIASES = ["Canal", "canal", "Canais", "canais", "channel", "channel
 type NormalizeOutcome =
   | { ok: true; row: any; warning?: string }
   | { ok: false; skip: true }
-  | { ok: false; error: string };
+  | {
+      ok: false;
+      error: string;
+      // ✅ NOVO — versão estruturada do mesmo erro, com os dados
+      // identificadores já disponíveis naquele ponto da validação.
+      detail: RowError;
+    };
 
 /**
  * Normaliza uma linha da planilha para o payload de
@@ -141,6 +152,10 @@ type NormalizeOutcome =
  * própria linha (opcional). Usado pelo Announce.tsx para pré-montar
  * `channelRowAssignments` automaticamente no preview, sem que o
  * usuário precise selecionar manualmente no ConfirmImportModal.
+ *
+ * ✅ `linha`: número da linha real na planilha (cabeçalho = linha 1),
+ * guardado dentro do próprio registro para ser recuperado depois,
+ * caso o servidor rejeite esse registro (ver `linhaLookup` abaixo).
  */
 function normalizeRow(
   rowRaw: Record<string, any>,
@@ -156,23 +171,48 @@ function normalizeRow(
   if (!store && !reference) return { ok: false, skip: true };
 
   if (!store) {
-    return { ok: false, error: `Linha ${lineNumber}: "Loja" vazia ou inválida.` };
+    return {
+      ok: false,
+      error: `Linha ${lineNumber}: "Loja" vazia ou inválida.`,
+      detail: {
+        row: lineNumber,
+        message: '"Loja" vazia ou inválida.',
+        reference,
+        idBling,
+      },
+    };
   }
 
   if (!reference) {
-    return { ok: false, error: `Linha ${lineNumber} (loja "${store}"): "Referência" vazia ou inválida.` };
+    return {
+      ok: false,
+      error: `Linha ${lineNumber} (loja "${store}"): "Referência" vazia ou inválida.`,
+      detail: {
+        row: lineNumber,
+        message: '"Referência" vazia ou inválida.',
+        store,
+        idBling,
+      },
+    };
   }
 
   if (modo === "alteracao" && !idBling) {
     return {
       ok: false,
       error: `Linha ${lineNumber} (loja "${store}", referência "${reference}"): "ID Bling" é obrigatório no modo 'Alteração'.`,
+      detail: {
+        row: lineNumber,
+        message: `"ID Bling" é obrigatório no modo 'Alteração'.`,
+        store,
+        reference,
+      },
     };
   }
 
   return {
     ok: true,
     row: {
+      linha: lineNumber,
       store,
       id_bling: idBling,
       reference,
@@ -200,6 +240,10 @@ type RegistroResultado = {
   reference: string;
   status: "ok" | "erro";
   message: string;
+  // ✅ NOVO — campos opcionais, caso a API já os retorne. Quando
+  // ausentes, são recuperados via `linhaLookup` no final do processo.
+  id_bling?: string | null;
+  code_id?: string | number | null;
 };
 
 type ImportAnnounceApiResultado = {
@@ -352,6 +396,48 @@ function applyChannelRowAssignments(
   });
 }
 
+/**
+ * ✅ NOVO — monta um mapa (chave -> linha original da planilha) a
+ * partir de `deduped`, usando a MESMA chave de deduplicação do modo
+ * atual. Usado para recuperar o número da linha quando o servidor
+ * rejeita um registro (que só volta com store/reference, sem saber a
+ * linha original do Excel).
+ */
+function buildLinhaLookup(deduped: any[], modo: ModoImportacao): Map<string, number> {
+  const lookup = new Map<string, number>();
+  for (const row of deduped) {
+    const key =
+      modo === "alteracao" ? `${row.store}::bling::${row.id_bling}` : `${row.store}::ref::${row.reference}`;
+    lookup.set(key, row.linha);
+  }
+  return lookup;
+}
+
+/**
+ * ✅ NOVO — converte os erros retornados pelo servidor
+ * (`RegistroResultado`) para o formato estruturado `RowError`,
+ * recuperando a linha original via `linhaLookup`.
+ */
+function buildServerRowErrors(
+  erros: RegistroResultado[],
+  linhaLookup: Map<string, number>,
+  modo: ModoImportacao
+): RowError[] {
+  return erros.map((e) => {
+    const key =
+      modo === "alteracao" ? `${e.store}::bling::${e.id_bling ?? ""}` : `${e.store}::ref::${e.reference}`;
+
+    return {
+      row: linhaLookup.get(key) ?? 0,
+      message: e.message,
+      store: e.store,
+      reference: e.reference,
+      idBling: e.id_bling ?? null,
+      code: e.code_id != null ? String(e.code_id) : null,
+    };
+  });
+}
+
 // ---------------------------------------------------------------------
 // Notificação — disparada em background pelo chamador (fire-and-forget).
 // ---------------------------------------------------------------------
@@ -455,6 +541,8 @@ export async function importAnnounceFromXlsxOrCsv(
 
   const normalizedAll: any[] = [];
   const rowErrors: string[] = [];
+  // ✅ NOVO — versão estruturada, acumulada em paralelo com `rowErrors`.
+  const rowErrorDetails: RowError[] = [];
   const rowWarnings: string[] = [];
   let totalIgnoradas = 0;
 
@@ -468,6 +556,7 @@ export async function importAnnounceFromXlsxOrCsv(
       totalIgnoradas++;
     } else {
       rowErrors.push(outcome.error);
+      rowErrorDetails.push(outcome.detail);
     }
   }
 
@@ -542,6 +631,7 @@ export async function importAnnounceFromXlsxOrCsv(
       data: deduped,
       warnings,
       errors: rowErrors.length > 0 ? rowErrors : undefined,
+      rowErrors: rowErrorDetails.length > 0 ? rowErrorDetails : undefined,
       fileName,
     };
   }
@@ -552,6 +642,10 @@ export async function importAnnounceFromXlsxOrCsv(
   // da planilha > fallback global) antes de enviar. Cada registro
   // passa a carregar seu próprio `channels`.
   const registrosComCanais = applyChannelRowAssignments(deduped, channels, channelRowAssignments);
+
+  // ✅ NOVO — lookup para recuperar a linha original quando o servidor
+  // rejeitar um registro (a API só devolve store/reference/message).
+  const linhaLookup = buildLinhaLookup(deduped, modo);
 
   onProgress?.({ processed: 0, total: registrosComCanais.length, batchSize: CHUNK_SIZE });
 
@@ -572,6 +666,11 @@ export async function importAnnounceFromXlsxOrCsv(
         .map((e) => `[${e.store}] ${e.reference}: ${e.message}`)
         .join("\n")}${remaining > 0 ? `\n... e mais ${remaining} erro(s).` : ""}`
     );
+
+    // ✅ NOVO — converte TODOS os erros do servidor (não só os
+    // primeiros MAX_ERRORS_SHOWN exibidos no warning) em RowError
+    // estruturado, com a linha recuperada via lookup.
+    rowErrorDetails.push(...buildServerRowErrors(resultado.erros, linhaLookup, modo));
   }
 
   warnings.push(`Importação concluída. ${resultado.importados} de ${resultado.total} registro(s) processado(s) com sucesso.`);
@@ -594,6 +693,7 @@ export async function importAnnounceFromXlsxOrCsv(
     data: deduped,
     warnings,
     errors: rowErrors.length > 0 ? rowErrors : undefined,
+    rowErrors: rowErrorDetails.length > 0 ? rowErrorDetails : undefined,
     fileName,
     importados: resultado.importados,
     errosCount: resultado.errosCount,

@@ -2,7 +2,7 @@
 
 import React from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { Menu, SlidersHorizontal, X as XIcon } from "lucide-react";
+import { Menu, SlidersHorizontal, X as XIcon, Download } from "lucide-react";
 
 import AnnounceActions from "@/components/announce/Announceactions";
 import AnnounceDataTable from "@/components/announce/Announcedatatable";
@@ -100,6 +100,197 @@ function extractFilenameFromHeader(
 
   const asciiMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
   return asciiMatch?.[1] ?? null;
+}
+
+/* ─────────────────────────────────────────────
+ * ✅ NOVO — Erros da importação de COMPOSIÇÃO
+ *
+ * Unifica os dois formatos vindos de /api/composicao/import:
+ *  - `skippedDetails` → linhas rejeitadas na validação (antes de ir ao banco).
+ *  - `errors` (quando objetos, não strings) → falharam na função SQL
+ *    `upsert_composition_lote`.
+ * ───────────────────────────────────────────── */
+
+type ComposicaoRowError = {
+  linha: number | null;
+  idBling: string | null;
+  store: string | null;
+  reference: string | null;
+  code: string | null;
+  motivo: string;
+  origem: "validacao" | "banco";
+};
+
+function buildComposicaoRowErrors(result: any): ComposicaoRowError[] {
+  const rows: ComposicaoRowError[] = [];
+
+  const skipped = Array.isArray(result?.skippedDetails) ? result.skippedDetails : [];
+  for (const item of skipped) {
+    rows.push({
+      linha: item?.linha ?? null,
+      idBling: item?.id_bling ?? item?.idBling ?? null,
+      store: item?.store ?? null,
+      reference: item?.reference ?? null,
+      code: item?.code ?? null,
+      motivo: item?.motivo ?? item?.message ?? "Linha rejeitada na validação.",
+      origem: "validacao",
+    });
+  }
+
+  const dbErrors = Array.isArray(result?.errors) ? result.errors : [];
+  for (const item of dbErrors) {
+    // Compatibilidade: versões antigas de `errors` retornavam apenas strings.
+    if (typeof item === "string") {
+      rows.push({
+        linha: null,
+        idBling: null,
+        store: null,
+        reference: null,
+        code: null,
+        motivo: item,
+        origem: "banco",
+      });
+      continue;
+    }
+
+    rows.push({
+      linha: item?.linha ?? null,
+      idBling: item?.id_bling ?? item?.idBling ?? null,
+      store: item?.store ?? null,
+      reference: item?.reference ?? null,
+      code: item?.code ?? null,
+      motivo: item?.motivo ?? item?.message ?? "Erro ao processar no banco.",
+      origem: "banco",
+    });
+  }
+
+  return rows;
+}
+
+function downloadComposicaoErrorsCsv(rows: ComposicaoRowError[]) {
+  const header = ["Linha", "ID Bling", "Loja", "Referência", "Código", "Origem", "Motivo"];
+  const lines = rows.map((r) =>
+    [
+      r.linha ?? "",
+      r.idBling ?? "",
+      r.store ?? "",
+      r.reference ?? "",
+      r.code ?? "",
+      r.origem === "validacao" ? "Validação" : "Banco de dados",
+      r.motivo,
+    ]
+      .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+      .join(";")
+  );
+
+  const csv = "\uFEFF" + [header.join(";"), ...lines].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `erros-importacao-composicao-${Date.now()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * ✅ NOVO — Modal com a tabela de erros da importação de composição.
+ * Simples, auto-contido, sem dependência do ConfirmImportModal (que
+ * pertence à importação de anúncios).
+ */
+function ComposicaoErrorsModal({
+  open,
+  onClose,
+  rows,
+}: {
+  open: boolean;
+  onClose: () => void;
+  rows: ComposicaoRowError[];
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/80">
+      <button
+        type="button"
+        className="absolute inset-0 h-full w-full cursor-default"
+        onClick={onClose}
+        aria-label="Fechar"
+      />
+
+      <div className="absolute left-1/2 top-1/2 flex max-h-[85vh] w-[94vw] max-w-3xl -translate-x-1/2 -translate-y-1/2 flex-col border border-neutral-800 bg-[#0a0a0a] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-neutral-900 px-5 py-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-red-400/80">
+              Importação de composição
+            </p>
+            <h2 className="text-lg font-semibold text-white">
+              {rows.length} linha(s) com erro
+            </h2>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => downloadComposicaoErrorsCsv(rows)}
+              className="flex h-9 items-center gap-2 border border-neutral-800 bg-neutral-950 px-3 text-xs font-medium uppercase tracking-wide text-neutral-300 hover:border-[#1a8ceb]/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
+            >
+              <Download className="h-3.5 w-3.5 text-[#1a8ceb]" />
+              Exportar CSV
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Fechar"
+              className="flex h-9 w-9 items-center justify-center border border-neutral-800 text-white active:scale-95 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="sticky top-0 bg-[#0a0a0a]">
+              <tr className="border-b border-neutral-900 text-neutral-500">
+                <th className="px-3 py-2 font-medium">Linha</th>
+                <th className="px-3 py-2 font-medium">ID Bling</th>
+                <th className="px-3 py-2 font-medium">Loja</th>
+                <th className="px-3 py-2 font-medium">Referência</th>
+                <th className="px-3 py-2 font-medium">Código</th>
+                <th className="px-3 py-2 font-medium">Origem</th>
+                <th className="px-3 py-2 font-medium">Motivo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, idx) => (
+                <tr key={idx} className="border-b border-neutral-900/60 text-neutral-300">
+                  <td className="px-3 py-2">{r.linha ?? "—"}</td>
+                  <td className="px-3 py-2">{r.idBling ?? "—"}</td>
+                  <td className="px-3 py-2">{r.store ?? "—"}</td>
+                  <td className="px-3 py-2">{r.reference ?? "—"}</td>
+                  <td className="px-3 py-2">{r.code ?? "—"}</td>
+                  <td className="px-3 py-2">
+                    <span
+                      className={
+                        r.origem === "validacao"
+                          ? "text-amber-400"
+                          : "text-red-400"
+                      }
+                    >
+                      {r.origem === "validacao" ? "Validação" : "Banco"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">{r.motivo}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function Announce() {
@@ -529,6 +720,11 @@ export default function Announce() {
   const [composicaoProgress, setComposicaoProgress] = React.useState(0);
   const [composicaoProgressCount, setComposicaoProgressCount] = React.useState(0);
 
+  // ✅ NOVO — states do modal de erros detalhados da importação de
+  // composição (linha, ID Bling, loja, referência, código, motivo).
+  const [composicaoErrorsModalOpen, setComposicaoErrorsModalOpen] = React.useState(false);
+  const [composicaoErrorRows, setComposicaoErrorRows] = React.useState<ComposicaoRowError[]>([]);
+
   // ✅ NOVO — states do modal de confirmação (merge/replace) do
   // import de composição. O arquivo escolhido pelo usuário é
   // guardado aqui até a confirmação do modo no modal.
@@ -551,6 +747,11 @@ export default function Announce() {
   /**
    * Upload real da planilha de composição, agora recebendo o `mode`
    * ("merge" | "replace") escolhido no ImportComposicaoModal.
+   *
+   * ✅ Atualizado: monta `composicaoErrorRows` a partir de
+   * `result.skippedDetails` (validação) e `result.errors` (banco) e
+   * abre o modal de detalhamento sempre que houver pelo menos 1 erro
+   * — inclusive em sucesso parcial (alguns processados, outros não).
    */
   const handleImportComposicao = async (
     file: File,
@@ -560,6 +761,7 @@ export default function Announce() {
     setComposicaoProgressOpen(true);
     setComposicaoProgress(0);
     setComposicaoProgressCount(0);
+    setComposicaoErrorRows([]);
 
     try {
       const token = await getAccessToken();
@@ -585,17 +787,18 @@ export default function Announce() {
       const result = await res.json();
 
       if (!res.ok || !result.success) {
-        const totalErros = result?.errors?.length ?? 0;
+        const detailed = buildComposicaoRowErrors(result);
         setComposicaoProgress(0);
 
         toastCustom.error(
-          totalErros > 0
-            ? `${totalErros} linha(s) com erro na importação de composição.`
+          detailed.length > 0
+            ? `${detailed.length} linha(s) com erro na importação de composição.`
             : result?.error ?? "Não foi possível importar a composição."
         );
 
-        if (result?.errors?.length) {
-          console.error("Erros na importação de composição:", result.errors);
+        if (detailed.length > 0) {
+          setComposicaoErrorRows(detailed);
+          setComposicaoErrorsModalOpen(true);
         }
         return;
       }
@@ -612,11 +815,14 @@ export default function Announce() {
         );
       }
 
-      if (result.errors?.length) {
-        toastCustom.error(
-          `${result.errors.length} linha(s) não foram processadas.`
-        );
-        console.error("Erros na importação de composição:", result.errors);
+      // ✅ Sucesso parcial: processou alguns, mas houve linhas rejeitadas
+      // na validação ou erros vindos do banco. Mostra o toast e abre o
+      // modal com o detalhamento completo (sem truncar).
+      const detailed = buildComposicaoRowErrors(result);
+      if (detailed.length > 0) {
+        toastCustom.error(`${detailed.length} linha(s) não foram processadas.`);
+        setComposicaoErrorRows(detailed);
+        setComposicaoErrorsModalOpen(true);
       }
 
       refetch();
@@ -1221,6 +1427,13 @@ export default function Announce() {
         onConfirm={handleConfirmImportComposicao}
         loading={importingComposicao}
         fileName={pendingComposicaoFile?.name}
+      />
+
+      {/* ✅ NOVO — modal de erros detalhados da importação de composição */}
+      <ComposicaoErrorsModal
+        open={composicaoErrorsModalOpen}
+        onClose={() => setComposicaoErrorsModalOpen(false)}
+        rows={composicaoErrorRows}
       />
 
       <ExportProgressToast

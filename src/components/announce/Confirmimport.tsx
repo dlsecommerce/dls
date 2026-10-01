@@ -29,11 +29,21 @@ type Channel = {
   name: string;
 };
 
-/** Erro estruturado: associado a uma linha (e opcionalmente a uma coluna específica) */
+/**
+ * Erro estruturado: associado a uma linha (e opcionalmente a uma coluna
+ * específica). Os campos store/reference/idBling/code são opcionais e
+ * usados apenas para enriquecer a tabela de detalhamento — não afetam o
+ * destaque das células na pré-visualização (que continua usando `row`
+ * como índice e `field` como coluna).
+ */
 export type RowError = {
   row: number;
   field?: string;
   message: string;
+  store?: string | null;
+  reference?: string | null;
+  idBling?: string | null;
+  code?: string | null;
 };
 
 export type ImportResult = {
@@ -260,6 +270,87 @@ function buildRowErrorMap(rowErrors: RowError[]): RowErrorMap {
     }
   }
   return map;
+}
+
+/**
+ * ✅ NOVO — Tabela de detalhamento de erros, linha a linha da
+ * planilha original. Mostra o número da linha + identificadores
+ * (ID Bling, Loja, Referência, Código quando disponíveis) + o motivo
+ * exato. Ordenada pela linha para facilitar a conferência no Excel.
+ */
+function ErrorDetailsTable({ rowErrors }: { rowErrors: RowError[] }) {
+  const sorted = useMemo(() => [...rowErrors].sort((a, b) => a.row - b.row), [rowErrors]);
+
+  if (sorted.length === 0) return null;
+
+  const hasAnyContext = sorted.some((e) => e.idBling || e.store || e.reference || e.code);
+
+  return (
+    <div className="border border-neutral-800 overflow-hidden" style={{ borderLeft: `2px solid ${RED}` }}>
+      <div className="flex items-center justify-between border-b border-neutral-900 bg-neutral-950 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-3.5 w-3.5" style={{ color: RED }} />
+          <strong className="text-[11px] font-semibold uppercase tracking-[0.1em]" style={{ color: RED }}>
+            Linhas com erro ({sorted.length})
+          </strong>
+        </div>
+      </div>
+      <div className="max-h-56 overflow-auto">
+        <table className="w-full min-w-full text-[11px] text-neutral-400">
+          <thead className="sticky top-0 bg-neutral-900">
+            <tr>
+              <th className="whitespace-nowrap p-2 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-neutral-500">
+                Linha
+              </th>
+              {hasAnyContext && (
+                <>
+                  <th className="whitespace-nowrap p-2 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-neutral-500">
+                    ID Bling
+                  </th>
+                  <th className="whitespace-nowrap p-2 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-neutral-500">
+                    Loja
+                  </th>
+                  <th className="whitespace-nowrap p-2 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-neutral-500">
+                    Referência
+                  </th>
+                  <th className="whitespace-nowrap p-2 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-neutral-500">
+                    Código
+                  </th>
+                </>
+              )}
+              <th className="whitespace-nowrap p-2 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-neutral-500">
+                Motivo
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((err, i) => (
+              <tr
+                key={`${err.row}-${i}`}
+                className="border-t border-neutral-900"
+                style={{ backgroundColor: `${RED}0d` }}
+              >
+                <td className="whitespace-nowrap p-2 font-semibold tabular-nums text-neutral-300">
+                  {err.row > 0 ? `#${err.row}` : "-"}
+                </td>
+                {hasAnyContext && (
+                  <>
+                    <td className="whitespace-nowrap p-2">{err.idBling || "-"}</td>
+                    <td className="whitespace-nowrap p-2">{err.store || "-"}</td>
+                    <td className="whitespace-nowrap p-2">{err.reference || "-"}</td>
+                    <td className="whitespace-nowrap p-2">{err.code || "-"}</td>
+                  </>
+                )}
+                <td className="p-2" style={{ color: RED }}>
+                  {err.message}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -805,6 +896,24 @@ export default function ConfirmImportModal({
                   />
                 )}
                 {hasWarnings && <AlertBox variant="warning" title="Avisos" messages={warnings} />}
+              </div>
+            </>
+          )}
+
+          {/* ✅ NOVO — Detalhamento linha a linha dos erros, com
+              identificadores (ID Bling/Loja/Referência/Código) quando
+              disponíveis. Sempre visível enquanto houver rowErrors,
+              independente do estado dos AlertBox acima. */}
+          {rowErrors.length > 0 && (
+            <>
+              <div className="my-5 h-px bg-neutral-900" />
+              <div>
+                <SectionHeader
+                  icon={<AlertTriangle className="h-3.5 w-3.5" />}
+                  title="Detalhamento dos erros"
+                  description="Cada linha listada corresponde exatamente à linha da planilha original."
+                />
+                <ErrorDetailsTable rowErrors={rowErrors} />
               </div>
             </>
           )}
