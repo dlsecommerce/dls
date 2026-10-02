@@ -20,7 +20,7 @@ function cfg(loja: Loja) {
   const C = conta.toUpperCase();
   return {
     conta,
-    idLoja: process.env[`BLING_LOJA_ML_${L}_ID`],
+    idLoja: process.env[`BLING_LOJA_ML_${L}_ID`]?.trim(),
     clientId: process.env[`BLING_CLIENT_ID_${C}`],
     clientSecret: process.env[`BLING_CLIENT_SECRET_${C}`],
   };
@@ -97,11 +97,12 @@ export async function blingGet<T = any>(
   path: string,
   params: Record<string, string | number> = {}
 ): Promise<T> {
-  const token = await getAccessToken(loja);
   const qs = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]));
-  const url = `${BLING}${path}${qs.size ? `?${qs}` : ""}`;
+  const url = `${BLING}${path}${qs.toString() ? `?${qs}` : ""}`;
 
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 4; i++) {
+    // token lido a cada tentativa: renova sozinho se expirar durante a paginação
+    const token = await getAccessToken(loja);
     const r = await fetch(url, {
       headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       cache: "no-store",
@@ -116,22 +117,81 @@ export async function blingGet<T = any>(
   throw new Error("Bling: limite de requisições excedido");
 }
 
-/** Lista todos os vínculos produto↔anúncio da loja ML informada */
-export async function listarAnunciosML(loja: Loja) {
+export type AnuncioML = { idBling: number; idMercadoLivre: string; preco: number };
+
+export type DiagnosticoListagem = {
+  idLoja: string;
+  paginas: number;
+  lidos: number;
+  descartadosOutraLoja: number;
+  descartadosSemCodigo: number;
+  duplicados: number;
+  lojasVistas: string[];
+  amostraBruta: unknown;
+  itens: AnuncioML[];
+};
+
+/** Lista os vínculos produto↔anúncio da loja ML, com diagnóstico do que foi lido/descartado */
+export async function listarAnunciosMLDebug(loja: Loja): Promise<DiagnosticoListagem> {
   const { idLoja } = cfg(loja);
   if (!idLoja) throw new Error(`BLING_LOJA_ML_${loja.toUpperCase()}_ID não definido`);
 
   const limite = 100;
-  const out: { idBling: number; idMercadoLivre: string; preco: number }[] = [];
+  const mapa = new Map<string, AnuncioML>();
+  const lojasVistas = new Set<string>();
+  let paginas = 0;
+  let lidos = 0;
+  let outraLoja = 0;
+  let semCodigo = 0;
+  let duplicados = 0;
+  let amostraBruta: unknown = null;
 
   for (let pagina = 1; ; pagina++) {
-    const { data = [] } = await blingGet(loja, "/produtos/lojas", { idLoja, pagina, limite });
+    const resp = await blingGet(loja, "/produtos/lojas", { idLoja, pagina, limite });
+    const data: any[] = Array.isArray(resp?.data) ? resp.data : [];
+    paginas++;
+    lidos += data.length;
+    if (pagina === 1) amostraBruta = data[0] ?? resp;
+
     for (const i of data) {
-      if (String(i.loja?.id) !== String(idLoja) || !i.codigo) continue;
-      out.push({ idBling: i.produto?.id, idMercadoLivre: i.codigo, preco: i.preco });
+      if (i.loja?.id != null) lojasVistas.add(String(i.loja.id));
+
+      if (String(i.loja?.id) !== String(idLoja)) {
+        outraLoja++;
+        continue;
+      }
+      const codigo = String(i.codigo ?? "").trim();
+      if (!codigo) {
+        semCodigo++;
+        continue;
+      }
+      if (mapa.has(codigo)) duplicados++;
+
+      mapa.set(codigo, {
+        idBling: i.produto?.id,
+        idMercadoLivre: codigo,
+        preco: Number(i.preco) || 0,
+      });
     }
+
     if (data.length < limite) break;
     await sleep(350);
   }
-  return out;
+
+  return {
+    idLoja,
+    paginas,
+    lidos,
+    descartadosOutraLoja: outraLoja,
+    descartadosSemCodigo: semCodigo,
+    duplicados,
+    lojasVistas: Array.from(lojasVistas),
+    amostraBruta,
+    itens: Array.from(mapa.values()),
+  };
+}
+
+/** Mantém a assinatura original */
+export async function listarAnunciosML(loja: Loja): Promise<AnuncioML[]> {
+  return (await listarAnunciosMLDebug(loja)).itens;
 }
