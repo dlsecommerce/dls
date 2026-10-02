@@ -14,6 +14,7 @@ import {
 import { unlockAudio } from "@/utils/sound";
 import TableInfoCard from "@/components/ui/Tableinfocard";
 import { supabase } from "@/integrations/supabase/client";
+import ExportProgressToast from "@/components/announce/ExportProgressToast"; // ajuste o caminho se for outro
 
 type Props = {
   exporting: boolean;
@@ -122,6 +123,9 @@ export default function AnnounceActions({
   const [showMoreOptions, setShowMoreOptions] = useState(true);
   const [exportingBling, setExportingBling] = useState(false);
   const [blingProgress, setBlingProgress] = useState(0);
+  const [blingToastOpen, setBlingToastOpen] = useState(false);
+  const [blingCurrent, setBlingCurrent] = useState<number | undefined>();
+  const [blingTotal, setBlingTotal] = useState<number | undefined>();
 
   useEffect(() => {
     try {
@@ -157,6 +161,9 @@ export default function AnnounceActions({
   const handleExportBling = async () => {
     setExportingBling(true);
     setBlingProgress(0);
+    setBlingCurrent(undefined);
+    setBlingTotal(undefined);
+    setBlingToastOpen(true);
     try {
       const {
         data: { session },
@@ -179,11 +186,19 @@ export default function AnnounceActions({
       let fileName = "bling-anuncios.xlsx";
       let mimeType = "application/octet-stream";
       let finished = false;
+      let lastTotal: number | undefined;
 
       const handleLine = (line: string) => {
         if (!line.trim()) return; // ignora o preâmbulo de espaços
         const msg = JSON.parse(line);
-        if (msg.type === "progress") setBlingProgress(msg.percent);
+        if (msg.type === "progress") {
+          setBlingProgress(msg.percent);
+          if (typeof msg.current === "number") setBlingCurrent(msg.current);
+          if (typeof msg.total === "number") {
+            lastTotal = msg.total;
+            setBlingTotal(msg.total);
+          }
+        }
         else if (msg.type === "chunk") chunks[msg.index] = msg.data;
         else if (msg.type === "error") throw new Error(msg.error);
         else if (msg.type === "done") {
@@ -214,11 +229,20 @@ export default function AnnounceActions({
       a.download = fileName;
       a.click();
       URL.revokeObjectURL(url);
+
+      setBlingProgress(100);
+      if (lastTotal !== undefined) setBlingCurrent(lastTotal);
     } catch (e) {
+      setBlingToastOpen(false);
       alert(e instanceof Error ? e.message : "Erro ao exportar");
     } finally {
       setExportingBling(false);
-      setBlingProgress(0);
+      setTimeout(() => {
+        setBlingToastOpen(false);
+        setBlingProgress(0);
+        setBlingCurrent(undefined);
+        setBlingTotal(undefined);
+      }, 2000); // deixa o 100% visível
     }
   };
 
@@ -358,6 +382,15 @@ export default function AnnounceActions({
           <TableInfoCard label="Quantidade de Anúncios" value={totalCount} />
         </div>
       </div>
+
+      <ExportProgressToast
+        open={blingToastOpen}
+        percent={blingProgress}
+        title="Exportando planilha Bling..."
+        current={blingCurrent}
+        total={blingTotal}
+        onClose={() => setBlingToastOpen(false)}
+      />
     </div>
   );
 }

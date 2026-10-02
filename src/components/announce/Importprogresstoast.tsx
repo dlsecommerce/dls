@@ -1,12 +1,12 @@
-"use client";
-
-import React from "react";
-import { CheckCircle2, X, Loader2 } from "lucide-react";
+// ─────────────────────────────────────────────
+// 1) Importprogresstoast.tsx — adicionar a prop `doneTitle`
+// ─────────────────────────────────────────────
 
 type Props = {
   open: boolean;
   percent: number;
   title?: string;
+  doneTitle?: string; // ✅ NOVO
   message?: string;
   onClose?: () => void;
 };
@@ -15,62 +15,111 @@ export default function ImportProgressToast({
   open,
   percent,
   title = "Importando planilha...",
+  doneTitle = "Importação concluída!", // ✅ NOVO
   message,
   onClose,
 }: Props) {
-  if (!open) return null;
-
-  const done = percent >= 100;
-
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="
-        fixed left-1/2 top-6 z-[100] w-[92vw] max-w-md
-        -translate-x-1/2
-        border border-neutral-800 bg-[#0a0a0a]
-        px-4 py-3 shadow-2xl
-        animate-in fade-in slide-in-from-top-2 duration-200
-      "
-    >
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5 shrink-0">
-          {done ? (
-            <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-          ) : (
-            <Loader2 className="h-5 w-5 animate-spin text-[#1a8ceb]" />
-          )}
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-white">
-            {done ? "Importação concluída!" : title}
-          </p>
-
-          {message && <p className="mt-0.5 text-xs text-neutral-400">{message}</p>}
-
-          <div className="mt-2 h-1.5 w-full overflow-hidden bg-neutral-900">
-            <div
-              className="h-full bg-[#1a8ceb] transition-all duration-150 ease-out"
-              style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
-            />
-          </div>
-
-          <p className="mt-1 text-[11px] text-neutral-500">{percent}%</p>
-        </div>
-
-        {onClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Fechar"
-            className="shrink-0 text-neutral-500 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        )}
-      </div>
-    </div>
-  );
+  // ...
+  // trocar o texto fixo:
+  // {done ? "Importação concluída!" : title}
+  // por:
+  // {done ? doneTitle : title}
 }
+
+
+// ─────────────────────────────────────────────
+// 2) AnnounceActions.tsx
+// ─────────────────────────────────────────────
+
+// (a) import
+import ImportProgressToast from "@/components/announce/Importprogresstoast";
+
+// (b) novo state, junto dos outros do Bling
+const [blingToastOpen, setBlingToastOpen] = useState(false);
+
+// (c) handleExportBling completo
+const handleExportBling = async () => {
+  setExportingBling(true);
+  setBlingProgress(0);
+  setBlingToastOpen(true);
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session) throw new Error("Sessão expirada. Entre novamente.");
+
+    const r = await fetch(
+      `/api/announce/export?source=bling&loja=${loja}&format=xlsx`,
+      { headers: { Authorization: `Bearer ${session.access_token}` } }
+    );
+    if (!r.ok || !r.body) {
+      const j = await r.json().catch(() => null);
+      throw new Error(j?.error || "Erro ao exportar");
+    }
+
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    const chunks: string[] = [];
+    let buffer = "";
+    let fileName = "bling-anuncios.xlsx";
+    let mimeType = "application/octet-stream";
+    let finished = false;
+
+    const handleLine = (line: string) => {
+      if (!line.trim()) return;
+      const msg = JSON.parse(line);
+      if (msg.type === "progress") setBlingProgress(msg.percent);
+      else if (msg.type === "chunk") chunks[msg.index] = msg.data;
+      else if (msg.type === "error") throw new Error(msg.error);
+      else if (msg.type === "done") {
+        fileName = msg.fileName;
+        mimeType = msg.mimeType;
+        finished = true;
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      lines.forEach(handleLine);
+    }
+    if (buffer.trim()) handleLine(buffer);
+    if (!finished) throw new Error("Exportação interrompida.");
+
+    const bin = atob(chunks.join(""));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+
+    const url = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    setBlingProgress(100); // ✅ mostra "concluída" no toast
+  } catch (e) {
+    setBlingProgress(0);
+    setBlingToastOpen(false); // erro: fecha o toast e avisa
+    alert(e instanceof Error ? e.message : "Erro ao exportar");
+  } finally {
+    setExportingBling(false);
+    setTimeout(() => {
+      setBlingToastOpen(false);
+      setBlingProgress(0);
+    }, 1500);
+  }
+};
+
+// (d) render — colocar logo antes do </div> final do return
+<ImportProgressToast
+  open={blingToastOpen}
+  percent={blingProgress}
+  title="Exportando planilha Bling..."
+  doneTitle="Exportação concluída!"
+  message={`Loja: ${loja === "pikot" ? "Pikot Shop" : "Sóbaquetas"}`}
+  onClose={() => setBlingToastOpen(false)}
+/>

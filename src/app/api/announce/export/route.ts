@@ -298,6 +298,7 @@ async function handleExport(
    * importação) na mesma tabela.
    */
   let clientDisconnected = false;
+  let totalRows = 0; // total esperado, usado no contador do toast
   request.signal.addEventListener("abort", () => {
     clientDisconnected = true;
   });
@@ -311,7 +312,13 @@ async function handleExport(
   // Nunca deixa o write() travar a transação: timeout curto na escrita.
   function sendProgress(percent: number, processed: number) {
     return Promise.race([
-      sendLine(writer, encoder, { type: "progress", percent, processed }),
+      sendLine(writer, encoder, {
+        type: "progress",
+        percent,
+        processed,
+        current: processed,
+        total: totalRows,
+      }),
       new Promise((_, reject) =>
         setTimeout(() => reject(new Error("CLIENT_DISCONNECTED")), 5000)
       ),
@@ -340,6 +347,13 @@ async function handleExport(
         // ============================================================
         if (source === "bling") {
           await transaction.unsafe(`set local statement_timeout = '30000'`);
+
+          const [{ count: blingCount }] = await transaction<{ count: number }[]>`
+            select count(*)::int as count
+            from newsystem.anuncios_ml
+            where loja = ${loja!}
+          `;
+          totalRows = Math.min(blingCount, MAX_LINHAS);
 
           let lastCodigo: string | null = null;
 
@@ -411,6 +425,7 @@ async function handleExport(
         // ============================================================
         if (isSelectionMode) {
           const ids = selectedIds!;
+          totalRows = ids.length;
 
           for (let offset = 0; offset < ids.length; offset += PAGE_SIZE) {
             checkDisconnected();
@@ -444,6 +459,19 @@ async function handleExport(
         // ============================================================
         // MODO FILTRO/PAGINAÇÃO (comportamento original, sem alterações)
         // ============================================================
+        const [{ count: announceCount }] = store
+          ? await transaction<{ count: number }[]>`
+              select count(*)::int as count
+              from newsystem.announce
+              where deleted_at is null and store = ${store}
+            `
+          : await transaction<{ count: number }[]>`
+              select count(*)::int as count
+              from newsystem.announce
+              where deleted_at is null
+            `;
+        totalRows = Math.min(announceCount, MAX_LINHAS);
+
         let lastStore: string | null = null;
         let lastReference: string | null = null;
 
@@ -529,7 +557,12 @@ async function handleExport(
         );
       }
 
-      await sendLine(writer, encoder, { type: "progress", percent: 75 });
+      await sendLine(writer, encoder, {
+        type: "progress",
+        percent: 75,
+        current: allRows.length,
+        total: allRows.length,
+      });
 
       /*
        * 3. Monta o arquivo no formato solicitado, com cabeçalho em
@@ -558,7 +591,12 @@ async function handleExport(
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
       }
 
-      await sendLine(writer, encoder, { type: "progress", percent: 90 });
+      await sendLine(writer, encoder, {
+        type: "progress",
+        percent: 90,
+        current: allRows.length,
+        total: allRows.length,
+      });
 
       // ============================================================
       // Envia o arquivo em pedaços (chunks) de base64, em vez de um
@@ -591,6 +629,8 @@ async function handleExport(
           await sendLine(writer, encoder, {
             type: "progress",
             percent: Math.min(chunkPercent, 99),
+            current: allRows.length,
+            total: allRows.length,
           });
         }
       }
@@ -599,6 +639,8 @@ async function handleExport(
       await sendLine(writer, encoder, {
         type: "done",
         percent: 100,
+        current: allRows.length,
+        total: allRows.length,
         fileName,
         mimeType,
         totalChunks,
