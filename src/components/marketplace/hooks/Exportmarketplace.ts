@@ -65,9 +65,42 @@ const COL = {
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// ✅ FIX: extrai o valor real da célula, tratando fórmulas (ExcelJS retorna
+// { formula, result }), rich text ({ richText: [...] }) e hyperlinks
+// ({ text, hyperlink }). Antes, nesses casos, `cell.value` virava um objeto
+// e `String(valor)` resultava em "[object Object]", quebrando a validação
+// do UUID e dos números silenciosamente.
+function extractCellValue(cell: ExcelJS.Cell): unknown {
+  const v = cell.value;
+
+  if (v === null || v === undefined) return null;
+
+  if (typeof v === "object") {
+    if ("result" in (v as any)) return (v as any).result ?? null;
+    if ("richText" in (v as any)) {
+      return (v as any).richText.map((r: any) => r.text).join("");
+    }
+    if ("text" in (v as any)) return (v as any).text;
+  }
+
+  return v;
+}
+
+// ✅ FIX: remove símbolos de moeda ("R$"), percentual ("%") e espaços antes
+// de converter para número, e troca vírgula decimal por ponto. Antes,
+// valores formatados como "R$ 341,59" ou "12,00 %" viravam NaN -> null,
+// descartando a linha inteira sem explicar o motivo.
 function toNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
-  const n = Number(value);
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  let str = String(value).trim();
+  str = str.replace(/[R$%\s]/g, "").replace(",", ".");
+
+  const n = Number(str);
   return Number.isFinite(n) ? n : null;
 }
 
@@ -268,13 +301,20 @@ export function useMarketplaceImportExport(
       const rowErrors: MarketplaceImportRowError[] = [];
       const idsVistos = new Set<string>();
 
-      sheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return; // header
+      // ✅ FIX: loop explícito por índice em vez de `sheet.eachRow`.
+      // `eachRow` depende do estado interno de "linhas sujas" do ExcelJS e,
+      // dependendo de como o arquivo foi salvo/reaberto (Excel, Google
+      // Sheets, LibreOffice), pode pular linhas válidas silenciosamente —
+      // resultando em "0 registros" sem nenhum erro reportado.
+      const totalRows = sheet.actualRowCount || sheet.rowCount;
 
-        const rawId = row.getCell(COL.ID).value;
-        const rawLoja = row.getCell(COL.LOJA).value;
+      for (let rowNumber = 2; rowNumber <= totalRows; rowNumber++) {
+        const row = sheet.getRow(rowNumber);
 
-        if (!rawId && !rawLoja) return; // linha vazia
+        const rawId = extractCellValue(row.getCell(COL.ID));
+        const rawLoja = extractCellValue(row.getCell(COL.LOJA));
+
+        if (!rawId && !rawLoja) continue; // linha vazia
 
         const id = rawId ? String(rawId).trim() : "";
 
@@ -283,7 +323,7 @@ export function useMarketplaceImportExport(
             row: rowNumber,
             message: `ID inválido ou ausente na linha ${rowNumber}.`,
           });
-          return;
+          continue;
         }
 
         if (idsVistos.has(id)) {
@@ -291,15 +331,15 @@ export function useMarketplaceImportExport(
             row: rowNumber,
             message: `ID duplicado na linha ${rowNumber}: "${id}".`,
           });
-          return;
+          continue;
         }
         idsVistos.add(id);
 
-        const commissionRate = toNumber(row.getCell(COL.COMISSAO).value);
-        const freight = toNumber(row.getCell(COL.FRETE).value);
-        const profitMargin = toNumber(row.getCell(COL.MARGEM).value);
-        const currentCost = toNumber(row.getCell(COL.CUSTO).value);
-        const sellingPrice = toNumber(row.getCell(COL.PRECO_VENDA).value);
+        const commissionRate = toNumber(extractCellValue(row.getCell(COL.COMISSAO)));
+        const freight = toNumber(extractCellValue(row.getCell(COL.FRETE)));
+        const profitMargin = toNumber(extractCellValue(row.getCell(COL.MARGEM)));
+        const currentCost = toNumber(extractCellValue(row.getCell(COL.CUSTO)));
+        const sellingPrice = toNumber(extractCellValue(row.getCell(COL.PRECO_VENDA)));
 
         if (
           commissionRate === null ||
@@ -312,7 +352,7 @@ export function useMarketplaceImportExport(
             row: rowNumber,
             message: `Valores numéricos inválidos na linha ${rowNumber} (ID "${id}").`,
           });
-          return;
+          continue;
         }
 
         if (commissionRate < 0 || commissionRate > 100) {
@@ -321,7 +361,7 @@ export function useMarketplaceImportExport(
             field: "commission_rate",
             message: `Comissão fora do intervalo 0-100 na linha ${rowNumber}.`,
           });
-          return;
+          continue;
         }
 
         if (profitMargin < 0 || profitMargin > 100) {
@@ -330,7 +370,7 @@ export function useMarketplaceImportExport(
             field: "profit_margin",
             message: `Margem de lucro fora do intervalo 0-100 na linha ${rowNumber}.`,
           });
-          return;
+          continue;
         }
 
         if (freight < 0 || currentCost < 0 || sellingPrice < 0) {
@@ -338,7 +378,7 @@ export function useMarketplaceImportExport(
             row: rowNumber,
             message: `Valores negativos não são permitidos na linha ${rowNumber}.`,
           });
-          return;
+          continue;
         }
 
         const registro: MarketplaceImportRegistro = {
@@ -355,14 +395,14 @@ export function useMarketplaceImportExport(
         previewRows.push({
           id,
           store: rawLoja ?? "",
-          channel: row.getCell(COL.CANAL).value ?? "",
-          id_bling: row.getCell(COL.ID_BLING).value ?? "",
-          reference: row.getCell(COL.REFERENCIA).value ?? "",
-          product: row.getCell(COL.PRODUTO).value ?? "",
-          mark: row.getCell(COL.MARCA).value ?? "",
+          channel: extractCellValue(row.getCell(COL.CANAL)) ?? "",
+          id_bling: extractCellValue(row.getCell(COL.ID_BLING)) ?? "",
+          reference: extractCellValue(row.getCell(COL.REFERENCIA)) ?? "",
+          product: extractCellValue(row.getCell(COL.PRODUTO)) ?? "",
+          mark: extractCellValue(row.getCell(COL.MARCA)) ?? "",
           ...registro,
         });
-      });
+      }
 
       if (registros.length === 0 && rowErrors.length === 0) {
         errors.push("Nenhum registro válido encontrado na planilha.");
