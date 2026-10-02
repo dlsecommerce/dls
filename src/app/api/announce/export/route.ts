@@ -4,9 +4,12 @@ import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx-js-style";
 import { getPostgresClient } from "@/lib/postgres";
+import { isLoja } from "@/lib/bling";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+type Source = "announce" | "bling";
 
 type AnnounceRow = {
   store: string;
@@ -17,13 +20,57 @@ type AnnounceRow = {
   code_id: number | null;
 };
 
+type BlingRow = {
+  loja: string;
+  id_bling: string | number;
+  codigo: string;
+  tipo: "anuncio" | "variacao";
+  item_id: string | null;
+  preco: string | number | null;
+};
+
+type ExportRow = AnnounceRow | BlingRow;
+
+type Layout = {
+  headers: string[];
+  widths: number[];
+  sheet: string;
+  toCells: (row: ExportRow) => unknown[];
+};
+
 const PAGE_SIZE = 20_000;
 const MAX_LINHAS = 300_000; // trava de segurança contra export descontrolado
 const MAX_IDS_SELECAO = 300_000; // mesma trava aplicada ao modo seleção
 const BASE64_CHUNK_SIZE = 200_000; // tamanho de cada pedaço do arquivo
 
-// Cabeçalhos traduzidos para português, na ordem das colunas do banco.
-const HEADERS_PT = ["Loja", "ID Bling", "Referência", "Produto", "Marca", "Código ID"];
+// Layout de colunas por fonte de dados.
+const LAYOUTS: Record<Source, Layout> = {
+  announce: {
+    headers: ["Loja", "ID Bling", "Referência", "Produto", "Marca", "Código ID"],
+    widths: [15, 18, 22, 34, 20, 14],
+    sheet: "Announce",
+    toCells: (row) => {
+      const r = row as AnnounceRow;
+      return [r.store, r.id_bling, r.reference, r.product, r.mark, r.code_id];
+    },
+  },
+  bling: {
+    headers: ["Loja", "ID Bling", "ID na Loja (MLB)", "Tipo", "Anúncio pai", "Preço"],
+    widths: [15, 18, 22, 12, 20, 12],
+    sheet: "Anuncios",
+    toCells: (row) => {
+      const r = row as BlingRow;
+      return [
+        r.loja,
+        r.id_bling,
+        r.codigo,
+        r.tipo === "anuncio" ? "Anúncio" : "Variação",
+        r.item_id ?? "",
+        r.preco === null ? null : Number(r.preco),
+      ];
+    },
+  },
+};
 
 function getBearerToken(request: NextRequest): string | null {
   const authorization = request.headers.get("authorization");
@@ -63,22 +110,13 @@ function escapeCsvValue(value: unknown): string {
 /**
  * Converte as linhas diretamente para CSV, sem passar por XLSX.
  * Muito mais rápido para grandes volumes (50k-100k+ linhas).
- * Cabeçalho traduzido para português.
  */
-function rowsToCsv(rows: AnnounceRow[]): string {
-  const header = HEADERS_PT.join(",");
+function rowsToCsv(rows: ExportRow[], layout: Layout): string {
+  const header = layout.headers.join(",");
 
   const lines = new Array(rows.length);
   for (let i = 0; i < rows.length; i++) {
-    const r = rows[i];
-    lines[i] = [
-      escapeCsvValue(r.store),
-      escapeCsvValue(r.id_bling),
-      escapeCsvValue(r.reference),
-      escapeCsvValue(r.product),
-      escapeCsvValue(r.mark),
-      escapeCsvValue(r.code_id),
-    ].join(",");
+    lines[i] = layout.toCells(rows[i]).map(escapeCsvValue).join(",");
   }
 
   return `${header}\n${lines.join("\n")}`;
@@ -88,17 +126,10 @@ function rowsToCsv(rows: AnnounceRow[]): string {
  * Monta o XLSX com cabeçalho em português e estilizado em azul,
  * no mesmo padrão visual usado em Exportcosts.tsx.
  */
-function buildStyledXlsxBuffer(rows: AnnounceRow[]): Buffer {
-  const data = rows.map((r) => [
-    r.store,
-    r.id_bling,
-    r.reference,
-    r.product,
-    r.mark,
-    r.code_id,
-  ]);
+function buildStyledXlsxBuffer(rows: ExportRow[], layout: Layout): Buffer {
+  const data = rows.map(layout.toCells);
 
-  const worksheet = XLSX.utils.aoa_to_sheet([HEADERS_PT, ...data]);
+  const worksheet = XLSX.utils.aoa_to_sheet([layout.headers, ...data]);
 
   const headerStyle = {
     font: { bold: true, color: { rgb: "FFFFFF" } },
@@ -106,23 +137,16 @@ function buildStyledXlsxBuffer(rows: AnnounceRow[]): Buffer {
     alignment: { horizontal: "center", vertical: "center" },
   };
 
-  HEADERS_PT.forEach((_, idx) => {
+  layout.headers.forEach((_, idx) => {
     const cellRef = XLSX.utils.encode_cell({ r: 0, c: idx });
     (worksheet as any)[cellRef] = (worksheet as any)[cellRef] || {};
     (worksheet as any)[cellRef].s = headerStyle;
   });
 
-  (worksheet as any)["!cols"] = [
-    { wch: 15 }, // Loja
-    { wch: 18 }, // ID Bling
-    { wch: 22 }, // Referência
-    { wch: 34 }, // Produto
-    { wch: 20 }, // Marca
-    { wch: 14 }, // Código ID
-  ];
+  (worksheet as any)["!cols"] = layout.widths.map((wch) => ({ wch }));
 
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Announce");
+  XLSX.utils.book_append_sheet(workbook, worksheet, layout.sheet);
 
   return XLSX.write(workbook, {
     type: "buffer",
@@ -173,6 +197,13 @@ function normalizeIdsBody(value: unknown): string[] | null {
   return ids.length > 0 ? ids : null;
 }
 
+function jsonError(error: string, status: number): Response {
+  return new Response(JSON.stringify({ error }), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 /**
  * Núcleo compartilhado da exportação. Recebe os parâmetros já
  * extraídos (independente de terem vindo de querystring no GET ou
@@ -180,9 +211,18 @@ function normalizeIdsBody(value: unknown): string[] | null {
  */
 async function handleExport(
   request: NextRequest,
-  params: { store: string | null; format: string; selectedIds: string[] | null }
+  params: {
+    source: Source;
+    store: string | null;
+    loja: string | null;
+    format: string;
+    selectedIds: string[] | null;
+  }
 ): Promise<Response> {
-  const { store, format, selectedIds } = params;
+  const { source, store, loja, format } = params;
+  // Modo seleção só existe para a tabela do sistema (announce)
+  const selectedIds = source === "announce" ? params.selectedIds : null;
+  const layout = LAYOUTS[source];
 
   /*
    * 1. Obtém e valida o token antes de abrir o stream — se falhar,
@@ -191,12 +231,7 @@ async function handleExport(
   const accessToken = getBearerToken(request);
 
   if (!accessToken) {
-    return new Response(
-      JSON.stringify({
-        error: "Usuário não autenticado. Entre novamente no sistema.",
-      }),
-      { status: 401, headers: { "Content-Type": "application/json" } }
-    );
+    return jsonError("Usuário não autenticado. Entre novamente no sistema.", 401);
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -206,12 +241,7 @@ async function handleExport(
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseKey) {
-    return new Response(
-      JSON.stringify({
-        error: "As variáveis do Supabase não foram configuradas no servidor.",
-      }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    return jsonError("As variáveis do Supabase não foram configuradas no servidor.", 500);
   }
 
   const authClient = createClient(supabaseUrl, supabaseKey, {
@@ -226,13 +256,14 @@ async function handleExport(
     await authClient.auth.getUser(accessToken);
 
   if (userError || !userData.user) {
-    return new Response(
-      JSON.stringify({
-        error:
-          "Sua sessão não é válida ou expirou. Entre novamente no sistema.",
-      }),
-      { status: 401, headers: { "Content-Type": "application/json" } }
+    return jsonError(
+      "Sua sessão não é válida ou expirou. Entre novamente no sistema.",
+      401
     );
+  }
+
+  if (source === "bling" && !isLoja(loja)) {
+    return jsonError('O parâmetro "loja" deve ser "sobaquetas" ou "pikot".', 400);
   }
 
   // ✅ modo seleção — se vierem IDs, ignora completamente o filtro
@@ -240,19 +271,14 @@ async function handleExport(
   const isSelectionMode = selectedIds !== null;
 
   if (isSelectionMode && selectedIds.length > MAX_IDS_SELECAO) {
-    return new Response(
-      JSON.stringify({
-        error: `Seleção excede o limite máximo de ${MAX_IDS_SELECAO} registros.`,
-      }),
-      { status: 400, headers: { "Content-Type": "application/json" } }
+    return jsonError(
+      `Seleção excede o limite máximo de ${MAX_IDS_SELECAO} registros.`,
+      400
     );
   }
 
   if (format !== "xlsx" && format !== "csv") {
-    return new Response(
-      JSON.stringify({ error: 'O parâmetro "format" deve ser "xlsx" ou "csv".' }),
-      { status: 400, headers: { "Content-Type": "application/json" } }
-    );
+    return jsonError('O parâmetro "format" deve ser "xlsx" ou "csv".', 400);
   }
 
   const encoder = new TextEncoder();
@@ -282,6 +308,16 @@ async function handleExport(
     }
   }
 
+  // Nunca deixa o write() travar a transação: timeout curto na escrita.
+  function sendProgress(percent: number, processed: number) {
+    return Promise.race([
+      sendLine(writer, encoder, { type: "progress", percent, processed }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("CLIENT_DISCONNECTED")), 5000)
+      ),
+    ]);
+  }
+
   /*
    * 2. Processa tudo em background e vai escrevendo linhas NDJSON
    * no stream conforme avança.
@@ -290,7 +326,66 @@ async function handleExport(
     try {
       const sql = getPostgresClient();
 
-      const allRows: AnnounceRow[] = await sql.begin(async (transaction) => {
+      const allRows: ExportRow[] = await sql.begin(async (transaction) => {
+        // Timeout de segurança: se uma query travar por qualquer motivo
+        // (lock, RLS lenta), o Postgres cancela em vez de ficar preso
+        // para sempre segurando lock em outras operações (ex.: importação).
+        const collected: ExportRow[] = [];
+
+        // ============================================================
+        // ✅ FONTE BLING: espelho do Bling (newsystem.anuncios_ml).
+        // A tabela só tem permissão para service_role/conexão direta,
+        // então NÃO troca para o role "authenticated". O acesso já foi
+        // protegido pela validação do token acima.
+        // ============================================================
+        if (source === "bling") {
+          await transaction.unsafe(`set local statement_timeout = '30000'`);
+
+          let lastCodigo: string | null = null;
+
+          while (true) {
+            checkDisconnected();
+
+            const rows: BlingRow[] =
+              lastCodigo === null
+                ? await transaction<BlingRow[]>`
+                    select loja, id_bling, codigo, tipo, item_id, preco
+                    from newsystem.anuncios_ml
+                    where loja = ${loja!}
+                    order by codigo
+                    limit ${PAGE_SIZE}
+                  `
+                : await transaction<BlingRow[]>`
+                    select loja, id_bling, codigo, tipo, item_id, preco
+                    from newsystem.anuncios_ml
+                    where loja = ${loja!}
+                      and codigo > ${lastCodigo}
+                    order by codigo
+                    limit ${PAGE_SIZE}
+                  `;
+
+            checkDisconnected();
+
+            if (rows.length === 0) break;
+
+            collected.push(...rows);
+            lastCodigo = rows[rows.length - 1].codigo;
+
+            await sendProgress(
+              Math.min(70, 1 + Math.round((collected.length / MAX_LINHAS) * 69)),
+              collected.length
+            );
+
+            if (collected.length >= MAX_LINHAS) break;
+            if (rows.length < PAGE_SIZE) break;
+          }
+
+          return collected;
+        }
+
+        // ============================================================
+        // FONTE ANNOUNCE (sistema): roda como usuário autenticado (RLS)
+        // ============================================================
         const jwtClaims = JSON.stringify({
           sub: userData.user.id,
           role: "authenticated",
@@ -307,13 +402,7 @@ async function handleExport(
           select set_config('request.jwt.claim.role', 'authenticated', true)
         `;
         await transaction`set local role authenticated`;
-
-        // Timeout de segurança: se uma query travar por qualquer motivo
-        // (lock, RLS lenta), o Postgres cancela em vez de ficar preso
-        // para sempre segurando lock em outras operações (ex.: importação).
         await transaction.unsafe(`set local statement_timeout = '30000'`);
-
-        const collected: AnnounceRow[] = [];
 
         // ============================================================
         // ✅ MODO SELEÇÃO: busca direto pelos IDs marcados na tabela,
@@ -340,21 +429,13 @@ async function handleExport(
 
             collected.push(...rows);
 
-            const percent = Math.min(
-              70,
-              1 + Math.round((collected.length / Math.max(ids.length, 1)) * 69)
-            );
-
-            await Promise.race([
-              sendLine(writer, encoder, {
-                type: "progress",
-                percent,
-                processed: collected.length,
-              }),
-              new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("CLIENT_DISCONNECTED")), 5000)
+            await sendProgress(
+              Math.min(
+                70,
+                1 + Math.round((collected.length / Math.max(ids.length, 1)) * 69)
               ),
-            ]);
+              collected.length
+            );
           }
 
           return collected;
@@ -418,24 +499,10 @@ async function handleExport(
           lastStore = last.store;
           lastReference = last.reference;
 
-          const percent = Math.min(
-            70,
-            1 + Math.round((collected.length / MAX_LINHAS) * 69)
+          await sendProgress(
+            Math.min(70, 1 + Math.round((collected.length / MAX_LINHAS) * 69)),
+            collected.length
           );
-
-          // Nunca deixa o write() travar a transação: dá um timeout
-          // curto na própria escrita. Se o cliente já foi, isso falha
-          // rápido em vez de ficar pendurado para sempre.
-          await Promise.race([
-            sendLine(writer, encoder, {
-              type: "progress",
-              percent,
-              processed: collected.length,
-            }),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error("CLIENT_DISCONNECTED")), 5000)
-            ),
-          ]);
 
           if (collected.length >= MAX_LINHAS) break;
           if (rows.length < PAGE_SIZE) break;
@@ -447,7 +514,10 @@ async function handleExport(
       if (allRows.length === 0) {
         await sendLine(writer, encoder, {
           type: "error",
-          error: "Nenhum registro encontrado para exportar.",
+          error:
+            source === "bling"
+              ? "Nenhum anúncio do Bling encontrado. Sincronize com o Bling primeiro."
+              : "Nenhum registro encontrado para exportar.",
         });
         await writer.close();
         return;
@@ -455,7 +525,7 @@ async function handleExport(
 
       if (allRows.length >= MAX_LINHAS) {
         console.warn(
-          `Exportação de announce atingiu o limite de ${MAX_LINHAS} linhas. Considere aplicar filtros.`
+          `Exportação (${source}) atingiu o limite de ${MAX_LINHAS} linhas. Considere aplicar filtros.`
         );
       }
 
@@ -469,17 +539,20 @@ async function handleExport(
       let fileName: string;
       let mimeType: string;
 
-      const filePrefix = isSelectionMode
-        ? "ANÚNCIOS - SELECIONADOS"
-        : "ANÚNCIOS - PLANILHA";
+      const filePrefix =
+        source === "bling"
+          ? `BLING - ANÚNCIOS ${String(loja).toUpperCase()}`
+          : isSelectionMode
+            ? "ANÚNCIOS - SELECIONADOS"
+            : "ANÚNCIOS - PLANILHA";
 
       if (format === "csv") {
-        const csv = rowsToCsv(allRows);
+        const csv = rowsToCsv(allRows, layout);
         buffer = Buffer.from(csv, "utf-8");
         fileName = buildTimestampedFileName(filePrefix, "csv");
         mimeType = "text/csv; charset=utf-8";
       } else {
-        buffer = buildStyledXlsxBuffer(allRows);
+        buffer = buildStyledXlsxBuffer(allRows, layout);
         fileName = buildTimestampedFileName(filePrefix, "xlsx");
         mimeType =
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -551,7 +624,7 @@ async function handleExport(
         where?: string;
       };
 
-      console.error("Erro na exportação de announce:", {
+      console.error(`Erro na exportação (${source}):`, {
         name: databaseError?.name ?? null,
         message: databaseError?.message ?? null,
         code: databaseError?.code ?? null,
@@ -585,21 +658,24 @@ async function handleExport(
 }
 
 /**
- * Mantido para exportação por filtro/loja (comportamento original).
- * Não deve ser usado para envio de listas grandes de IDs — nesse
- * caso, use POST (evita o limite de tamanho de URL/querystring).
+ * Exportação por filtro/loja (comportamento original) e, com
+ * `?source=bling&loja=sobaquetas`, exportação do espelho do Bling.
+ * Não use para listas grandes de IDs — nesse caso, use POST.
  */
 export async function GET(request: NextRequest): Promise<Response> {
   const { searchParams } = new URL(request.url);
+  const source: Source =
+    searchParams.get("source") === "bling" ? "bling" : "announce";
   const store = searchParams.get("store")?.trim() || null;
+  const loja = searchParams.get("loja")?.trim().toLowerCase() || null;
   const format = (searchParams.get("format") ?? "xlsx").toLowerCase();
   const selectedIds = parseIdsParam(searchParams);
 
-  return handleExport(request, { store, format, selectedIds });
+  return handleExport(request, { source, store, loja, format, selectedIds });
 }
 
 /**
- * ✅ NOVO — usado para exportação por seleção de IDs na tabela.
+ * ✅ Usado para exportação por seleção de IDs na tabela.
  * Recebe os IDs no corpo JSON em vez de querystring, evitando o
  * erro 414 (Request-URI Too Long) quando há muitos itens
  * selecionados (centenas/milhares de UUIDs).
@@ -612,26 +688,24 @@ export async function POST(request: NextRequest): Promise<Response> {
   try {
     body = await request.json();
   } catch {
-    return new Response(
-      JSON.stringify({ error: "Corpo da requisição inválido. Esperado JSON." }),
-      { status: 400, headers: { "Content-Type": "application/json" } }
-    );
+    return jsonError("Corpo da requisição inválido. Esperado JSON.", 400);
   }
 
   const selectedIds = normalizeIdsBody(body.ids);
 
   if (!selectedIds) {
-    return new Response(
-      JSON.stringify({
-        error: 'O campo "ids" é obrigatório e deve conter ao menos 1 item.',
-      }),
-      { status: 400, headers: { "Content-Type": "application/json" } }
-    );
+    return jsonError('O campo "ids" é obrigatório e deve conter ao menos 1 item.', 400);
   }
 
   const format =
     typeof body.format === "string" ? body.format.toLowerCase() : "xlsx";
   const store = typeof body.store === "string" ? body.store.trim() || null : null;
 
-  return handleExport(request, { store, format, selectedIds });
+  return handleExport(request, {
+    source: "announce",
+    store,
+    loja: null,
+    format,
+    selectedIds,
+  });
 }
