@@ -80,9 +80,6 @@ async function extractErrorMessage(response: Response, fallback: string): Promis
 /**
  * Extrai o nome real do arquivo a partir do header Content-Disposition
  * enviado pelo servidor (ex: "COMPOSIÇÃO - 16-09-2026 10h41min.xlsx").
- *
- * Prioriza o formato filename*=UTF-8''... (nome com acentos, RFC 5987).
- * Cai para filename="..." como fallback caso o primeiro não exista.
  */
 function extractFilenameFromHeader(
   contentDisposition: string | null
@@ -102,13 +99,15 @@ function extractFilenameFromHeader(
   return asciiMatch?.[1] ?? null;
 }
 
+type BlingLoja = "sobaquetas" | "pikot";
+
+/** Converte o filtro de loja ("Pikot Shop", "Sóbaquetas"...) para o valor que a rota espera. */
+function getBlingLoja(store?: string): BlingLoja {
+  return store?.toLowerCase().includes("pikot") ? "pikot" : "sobaquetas";
+}
+
 /* ─────────────────────────────────────────────
- * ✅ NOVO — Erros da importação de COMPOSIÇÃO
- *
- * Unifica os dois formatos vindos de /api/composicao/import:
- *  - `skippedDetails` → linhas rejeitadas na validação (antes de ir ao banco).
- *  - `errors` (quando objetos, não strings) → falharam na função SQL
- *    `upsert_composition_lote`.
+ * Erros da importação de COMPOSIÇÃO
  * ───────────────────────────────────────────── */
 
 type ComposicaoRowError = {
@@ -139,7 +138,6 @@ function buildComposicaoRowErrors(result: any): ComposicaoRowError[] {
 
   const dbErrors = Array.isArray(result?.errors) ? result.errors : [];
   for (const item of dbErrors) {
-    // Compatibilidade: versões antigas de `errors` retornavam apenas strings.
     if (typeof item === "string") {
       rows.push({
         linha: null,
@@ -193,11 +191,6 @@ function downloadComposicaoErrorsCsv(rows: ComposicaoRowError[]) {
   URL.revokeObjectURL(url);
 }
 
-/**
- * ✅ NOVO — Modal com a tabela de erros da importação de composição.
- * Simples, auto-contido, sem dependência do ConfirmImportModal (que
- * pertence à importação de anúncios).
- */
 function ComposicaoErrorsModal({
   open,
   onClose,
@@ -310,6 +303,108 @@ export default function Announce() {
   const storeValue =
     appliedFilters.loja !== "Todos" ? appliedFilters.loja : undefined;
 
+  // Loja usada no botão "Exportar dados para planilha Bling".
+  const blingLoja = getBlingLoja(storeValue);
+
+  // ✅ Exportação Bling (toast fica na página, igual às outras exportações)
+  const [exportingBling, setExportingBling] = React.useState(false);
+  const [blingOpen, setBlingOpen] = React.useState(false);
+  const [blingProgress, setBlingProgress] = React.useState(0);
+  const [blingCurrent, setBlingCurrent] = React.useState<number | undefined>();
+  const [blingTotal, setBlingTotal] = React.useState<number | undefined>();
+
+  const handleExportBling = async () => {
+    if (exportingBling) return;
+
+    setExportingBling(true);
+    setBlingProgress(0);
+    setBlingCurrent(undefined);
+    setBlingTotal(undefined);
+    setBlingOpen(true);
+
+    try {
+      const token = await getAccessToken();
+
+      const r = await fetch(
+        `/api/announce/export?source=bling&loja=${blingLoja}&format=xlsx`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (!r.ok || !r.body) {
+        throw new Error(await extractErrorMessage(r, "Erro ao exportar."));
+      }
+
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      const chunks: string[] = [];
+      let buffer = "";
+      let fileName = "bling-anuncios.xlsx";
+      let mimeType = "application/octet-stream";
+      let finished = false;
+      let lastTotal: number | undefined;
+
+      const handleLine = (line: string) => {
+        if (!line.trim()) return; // ignora o preâmbulo de espaços
+        const msg = JSON.parse(line);
+
+        if (msg.type === "progress") {
+          setBlingProgress(msg.percent);
+          if (typeof msg.current === "number") setBlingCurrent(msg.current);
+          if (typeof msg.total === "number") {
+            lastTotal = msg.total;
+            setBlingTotal(msg.total);
+          }
+        } else if (msg.type === "chunk") {
+          chunks[msg.index] = msg.data;
+        } else if (msg.type === "error") {
+          throw new Error(msg.error);
+        } else if (msg.type === "done") {
+          fileName = msg.fileName;
+          mimeType = msg.mimeType;
+          finished = true;
+        }
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        lines.forEach(handleLine);
+      }
+      if (buffer.trim()) handleLine(buffer);
+      if (!finished) throw new Error("Exportação interrompida.");
+
+      const bin = atob(chunks.join(""));
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+
+      const url = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      setBlingProgress(100);
+      if (lastTotal !== undefined) setBlingCurrent(lastTotal);
+    } catch (err: any) {
+      console.error("Erro ao exportar planilha Bling:", err);
+      setBlingProgress(0);
+      setBlingOpen(false);
+      toastCustom.error(err?.message ?? "Não foi possível exportar a planilha Bling.");
+    } finally {
+      setExportingBling(false);
+      setTimeout(() => {
+        setBlingOpen(false);
+        setBlingProgress(0);
+        setBlingCurrent(undefined);
+        setBlingTotal(undefined);
+      }, 2000); // deixa o 100% visível
+    }
+  };
+
   const [sortColumn, setSortColumn] = React.useState<string | null>(null);
   const [sortDirection, setSortDirection] = React.useState<"asc" | "desc">("asc");
 
@@ -352,9 +447,6 @@ export default function Announce() {
   const [allBrands, setAllBrands] = React.useState<string[]>([]);
   const [brandsLoading, setBrandsLoading] = React.useState(false);
 
-  // ✅ Canais de marketplace disponíveis (mesma fonte usada em
-  // ProductDetails, via ChannelSelector) — reaproveitados aqui para
-  // permitir vincular canais também na importação em massa.
   const { channels: availableChannels, loading: loadingChannels } = useChannels();
 
   React.useEffect(() => {
@@ -497,11 +589,6 @@ export default function Announce() {
     totalCountRef.current = totalCount;
   }, [totalCount]);
 
-  // ✅ Export com 2 modos, mutuamente exclusivos:
-  //   - Se houver linhas selecionadas na tabela → exporta SÓ a seleção
-  //     (ids), ignorando o filtro de loja.
-  //   - Caso contrário → exporta pelo filtro de loja aplicado na tela
-  //     (comportamento original).
   const handleExport = async () => {
     cancelExportRef.current = false;
     const controller = new AbortController();
@@ -515,8 +602,6 @@ export default function Announce() {
     setExportProgress(0);
     setExportProgressCount(0);
 
-    // Quando é exportação por seleção, o total do progresso passa a ser
-    // a quantidade de itens selecionados (não o total geral filtrado).
     if (hasSelection) {
       totalCountRef.current = selectedIds.length;
     }
@@ -562,20 +647,6 @@ export default function Announce() {
       console.error("Erro ao gerar planilha modelo:", err);
     }
   };
-
-  // ────────────────────────────────────────────────────────────
-  // ✅ HANDLERS — Composição (Gerar: Modelo / Exportar / Importar)
-  // Todas as chamadas usam fetch manual com Authorization: Bearer,
-  // pois os endpoints /api/composicao/* exigem o token do Supabase
-  // explicitamente no header (não usam cookies de sessão).
-  //
-  // ✅ Ambos os exports de composição agora respeitam o mesmo
-  // filtro/seleção aplicado na tabela de anúncios:
-  //   - Se houver linhas selecionadas → envia via POST { ids }
-  //     (evita limite de tamanho de URL).
-  //   - Caso contrário → envia via GET com querystring, usando
-  //     store / search / type / marks aplicados na tela.
-  // ────────────────────────────────────────────────────────────
 
   const downloadBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
@@ -630,8 +701,6 @@ export default function Announce() {
 
       const blob = await res.blob();
 
-      // ✅ Usa o nome real gerado pelo servidor (com data/hora),
-      // caindo para um nome fixo apenas se o header não vier.
       const filename =
         extractFilenameFromHeader(res.headers.get("Content-Disposition")) ??
         "modelo-composicao.xlsx";
@@ -697,8 +766,6 @@ export default function Announce() {
 
       const blob = await res.blob();
 
-      // ✅ Usa o nome real gerado pelo servidor (com data/hora),
-      // caindo para um nome fixo apenas se o header não vier.
       const filename =
         extractFilenameFromHeader(res.headers.get("Content-Disposition")) ??
         "composicoes.xlsx";
@@ -720,39 +787,19 @@ export default function Announce() {
   const [composicaoProgress, setComposicaoProgress] = React.useState(0);
   const [composicaoProgressCount, setComposicaoProgressCount] = React.useState(0);
 
-  // ✅ NOVO — states do modal de erros detalhados da importação de
-  // composição (linha, ID Bling, loja, referência, código, motivo).
   const [composicaoErrorsModalOpen, setComposicaoErrorsModalOpen] = React.useState(false);
   const [composicaoErrorRows, setComposicaoErrorRows] = React.useState<ComposicaoRowError[]>([]);
 
-  // ✅ NOVO — states do modal de confirmação (merge/replace) do
-  // import de composição. O arquivo escolhido pelo usuário é
-  // guardado aqui até a confirmação do modo no modal.
   const [composicaoModalOpen, setComposicaoModalOpen] = React.useState(false);
   const [pendingComposicaoFile, setPendingComposicaoFile] = React.useState<File | null>(
     null
   );
 
-  /**
-   * ✅ NOVO — dispara quando o usuário seleciona o arquivo de
-   * composição (no AnnounceActions). Não faz upload ainda: apenas
-   * guarda o arquivo e abre o modal de confirmação de modo
-   * (merge/replace).
-   */
   const handleSelectComposicaoFile = (file: File) => {
     setPendingComposicaoFile(file);
     setComposicaoModalOpen(true);
   };
 
-  /**
-   * Upload real da planilha de composição, agora recebendo o `mode`
-   * ("merge" | "replace") escolhido no ImportComposicaoModal.
-   *
-   * ✅ Atualizado: monta `composicaoErrorRows` a partir de
-   * `result.skippedDetails` (validação) e `result.errors` (banco) e
-   * abre o modal de detalhamento sempre que houver pelo menos 1 erro
-   * — inclusive em sucesso parcial (alguns processados, outros não).
-   */
   const handleImportComposicao = async (
     file: File,
     mode: ComposicaoImportMode
@@ -770,8 +817,6 @@ export default function Announce() {
       formData.append("file", file);
       formData.append("mode", mode);
 
-      // Progresso simulado: não há streaming real de linhas processadas
-      // no endpoint atual (upload único + processamento no servidor).
       setComposicaoProgress(30);
 
       const res = await fetch("/api/composicao/import", {
@@ -815,9 +860,6 @@ export default function Announce() {
         );
       }
 
-      // ✅ Sucesso parcial: processou alguns, mas houve linhas rejeitadas
-      // na validação ou erros vindos do banco. Mostra o toast e abre o
-      // modal com o detalhamento completo (sem truncar).
       const detailed = buildComposicaoRowErrors(result);
       if (detailed.length > 0) {
         toastCustom.error(`${detailed.length} linha(s) não foram processadas.`);
@@ -838,10 +880,6 @@ export default function Announce() {
     }
   };
 
-  /**
-   * ✅ NOVO — chamado quando o usuário confirma o modo no
-   * ImportComposicaoModal. Dispara o upload real e fecha o modal.
-   */
   const handleConfirmImportComposicao = async (mode: ComposicaoImportMode) => {
     if (!pendingComposicaoFile) {
       setComposicaoModalOpen(false);
@@ -868,22 +906,11 @@ export default function Announce() {
   const [importProgress, setImportProgress] = React.useState(0);
   const [importProgressCount, setImportProgressCount] = React.useState(0);
   const [pendingFile, setPendingFile] = React.useState<File | null>(null);
-  // ✅ Resultado final retornado pela API (importados / rejeitados),
-  // exibido no resumo dentro do ConfirmImportModal.
   const [importResult, setImportResult] = React.useState<ImportResult | null>(
     null
   );
-  // ✅ Canais de marketplace selecionados na importação (inclusão e
-  // alteração). Reaproveita a mesma lista/estilo do ChannelSelector
-  // usado em ProductDetails.
   const [importChannels, setImportChannels] = React.useState<string[]>([]);
 
-  // ✅ Mapa canal -> índices das linhas do preview que serão enviadas
-  // para aquele canal. Usado pelo ConfirmImportModal para permitir
-  // escolher, linha a linha, quais anúncios vão para qual canal.
-  // Pode vir PRÉ-PREENCHIDO automaticamente quando a planilha traz a
-  // coluna "Canal" (ver runImportPreview abaixo) — o usuário ainda
-  // pode ajustar manualmente no modal antes de confirmar.
   const [importChannelRowAssignments, setImportChannelRowAssignments] =
     React.useState<Record<string, number[]>>({});
 
@@ -904,13 +931,6 @@ export default function Announce() {
     try {
       const result: any = await importAnnounceFromXlsxOrCsv(file, true);
 
-      // ✅ Se a planilha trouxe a coluna "Canal" preenchida em alguma
-      // linha, pré-monta automaticamente o mapa canal -> índices, para
-      // que o usuário já veja tudo pronto no modal (podendo ajustar
-      // manualmente antes de confirmar). Os índices correspondem à
-      // posição em `result.data` (mesmo array usado na importação
-      // final), não em `previewRows` (que é só um recorte das 50
-      // primeiras linhas para exibição).
       const autoAssignments: Record<string, number[]> = {};
       const canaisNaoEncontrados = new Set<string>();
       const nomesValidos = new Set(
@@ -994,11 +1014,6 @@ export default function Announce() {
     setImportResult(null);
 
     try {
-      // ✅ Agora repassa `importChannelRowAssignments`: cada linha do
-      // preview pode ir para canais diferentes entre si. Os índices
-      // usados no mapa correspondem à posição do registro em `deduped`
-      // (mesmo array vindo do preview), calculado dentro de
-      // importAnnounceFromXlsxOrCsv/applyChannelRowAssignments.
       const result: any = await importAnnounceFromXlsxOrCsv(
         pendingFile,
         false,
@@ -1023,7 +1038,6 @@ export default function Announce() {
       const rejeitadosCount =
         result.rejeitados ?? Math.max((result.total ?? 0) - importedCount, 0);
 
-      // Alimenta o resumo final exibido no ConfirmImportModal
       setImportResult({
         total: result.total ?? result.data.length,
         importados: importedCount,
@@ -1069,12 +1083,6 @@ export default function Announce() {
   const [openActionsMobile, setOpenActionsMobile] = React.useState(false);
   const [openValidateAds, setOpenValidateAds] = React.useState(false);
 
-  /* ── MODAL DE EDIÇÃO/CRIAÇÃO (controlado via query params) ──
-   * `id` → edição de um anúncio existente.
-   * `new=1` → criação de um anúncio novo, SEM registro no banco.
-   * O anúncio só é persistido de fato quando o usuário clicar em
-   * "Salvar" dentro do modal (ProductEditModal / useAnnounceEdit).
-   * ─────────────────────────────────────────── */
   const editId = searchParams.get("id");
   const editLoja = searchParams.get("loja");
   const isCreating = searchParams.has("new");
@@ -1092,8 +1100,6 @@ export default function Announce() {
   );
 
   const openCreateModal = React.useCallback(() => {
-    // ✅ Sem RPC, sem registro no banco — só abre o modal em modo
-    // de criação. O anúncio só é persistido quando o usuário salvar.
     const storeParaNovo = storeValue ?? "Pikot Shop";
 
     const params = new URLSearchParams(searchParams.toString());
@@ -1244,6 +1250,8 @@ export default function Announce() {
               onExportModeloComposicao={handleExportModeloComposicao}
               onExportComposicao={handleExportComposicao}
               onImportComposicao={handleSelectComposicaoFile}
+              onExportBling={handleExportBling}
+              exportingBling={exportingBling}
               totalCount={totalCount}
             />
           </div>
@@ -1372,6 +1380,11 @@ export default function Announce() {
                   setOpenActionsMobile(false);
                   handleSelectComposicaoFile(file);
                 }}
+                onExportBling={() => {
+                  setOpenActionsMobile(false);
+                  handleExportBling();
+                }}
+                exportingBling={exportingBling}
                 totalCount={totalCount}
               />
             </div>
@@ -1416,8 +1429,6 @@ export default function Announce() {
         onChannelRowAssignmentsChange={setImportChannelRowAssignments}
       />
 
-      {/* ✅ NOVO — modal de confirmação do modo de importação de
-          composição (merge/replace), aberto ao selecionar o arquivo. */}
       <ImportComposicaoModal
         open={composicaoModalOpen}
         onOpenChange={(open) => {
@@ -1429,7 +1440,6 @@ export default function Announce() {
         fileName={pendingComposicaoFile?.name}
       />
 
-      {/* ✅ NOVO — modal de erros detalhados da importação de composição */}
       <ComposicaoErrorsModal
         open={composicaoErrorsModalOpen}
         onClose={() => setComposicaoErrorsModalOpen(false)}
@@ -1446,6 +1456,15 @@ export default function Announce() {
           exportAbortRef.current?.abort();
           setExportProgressOpen(false);
         }}
+      />
+
+      <ExportProgressToast
+        open={blingOpen}
+        percent={blingProgress}
+        title="Exportando planilha Bling..."
+        current={blingCurrent}
+        total={blingTotal}
+        onClose={() => setBlingOpen(false)}
       />
 
       <ImportProgressToast

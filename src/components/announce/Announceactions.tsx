@@ -13,8 +13,6 @@ import {
 } from "lucide-react";
 import { unlockAudio } from "@/utils/sound";
 import TableInfoCard from "@/components/ui/Tableinfocard";
-import { supabase } from "@/integrations/supabase/client";
-import ExportProgressToast from "@/components/announce/ExportProgressToast"; // ajuste o caminho se for outro
 
 type Props = {
   exporting: boolean;
@@ -28,8 +26,10 @@ type Props = {
   onExportModeloComposicao: () => void | Promise<void>;
   onExportComposicao: () => void | Promise<void>;
   onImportComposicao: (file: File) => void | Promise<void>;
+  // Export Bling (estado e toast ficam na página)
+  onExportBling: () => void | Promise<void>;
+  exportingBling: boolean;
   totalCount: number;
-  loja?: "sobaquetas" | "pikot"; // padrão: sobaquetas
 };
 
 function ActionTextButton({
@@ -112,8 +112,9 @@ export default function AnnounceActions({
   onExportModeloComposicao,
   onExportComposicao,
   onImportComposicao,
+  onExportBling,
+  exportingBling,
   totalCount,
-  loja = "sobaquetas",
 }: Props) {
   const inputInclusaoRef = useRef<HTMLInputElement | null>(null);
   const inputAlteracaoRef = useRef<HTMLInputElement | null>(null);
@@ -121,11 +122,6 @@ export default function AnnounceActions({
 
   const [hydrated, setHydrated] = useState(false);
   const [showMoreOptions, setShowMoreOptions] = useState(true);
-  const [exportingBling, setExportingBling] = useState(false);
-  const [blingProgress, setBlingProgress] = useState(0);
-  const [blingToastOpen, setBlingToastOpen] = useState(false);
-  const [blingCurrent, setBlingCurrent] = useState<number | undefined>();
-  const [blingTotal, setBlingTotal] = useState<number | undefined>();
 
   useEffect(() => {
     try {
@@ -156,94 +152,6 @@ export default function AnnounceActions({
   const triggerFileInput = async (ref: React.RefObject<HTMLInputElement | null>) => {
     await unlockAudio();
     ref.current?.click();
-  };
-
-  const handleExportBling = async () => {
-    setExportingBling(true);
-    setBlingProgress(0);
-    setBlingCurrent(undefined);
-    setBlingTotal(undefined);
-    setBlingToastOpen(true);
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) throw new Error("Sessão expirada. Entre novamente.");
-
-      const r = await fetch(
-        `/api/announce/export?source=bling&loja=${loja}&format=xlsx`,
-        { headers: { Authorization: `Bearer ${session.access_token}` } }
-      );
-      if (!r.ok || !r.body) {
-        const j = await r.json().catch(() => null);
-        throw new Error(j?.error || "Erro ao exportar");
-      }
-
-      const reader = r.body.getReader();
-      const decoder = new TextDecoder();
-      const chunks: string[] = [];
-      let buffer = "";
-      let fileName = "bling-anuncios.xlsx";
-      let mimeType = "application/octet-stream";
-      let finished = false;
-      let lastTotal: number | undefined;
-
-      const handleLine = (line: string) => {
-        if (!line.trim()) return; // ignora o preâmbulo de espaços
-        const msg = JSON.parse(line);
-        if (msg.type === "progress") {
-          setBlingProgress(msg.percent);
-          if (typeof msg.current === "number") setBlingCurrent(msg.current);
-          if (typeof msg.total === "number") {
-            lastTotal = msg.total;
-            setBlingTotal(msg.total);
-          }
-        }
-        else if (msg.type === "chunk") chunks[msg.index] = msg.data;
-        else if (msg.type === "error") throw new Error(msg.error);
-        else if (msg.type === "done") {
-          fileName = msg.fileName;
-          mimeType = msg.mimeType;
-          finished = true;
-        }
-      };
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        lines.forEach(handleLine);
-      }
-      if (buffer.trim()) handleLine(buffer);
-      if (!finished) throw new Error("Exportação interrompida.");
-
-      const bin = atob(chunks.join(""));
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-
-      const url = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
-
-      setBlingProgress(100);
-      if (lastTotal !== undefined) setBlingCurrent(lastTotal);
-    } catch (e) {
-      setBlingToastOpen(false);
-      alert(e instanceof Error ? e.message : "Erro ao exportar");
-    } finally {
-      setExportingBling(false);
-      setTimeout(() => {
-        setBlingToastOpen(false);
-        setBlingProgress(0);
-        setBlingCurrent(undefined);
-        setBlingTotal(undefined);
-      }, 2000); // deixa o 100% visível
-    }
   };
 
   if (!hydrated) return null;
@@ -290,12 +198,8 @@ export default function AnnounceActions({
         />
         <ActionTextButton
           icon={<FileSpreadsheet className="h-4 w-4" />}
-          label={
-            exportingBling
-              ? `Exportando... ${blingProgress}%`
-              : "Exportar dados para planilha Bling"
-          }
-          onClick={handleExportBling}
+          label="Exportar dados para planilha Bling"
+          onClick={onExportBling}
           disabled={exportingBling}
         />
 
@@ -382,15 +286,6 @@ export default function AnnounceActions({
           <TableInfoCard label="Quantidade de Anúncios" value={totalCount} />
         </div>
       </div>
-
-      <ExportProgressToast
-        open={blingToastOpen}
-        percent={blingProgress}
-        title="Exportando planilha Bling..."
-        current={blingCurrent}
-        total={blingTotal}
-        onClose={() => setBlingToastOpen(false)}
-      />
     </div>
   );
 }
