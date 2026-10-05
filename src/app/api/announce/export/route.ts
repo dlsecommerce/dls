@@ -18,6 +18,7 @@ type AnnounceRow = {
   product: string | null;
   mark: string | null;
   code_id: number | null;
+  titulo?: string | null;
 };
 
 type BlingRow = {
@@ -47,25 +48,25 @@ const BASE64_CHUNK_SIZE = 200_000; // tamanho de cada pedaço do arquivo
 // Layout de colunas por fonte de dados.
 const LAYOUTS: Record<Source, Layout> = {
   announce: {
-    headers: ["Loja", "ID Bling", "Referência", "Produto", "Marca", "Código ID"],
-    widths: [15, 18, 22, 34, 20, 14],
+    headers: ["Loja", "ID Bling", "Título", "Referência", "Produto", "Marca", "Código ID"],
+    widths: [15, 18, 50, 22, 34, 20, 14],
     sheet: "Announce",
     toCells: (row) => {
       const r = row as AnnounceRow;
-      return [r.store, r.id_bling, r.reference, r.product, r.mark, r.code_id];
+      return [r.store, r.id_bling, r.titulo ?? "", r.reference, r.product, r.mark, r.code_id];
     },
   },
   bling: {
-    headers: ["Loja", "ID Bling", "ID na Loja (MLB)", "Título", "Tipo", "Anúncio pai", "Preço"],
-    widths: [15, 18, 22, 50, 12, 20, 12],
+    headers: ["Loja", "ID Bling", "Título", "ID na Loja (MLB)", "Tipo", "Anúncio pai", "Preço"],
+    widths: [15, 18, 50, 22, 12, 20, 12],
     sheet: "Anuncios",
     toCells: (row) => {
       const r = row as BlingRow;
       return [
         r.loja,
         r.id_bling,
-        r.codigo,
         r.titulo ?? "",
+        r.codigo,
         r.tipo === "anuncio" ? "Anúncio" : "Variação",
         r.item_id ?? "",
         r.preco === null ? null : Number(r.preco),
@@ -197,6 +198,49 @@ function normalizeIdsBody(value: unknown): string[] | null {
     .filter(Boolean);
 
   return ids.length > 0 ? ids : null;
+}
+
+/**
+ * Busca o título em newsystem.anuncios_ml (preenchido pelo cron do Bling)
+ * e anexa às linhas. Roda FORA da transação com role "authenticated",
+ * usando a conexão direta, pois anuncios_ml não é acessível a esse role.
+ */
+async function anexarTitulos(
+  sql: ReturnType<typeof getPostgresClient>,
+  rows: AnnounceRow[]
+) {
+  const ids = [
+    ...new Set(
+      rows
+        .map((r) => (r.id_bling === null ? "" : String(r.id_bling).trim()))
+        .filter((v) => /^\d+$/.test(v))
+    ),
+  ];
+  if (ids.length === 0) return;
+
+  const porLoja = new Map<string, string>(); // "loja|id" -> título
+  const porId = new Map<string, string>(); // "id" -> título (fallback)
+
+  for (let i = 0; i < ids.length; i += PAGE_SIZE) {
+    const chunk = ids.slice(i, i + PAGE_SIZE);
+    const found = await sql<{ loja: string; id_bling: string; titulo: string }[]>`
+      select loja, id_bling::text as id_bling, titulo
+      from newsystem.anuncios_ml
+      where titulo is not null
+        and id_bling = any(${chunk}::bigint[])
+    `;
+    for (const f of found) {
+      porLoja.set(`${f.loja}|${f.id_bling}`, f.titulo);
+      if (!porId.has(f.id_bling)) porId.set(f.id_bling, f.titulo);
+    }
+  }
+
+  for (const r of rows) {
+    if (r.id_bling === null) continue;
+    const id = String(r.id_bling).trim();
+    const loja = String(r.store).toLowerCase().includes("pikot") ? "pikot" : "sobaquetas";
+    r.titulo = porLoja.get(`${loja}|${id}`) ?? porId.get(id) ?? "";
+  }
 }
 
 function jsonError(error: string, status: number): Response {
@@ -557,6 +601,10 @@ async function handleExport(
         console.warn(
           `Exportação (${source}) atingiu o limite de ${MAX_LINHAS} linhas. Considere aplicar filtros.`
         );
+      }
+
+      if (source === "announce") {
+        await anexarTitulos(sql, allRows as AnnounceRow[]);
       }
 
       await sendLine(writer, encoder, {

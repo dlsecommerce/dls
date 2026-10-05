@@ -1,65 +1,197 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getSb, listarAnunciosML, LOJAS } from "@/lib/bling";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-export const maxDuration = 300;
-export const dynamic = "force-dynamic";
+const BLING = "https://api.bling.com.br/Api/v3";
+const RPC_NAME = "rotate_bling_tokens";
+const MARGEM_MS = 10 * 60_000;
 
-export async function GET(req: NextRequest) {
-  if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ erro: "unauthorized" }, { status: 401 });
+export const LOJAS = ["sobaquetas", "pikot"] as const;
+export type Loja = (typeof LOJAS)[number];
+export const isLoja = (v: unknown): v is Loja => LOJAS.includes(v as Loja);
+
+/**
+ * Convenção de env por loja (ex.: pikot):
+ *   BLING_LOJA_ML_PIKOT_ID          -> id da loja ML no Bling
+ *   BLING_CLIENT_ID_PIKOT / BLING_CLIENT_SECRET_PIKOT -> app Bling da conta
+ *   BLING_CONTA_PIKOT (opcional)    -> use "sobaquetas" se for a MESMA conta Bling
+ */
+function cfg(loja: Loja) {
+  const L = loja.toUpperCase();
+  const conta = (process.env[`BLING_CONTA_${L}`] ?? loja).toLowerCase();
+  const C = conta.toUpperCase();
+  return {
+    conta,
+    idLoja: process.env[`BLING_LOJA_ML_${L}_ID`]?.trim(),
+    clientId: process.env[`BLING_CLIENT_ID_${C}`],
+    clientSecret: process.env[`BLING_CLIENT_SECRET_${C}`],
+  };
+}
+
+let _sb: SupabaseClient | null = null;
+export function getSb(): SupabaseClient {
+  if (_sb) return _sb;
+  const url = (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL)?.trim();
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY_SECRET?.trim();
+  if (!url) throw new Error("Falta SUPABASE_URL ou NEXT_PUBLIC_SUPABASE_URL");
+  if (!key) throw new Error("Falta SUPABASE_SERVICE_ROLE_KEY_SECRET");
+  _sb = createClient(url, key, {
+    auth: { persistSession: false },
+    db: { schema: "newsystem" },
+  });
+  return _sb;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+type Tokens = { access_token: string; refresh_token: string; expires_at: string };
+
+async function lerTokens(conta: string): Promise<Tokens> {
+  const { data, error } = await getSb()
+    .from("bling_tokens")
+    .select("access_token, refresh_token, expires_at")
+    .eq("conta", conta)
+    .single();
+  if (error || !data) throw new Error(`Tokens do Bling (${conta}) não encontrados: ${error?.message}`);
+  return data as Tokens;
+}
+
+export async function getAccessToken(loja: Loja): Promise<string> {
+  const { conta, clientId, clientSecret } = cfg(loja);
+  if (!clientId || !clientSecret) throw new Error(`Faltam credenciais Bling da conta "${conta}"`);
+
+  const atual = await lerTokens(conta);
+  if (new Date(atual.expires_at).getTime() - Date.now() > MARGEM_MS) return atual.access_token;
+
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+  const resp = await fetch(`${BLING}/oauth/token`, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${basic}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "1.0",
+    },
+    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: atual.refresh_token }),
+  });
+
+  if (!resp.ok) {
+    await sleep(1000);
+    const novo = await lerTokens(conta);
+    if (novo.refresh_token !== atual.refresh_token) return novo.access_token;
+    throw new Error(`Falha no refresh do Bling (${conta}): ${await resp.text()}`);
   }
 
-  const sb = getSb();
-  const resultado: Record<string, unknown> = {};
+  const t = await resp.json();
+  const { data: gravou, error } = await getSb().rpc(RPC_NAME, {
+    p_conta: conta,
+    p_old_refresh: atual.refresh_token,
+    p_access: t.access_token,
+    p_refresh: t.refresh_token,
+    p_expires_at: new Date(Date.now() + t.expires_in * 1000).toISOString(),
+  });
+  if (error) throw new Error("Erro ao gravar tokens: " + error.message);
+  if (!gravou) return (await lerTokens(conta)).access_token;
+  return t.access_token;
+}
 
-  for (const loja of LOJAS) {
-    if (!process.env[`BLING_LOJA_ML_${loja.toUpperCase()}_ID`]) {
-      resultado[loja] = "ignorada (sem BLING_LOJA_ML_*_ID)";
+export async function blingGet<T = any>(
+  loja: Loja,
+  path: string,
+  params: Record<string, string | number> = {}
+): Promise<T> {
+  const qs = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]));
+  const url = `${BLING}${path}${qs.toString() ? `?${qs}` : ""}`;
+
+  for (let i = 0; i < 4; i++) {
+    // token lido a cada tentativa: renova sozinho se expirar durante a paginação
+    const token = await getAccessToken(loja);
+    const r = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (r.status === 429) {
+      await sleep(1000 * (i + 1));
       continue;
     }
+    if (!r.ok) throw new Error(`Bling ${r.status}: ${await r.text()}`);
+    return r.json();
+  }
+  throw new Error("Bling: limite de requisições excedido");
+}
 
-    try {
-      const inicio = new Date().toISOString();
-      const todos = await listarAnunciosML(loja);
+export type AnuncioML = { idBling: number; idMercadoLivre: string; preco: number };
 
-      const map = new Map<string, any>();
-      for (const a of todos) {
-        const mlb = /^MLB\d+$/.test(a.idMercadoLivre);
-        map.set(a.idMercadoLivre, {
-          loja,
-          codigo: a.idMercadoLivre,
-          tipo: mlb ? "anuncio" : "variacao",
-          id_bling: a.idBling,
-          item_id: mlb ? a.idMercadoLivre : null,
-          preco: Math.round(a.preco * 100) / 100,
-          atualizado_em: inicio,
-        });
+export type DiagnosticoListagem = {
+  idLoja: string;
+  paginas: number;
+  lidos: number;
+  descartadosOutraLoja: number;
+  descartadosSemCodigo: number;
+  duplicados: number;
+  lojasVistas: string[];
+  amostraBruta: unknown;
+  itens: AnuncioML[];
+};
+
+/** Lista os vínculos produto↔anúncio da loja ML, com diagnóstico do que foi lido/descartado */
+export async function listarAnunciosMLDebug(loja: Loja): Promise<DiagnosticoListagem> {
+  const { idLoja } = cfg(loja);
+  if (!idLoja) throw new Error(`BLING_LOJA_ML_${loja.toUpperCase()}_ID não definido`);
+
+  const limite = 100;
+  const mapa = new Map<string, AnuncioML>();
+  const lojasVistas = new Set<string>();
+  let paginas = 0;
+  let lidos = 0;
+  let outraLoja = 0;
+  let semCodigo = 0;
+  let duplicados = 0;
+  let amostraBruta: unknown = null;
+
+  for (let pagina = 1; ; pagina++) {
+    const resp = await blingGet(loja, "/produtos/lojas", { idLoja, pagina, limite });
+    const data: any[] = Array.isArray(resp?.data) ? resp.data : [];
+    paginas++;
+    lidos += data.length;
+    if (pagina === 1) amostraBruta = data[0] ?? resp;
+
+    for (const i of data) {
+      if (i.loja?.id != null) lojasVistas.add(String(i.loja.id));
+
+      if (String(i.loja?.id) !== String(idLoja)) {
+        outraLoja++;
+        continue;
       }
-      const rows = Array.from(map.values());
-
-      for (let i = 0; i < rows.length; i += 500) {
-        const { error } = await sb
-          .from("anuncios_ml")
-          .upsert(rows.slice(i, i + 500), { onConflict: "loja,codigo" });
-        if (error) throw new Error(`upsert lote ${i}: ${error.message}`);
+      const codigo = String(i.codigo ?? "").trim();
+      if (!codigo) {
+        semCodigo++;
+        continue;
       }
+      if (mapa.has(codigo)) duplicados++;
 
-      // Remove o que sumiu do Bling. Trava: só com lista não vazia
-      let removidos = 0;
-      if (rows.length > 0) {
-        const { count } = await sb
-          .from("anuncios_ml")
-          .delete({ count: "exact" })
-          .eq("loja", loja)
-          .lt("atualizado_em", inicio);
-        removidos = count ?? 0;
-      }
-
-      resultado[loja] = { gravados: rows.length, removidos };
-    } catch (e) {
-      resultado[loja] = { erro: e instanceof Error ? e.message : String(e) };
+      mapa.set(codigo, {
+        idBling: i.produto?.id,
+        idMercadoLivre: codigo,
+        preco: Number(i.preco) || 0,
+      });
     }
+
+    if (data.length < limite) break;
+    await sleep(350);
   }
 
-  return NextResponse.json(resultado);
+  return {
+    idLoja,
+    paginas,
+    lidos,
+    descartadosOutraLoja: outraLoja,
+    descartadosSemCodigo: semCodigo,
+    duplicados,
+    lojasVistas: Array.from(lojasVistas),
+    amostraBruta,
+    itens: Array.from(mapa.values()),
+  };
+}
+
+/** Mantém a assinatura original */
+export async function listarAnunciosML(loja: Loja): Promise<AnuncioML[]> {
+  return (await listarAnunciosMLDebug(loja)).itens;
 }

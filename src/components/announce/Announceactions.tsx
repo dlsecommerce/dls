@@ -198,7 +198,7 @@ export default function AnnounceActions({
         />
         <ActionTextButton
           icon={<FileSpreadsheet className="h-4 w-4" />}
-          label="Exportar dados para planilha Bling"
+          label="Exportar dados planilha Bling"
           onClick={onExportBling}
           disabled={exportingBling}
         />
