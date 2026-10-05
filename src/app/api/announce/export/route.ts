@@ -27,6 +27,7 @@ type BlingRow = {
   tipo: "anuncio" | "variacao";
   item_id: string | null;
   preco: string | number | null;
+  titulo: string | null;
 };
 
 type ExportRow = AnnounceRow | BlingRow;
@@ -55,8 +56,8 @@ const LAYOUTS: Record<Source, Layout> = {
     },
   },
   bling: {
-    headers: ["Loja", "ID Bling", "ID na Loja (MLB)", "Tipo", "Anúncio pai", "Preço"],
-    widths: [15, 18, 22, 12, 20, 12],
+    headers: ["Loja", "ID Bling", "ID na Loja (MLB)", "Título", "Tipo", "Anúncio pai", "Preço"],
+    widths: [15, 18, 22, 50, 12, 20, 12],
     sheet: "Anuncios",
     toCells: (row) => {
       const r = row as BlingRow;
@@ -64,6 +65,7 @@ const LAYOUTS: Record<Source, Layout> = {
         r.loja,
         r.id_bling,
         r.codigo,
+        r.titulo ?? "",
         r.tipo === "anuncio" ? "Anúncio" : "Variação",
         r.item_id ?? "",
         r.preco === null ? null : Number(r.preco),
@@ -363,14 +365,14 @@ async function handleExport(
             const rows: BlingRow[] =
               lastCodigo === null
                 ? await transaction<BlingRow[]>`
-                    select loja, id_bling, codigo, tipo, item_id, preco
+                    select loja, id_bling, codigo, tipo, item_id, preco, titulo
                     from newsystem.anuncios_ml
                     where loja = ${loja!}
                     order by codigo
                     limit ${PAGE_SIZE}
                   `
                 : await transaction<BlingRow[]>`
-                    select loja, id_bling, codigo, tipo, item_id, preco
+                    select loja, id_bling, codigo, tipo, item_id, preco, titulo
                     from newsystem.anuncios_ml
                     where loja = ${loja!}
                       and codigo > ${lastCodigo}
