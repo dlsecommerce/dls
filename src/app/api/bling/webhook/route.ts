@@ -1,27 +1,18 @@
 import crypto from "crypto";
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { mapProductToRows } from "@/lib/bling/mapProduct";
-import { getBlingAccessToken } from "@/lib/bling/auth"; // ⚠️ sua função de token existente
+import { blingGet, getSb, type Loja } from "@/lib/bling";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
-const LOJA = "Sóbaquetas"; // ⚠️ use exatamente o valor gravado hoje na coluna `loja`
-
-const admin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { db: { schema: "newsystem" } }
-);
+const LOJA: Loja = "sobaquetas";
 
 function validSignature(raw: string, header: string | null) {
-  if (!header) return false;
+  const secret = process.env.BLING_CLIENT_SECRET_SOBAQUETAS;
+  if (!header || !secret) return false;
   const expected =
-    "sha256=" +
-    crypto
-      .createHmac("sha256", process.env.BLING_CLIENT_SECRET!)
-      .update(raw)
-      .digest("hex");
+    "sha256=" + crypto.createHmac("sha256", secret).update(raw).digest("hex");
   const a = Buffer.from(expected);
   const b = Buffer.from(header);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -34,28 +25,67 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "assinatura inválida" }, { status: 401 });
   }
 
-  const evt = JSON.parse(raw);
-  const productId = evt?.data?.id;
+  let evt: any;
+  try {
+    evt = JSON.parse(raw);
+  } catch {
+    return NextResponse.json({ error: "json inválido" }, { status: 400 });
+  }
+
+  const productId = Number(evt?.data?.id);
   if (!productId) return NextResponse.json({ ok: true });
 
   try {
+    const sb = getSb();
+
     if (evt.event === "product.deleted") {
-      await admin.from("anuncios_ml").delete().eq("loja", LOJA).eq("id_bling", productId);
+      const { error } = await sb
+        .from("anuncios_ml")
+        .delete()
+        .eq("loja", LOJA)
+        .eq("id_bling", productId);
+      if (error) throw error;
       return NextResponse.json({ ok: true });
     }
 
     if (evt.event === "product.created" || evt.event === "product.updated") {
-      const token = await getBlingAccessToken();
-      const r = await fetch(`https://api.bling.com.br/Api/v3/produtos/${productId}`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const idLoja = process.env.BLING_LOJA_ML_SOBAQUETAS_ID?.trim();
+      if (!idLoja) throw new Error("BLING_LOJA_ML_SOBAQUETAS_ID não definido");
+
+      const resp = await blingGet(LOJA, "/produtos/lojas", {
+        idProduto: productId,
+        idLoja,
+        limite: 100,
       });
-      if (!r.ok) throw new Error(`Bling ${r.status}`);
 
-      const { data } = await r.json();
-      const rows = mapProductToRows(data, LOJA);
+      const links = ((resp?.data ?? []) as any[]).filter(
+        (i) =>
+          String(i.loja?.id) === String(idLoja) &&
+          i.codigo &&
+          Number(i.produto?.id ?? productId) === productId
+      );
 
-      if (rows.length) {
-        const { error } = await admin
+      if (links.length > 0) {
+        const prod = await blingGet(LOJA, `/produtos/${productId}`);
+        const titulo = String(prod?.data?.nome ?? "").trim() || null;
+        const agora = new Date().toISOString();
+
+        const rows = links.map((i) => {
+          const codigo = String(i.codigo);
+          const mlb = /^MLB\d+$/.test(codigo);
+          return {
+            loja: LOJA,
+            codigo,
+            tipo: mlb ? "anuncio" : "variacao",
+            id_bling: productId,
+            item_id: mlb ? codigo : null,
+            preco: Math.round(Number(i.preco ?? 0) * 100) / 100,
+            titulo,
+            atualizado_em: agora,
+          };
+        });
+
+        const { error } = await sb
           .from("anuncios_ml")
           .upsert(rows, { onConflict: "loja,codigo" });
         if (error) throw error;
@@ -65,7 +95,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("Webhook Bling:", err);
-    // 500 faz o Bling tentar de novo
     return NextResponse.json({ error: "falha" }, { status: 500 });
   }
 }
