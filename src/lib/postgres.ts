@@ -9,13 +9,24 @@ export function getPostgresClient(): Sql {
     return globalThis.postgresClient;
   }
 
-  const databaseUrl = process.env.DATABASE_URL?.trim();
+  // remove espaços, quebras de linha e aspas coladas junto do valor
+  const databaseUrl = process.env.DATABASE_URL?.trim().replace(/^["']|["']$/g, "");
 
   if (!databaseUrl) {
     throw new Error("A variável DATABASE_URL não foi configurada.");
   }
 
-  const parsedUrl = new URL(databaseUrl);
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(databaseUrl);
+  } catch {
+    const prefixOk = /^postgres(ql)?:\/\//.test(databaseUrl);
+    throw new Error(
+      `DATABASE_URL inválida (prefixo ${prefixOk ? "ok" : "ERRADO"}, ${databaseUrl.length} caracteres). ` +
+        "Verifique caracteres especiais na senha (use encodeURIComponent), " +
+        "placeholders como [YOUR-PASSWORD], aspas e espaços."
+    );
+  }
 
   console.log("Conectando ao PostgreSQL:", {
     hostname: parsedUrl.hostname,
@@ -28,18 +39,8 @@ export function getPostgresClient(): Sql {
   const client = postgres(databaseUrl, {
     ssl: "require",
     prepare: false,
-
-    // Aumentado de 1 para 5: cobre os 4 workers paralelos do client
-    // (CONCURRENCY = 4) + 1 de margem. Com max:1, requests paralelos
-    // ficavam na fila esperando a única conexão — anulando o ganho
-    // da paralelização implementada no ImportAnnounce.ts.
     max: 5,
-
     connect_timeout: 20,
-
-    // Aumentado de 20s para 60s: reduz a frequência de reconexão
-    // (handshake TCP+TLS+auth) em invocações "quentes" que ficam
-    // ociosas por um curto período entre requests do usuário.
     idle_timeout: 60,
   });
 
