@@ -1,8 +1,3 @@
-/*
-  Pré-requisitos no Supabase:
-  - alter table newsystem.ml_fretes add column if not exists titulo text;
-  - view newsystem.ml_custo_vendedor já criada
-*/
 import { NextRequest, NextResponse } from "next/server";
 import { Pool } from "pg";
 import { createClient } from "@supabase/supabase-js";
@@ -10,41 +5,12 @@ import * as XLSX from "xlsx-js-style";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
-
-// A view agrega o título de ml_fretes; completa os que ainda estão nulos.
-async function preencherTitulos(conta: string) {
-  const { rows } = await pool.query(
-    `select distinct item_id from newsystem.ml_fretes
-      where conta = $1 and titulo is null`,
-    [conta]
-  );
-  const ids: string[] = rows.map((r) => r.item_id);
-
-  for (let i = 0; i < ids.length; i += 20) {
-    const lote = ids.slice(i, i + 20);
-    const r = await fetch(
-      `https://api.mercadolibre.com/items?ids=${lote.join(",")}&attributes=id,title`
-    );
-    if (!r.ok) continue;
-
-    const itens: Array<{ code: number; body: { id: string; title: string } }> =
-      await r.json();
-
-    for (const it of itens) {
-      if (it.code !== 200 || !it.body?.title) continue;
-      await pool.query(
-        `update newsystem.ml_fretes set titulo = $1
-          where conta = $2 and item_id = $3`,
-        [it.body.title, conta, it.body.id]
-      );
-    }
-  }
-}
 
 type CustoRow = {
   item_id: string;
@@ -134,13 +100,26 @@ export async function GET(req: NextRequest) {
   const conta = (req.nextUrl.searchParams.get("conta") ?? "sobaquetas").toLowerCase();
 
   try {
-    await preencherTitulos(conta);
-
     const { rows } = await pool.query(
-      `select item_id, titulo, custo_vendedor
-         from newsystem.ml_custo_vendedor
-        where conta = $1
-        order by titulo nulls last, item_id`,
+      `with f as (
+         select item_id,
+                max(titulo) as titulo,
+                max(nullif(custo_vendedor, 0)) as custo
+           from newsystem.ml_fretes
+          where conta = $1
+          group by item_id
+       ),
+       c as (
+         select item_id, titulo, custo
+           from newsystem.ml_custo_vendedor_item
+          where conta = $1 and custo > 0
+       )
+       select item_id,
+              coalesce(f.titulo, c.titulo) as titulo,
+              coalesce(f.custo, c.custo)   as custo_vendedor
+         from f
+         full join c using (item_id)
+        order by 2 nulls last, 1`,
       [conta]
     );
 
