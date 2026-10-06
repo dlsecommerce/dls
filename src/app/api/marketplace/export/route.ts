@@ -110,6 +110,8 @@ export async function POST(req: NextRequest) {
         // ============================================================
         // Resolve em lote: imposto, marketing, desconto, margem mínima,
         // margem efetiva, comissão, taxa fixa, frete% e frete fixo
+        // ✅ Agora inclui `freight_amount` já calculado em R$
+        // (preço_venda * frete_rate + frete_fixed), vindo direto da função SQL.
         // ============================================================
         const { data: resolved, error: resolveError } = await supabase
           .schema("newsystem")
@@ -227,7 +229,13 @@ export async function POST(req: NextRequest) {
           // Sempre usar o valor resolvido pelo banco (mesma fonte da tela).
           const commissionRate = res ? res.commission_rate * 100 : 0;
           const marginInicial = res ? res.effective_margin : 0;
-          const freteInicial = freteFixed;
+
+          // ✅ FIX (frete não calculado): antes usava apenas `freteFixed`,
+          // ignorando por completo o componente percentual (`freteRate`).
+          // Agora usa `freight_amount`, já resolvido em R$ pela função SQL
+          // (preço_venda * frete_rate + frete_fixed) — mesma lógica usada
+          // na tela individual (fn_calc_marketplace_price_full).
+          const freteInicial = res?.freight_amount ?? freteFixed;
 
           const excelRow = sheet.addRow([
             row.id || "", row.store || "", row.channel || "", row.id_bling || "",
@@ -240,7 +248,9 @@ export async function POST(req: NextRequest) {
 
           // ✅ FIX: Frete fixo e taxa fixa somados FORA da divisão, igual à
           // fórmula do banco (fn_calc_marketplace_price_full). Apenas o
-          // frete percentual (freteRate) entra no divisor.
+          // frete percentual (freteRate) entra no divisor. A fórmula do
+          // preço de venda não depende da coluna Frete (J), por isso não
+          // há dependência circular com o valor já resolvido acima.
           const constPart = (tax + marketing + freteRate).toFixed(6);
           const fixedFeeStr = fixedFee.toFixed(2);
           const freteFixedStr = freteFixed.toFixed(2);
