@@ -8,8 +8,9 @@ import { isLoja } from "@/lib/bling";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
-type Source = "announce" | "bling";
+type Source = "announce" | "bling" | "frete";
 
 type AnnounceRow = {
   store: string;
@@ -31,12 +32,19 @@ type BlingRow = {
   titulo: string | null;
 };
 
-type ExportRow = AnnounceRow | BlingRow;
+type FreteRow = {
+  item_id: string;
+  titulo: string | null;
+  custo_vendedor: string | number | null;
+};
+
+type ExportRow = AnnounceRow | BlingRow | FreteRow;
 
 type Layout = {
   headers: string[];
   widths: number[];
   sheet: string;
+  moneyCol?: number;
   toCells: (row: ExportRow) => unknown[];
 };
 
@@ -44,6 +52,7 @@ const PAGE_SIZE = 20_000;
 const MAX_LINHAS = 300_000; // trava de segurança contra export descontrolado
 const MAX_IDS_SELECAO = 300_000; // mesma trava aplicada ao modo seleção
 const BASE64_CHUNK_SIZE = 200_000; // tamanho de cada pedaço do arquivo
+const MONEY_FORMAT = '"R$" #,##0.00';
 
 // Layout de colunas por fonte de dados.
 const LAYOUTS: Record<Source, Layout> = {
@@ -70,6 +79,22 @@ const LAYOUTS: Record<Source, Layout> = {
         r.tipo === "anuncio" ? "Anúncio" : "Variação",
         r.item_id ?? "",
         r.preco === null ? null : Number(r.preco),
+      ];
+    },
+  },
+  frete: {
+    headers: ["ID", "Produto", "Frete"],
+    widths: [20, 60, 18],
+    sheet: "Frete vendedor",
+    moneyCol: 2,
+    toCells: (row) => {
+      const r = row as FreteRow;
+      return [
+        r.item_id,
+        r.titulo ?? "",
+        r.custo_vendedor === null || r.custo_vendedor === undefined
+          ? null
+          : Number(r.custo_vendedor),
       ];
     },
   },
@@ -147,6 +172,18 @@ function buildStyledXlsxBuffer(rows: ExportRow[], layout: Layout): Buffer {
   });
 
   (worksheet as any)["!cols"] = layout.widths.map((wch) => ({ wch }));
+
+  if (layout.moneyCol !== undefined) {
+    for (let r = 1; r <= data.length; r++) {
+      const cell = (worksheet as any)[
+        XLSX.utils.encode_cell({ r, c: layout.moneyCol })
+      ];
+      if (cell && cell.t === "n") cell.z = MONEY_FORMAT;
+    }
+    (worksheet as any)["!autofilter"] = {
+      ref: `A1:${XLSX.utils.encode_col(layout.headers.length - 1)}${data.length + 1}`,
+    };
+  }
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, layout.sheet);
@@ -308,7 +345,7 @@ async function handleExport(
     );
   }
 
-  if (source === "bling" && !isLoja(loja)) {
+  if ((source === "bling" || source === "frete") && !isLoja(loja)) {
     return jsonError('O parâmetro "loja" deve ser "sobaquetas" ou "pikot".', 400);
   }
 
@@ -384,6 +421,42 @@ async function handleExport(
         // (lock, RLS lenta), o Postgres cancela em vez de ficar preso
         // para sempre segurando lock em outras operações (ex.: importação).
         const collected: ExportRow[] = [];
+
+        // ============================================================
+        // ✅ FONTE FRETE: custo de frete do vendedor (Mercado Livre).
+        // ml_fretes + ml_custo_vendedor_item (anúncios sem cobertura).
+        // Conexão direta, sem trocar para o role "authenticated";
+        // o acesso já foi protegido pela validação do token acima.
+        // ============================================================
+        if (source === "frete") {
+          await transaction.unsafe(`set local statement_timeout = '30000'`);
+
+          const rows = await transaction<FreteRow[]>`
+            with f as (
+              select item_id, max(titulo) as titulo,
+                     max(nullif(custo_vendedor, 0)) as custo
+                from newsystem.ml_fretes
+               where conta = ${loja!}
+               group by item_id
+            ),
+            c as (
+              select item_id, titulo, custo
+                from newsystem.ml_custo_vendedor_item
+               where conta = ${loja!} and custo > 0
+            )
+            select item_id,
+                   coalesce(f.titulo, c.titulo) as titulo,
+                   coalesce(f.custo, c.custo)   as custo_vendedor
+              from f full join c using (item_id)
+             order by 2 nulls last, 1
+          `;
+
+          totalRows = rows.length;
+          checkDisconnected();
+          await sendProgress(70, rows.length);
+
+          return rows;
+        }
 
         // ============================================================
         // ✅ FONTE BLING: espelho do Bling (newsystem.anuncios_ml).
@@ -589,9 +662,11 @@ async function handleExport(
         await sendLine(writer, encoder, {
           type: "error",
           error:
-            source === "bling"
-              ? "Nenhum anúncio do Bling encontrado. Sincronize com o Bling primeiro."
-              : "Nenhum registro encontrado para exportar.",
+            source === "frete"
+              ? "Nenhum frete encontrado. Rode a sincronização antes de exportar."
+              : source === "bling"
+                ? "Nenhum anúncio do Bling encontrado. Sincronize com o Bling primeiro."
+                : "Nenhum registro encontrado para exportar.",
         });
         await writer.close();
         return;
@@ -623,11 +698,13 @@ async function handleExport(
       let mimeType: string;
 
       const filePrefix =
-        source === "bling"
-          ? `BLING - ANÚNCIOS ${String(loja).toUpperCase()}`
-          : isSelectionMode
-            ? "ANÚNCIOS - SELECIONADOS"
-            : "ANÚNCIOS - PLANILHA";
+        source === "frete"
+          ? `FRETES ML - ${String(loja).toUpperCase()}`
+          : source === "bling"
+            ? `BLING - ANÚNCIOS ${String(loja).toUpperCase()}`
+            : isSelectionMode
+              ? "ANÚNCIOS - SELECIONADOS"
+              : "ANÚNCIOS - PLANILHA";
 
       if (format === "csv") {
         const csv = rowsToCsv(allRows, layout);
@@ -752,12 +829,13 @@ async function handleExport(
 /**
  * Exportação por filtro/loja (comportamento original) e, com
  * `?source=bling&loja=sobaquetas`, exportação do espelho do Bling.
+ * Com `?source=frete&loja=sobaquetas`, exporta o frete do vendedor (ML).
  * Não use para listas grandes de IDs — nesse caso, use POST.
  */
 export async function GET(request: NextRequest): Promise<Response> {
   const { searchParams } = new URL(request.url);
-  const source: Source =
-    searchParams.get("source") === "bling" ? "bling" : "announce";
+  const s = searchParams.get("source");
+  const source: Source = s === "bling" ? "bling" : s === "frete" ? "frete" : "announce";
   const store = searchParams.get("store")?.trim() || null;
   const loja = searchParams.get("loja")?.trim().toLowerCase() || null;
   const format = (searchParams.get("format") ?? "xlsx").toLowerCase();

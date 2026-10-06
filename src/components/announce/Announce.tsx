@@ -659,38 +659,44 @@ export default function Announce() {
 
   // ✅ Exportação de fretes do Mercado Livre
   const [exportingFretesML, setExportingFretesML] = React.useState(false);
+  const [fretesOpen, setFretesOpen] = React.useState(false);
+  const [fretesProgress, setFretesProgress] = React.useState(0);
+  const [fretesCurrent, setFretesCurrent] = React.useState<number | undefined>();
+  const [fretesTotal, setFretesTotal] = React.useState<number | undefined>();
 
   const handleExportFretesML = async () => {
     if (exportingFretesML) return;
     setExportingFretesML(true);
+    setFretesProgress(0);
+    setFretesCurrent(undefined);
+    setFretesTotal(undefined);
+    setFretesOpen(true);
 
     try {
-      const token = await getAccessToken();
-
-      const res = await fetch(
-        `/api/mercadolivre/frete/export?conta=${blingLoja}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+      await exportAnnounceFromApi(
+        { source: "frete", loja: blingLoja, format: "xlsx" },
+        (percent, current, total) => {
+          setFretesProgress(percent);
+          if (typeof current === "number") setFretesCurrent(current);
+          if (typeof total === "number") setFretesTotal(total);
+        }
       );
-
-      if (!res.ok) {
-        throw new Error(
-          await extractErrorMessage(res, "Falha ao exportar fretes do Mercado Livre.")
-        );
-      }
-
-      const blob = await res.blob();
-      const filename =
-        extractFilenameFromHeader(res.headers.get("Content-Disposition")) ??
-        "fretes-mercado-livre.csv";
-
-      downloadBlob(blob, filename);
+      setFretesProgress(100);
     } catch (err: any) {
       console.error("Erro ao exportar fretes ML:", err);
+      setFretesProgress(0);
+      setFretesOpen(false);
       toastCustom.error(
         err?.message ?? "Não foi possível exportar os fretes do Mercado Livre."
       );
     } finally {
       setExportingFretesML(false);
+      setTimeout(() => {
+        setFretesOpen(false);
+        setFretesProgress(0);
+        setFretesCurrent(undefined);
+        setFretesTotal(undefined);
+      }, 2000);
     }
   };
 
@@ -1509,6 +1515,16 @@ export default function Announce() {
         current={blingCurrent}
         total={blingTotal}
         onClose={() => setBlingOpen(false)}
+      />
+
+      <ExportProgressToast
+        open={fretesOpen}
+        percent={fretesProgress}
+        title="Exportando fretes Mercado Livre..."
+        current={fretesCurrent}
+        total={fretesTotal}
+        itemLabel="fretes"
+        onClose={() => setFretesOpen(false)}
       />
 
       <ImportProgressToast

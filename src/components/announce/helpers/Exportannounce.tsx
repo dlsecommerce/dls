@@ -20,7 +20,11 @@ function ensureXlsxExtension(filename: string): string {
   return `${normalized}.xlsx`;
 }
 
-export type ExportProgressCallback = (percent: number) => void;
+export type ExportProgressCallback = (
+  percent: number,
+  current?: number,
+  total?: number
+) => void;
 
 const CHUNK_SIZE = 500;
 
@@ -151,16 +155,15 @@ export async function exportAnnounceToXlsx(
 }
 
 // ---------------------------------------------------------------------
-// ✅ Planilha modelo (gerada 100% no client, mesmo padrão visual do
+// Planilha modelo (gerada 100% no client, mesmo padrão visual do
 // export normal). Usada pelo botão "Baixar planilha modelo". Não
 // depende de nenhum arquivo estático em /public.
 //
-// ✅ NOVO — inclui a coluna "Canal": permite ao usuário já informar,
-// linha a linha, para qual(is) canal(is) de marketplace cada anúncio
-// deve ser vinculado na importação (múltiplos canais separados por
-// vírgula ou ponto-e-vírgula, ex: "Shopee, Mercado Livre"). Essa
-// coluna é opcional — se deixada em branco, o anúncio usa o(s)
-// canal(is) selecionado(s) globalmente na tela de importação.
+// Inclui a coluna "Canal": permite ao usuário já informar, linha a
+// linha, para qual(is) canal(is) de marketplace cada anúncio deve ser
+// vinculado na importação (múltiplos canais separados por vírgula ou
+// ponto-e-vírgula, ex: "Shopee, Mercado Livre"). Opcional — se em
+// branco, usa o(s) canal(is) selecionado(s) na tela de importação.
 // ---------------------------------------------------------------------
 export async function exportAnnounceModelo(): Promise<void> {
   const XLSX = await import("xlsx-js-style");
@@ -225,7 +228,7 @@ export async function exportAnnounceModelo(): Promise<void> {
 // ---------------------------------------------------------------------
 // Busca no servidor + export — usado quando os dados não vêm
 // já filtrados/prontos em memória (ex.: exportar tudo, por loja,
-// ou por seleção de linhas na tabela)
+// por seleção de linhas na tabela, Bling ou fretes do Mercado Livre)
 // ---------------------------------------------------------------------
 async function ensureValidSession(): Promise<string> {
   const { data, error } = await supabase.auth.getSession();
@@ -263,7 +266,13 @@ function mapRawToDisplayRow(row: RawAnnounceRow): AnnounceRow {
 }
 
 type ExportStreamEvent =
-  | { type: "progress"; percent: number; processed?: number }
+  | {
+      type: "progress";
+      percent: number;
+      processed?: number;
+      current?: number;
+      total?: number;
+    }
   | { type: "chunk"; index: number; data: string }
   | {
       type: "done";
@@ -275,8 +284,7 @@ type ExportStreamEvent =
   | { type: "error"; error: string; code?: string | null };
 
 /**
- * Converte uma string base64 em Blob, sem passar por atob em blocos
- * grandes de uma vez (evita travar a UI com strings muito longas).
+ * Converte uma string base64 em Blob.
  */
 function base64ToBlob(base64: string, mimeType: string): Blob {
   const byteChars = atob(base64);
@@ -289,29 +297,29 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
 }
 
 /**
- * Busca os anúncios direto da API (respeitando RLS/sessão) e gera
+ * Busca os dados direto da API (respeitando RLS/sessão) e gera
  * o download. A API responde em streaming NDJSON (uma linha JSON
  * por evento), reportando progresso REAL conforme processa no
- * servidor (busca no banco + geração do arquivo). O arquivo final
- * chega dividido em vários eventos "chunk" (base64 em pedaços), que
- * são acumulados e remontados quando chega o evento "done".
+ * servidor. O arquivo final chega dividido em eventos "chunk"
+ * (base64 em pedaços), remontados quando chega o evento "done".
  *
- * ✅ Suporta 2 modos, mutuamente exclusivos:
- *    - Seleção: se `ids` tiver itens, exporta SÓ essas linhas,
- *      via POST (evita limite de tamanho de URL em seleções grandes).
- *    - Filtro: caso contrário, exporta pelo filtro de loja aplicado
- *      na tela, via GET (comportamento original, sem alterações).
+ * Modos:
+ *    - Seleção: se `ids` tiver itens, exporta SÓ essas linhas, via POST.
+ *    - Filtro: caso contrário, via GET, com `store` (announce) ou
+ *      `source` + `loja` (bling / frete).
  */
 export async function exportAnnounceFromApi(
   options: {
     store?: string;
     format?: "xlsx" | "csv";
-    ids?: string[]; // ✅ ids selecionados na tabela
+    ids?: string[]; // ids selecionados na tabela
+    source?: "announce" | "bling" | "frete"; // fonte dos dados
+    loja?: "sobaquetas" | "pikot"; // obrigatório para bling/frete
     signal?: AbortSignal;
   } = {},
   onProgress?: ExportProgressCallback
 ): Promise<void> {
-  const { store, format = "xlsx", ids, signal } = options;
+  const { store, format = "xlsx", ids, source, loja, signal } = options;
 
   const isSelectionMode = Array.isArray(ids) && ids.length > 0;
 
@@ -322,9 +330,8 @@ export async function exportAnnounceFromApi(
   let response: Response;
 
   if (isSelectionMode) {
-    // ✅ Modo seleção — envia os IDs no body via POST.
-    // Evita o limite de ~8KB de tamanho de URL que quebrava a
-    // exportação sempre que muitos itens eram selecionados.
+    // Modo seleção — envia os IDs no body via POST.
+    // Evita o limite de tamanho de URL em seleções grandes.
     response = await fetch(`/api/announce/export`, {
       method: "POST",
       headers: {
@@ -335,10 +342,11 @@ export async function exportAnnounceFromApi(
       signal,
     });
   } else {
-    // Modo filtro/loja — continua via GET com querystring,
-    // sem risco de exceder o limite de tamanho.
+    // Modo filtro/loja/fonte — via GET com querystring.
     const params = new URLSearchParams();
     if (store) params.set("store", store);
+    if (source) params.set("source", source);
+    if (loja) params.set("loja", loja);
     params.set("format", format);
 
     response = await fetch(`/api/announce/export?${params.toString()}`, {
@@ -359,9 +367,11 @@ export async function exportAnnounceFromApi(
   const decoder = new TextDecoder();
   let buffer = "";
 
-  // ✅ Acumula os pedaços base64 do arquivo, na posição correta,
-  // conforme os eventos "chunk" chegam do servidor.
+  // Acumula os pedaços base64 do arquivo, na posição correta.
   const chunksReceived: string[] = [];
+
+  // Guarda o último total informado para mostrar "X de Y" no 100%.
+  let lastTotal: number | undefined;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -378,14 +388,15 @@ export async function exportAnnounceFromApi(
       const event = JSON.parse(line) as ExportStreamEvent;
 
       if (event.type === "progress") {
-        onProgress?.(event.percent);
+        if (typeof event.total === "number") lastTotal = event.total;
+        onProgress?.(event.percent, event.current, event.total);
         await yieldToUI();
       } else if (event.type === "chunk") {
         chunksReceived[event.index] = event.data;
       } else if (event.type === "error") {
         throw new Error(event.error);
       } else if (event.type === "done") {
-        onProgress?.(100);
+        onProgress?.(100, lastTotal, lastTotal);
 
         const fileBase64 = chunksReceived.join("");
         const blob = base64ToBlob(fileBase64, event.mimeType);
@@ -396,6 +407,10 @@ export async function exportAnnounceFromApi(
             title: "Planilha de anúncios exportada",
             message: isSelectionMode
               ? `A planilha com ${ids!.length} anúncio(s) selecionado(s) foi exportada com sucesso.`
+              : source === "frete"
+              ? `A planilha de frete da loja "${loja}" foi exportada com sucesso.`
+              : source === "bling"
+              ? `A planilha do Bling da loja "${loja}" foi exportada com sucesso.`
               : store
               ? `A planilha da loja "${store}" foi exportada com sucesso.`
               : "A planilha de anúncios foi exportada com sucesso.",

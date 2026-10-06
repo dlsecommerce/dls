@@ -9,6 +9,7 @@ type Props = {
   title?: string;
   current?: number;
   total?: number;
+  itemLabel?: string;
   onClose?: () => void;
 };
 
@@ -18,6 +19,7 @@ export default function ExportProgressToast({
   title = "Exportando planilha...",
   current,
   total,
+  itemLabel = "anúncios",
   onClose,
 }: Props) {
   if (!open) return null;
@@ -26,7 +28,7 @@ export default function ExportProgressToast({
 
   const countLabel =
     typeof current === "number" && typeof total === "number" && total > 0
-      ? `${current.toLocaleString("pt-BR")} de ${total.toLocaleString("pt-BR")} anúncios`
+      ? `${current.toLocaleString("pt-BR")} de ${total.toLocaleString("pt-BR")} ${itemLabel}`
       : undefined;
 
   return (
