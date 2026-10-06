@@ -8,7 +8,6 @@ import { isLoja } from "@/lib/bling";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
 
 type Source = "announce" | "bling" | "frete";
 
@@ -173,6 +172,7 @@ function buildStyledXlsxBuffer(rows: ExportRow[], layout: Layout): Buffer {
 
   (worksheet as any)["!cols"] = layout.widths.map((wch) => ({ wch }));
 
+  // Formato monetário (usado só no frete)
   if (layout.moneyCol !== undefined) {
     for (let r = 1; r <= data.length; r++) {
       const cell = (worksheet as any)[
@@ -431,31 +431,51 @@ async function handleExport(
         if (source === "frete") {
           await transaction.unsafe(`set local statement_timeout = '30000'`);
 
-          const rows = await transaction<FreteRow[]>`
-            with f as (
-              select item_id, max(titulo) as titulo,
-                     max(nullif(custo_vendedor, 0)) as custo
-                from newsystem.ml_fretes
-               where conta = ${loja!}
-               group by item_id
-            ),
-            c as (
-              select item_id, titulo, custo
-                from newsystem.ml_custo_vendedor_item
-               where conta = ${loja!} and custo > 0
-            )
-            select item_id,
-                   coalesce(f.titulo, c.titulo) as titulo,
-                   coalesce(f.custo, c.custo)   as custo_vendedor
-              from f full join c using (item_id)
-             order by 2 nulls last, 1
+          // Se a tabela complementar não existir, usa só ml_fretes
+          // (sem erro, que abortaria a transação).
+          const [{ ok: temCustoItem }] = await transaction<{ ok: boolean }[]>`
+            select to_regclass('newsystem.ml_custo_vendedor_item') is not null as ok
           `;
+
+          const rows = temCustoItem
+            ? await transaction<FreteRow[]>`
+                with f as (
+                  select item_id,
+                         max(titulo) as titulo,
+                         max(nullif(custo_vendedor, 0)) as custo
+                    from newsystem.ml_fretes
+                   where conta = ${loja!}
+                   group by item_id
+                ),
+                c as (
+                  select item_id, titulo, custo
+                    from newsystem.ml_custo_vendedor_item
+                   where conta = ${loja!} and custo > 0
+                )
+                select item_id,
+                       coalesce(f.titulo, c.titulo) as titulo,
+                       coalesce(f.custo, c.custo)   as custo_vendedor
+                  from f
+                  full join c using (item_id)
+                 order by 2 nulls last, 1
+              `
+            : await transaction<FreteRow[]>`
+                select item_id,
+                       max(titulo) as titulo,
+                       max(nullif(custo_vendedor, 0)) as custo_vendedor
+                  from newsystem.ml_fretes
+                 where conta = ${loja!}
+                 group by item_id
+                 order by 2 nulls last, 1
+              `;
 
           totalRows = rows.length;
           checkDisconnected();
-          await sendProgress(70, rows.length);
 
-          return rows;
+          collected.push(...rows);
+          await sendProgress(70, collected.length);
+
+          return collected;
         }
 
         // ============================================================
@@ -835,7 +855,8 @@ async function handleExport(
 export async function GET(request: NextRequest): Promise<Response> {
   const { searchParams } = new URL(request.url);
   const s = searchParams.get("source");
-  const source: Source = s === "bling" ? "bling" : s === "frete" ? "frete" : "announce";
+  const source: Source =
+    s === "bling" ? "bling" : s === "frete" ? "frete" : "announce";
   const store = searchParams.get("store")?.trim() || null;
   const loja = searchParams.get("loja")?.trim().toLowerCase() || null;
   const format = (searchParams.get("format") ?? "xlsx").toLowerCase();
