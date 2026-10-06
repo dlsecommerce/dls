@@ -1,5 +1,12 @@
 {
   "crons": [
-    { "path": "/api/cron/bling-sync", "schedule": "0 9 * * *" }
+    { "path": "/api/cron/bling-sync", "schedule": "0 9 * * *" },
+    { "path": "/api/mercadolivre/sync-fretes?conta=sobaquetas", "schedule": "0 5 * * *" },
+    { "path": "/api/mercadolivre/sync-fretes?conta=sobaquetas&offset=0&limit=400",    "schedule": "0 3 * * *" },
+    { "path": "/api/mercadolivre/sync-fretes?conta=sobaquetas&offset=400&limit=400",  "schedule": "10 3 * * *" },
+    { "path": "/api/mercadolivre/sync-fretes?conta=sobaquetas&offset=800&limit=400",  "schedule": "20 3 * * *" },
+    { "path": "/api/mercadolivre/sync-fretes?conta=sobaquetas&offset=1200&limit=400", "schedule": "30 3 * * *" },
+    { "path": "/api/mercadolivre/sync-fretes?conta=sobaquetas&offset=1600&limit=400", "schedule": "40 3 * * *" }
+
   ]
 }

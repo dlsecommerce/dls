@@ -303,7 +303,7 @@ export default function Announce() {
   const storeValue =
     appliedFilters.loja !== "Todos" ? appliedFilters.loja : undefined;
 
-  // Loja usada no botão "Exportar dados para planilha Bling".
+  // Loja usada nos botões "Bling" e "Fretes Mercado Livre".
   const blingLoja = getBlingLoja(storeValue);
 
   // ✅ Exportação Bling (toast fica na página, igual às outras exportações)
@@ -655,6 +655,43 @@ export default function Announce() {
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // ✅ Exportação de fretes do Mercado Livre
+  const [exportingFretesML, setExportingFretesML] = React.useState(false);
+
+  const handleExportFretesML = async () => {
+    if (exportingFretesML) return;
+    setExportingFretesML(true);
+
+    try {
+      const token = await getAccessToken();
+
+      const res = await fetch(
+        `/api/mercadolivre/frete/export?conta=${blingLoja}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (!res.ok) {
+        throw new Error(
+          await extractErrorMessage(res, "Falha ao exportar fretes do Mercado Livre.")
+        );
+      }
+
+      const blob = await res.blob();
+      const filename =
+        extractFilenameFromHeader(res.headers.get("Content-Disposition")) ??
+        "fretes-mercado-livre.csv";
+
+      downloadBlob(blob, filename);
+    } catch (err: any) {
+      console.error("Erro ao exportar fretes ML:", err);
+      toastCustom.error(
+        err?.message ?? "Não foi possível exportar os fretes do Mercado Livre."
+      );
+    } finally {
+      setExportingFretesML(false);
+    }
   };
 
   const [exportingModeloComposicao, setExportingModeloComposicao] = React.useState(false);
@@ -1252,6 +1289,8 @@ export default function Announce() {
               onImportComposicao={handleSelectComposicaoFile}
               onExportBling={handleExportBling}
               exportingBling={exportingBling}
+              onExportFretesML={handleExportFretesML}
+              exportingFretesML={exportingFretesML}
               totalCount={totalCount}
             />
           </div>
@@ -1384,7 +1423,12 @@ export default function Announce() {
                   setOpenActionsMobile(false);
                   handleExportBling();
                 }}
+                onExportFretesML={() => {
+                  setOpenActionsMobile(false);
+                  handleExportFretesML();
+                }}
                 exportingBling={exportingBling}
+                exportingFretesML={exportingFretesML}
                 totalCount={totalCount}
               />
             </div>

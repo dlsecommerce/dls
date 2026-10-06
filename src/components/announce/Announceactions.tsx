@@ -10,6 +10,7 @@ import {
   ChevronUp,
   Upload,
   CheckCircle2,
+  Truck,
 } from "lucide-react";
 import { unlockAudio } from "@/utils/sound";
 import TableInfoCard from "@/components/ui/Tableinfocard";
@@ -29,6 +30,9 @@ type Props = {
   // Export Bling (estado e toast ficam na página)
   onExportBling: () => void | Promise<void>;
   exportingBling: boolean;
+  // Export fretes Mercado Livre (estado fica na página)
+  onExportFretesML: () => void | Promise<void>;
+  exportingFretesML: boolean;
   totalCount: number;
 };
 
@@ -114,6 +118,8 @@ export default function AnnounceActions({
   onImportComposicao,
   onExportBling,
   exportingBling,
+  onExportFretesML,
+  exportingFretesML,
   totalCount,
 }: Props) {
   const inputInclusaoRef = useRef<HTMLInputElement | null>(null);
@@ -201,6 +207,12 @@ export default function AnnounceActions({
           label="Exportar dados planilha Bling"
           onClick={onExportBling}
           disabled={exportingBling}
+        />
+        <ActionTextButton
+          icon={<Truck className="h-4 w-4" />}
+          label="Exportar fretes Mercado Livre"
+          onClick={onExportFretesML}
+          disabled={exportingFretesML}
         />
 
         <div className="mt-3 border-t border-neutral-900 pt-3">
