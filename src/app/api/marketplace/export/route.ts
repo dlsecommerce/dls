@@ -223,10 +223,13 @@ export async function POST(req: NextRequest) {
           const marketing = res?.marketing ?? 0;
           const fixedFee = res?.fixed_fee ?? 0;
 
-          // ✅ FIX: nunca cair no valor antigo (stale) da tabela marketplace.
-          // Sempre usar o valor resolvido pelo banco (mesma fonte da tela).
-          const commissionRate = res ? res.commission_rate * 100 : 0;
-          const marginInicial = res ? res.effective_margin : 0;
+          // ✅ FIX (NaN silencioso): antes era `res ? res.commission_rate * 100 : 0`.
+          // Se `res` existisse mas `commission_rate`/`effective_margin` viessem
+          // null/undefined, a conta gerava NaN e o ExcelJS escrevia a célula
+          // vazia, sem erro algum. Agora o fallback é por campo, nunca pelo
+          // objeto `res` como um todo.
+          const commissionRate = (res?.commission_rate ?? 0) * 100;
+          const marginInicial = res?.effective_margin ?? 0;
 
           // ✅ Frete inicial em R$, já calculado pela função SQL
           // (preço_venda * frete_rate + frete_fixed) — mesma lógica da tela.
@@ -251,8 +254,22 @@ export async function POST(req: NextRequest) {
           const constPart = (tax + marketing).toFixed(6);
           const fixedFeeStr = fixedFee.toFixed(2);
 
+          // ✅ FIX (célula vazia até recálculo manual): fórmula sem `result`
+          // em cache fica sem valor visível em qualquer leitor que não
+          // recalcule automaticamente ao abrir (ou dependendo da config de
+          // cálculo manual do Excel). Agora calculamos o valor em JS e o
+          // gravamos como `result`, garantindo que a célula já nasça com o
+          // número visível — a fórmula continua lá para recálculo ao editar.
+          const denom = 1 - (tax + marketing + commissionRate / 100 + marginInicial / 100);
+          const sellingPriceRaw =
+            denom !== 0
+              ? costLiquido / denom + fixedFee + freteInicial
+              : 0;
+          const sellingPrice = Math.round(sellingPriceRaw * 100) / 100;
+
           excelRow.getCell(COL.PRECO_VENDA).value = {
             formula: `ROUND(M${rn}/(1-(${constPart}+I${rn}/100+K${rn}/100))+${fixedFeeStr}+J${rn},2)`,
+            result: sellingPrice,
           };
 
           excelRow.eachCell((cell) => {
