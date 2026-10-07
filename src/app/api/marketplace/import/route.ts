@@ -217,6 +217,18 @@ export async function POST(request: NextRequest): Promise<Response> {
       `;
       await transaction`set local role authenticated`;
 
+      // ✅ FIX (import sobrescrito pela trigger): a trigger
+      // trg_marketplace_apply_rules recalcula commission_rate/freight/
+      // selling_price em todo UPDATE, a menos que esta flag de sessão
+      // esteja setada como 'true'. Sem isso, o valor importado pelo
+      // usuário era descartado e substituído pelo cálculo automático
+      // de pricing_rules no mesmo UPDATE, antes de persistir.
+      // `true` no 3º parâmetro de set_config escopa a variável à
+      // transação local — some automaticamente ao fim do sql.begin.
+      await transaction`
+        select set_config('newsystem.manual_price_override', 'true', true)
+      `;
+
       const rows = await transaction`
         with payload as (
           select ${transaction.json(registros)}::jsonb as valor
