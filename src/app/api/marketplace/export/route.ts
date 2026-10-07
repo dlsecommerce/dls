@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
         // ============================================================
         // Resolve em lote: imposto, marketing, desconto, margem mínima,
         // margem efetiva, comissão, taxa fixa, frete% e frete fixo
-        // ✅ Agora inclui `freight_amount` já calculado em R$
+        // ✅ Inclui `freight_amount` já calculado em R$
         // (preço_venda * frete_rate + frete_fixed), vindo direto da função SQL.
         // ============================================================
         const { data: resolved, error: resolveError } = await supabase
@@ -221,8 +221,6 @@ export async function POST(req: NextRequest) {
           const costLiquido = res?.cost_liquido ?? 0;
           const tax = res?.tax ?? 0;
           const marketing = res?.marketing ?? 0;
-          const freteRate = res?.frete_rate ?? 0;
-          const freteFixed = res?.frete_fixed ?? 0;
           const fixedFee = res?.fixed_fee ?? 0;
 
           // ✅ FIX: nunca cair no valor antigo (stale) da tabela marketplace.
@@ -230,12 +228,9 @@ export async function POST(req: NextRequest) {
           const commissionRate = res ? res.commission_rate * 100 : 0;
           const marginInicial = res ? res.effective_margin : 0;
 
-          // ✅ FIX (frete não calculado): antes usava apenas `freteFixed`,
-          // ignorando por completo o componente percentual (`freteRate`).
-          // Agora usa `freight_amount`, já resolvido em R$ pela função SQL
-          // (preço_venda * frete_rate + frete_fixed) — mesma lógica usada
-          // na tela individual (fn_calc_marketplace_price_full).
-          const freteInicial = res?.freight_amount ?? freteFixed;
+          // ✅ Frete inicial em R$, já calculado pela função SQL
+          // (preço_venda * frete_rate + frete_fixed) — mesma lógica da tela.
+          const freteInicial = res?.freight_amount ?? res?.frete_fixed ?? 0;
 
           const excelRow = sheet.addRow([
             row.id || "", row.store || "", row.channel || "", row.id_bling || "",
@@ -246,17 +241,18 @@ export async function POST(req: NextRequest) {
 
           const rn = excelRow.number;
 
-          // ✅ FIX: Frete fixo e taxa fixa somados FORA da divisão, igual à
-          // fórmula do banco (fn_calc_marketplace_price_full). Apenas o
-          // frete percentual (freteRate) entra no divisor. A fórmula do
-          // preço de venda não depende da coluna Frete (J), por isso não
-          // há dependência circular com o valor já resolvido acima.
-          const constPart = (tax + marketing + freteRate).toFixed(6);
+          // ✅ FIX (frete não editável): antes o frete% ficava embutido como
+          // constante no divisor e a célula J (FRETE) nunca era referenciada
+          // na fórmula — editar J no Excel não tinha efeito algum no preço.
+          // Agora o frete em R$ entra como soma direta (igual ao fixed_fee),
+          // referenciando a própria célula J. Resultado: editar J recalcula
+          // o preço de venda automaticamente, sem dependência circular
+          // (a fórmula de N não lê N, só lê J, que é um valor estático).
+          const constPart = (tax + marketing).toFixed(6);
           const fixedFeeStr = fixedFee.toFixed(2);
-          const freteFixedStr = freteFixed.toFixed(2);
 
           excelRow.getCell(COL.PRECO_VENDA).value = {
-            formula: `ROUND(M${rn}/(1-(${constPart}+I${rn}/100+K${rn}/100))+${fixedFeeStr}+${freteFixedStr},2)`,
+            formula: `ROUND(M${rn}/(1-(${constPart}+I${rn}/100+K${rn}/100))+${fixedFeeStr}+J${rn},2)`,
           };
 
           excelRow.eachCell((cell) => {
