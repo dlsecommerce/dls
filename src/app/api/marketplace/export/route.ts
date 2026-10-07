@@ -228,12 +228,12 @@ export async function POST(req: NextRequest) {
           // null/undefined, a conta gerava NaN e o ExcelJS escrevia a célula
           // vazia, sem erro algum. Agora o fallback é por campo, nunca pelo
           // objeto `res` como um todo.
-          const commissionRate = (res?.commission_rate || row.commission_rate || 0) * 100;
-          const marginInicial = res?.effective_margin ?? row.profit_margin ?? 0;
+          const commissionRate = (res?.commission_rate ?? 0) * 100;
+          const marginInicial = res?.effective_margin ?? 0;
 
           // ✅ Frete inicial em R$, já calculado pela função SQL
           // (preço_venda * frete_rate + frete_fixed) — mesma lógica da tela.
-          const freteInicial = res?.freight_amount || res?.frete_fixed || row.freight || 0;
+          const freteInicial = res?.freight_amount ?? res?.frete_fixed ?? 0;
 
           const excelRow = sheet.addRow([
             row.id || "", row.store || "", row.channel || "", row.id_bling || "",
