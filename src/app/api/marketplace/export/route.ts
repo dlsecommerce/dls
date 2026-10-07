@@ -237,7 +237,9 @@ export async function POST(req: NextRequest) {
 
           // ✅ Frete inicial em R$, já calculado pela função SQL
           // (preço_venda * frete_rate + frete_fixed) — mesma lógica da tela.
-          const freteInicial = res?.freight_amount ?? res?.frete_fixed ?? row.freight ?? 0;
+          const freteInicial = Number(
+  res?.freight_amount ?? res?.frete_fixed ?? row.freight ?? 0
+) || 0;
 
           const excelRow = sheet.addRow([
             row.id || "", row.store || "", row.channel || "", row.id_bling || "",
