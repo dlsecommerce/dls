@@ -223,17 +223,21 @@ export async function POST(req: NextRequest) {
           const marketing = res?.marketing ?? 0;
           const fixedFee = res?.fixed_fee ?? 0;
 
-          // ✅ FIX (NaN silencioso): antes era `res ? res.commission_rate * 100 : 0`.
-          // Se `res` existisse mas `commission_rate`/`effective_margin` viessem
-          // null/undefined, a conta gerava NaN e o ExcelJS escrevia a célula
-          // vazia, sem erro algum. Agora o fallback é por campo, nunca pelo
-          // objeto `res` como um todo.
-          const commissionRate = (res?.commission_rate ?? 0) * 100;
-          const marginInicial = res?.effective_margin ?? 0;
+          // ✅ FIX DEFINITIVO (escala da comissão): `res.commission_rate` vem
+          // em FRAÇÃO (ex: 0.12) da function SQL, por isso é multiplicado por
+          // 100. Já `row.commission_rate` (fallback direto da tabela) vem em
+          // PERCENTUAL puro (ex: 12.00) — multiplicar por 100 de novo gerava
+          // o bug de 1200%. Agora o ×100 só ocorre quando o valor vem da
+          // function (fração); no fallback da tabela, usa direto.
+          const commissionRate = res?.commission_rate
+            ? res.commission_rate * 100
+            : (row.commission_rate || 0);
+
+          const marginInicial = res?.effective_margin ?? row.profit_margin ?? 0;
 
           // ✅ Frete inicial em R$, já calculado pela função SQL
           // (preço_venda * frete_rate + frete_fixed) — mesma lógica da tela.
-          const freteInicial = res?.freight_amount ?? res?.frete_fixed ?? 0;
+          const freteInicial = res?.freight_amount ?? res?.frete_fixed ?? row.freight ?? 0;
 
           const excelRow = sheet.addRow([
             row.id || "", row.store || "", row.channel || "", row.id_bling || "",
