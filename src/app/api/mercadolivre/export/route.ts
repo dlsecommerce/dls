@@ -14,24 +14,29 @@ const pool = new Pool({
 
 type CustoRow = {
   item_id: string;
+  variation_id: string | number | null;
   titulo: string | null;
   custo_vendedor: string | number | null;
 };
 
-const HEADERS = ["ID", "Produto", "Frete"];
-const WIDTHS = [20, 60, 18];
-const MONEY_COL = 2;
+const HEADERS = ["ID", "ID Variação", "Produto", "Frete"];
+const WIDTHS = [20, 18, 60, 18];
+const MONEY_COL = 3;
 const MONEY_FORMAT = '"R$" #,##0.00';
 
 const toNum = (v: unknown) =>
   v === null || v === undefined || v === "" ? null : Number(v);
 
 function buildXlsx(rows: CustoRow[]): Buffer {
-  const data = rows.map((r) => [
-    r.item_id,
-    r.titulo ?? "",
-    toNum(r.custo_vendedor),
-  ]);
+  const data = rows.map((r) => {
+    const vid = toNum(r.variation_id);
+    return [
+      r.item_id,
+      vid ? String(r.variation_id) : "", // pai fica vazio
+      r.titulo ?? "",
+      toNum(r.custo_vendedor),
+    ];
+  });
 
   const ws = XLSX.utils.aoa_to_sheet([HEADERS, ...data]);
 
@@ -53,7 +58,7 @@ function buildXlsx(rows: CustoRow[]): Buffer {
   }
 
   (ws as any)["!cols"] = WIDTHS.map((wch) => ({ wch }));
-  (ws as any)["!autofilter"] = { ref: `A1:C${data.length + 1}` };
+  (ws as any)["!autofilter"] = { ref: `A1:D${data.length + 1}` };
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Frete vendedor");
@@ -100,26 +105,15 @@ export async function GET(req: NextRequest) {
   const conta = (req.nextUrl.searchParams.get("conta") ?? "sobaquetas").toLowerCase();
 
   try {
+    // uma linha por pai (variation_id = 0) e por variação; frete 0 vira vazio
     const { rows } = await pool.query(
-      `with f as (
-         select item_id,
-                max(titulo) as titulo,
-                max(nullif(custo_vendedor, 0)) as custo
-           from newsystem.ml_fretes
-          where conta = $1
-          group by item_id
-       ),
-       c as (
-         select item_id, titulo, custo
-           from newsystem.ml_custo_vendedor_item
-          where conta = $1 and custo > 0
-       )
-       select item_id,
-              coalesce(f.titulo, c.titulo) as titulo,
-              coalesce(f.custo, c.custo)   as custo_vendedor
-         from f
-         full join c using (item_id)
-        order by 2 nulls last, 1`,
+      `select item_id,
+              variation_id,
+              titulo,
+              nullif(custo_vendedor, 0) as custo_vendedor
+         from newsystem.ml_custo_vendedor
+        where conta = $1
+        order by titulo nulls last, item_id, variation_id`,
       [conta]
     );
 

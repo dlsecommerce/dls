@@ -92,10 +92,7 @@ type Opcao = {
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
-/** MLB -> [MLB]. MLBU -> lista de MLB do vendedor ligados ao produto. */
-async function resolverItens(id: string, token: string): Promise<string[]> {
-  if (!id.startsWith("MLBU")) return [id];
-
+async function getUserId(token: string): Promise<number> {
   const meRes = await fetch(`${API}/users/me`, {
     headers: auth(token),
     cache: "no-store",
@@ -104,12 +101,22 @@ async function resolverItens(id: string, token: string): Promise<string[]> {
   if (!meRes.ok || !me?.id) {
     throw new Error(`Falha ao obter usuário: ${JSON.stringify(me)}`);
   }
+  return me.id;
+}
+
+/** MLB -> [MLB]. MLBU -> lista de MLB do vendedor ligados ao produto. */
+async function resolverItens(
+  id: string,
+  token: string,
+  userId: number
+): Promise<string[]> {
+  if (!id.startsWith("MLBU")) return [id];
 
   const ids: string[] = [];
   let offset = 0;
   while (true) {
     const r = await fetch(
-      `${API}/users/${me.id}/items/search?user_product_id=${id}&limit=50&offset=${offset}`,
+      `${API}/users/${userId}/items/search?user_product_id=${id}&limit=50&offset=${offset}`,
       { headers: auth(token), cache: "no-store" }
     );
     const j = await r.json();
@@ -120,6 +127,106 @@ async function resolverItens(id: string, token: string): Promise<string[]> {
     if (!res.length || offset >= (j.paging?.total ?? 0)) break;
   }
   return ids;
+}
+
+function numAttr(attrs: any[], id: string, tipo: "peso" | "comp"): number | null {
+  const a = attrs.find((x) => x.id === id);
+  if (!a) return null;
+  const s = a.values?.[0]?.struct;
+  const nome = String(a.value_name ?? "");
+  const n = s?.number ?? parseFloat(nome.replace(",", "."));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const unit = String(s?.unit ?? nome.replace(/[\d.,\s-]/g, "")).toLowerCase();
+  let v = n;
+  if (tipo === "peso") {
+    if (unit === "kg") v = n * 1000;
+    else if (unit === "mg") v = n / 1000;
+  } else {
+    if (unit === "m") v = n * 100;
+    else if (unit === "mm") v = n / 10;
+  }
+  return Math.max(1, Math.round(v));
+}
+
+function dimsDe(attrs: any[]): string | null {
+  const h = numAttr(attrs, "SELLER_PACKAGE_HEIGHT", "comp");
+  const w = numAttr(attrs, "SELLER_PACKAGE_WIDTH", "comp");
+  const l = numAttr(attrs, "SELLER_PACKAGE_LENGTH", "comp");
+  const p = numAttr(attrs, "SELLER_PACKAGE_WEIGHT", "peso");
+  return h && w && l && p ? `${h}x${w}x${l},${p}` : null;
+}
+
+/** Grava pai (variation_id=0) + cada variação em ml_custo_vendedor_item. */
+async function gravarCustos(
+  conta: string,
+  itemId: string,
+  userId: number,
+  token: string
+) {
+  const ri = await fetch(`${API}/items/${itemId}?include_attributes=all`, {
+    headers: auth(token),
+    cache: "no-store",
+  });
+  const it = await ri.json().catch(() => null);
+  if (!ri.ok || !it) return;
+
+  const vars: any[] = it.variations?.length ? it.variations : [null];
+  const itemAttrs: any[] = it.attributes ?? [];
+  const dimsItem: string | null = it.shipping?.dimensions ?? dimsDe(itemAttrs);
+  const dimsHerdada: string | null =
+    dimsItem ?? vars.map((v) => dimsDe(v?.attributes ?? [])).find(Boolean) ?? null;
+
+  const cache = new Map<string, number | null>();
+  const linhas: { vid: number; custo: number | null }[] = [];
+
+  for (const v of vars) {
+    const vid: number = v?.id ?? 0;
+    const price = v?.price ?? it.price;
+    const dims = dimsDe([...(v?.attributes ?? []), ...itemAttrs]) ?? dimsHerdada;
+    let custo: number | null = null;
+
+    if (dims) {
+      const key = `${dims}|${price}`;
+      if (!cache.has(key)) {
+        const qs = new URLSearchParams({
+          dimensions: dims,
+          verbose: "true",
+          item_price: String(price),
+          listing_type_id: it.listing_type_id,
+          category_id: it.category_id,
+          condition: it.condition,
+          mode: it.shipping?.mode ?? "me2",
+          logistic_type: it.shipping?.logistic_type ?? "drop_off",
+        });
+        const r = await fetch(
+          `${API}/users/${userId}/shipping_options/free?${qs}`,
+          { headers: auth(token), cache: "no-store" }
+        );
+        const j = await r.json().catch(() => null);
+        const val = Number(j?.coverage?.all_country?.list_cost);
+        cache.set(key, Number.isFinite(val) && val > 0 ? val : null);
+      }
+      custo = cache.get(key) ?? null;
+    }
+    linhas.push({ vid, custo });
+  }
+
+  // anúncio com variações: linha do pai = maior custo entre elas
+  if (it.variations?.length) {
+    const max = Math.max(0, ...linhas.map((l) => l.custo ?? 0));
+    linhas.push({ vid: 0, custo: max > 0 ? max : null });
+  }
+
+  for (const l of linhas) {
+    await pool.query(
+      `insert into newsystem.ml_custo_vendedor_item
+         (conta,item_id,variation_id,titulo,custo,atualizado_em)
+       values ($1,$2,$3,$4,$5,now())
+       on conflict (conta,item_id,variation_id) do update set
+         custo=excluded.custo, titulo=excluded.titulo, atualizado_em=now()`,
+      [conta, itemId, l.vid, it.title ?? null, l.custo]
+    );
+  }
 }
 
 async function salvarOpcoes(
@@ -221,7 +328,8 @@ export async function GET(req: NextRequest) {
 
   try {
     const token = await getAccessToken(conta);
-    const ids = await resolverItens(itemId, token);
+    const userId = await getUserId(token);
+    const ids = await resolverItens(itemId, token, userId);
     if (!ids.length) {
       return NextResponse.json(
         { error: "Nenhum anúncio encontrado para este ID nesta conta." },
@@ -233,6 +341,13 @@ export async function GET(req: NextRequest) {
     let ultimoErro: { body: unknown; status: number } | null = null;
 
     for (const id of ids) {
+      // sempre grava pai + variações, mesmo sem cobertura de frete
+      if (salvar) {
+        await gravarCustos(conta, id, userId, token).catch((e) =>
+          console.error("gravarCustos", id, e)
+        );
+      }
+
       const r = await fetch(`${API}/items/${id}/shipping_options?zip_code=${cep}`, {
         headers: auth(token),
         cache: "no-store",
