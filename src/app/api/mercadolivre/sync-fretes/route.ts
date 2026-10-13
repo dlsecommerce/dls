@@ -219,50 +219,126 @@ async function resolverItens(
 
 /**
  * Lê um atributo numérico e converte a unidade.
+ * Tenta os ids em ordem (ex.: SELLER_PACKAGE_WEIGHT, depois PACKAGE_WEIGHT).
  * tipo "peso": devolve gramas (kg*1000). tipo "comp": devolve cm (m*100, mm/10).
  */
-function numAttr(attrs: any[], id: string, tipo: "peso" | "comp"): number | null {
-  const a = attrs.find((x) => x.id === id);
-  if (!a) return null;
-  const s = a.values?.[0]?.struct;
-  const nome = String(a.value_name ?? "");
-  const n = s?.number ?? parseFloat(nome.replace(",", "."));
-  if (!Number.isFinite(n) || n <= 0) return null;
-  const unit = String(s?.unit ?? nome.replace(/[\d.,\s-]/g, "")).toLowerCase();
+function numAttr(attrs: any[], ids: string[], tipo: "peso" | "comp"): number | null {
+  for (const id of ids) {
+    const a = attrs.find((x) => x?.id === id);
+    if (!a) continue;
+    const s = a.values?.[0]?.struct;
+    const nome = String(a.value_name ?? "");
+    const n = s?.number ?? parseFloat(nome.replace(",", "."));
+    if (!Number.isFinite(n) || n <= 0) continue;
+    const unit = String(s?.unit ?? nome.replace(/[\d.,\s-]/g, "")).toLowerCase();
 
-  let v = n;
-  if (tipo === "peso") {
-    if (unit === "kg") v = n * 1000;
-    else if (unit === "mg") v = n / 1000;
-  } else {
-    if (unit === "m") v = n * 100;
-    else if (unit === "mm") v = n / 10;
+    let v = n;
+    if (tipo === "peso") {
+      if (unit === "kg") v = n * 1000;
+      else if (unit === "mg") v = n / 1000;
+    } else {
+      if (unit === "m") v = n * 100;
+      else if (unit === "mm") v = n / 10;
+    }
+    return Math.max(1, Math.round(v));
   }
-  return Math.max(1, Math.round(v));
+  return null;
 }
 
 function dimsDe(attrs: any[]): string | null {
-  const h = numAttr(attrs, "SELLER_PACKAGE_HEIGHT", "comp");
-  const w = numAttr(attrs, "SELLER_PACKAGE_WIDTH", "comp");
-  const l = numAttr(attrs, "SELLER_PACKAGE_LENGTH", "comp");
-  const p = numAttr(attrs, "SELLER_PACKAGE_WEIGHT", "peso");
+  const h = numAttr(attrs, ["SELLER_PACKAGE_HEIGHT", "PACKAGE_HEIGHT"], "comp");
+  const w = numAttr(attrs, ["SELLER_PACKAGE_WIDTH", "PACKAGE_WIDTH"], "comp");
+  const l = numAttr(attrs, ["SELLER_PACKAGE_LENGTH", "PACKAGE_LENGTH"], "comp");
+  const p = numAttr(attrs, ["SELLER_PACKAGE_WEIGHT", "PACKAGE_WEIGHT"], "peso");
   return h && w && l && p ? `${h}x${w}x${l},${p}` : null;
 }
 
-/** atributos do User Product da variação (dimensões por variação no modelo UP) */
-async function attrsUP(upId: string | undefined, token: string): Promise<any[]> {
-  if (!upId) return [];
+const DIMS_RE = /^\d+(\.\d+)?x\d+(\.\d+)?x\d+(\.\d+)?,\d+(\.\d+)?$/;
+
+/** User Product: atributos + eventual string de dimensões (shipping.dimensions / dimensions) */
+async function dadosUP(upId: string | undefined, token: string): Promise<{ attrs: any[]; dims: string | null }> {
+  if (!upId) return { attrs: [], dims: null };
   const r = await ml(`/user-products/${upId}`, token);
+  if (!r.ok) return { attrs: [], dims: null };
+  const j = await r.json().catch(() => null);
+  const cand = [j?.shipping?.dimensions, j?.dimensions].find(
+    (d) => typeof d === "string" && DIMS_RE.test(d)
+  );
+  return { attrs: j?.attributes ?? [], dims: cand ?? null };
+}
+
+/** atributos da variação lidos direto no endpoint da variação */
+async function attrsVariacao(itemId: string, vid: number | null, token: string): Promise<any[]> {
+  if (!vid) return [];
+  const r = await ml(`/items/${itemId}/variations/${vid}?include_attributes=all`, token);
   if (!r.ok) return [];
   const j = await r.json().catch(() => null);
   return j?.attributes ?? [];
 }
 
+const PKG_RE = /PACKAGE|WEIGHT|HEIGHT|WIDTH|LENGTH|DIMENSION/i;
+
+/** debug raw: mostra onde (se em algum lugar) estão peso e medidas */
+async function diagnosticoDims(itemId: string, token: string) {
+  const pick = (attrs: any[] = []) =>
+    attrs.filter((a) => PKG_RE.test(String(a?.id))).map((a) => ({
+      id: a.id, valor: a.value_name, struct: a.values?.[0]?.struct,
+    }));
+
+  const ri = await ml(`/items/${itemId}?include_attributes=all`, token);
+  const it = await ri.json().catch(() => null);
+  if (!ri.ok || !it) return { item: itemId, erro: `item ${ri.status}` };
+
+  const v0 = it.variations?.[0];
+  const up: string | undefined = v0?.user_product_id ?? it.user_product_id;
+
+  let upInfo: any = null;
+  if (up) {
+    const r = await ml(`/user-products/${up}`, token);
+    const j = await r.json().catch(() => null);
+    upInfo = {
+      id: up,
+      status: r.status,
+      chaves: j ? Object.keys(j) : null,
+      shipping: j?.shipping,
+      dimensions: j?.dimensions,
+      atributosPacote: pick(j?.attributes),
+      totalAtributos: j?.attributes?.length,
+    };
+  }
+
+  let variacaoEndpoint: any = null;
+  if (v0?.id) {
+    const r = await ml(`/items/${itemId}/variations/${v0.id}?include_attributes=all`, token);
+    const j = await r.json().catch(() => null);
+    variacaoEndpoint = { id: v0.id, status: r.status, atributosPacote: pick(j?.attributes) };
+  }
+
+  return {
+    item: itemId,
+    status: it.status,
+    sub_status: it.sub_status,
+    user_product_id_item: it.user_product_id,
+    shipping: it.shipping,
+    atributosPacoteAnuncio: pick(it.attributes),
+    totalAtributosAnuncio: it.attributes?.length,
+    primeiraVariacao: v0
+      ? { id: v0.id, user_product_id: v0.user_product_id, atributosPacote: pick(v0.attributes) }
+      : null,
+    variacaoEndpoint,
+    userProduct: upInfo,
+    dimsCalculadas: {
+      anuncio: it.shipping?.dimensions ?? dimsDe(it.attributes ?? []),
+      variacao: v0 ? dimsDe(v0.attributes ?? []) : null,
+    },
+  };
+}
+
 /**
  * Custo de envio do vendedor (o "Você paga R$ X" do painel), um registro por variação.
  * Usa /users/{id}/shipping_options/free com as dimensões do anúncio/variação.
- * Dimensões, por prioridade: atributos da variação, User Product da variação, atributos do anúncio,
- * shipping.dimensions do anúncio e, por último, herdadas de outra variação do mesmo anúncio.
+ * Dimensões, por prioridade: atributos da variação, User Product (variação ou anúncio), atributos do anúncio,
+ * shipping.dimensions do anúncio, endpoint da variação e, por último, herdadas de outra variação.
  * Funciona com anúncio pausado, sem estoque ou inativo (não depende do status).
  */
 async function custosVendedorML(
@@ -287,10 +363,21 @@ async function custosVendedorML(
     const vid: number | null = v?.id ?? null;
     const price = v?.price ?? it.price;
 
-    const up: string | undefined = v?.user_product_id;
-    const upAttrs = up ? await attrsUP(up, token) : [];
-    const dims: string | null =
-      dimsDe([...(v?.attributes ?? []), ...upAttrs, ...itemAttrs]) ?? dimsHerdada;
+    // anúncio sem variações também pode ter user_product_id no nível do item
+    const up: string | undefined = v?.user_product_id ?? it.user_product_id;
+    const upDados = await dadosUP(up, token);
+
+    let dims: string | null =
+      dimsDe([...(v?.attributes ?? []), ...upDados.attrs, ...itemAttrs]) ??
+      dimsItem ??
+      upDados.dims;
+
+    // último recurso próprio da variação: endpoint dedicado
+    if (!dims && vid) {
+      const extra = await attrsVariacao(itemId, vid, token);
+      dims = dimsDe(extra);
+    }
+    dims = dims ?? dimsHerdada;
 
     if (!dims) {
       out.push({ variation_id: vid, valor: null, up, motivo: "sem dimensions e sem SELLER_PACKAGE_*" });
@@ -336,6 +423,7 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const conta = sp.get("conta") ?? "sobaquetas";
   const debugId = sp.get("debug")?.trim() || null; // testa o custo de 1 anúncio (todas as variações), sem gravar
+  const raw = !!sp.get("raw"); // com debug: mostra onde estão peso/medidas (anúncio, variação, User Product)
   const itemParam = sp.get("item")?.trim() || null; // MLB... ou MLBU...
   const dry = !!sp.get("dry"); // lista os anúncios sem gravar
   const status = sp.get("status") ?? "active"; // active | all | full | paused,inactive ...
@@ -366,6 +454,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (debugId) {
+    if (raw) return NextResponse.json(await diagnosticoDims(debugId, token));
     const custos = await custosVendedorML(debugId, me.id, token);
     return NextResponse.json({ debug: debugId, custos });
   }
