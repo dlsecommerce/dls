@@ -18,6 +18,7 @@ type Custo = {
   variation_id: number | null;
   valor: number | null;
   dims?: string;
+  up?: string;
   motivo?: string;
 };
 
@@ -248,11 +249,20 @@ function dimsDe(attrs: any[]): string | null {
   return h && w && l && p ? `${h}x${w}x${l},${p}` : null;
 }
 
+/** atributos do User Product da variação (dimensões por variação no modelo UP) */
+async function attrsUP(upId: string | undefined, token: string): Promise<any[]> {
+  if (!upId) return [];
+  const r = await ml(`/user-products/${upId}`, token);
+  if (!r.ok) return [];
+  const j = await r.json().catch(() => null);
+  return j?.attributes ?? [];
+}
+
 /**
  * Custo de envio do vendedor (o "Você paga R$ X" do painel), um registro por variação.
  * Usa /users/{id}/shipping_options/free com as dimensões do anúncio/variação.
- * Dimensões: shipping.dimensions ou, se nulo, atributos SELLER_PACKAGE_* (cm e gramas),
- * primeiro da variação, depois do anúncio, depois herdadas de outra variação do mesmo anúncio.
+ * Dimensões, por prioridade: atributos da variação, User Product da variação, atributos do anúncio,
+ * shipping.dimensions do anúncio e, por último, herdadas de outra variação do mesmo anúncio.
  * Funciona com anúncio pausado, sem estoque ou inativo (não depende do status).
  */
 async function custosVendedorML(
@@ -277,11 +287,13 @@ async function custosVendedorML(
     const vid: number | null = v?.id ?? null;
     const price = v?.price ?? it.price;
 
+    const up: string | undefined = v?.user_product_id;
+    const upAttrs = up ? await attrsUP(up, token) : [];
     const dims: string | null =
-      dimsDe([...(v?.attributes ?? []), ...itemAttrs]) ?? dimsHerdada;
+      dimsDe([...(v?.attributes ?? []), ...upAttrs, ...itemAttrs]) ?? dimsHerdada;
 
     if (!dims) {
-      out.push({ variation_id: vid, valor: null, motivo: "sem dimensions e sem SELLER_PACKAGE_*" });
+      out.push({ variation_id: vid, valor: null, up, motivo: "sem dimensions e sem SELLER_PACKAGE_*" });
       continue;
     }
 
@@ -307,7 +319,7 @@ async function custosVendedorML(
           : { variation_id: null, valor: null, dims, motivo: `free ${r.status}` }
       );
     }
-    out.push({ ...cache.get(key)!, variation_id: vid });
+    out.push({ ...cache.get(key)!, variation_id: vid, up });
   }
   return out;
 }
@@ -330,9 +342,11 @@ export async function GET(req: NextRequest) {
   const zerados = !!sp.get("zerados"); // só itens sem custo_vendedor > 0
   const pendentes = !!sp.get("pendentes"); // só anúncios com linhas consultado_em = epoch
   const soCusto = !!sp.get("socusto"); // pula o frete por CEP e calcula só o custo do vendedor
+  const varsync = !!sp.get("varsync"); // puxa todas as variações ausentes/zeradas (ignora o filtro por anúncio)
+  const pularCeps = soCusto || varsync;
   const offset = Math.max(0, Number(sp.get("offset") ?? 0) || 0);
   const limit = Number(sp.get("limit") ?? 0) || 0; // 0 = sem limite
-  const parcial = offset > 0 || limit > 0 || zerados || pendentes;
+  const parcial = offset > 0 || limit > 0 || zerados || pendentes || varsync;
   const ceps = (process.env.ML_CEPS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
   const limiteTempo = Date.now() + 270_000; // margem antes dos 300s
@@ -356,7 +370,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ debug: debugId, custos });
   }
 
-  if (!ceps.length && !soCusto)
+  if (!ceps.length && !pularCeps)
     return NextResponse.json({ erro: "defina ML_CEPS" }, { status: 400 });
 
   let porStatus: Record<string, number> = {};
@@ -418,6 +432,55 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  // ---- varsync: anúncios com variação ausente (ou zerada há mais de 6h) em ml_custo_vendedor_item ----
+  let vmapVar: Record<string, number[]> = {};
+  let anunciosComFaltas = 0;
+  let variacoesInseridas = 0;
+  let semResposta = 0;
+  if (varsync && !itemParam) {
+    vmapVar = await variacoes(ids, token);
+    semResposta = ids.filter((id) => !vmapVar[id]).length;
+
+    const { rows: dbRows } = await pool.query(
+      `select item_id, variation_id, custo,
+              (atualizado_em is null or atualizado_em < now() - interval '6 hours') as velho
+         from newsystem.ml_custo_vendedor_item where conta=$1`, [conta]);
+    const db = new Map<string, Map<number, { zerado: boolean; velho: boolean }>>();
+    for (const r of dbRows) {
+      if (!db.has(r.item_id)) db.set(r.item_id, new Map());
+      db.get(r.item_id)!.set(Number(r.variation_id), {
+        zerado: !(Number(r.custo) > 0),
+        velho: !!r.velho,
+      });
+    }
+
+    const comFaltas: string[] = [];
+    for (const id of ids) {
+      const vids = vmapVar[id];
+      if (!vids) continue;
+      const linhas = db.get(id);
+      let faltas = 0;
+      let precisa = false;
+      for (const vid of vids) {
+        const l = linhas?.get(vid);
+        if (!l) { faltas++; precisa = true; }
+        else if (l.zerado && l.velho) precisa = true;
+      }
+      if (precisa) { comFaltas.push(id); variacoesInseridas += faltas; }
+    }
+    anunciosComFaltas = comFaltas.length;
+    ids = comFaltas;
+    if (!ids.length)
+      return NextResponse.json({
+        modo: "varsync",
+        status,
+        listados: totalListado,
+        anunciosComFaltas: 0,
+        semResposta,
+        mensagem: "nenhuma variação faltando",
+      });
+  }
+
   // só zerados: remove os que já têm custo > 0 em TODAS as variações de ml_fretes, ou em ml_custo_vendedor_item
   if (zerados && !itemParam) {
     const { rows } = await pool.query(
@@ -450,18 +513,39 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ modo: "pendentes", processados: 0, mensagem: "nenhum pendente" });
   }
 
+  const totalAntesCorte = ids.length;
   if (offset > 0 || limit > 0) ids = ids.slice(offset, limit ? offset + limit : undefined);
 
-  console.log(`[sync] conta=${conta} listados=${totalListado} processar=${ids.length} socusto=${soCusto}`);
+  // varsync: replica em ml_fretes as linhas do pai (variation_id=0) para as variações que faltam
+  if (varsync && !itemParam) {
+    for (const id of ids) {
+      const reais = (vmapVar[id] ?? []).filter((v) => v !== 0);
+      if (!reais.length) continue;
+      try {
+        await pool.query(
+          `insert into newsystem.ml_fretes
+             (conta,item_id,titulo,cep,metodo_id,nome,custo_comprador,custo_lista,prazo_horas,consultado_em,variation_id)
+           select f.conta,f.item_id,f.titulo,f.cep,f.metodo_id,f.nome,f.custo_comprador,f.custo_lista,f.prazo_horas,f.consultado_em,u.vid
+             from newsystem.ml_fretes f, unnest($3::bigint[]) as u(vid)
+            where f.conta=$1 and f.item_id=$2 and f.variation_id=0
+           on conflict (conta,item_id,variation_id,cep,metodo_id) do nothing`,
+          [conta, id, reais]);
+      } catch (e) {
+        console.error("varsync ml_fretes", id, e instanceof Error ? e.message : e);
+      }
+    }
+  }
+
+  console.log(`[sync] conta=${conta} listados=${totalListado} processar=${ids.length} socusto=${soCusto} varsync=${varsync}`);
   const tit = await titulos(ids, token);
-  const vmap: Record<string, number[]> = soCusto ? {} : await variacoes(ids, token);
+  const vmap: Record<string, number[]> = pularCeps ? {} : await variacoes(ids, token);
 
   let gravados = 0, erros = 0, bloqueados = 0;
   let tempoEsgotado = false;
   const semCoberturaIds = new Set<string>();
   const falhas: { id: string; cep: string; status: number | string }[] = [];
-  // com socusto não há tarefas de frete por CEP
-  const tarefas = soCusto ? [] : ids.flatMap((id) => ceps.map((cep) => ({ id, cep })));
+  // com socusto/varsync não há tarefas de frete por CEP
+  const tarefas = pularCeps ? [] : ids.flatMap((id) => ceps.map((cep) => ({ id, cep })));
   const totalTarefas = tarefas.length;
   let feitasTarefas = 0;
   const CONC = 4;
@@ -549,7 +633,7 @@ export async function GET(req: NextRequest) {
       }
     }
   }
-  if (!soCusto) await Promise.all(Array.from({ length: CONC }, worker));
+  if (!pularCeps) await Promise.all(Array.from({ length: CONC }, worker));
 
   // ---- Custo do vendedor via /shipping_options/free (por variação) ----
   let custosAtualizados = 0; // anúncios com custo gravado em ml_fretes (por variação + pai = maior entre variações)
@@ -674,13 +758,15 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     modo: itemParam
       ? "item"
-      : pendentes
-        ? "pendentes"
-        : zerados
-          ? "zerados"
-          : parcial
-            ? "parcial"
-            : "completo",
+      : varsync
+        ? "varsync"
+        : pendentes
+          ? "pendentes"
+          : zerados
+            ? "zerados"
+            : parcial
+              ? "parcial"
+              : "completo",
     socusto: soCusto || undefined,
     status,
     item: itemParam,
@@ -689,10 +775,15 @@ export async function GET(req: NextRequest) {
     porStatus,
     statusFalhos: statusFalhos.length ? statusFalhos : undefined,
     processados: ids.length,
+    anunciosComFaltas: varsync ? anunciosComFaltas : undefined,
+    variacoesInseridas: varsync ? variacoesInseridas : undefined,
+    restantes: varsync ? Math.max(0, totalAntesCorte - offset - ids.length) : undefined,
+    semResposta: varsync ? semResposta : undefined,
     ceps: ceps.length,
     gravados,
     custosAtualizados,
     custosSemCobertura,
+    calculados: varsync ? custosSemCobertura : undefined,
     semCusto: semCusto.length,
     semCustoLista: semCusto.length ? semCusto : undefined,
     tempoEsgotado: tempoEsgotado || undefined,
