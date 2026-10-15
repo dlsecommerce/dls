@@ -250,7 +250,7 @@ export async function POST(req: NextRequest) {
           // preço), e o SQL usa frete_rate (%) no DIVISOR, não como soma.
           // Usar freight_amount como soma gerava o preço menor que o real
           // (ex: 992,62 em vez de 1.158,37).
-          const freteExibido = res?.freight_amount ?? row.freight ?? 0;
+          const freteExibido = res?.freight_amount || res?.frete_fixed || row.freight || 0;
 
           const excelRow = sheet.addRow([
             row.id || "", row.store || "", row.channel || "", row.id_bling || "",
