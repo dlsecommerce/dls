@@ -223,40 +223,53 @@ export async function POST(req: NextRequest) {
           const marketing = res?.marketing ?? 0;
           const fixedFee = res?.fixed_fee ?? 0;
 
+          // ✅ Frete% (fração, ex: 0.05) — entra no DIVISOR, igual ao SQL
+          // (v_divisor usa v_frete_rate, não v_frete_fixed, como fração).
+          const freteRate = res?.frete_rate ?? 0;
+
+          // ✅ Frete fixo em R$ — soma direta, igual fixed_fee.
+          const freteFixed = res?.frete_fixed ?? 0;
+
           // ✅ FIX DEFINITIVO (escala da comissão): `res.commission_rate` vem
           // em FRAÇÃO (ex: 0.12) da function SQL, por isso é multiplicado por
           // 100. Já `row.commission_rate` (fallback direto da tabela) vem em
           // PERCENTUAL puro (ex: 12.00) — multiplicar por 100 de novo gerava
           // o bug de 1200%. Agora o ×100 só ocorre quando o valor vem da
           // function (fração); no fallback da tabela, usa direto.
-          const commissionRate = res?.commission_rate
+          const commissionRate = res?.commission_rate != null
             ? res.commission_rate * 100
             : (row.commission_rate || 0);
 
           const marginInicial = res?.effective_margin ?? row.profit_margin ?? 0;
 
-          // ✅ Frete inicial em R$, já calculado pela função SQL
-          // (preço_venda * frete_rate + frete_fixed) — mesma lógica da tela.
-         const freteInicial = res?.freight_amount || res?.frete_fixed || row.freight || 0;
+          // ✅ FIX (preço divergente): coluna "Frete" (J) agora é APENAS
+          // informativa, exibindo o freight_amount (R$) já calculado pela
+          // function SQL (price * frete_rate + frete_fixed). Antes esse
+          // valor era usado como INSUMO somado direto ao preço — mas
+          // freight_amount é uma SAÍDA do cálculo (depende do próprio
+          // preço), e o SQL usa frete_rate (%) no DIVISOR, não como soma.
+          // Usar freight_amount como soma gerava o preço menor que o real
+          // (ex: 992,62 em vez de 1.158,37).
+          const freteExibido = res?.freight_amount ?? row.freight ?? 0;
 
           const excelRow = sheet.addRow([
             row.id || "", row.store || "", row.channel || "", row.id_bling || "",
             row.reference || "", row.product || "", row.mark || "", "",
-            commissionRate, freteInicial, marginInicial, "",
+            commissionRate, freteExibido, marginInicial, "",
             costLiquido, null, res?.margin_min ?? 0,
           ]);
 
           const rn = excelRow.number;
 
-          // ✅ FIX (frete não editável): antes o frete% ficava embutido como
-          // constante no divisor e a célula J (FRETE) nunca era referenciada
-          // na fórmula — editar J no Excel não tinha efeito algum no preço.
-          // Agora o frete em R$ entra como soma direta (igual ao fixed_fee),
-          // referenciando a própria célula J. Resultado: editar J recalcula
-          // o preço de venda automaticamente, sem dependência circular
-          // (a fórmula de N não lê N, só lê J, que é um valor estático).
-          const constPart = (tax + marketing).toFixed(6);
-          const fixedFeeStr = fixedFee.toFixed(2);
+          // ✅ FIX (preço divergente): frete% (freteRate) entra no DIVISOR
+          // como constante — igual tax/marketing — pois o SQL faz:
+          //   v_divisor := 1 - (tax + margem/100 + commission + marketing + frete_rate)
+          // frete_fixed entra como soma direta, junto com fixedFee.
+          // A coluna J (Frete) deixa de ser referenciada na fórmula: ela é
+          // resultado do cálculo, não insumo — editá-la no Excel não altera
+          // mais o preço (evita a dependência circular que gerava o erro).
+          const constPart = (tax + marketing + freteRate).toFixed(6);
+          const fixedSumStr = (fixedFee + freteFixed).toFixed(2);
 
           // ✅ FIX (célula vazia até recálculo manual): fórmula sem `result`
           // em cache fica sem valor visível em qualquer leitor que não
@@ -264,15 +277,19 @@ export async function POST(req: NextRequest) {
           // cálculo manual do Excel). Agora calculamos o valor em JS e o
           // gravamos como `result`, garantindo que a célula já nasça com o
           // número visível — a fórmula continua lá para recálculo ao editar.
-          const denom = 1 - (tax + marketing + commissionRate / 100 + marginInicial / 100);
+          const denom = 1 - (tax + marketing + freteRate + commissionRate / 100 + marginInicial / 100);
           const sellingPriceRaw =
             denom !== 0
-              ? costLiquido / denom + fixedFee + freteInicial
+              ? costLiquido / denom + fixedFee + freteFixed
               : 0;
-          const sellingPrice = Math.round(sellingPriceRaw * 100) / 100;
+
+          // Fonte de verdade: usa o selling_price já calculado pela
+          // function SQL quando disponível, evitando qualquer divergência
+          // de arredondamento/fórmula entre TS e banco.
+          const sellingPrice = res?.selling_price ?? (Math.round(sellingPriceRaw * 100) / 100);
 
           excelRow.getCell(COL.PRECO_VENDA).value = {
-            formula: `ROUND(M${rn}/(1-(${constPart}+I${rn}/100+K${rn}/100))+${fixedFeeStr}+J${rn},2)`,
+            formula: `ROUND(M${rn}/(1-(${constPart}+I${rn}/100+K${rn}/100))+${fixedSumStr},2)`,
             result: sellingPrice,
           };
 
