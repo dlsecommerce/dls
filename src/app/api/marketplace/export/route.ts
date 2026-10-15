@@ -228,7 +228,14 @@ export async function POST(req: NextRequest) {
           const freteRate = res?.frete_rate ?? 0;
 
           // ✅ Frete fixo em R$ — soma direta, igual fixed_fee.
-          const freteFixed = res?.frete_fixed ?? 0;
+          // FIX: quando a function SQL não tem regra de frete por canal
+          // (frete_rate=0 e frete_fixed=0), usa o frete manual importado
+          // via Excel (row.freight, em R$) como fallback. Esse é o caso
+          // real do sistema: frete não vem de regra de canal, vem do
+          // dado cadastrado no produto.
+          const freteFixed = (res?.frete_fixed || 0) > 0
+            ? res.frete_fixed
+            : (row.freight || 0);
 
           // ✅ FIX DEFINITIVO (escala da comissão): `res.commission_rate` vem
           // em FRAÇÃO (ex: 0.12) da function SQL, por isso é multiplicado por
