@@ -280,12 +280,12 @@ export async function POST(req: NextRequest) {
               : 0;
 
           const sellingPrice =
-            res?.selling_price != null && (res?.frete_fixed ?? 0) > 0
+            res?.selling_price != null
               ? res.selling_price
               : Math.round(sellingPriceRaw * 100) / 100;
 
           excelRow.getCell(COL.PRECO_VENDA).value = {
-            formula: `ROUND(M${rn}/(1-(${constPart}+I${rn}/100+K${rn}/100))+${fixedFeeStr}+J${rn},2)`,
+            formula: `ROUND((M${rn}+J${rn})/(1-(${constPart}+I${rn}/100+K${rn}/100))+${fixedFeeStr},2)`,
             result: sellingPrice,
           };
 
