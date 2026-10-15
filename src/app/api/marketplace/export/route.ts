@@ -228,14 +228,11 @@ export async function POST(req: NextRequest) {
           const freteRate = res?.frete_rate ?? 0;
 
           // ✅ Frete fixo em R$ — soma direta, igual fixed_fee.
-          // FIX: quando a function SQL não tem regra de frete por canal
-          // (frete_rate=0 e frete_fixed=0), usa o frete manual importado
-          // via Excel (row.freight, em R$) como fallback. Esse é o caso
-          // real do sistema: frete não vem de regra de canal, vem do
-          // dado cadastrado no produto.
-          const freteFixed = (res?.frete_fixed || 0) > 0
-            ? res.frete_fixed
-            : (row.freight || 0);
+          // Quando a function não tem regra de frete por canal (frete_fixed
+          // zerado), usa o frete manual importado do Excel (row.freight,
+          // valor em R$ — confirmado pelo numFmt de moeda da coluna) como
+          // insumo real do cálculo, em vez de descartá-lo.
+          const freteFixed = res?.frete_fixed || row.freight || 0;
 
           // ✅ FIX DEFINITIVO (escala da comissão): `res.commission_rate` vem
           // em FRAÇÃO (ex: 0.12) da function SQL, por isso é multiplicado por
@@ -251,13 +248,10 @@ export async function POST(req: NextRequest) {
 
           // ✅ FIX (preço divergente): coluna "Frete" (J) agora é APENAS
           // informativa, exibindo o freight_amount (R$) já calculado pela
-          // function SQL (price * frete_rate + frete_fixed). Antes esse
-          // valor era usado como INSUMO somado direto ao preço — mas
-          // freight_amount é uma SAÍDA do cálculo (depende do próprio
-          // preço), e o SQL usa frete_rate (%) no DIVISOR, não como soma.
-          // Usar freight_amount como soma gerava o preço menor que o real
-          // (ex: 992,62 em vez de 1.158,37).
-          const freteExibido = res?.freight_amount || res?.frete_fixed || row.freight || 0;
+          // function SQL (price * frete_rate + frete_fixed), ou — quando a
+          // function não conhece frete nenhum (canal sem regra) — o frete
+          // manual importado do Excel (freteFixed, já com o fallback acima).
+          const freteExibido = res?.freight_amount || freteFixed;
 
           const excelRow = sheet.addRow([
             row.id || "", row.store || "", row.channel || "", row.id_bling || "",
@@ -290,10 +284,18 @@ export async function POST(req: NextRequest) {
               ? costLiquido / denom + fixedFee + freteFixed
               : 0;
 
-          // Fonte de verdade: usa o selling_price já calculado pela
-          // function SQL quando disponível, evitando qualquer divergência
-          // de arredondamento/fórmula entre TS e banco.
-          const sellingPrice = res?.selling_price ?? (Math.round(sellingPriceRaw * 100) / 100);
+          // ✅ FIX (frete manual ignorado): `res.selling_price` vem da
+          // function SQL, que NÃO conhece o frete manual importado do Excel
+          // (row.freight) quando o canal não tem regra própria configurada.
+          // Usar `res.selling_price` sempre (via `??`) fazia o preço final
+          // nunca refletir esse frete, mesmo com o cálculo em JS corrigido.
+          // Agora só confiamos no valor do banco quando ele já tiver frete
+          // próprio resolvido (frete_fixed > 0); caso contrário, prevalece
+          // o cálculo em JS, que já embute o frete manual via freteFixed.
+          const sellingPrice =
+            res?.selling_price != null && (res?.frete_fixed ?? 0) > 0
+              ? res.selling_price
+              : Math.round(sellingPriceRaw * 100) / 100;
 
           excelRow.getCell(COL.PRECO_VENDA).value = {
             formula: `ROUND(M${rn}/(1-(${constPart}+I${rn}/100+K${rn}/100))+${fixedSumStr},2)`,
