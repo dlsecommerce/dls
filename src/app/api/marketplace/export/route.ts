@@ -246,11 +246,10 @@ export async function POST(req: NextRequest) {
 
           const marginInicial = res?.effective_margin ?? row.profit_margin ?? 0;
 
-          // ✅ FIX (preço divergente): coluna "Frete" (J) agora é APENAS
-          // informativa, exibindo o freight_amount (R$) já calculado pela
-          // function SQL (price * frete_rate + frete_fixed), ou — quando a
-          // function não conhece frete nenhum (canal sem regra) — o frete
-          // manual importado do Excel (freteFixed, já com o fallback acima).
+          // ✅ Coluna "Frete" (J) agora é a COLUNA DE INSUMO EDITÁVEL:
+          // mostra o freight_amount calculado (regra de canal) ou o frete
+          // manual do Excel (freteFixed) — e a fórmula do preço (ver abaixo)
+          // referencia ESSA célula ao vivo, então editar J recalcula N.
           const freteExibido = res?.freight_amount || freteFixed;
 
           const excelRow = sheet.addRow([
@@ -262,43 +261,31 @@ export async function POST(req: NextRequest) {
 
           const rn = excelRow.number;
 
-          // ✅ FIX (preço divergente): frete% (freteRate) entra no DIVISOR
-          // como constante — igual tax/marketing — pois o SQL faz:
-          //   v_divisor := 1 - (tax + margem/100 + commission + marketing + frete_rate)
-          // frete_fixed entra como soma direta, junto com fixedFee.
-          // A coluna J (Frete) deixa de ser referenciada na fórmula: ela é
-          // resultado do cálculo, não insumo — editá-la no Excel não altera
-          // mais o preço (evita a dependência circular que gerava o erro).
+          // ✅ FIX (preço não recalcula ao editar Frete no Excel): a
+          // fórmula anterior gravava fixedFee+freteFixed como NÚMERO FIXO
+          // no texto da fórmula — editar a célula J (Frete) no Excel não
+          // tinha efeito nenhum, pois a fórmula nunca referenciava J.
+          // Agora J{rn} entra DIRETO na fórmula: editar o frete na planilha
+          // recalcula o preço de venda automaticamente (fullCalcOnLoad já
+          // garante o recálculo ao abrir o arquivo).
           const constPart = (tax + marketing + freteRate).toFixed(6);
-          const fixedSumStr = (fixedFee + freteFixed).toFixed(2);
+          const fixedFeeStr = fixedFee.toFixed(2);
 
-          // ✅ FIX (célula vazia até recálculo manual): fórmula sem `result`
-          // em cache fica sem valor visível em qualquer leitor que não
-          // recalcule automaticamente ao abrir (ou dependendo da config de
-          // cálculo manual do Excel). Agora calculamos o valor em JS e o
-          // gravamos como `result`, garantindo que a célula já nasça com o
-          // número visível — a fórmula continua lá para recálculo ao editar.
+          // Valor "congelado" calculado em JS, só para a célula já nascer
+          // com o número visível antes de qualquer recálculo do Excel.
           const denom = 1 - (tax + marketing + freteRate + commissionRate / 100 + marginInicial / 100);
           const sellingPriceRaw =
             denom !== 0
               ? costLiquido / denom + fixedFee + freteFixed
               : 0;
 
-          // ✅ FIX (frete manual ignorado): `res.selling_price` vem da
-          // function SQL, que NÃO conhece o frete manual importado do Excel
-          // (row.freight) quando o canal não tem regra própria configurada.
-          // Usar `res.selling_price` sempre (via `??`) fazia o preço final
-          // nunca refletir esse frete, mesmo com o cálculo em JS corrigido.
-          // Agora só confiamos no valor do banco quando ele já tiver frete
-          // próprio resolvido (frete_fixed > 0); caso contrário, prevalece
-          // o cálculo em JS, que já embute o frete manual via freteFixed.
           const sellingPrice =
             res?.selling_price != null && (res?.frete_fixed ?? 0) > 0
               ? res.selling_price
               : Math.round(sellingPriceRaw * 100) / 100;
 
           excelRow.getCell(COL.PRECO_VENDA).value = {
-            formula: `ROUND(M${rn}/(1-(${constPart}+I${rn}/100+K${rn}/100))+${fixedSumStr},2)`,
+            formula: `ROUND(M${rn}/(1-(${constPart}+I${rn}/100+K${rn}/100))+${fixedFeeStr}+J${rn},2)`,
             result: sellingPrice,
           };
 
