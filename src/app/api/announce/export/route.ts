@@ -21,7 +21,6 @@ type AnnounceRow = {
   product: string | null;
   mark: string | null;
   code_id: number | null;
-  titulo?: string | null;
   // usado internamente apenas para paginação no modo "Últimos incluídos"
   created_at?: string;
 };
@@ -59,14 +58,20 @@ const BASE64_CHUNK_SIZE = 200_000; // tamanho de cada pedaço do arquivo
 const MONEY_FORMAT = '"R$" #,##0.00';
 
 // Layout de colunas por fonte de dados.
+//
+// ✅ FIX: a coluna "Produto" já É o título do anúncio no sistema
+// (newsystem.announce.product). Não existe — e nunca existiu — uma
+// fonte separada de "título" para essa tabela; a tentativa anterior
+// de buscar isso em newsystem.anuncios_ml (tabela do espelho Bling/ML)
+// sempre resultava em célula vazia, pois é um dado de outro contexto.
 const LAYOUTS: Record<Source, Layout> = {
   announce: {
-    headers: ["Loja", "ID Bling", "Título", "Referência", "Produto", "Marca", "Código ID"],
-    widths: [15, 18, 50, 22, 34, 20, 14],
+    headers: ["Loja", "ID Bling", "Referência", "Produto", "Marca", "Código ID"],
+    widths: [15, 18, 22, 50, 20, 14],
     sheet: "Announce",
     toCells: (row) => {
       const r = row as AnnounceRow;
-      return [r.store, r.id_bling, r.titulo ?? "", r.reference, r.product, r.mark, r.code_id];
+      return [r.store, r.id_bling, r.reference, r.product, r.mark, r.code_id];
     },
   },
   bling: {
@@ -243,7 +248,7 @@ function normalizeIdsBody(value: unknown): string[] | null {
 }
 
 /**
- * ✅ NOVO — parse do parâmetro "marks" (marcas), separado por vírgula.
+ * Parse do parâmetro "marks" (marcas), separado por vírgula.
  * Ex: "marks=Fischer,Brastemp" -> ["Fischer", "Brastemp"]
  */
 function parseMarksParam(searchParams: URLSearchParams): string[] {
@@ -256,7 +261,7 @@ function parseMarksParam(searchParams: URLSearchParams): string[] {
 }
 
 /**
- * ✅ NOVO — normaliza o filtro de tipo (aceita PT e EN, igual ao
+ * Normaliza o filtro de tipo (aceita PT e EN, igual ao
  * normalizeTypeFilter do useAnnounce no client).
  */
 function normalizeTypeFilter(value: string | null): TipoFiltro {
@@ -273,55 +278,12 @@ function normalizeTypeFilter(value: string | null): TipoFiltro {
 }
 
 /**
- * ✅ NOVO — normaliza o filtro de situação. Cai em "Ativos" se vier
+ * Normaliza o filtro de situação. Cai em "Ativos" se vier
  * um valor desconhecido/ausente (mesmo default do useAnnounce).
  */
 function normalizeSituacao(value: string | null): Situacao {
   const valid: Situacao[] = ["Todos", "Ativos", "Inativos", "Excluídos", "Últimos incluídos"];
   return (valid as string[]).includes(value ?? "") ? (value as Situacao) : "Ativos";
-}
-
-/**
- * Busca o título em newsystem.anuncios_ml (preenchido pelo cron do Bling)
- * e anexa às linhas. Roda FORA da transação com role "authenticated",
- * usando a conexão direta, pois anuncios_ml não é acessível a esse role.
- */
-async function anexarTitulos(
-  sql: ReturnType<typeof getPostgresClient>,
-  rows: AnnounceRow[]
-) {
-  const ids = [
-    ...new Set(
-      rows
-        .map((r) => (r.id_bling === null ? "" : String(r.id_bling).trim()))
-        .filter((v) => /^\d+$/.test(v))
-    ),
-  ];
-  if (ids.length === 0) return;
-
-  const porLoja = new Map<string, string>(); // "loja|id" -> título
-  const porId = new Map<string, string>(); // "id" -> título (fallback)
-
-  for (let i = 0; i < ids.length; i += PAGE_SIZE) {
-    const chunk = ids.slice(i, i + PAGE_SIZE);
-    const found = await sql<{ loja: string; id_bling: string; titulo: string }[]>`
-      select loja, id_bling::text as id_bling, titulo
-      from newsystem.anuncios_ml
-      where titulo is not null
-        and id_bling = any(${chunk}::bigint[])
-    `;
-    for (const f of found) {
-      porLoja.set(`${f.loja}|${f.id_bling}`, f.titulo);
-      if (!porId.has(f.id_bling)) porId.set(f.id_bling, f.titulo);
-    }
-  }
-
-  for (const r of rows) {
-    if (r.id_bling === null) continue;
-    const id = String(r.id_bling).trim();
-    const loja = String(r.store).toLowerCase().includes("pikot") ? "pikot" : "sobaquetas";
-    r.titulo = porLoja.get(`${loja}|${id}`) ?? porId.get(id) ?? "";
-  }
 }
 
 function jsonError(error: string, status: number): Response {
@@ -794,10 +756,6 @@ async function handleExport(
         console.warn(
           `Exportação (${source}) atingiu o limite de ${MAX_LINHAS} linhas. Considere aplicar filtros.`
         );
-      }
-
-      if (source === "announce") {
-        await anexarTitulos(sql, allRows as AnnounceRow[]);
       }
 
       await sendLine(writer, encoder, {
