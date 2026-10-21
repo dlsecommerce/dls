@@ -11,6 +11,9 @@ export const dynamic = "force-dynamic";
 
 type Source = "announce" | "bling" | "frete";
 
+type Situacao = "Todos" | "Ativos" | "Inativos" | "Excluídos" | "Últimos incluídos";
+type TipoFiltro = "all" | "products" | "variations";
+
 type AnnounceRow = {
   store: string;
   id_bling: string | null;
@@ -19,6 +22,8 @@ type AnnounceRow = {
   mark: string | null;
   code_id: number | null;
   titulo?: string | null;
+  // usado internamente apenas para paginação no modo "Últimos incluídos"
+  created_at?: string;
 };
 
 type BlingRow = {
@@ -238,6 +243,45 @@ function normalizeIdsBody(value: unknown): string[] | null {
 }
 
 /**
+ * ✅ NOVO — parse do parâmetro "marks" (marcas), separado por vírgula.
+ * Ex: "marks=Fischer,Brastemp" -> ["Fischer", "Brastemp"]
+ */
+function parseMarksParam(searchParams: URLSearchParams): string[] {
+  const raw = searchParams.get("marks");
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((m) => m.trim())
+    .filter(Boolean);
+}
+
+/**
+ * ✅ NOVO — normaliza o filtro de tipo (aceita PT e EN, igual ao
+ * normalizeTypeFilter do useAnnounce no client).
+ */
+function normalizeTypeFilter(value: string | null): TipoFiltro {
+  switch (value) {
+    case "Produtos":
+    case "products":
+      return "products";
+    case "Variações":
+    case "variations":
+      return "variations";
+    default:
+      return "all";
+  }
+}
+
+/**
+ * ✅ NOVO — normaliza o filtro de situação. Cai em "Ativos" se vier
+ * um valor desconhecido/ausente (mesmo default do useAnnounce).
+ */
+function normalizeSituacao(value: string | null): Situacao {
+  const valid: Situacao[] = ["Todos", "Ativos", "Inativos", "Excluídos", "Últimos incluídos"];
+  return (valid as string[]).includes(value ?? "") ? (value as Situacao) : "Ativos";
+}
+
+/**
  * Busca o título em newsystem.anuncios_ml (preenchido pelo cron do Bling)
  * e anexa às linhas. Roda FORA da transação com role "authenticated",
  * usando a conexão direta, pois anuncios_ml não é acessível a esse role.
@@ -297,12 +341,16 @@ async function handleExport(
   params: {
     source: Source;
     store: string | null;
+    marks: string[];
+    search: string | null;
+    type: TipoFiltro;
+    situacao: Situacao;
     loja: string | null;
     format: string;
     selectedIds: string[] | null;
   }
 ): Promise<Response> {
-  const { source, store, loja, format } = params;
+  const { source, store, marks, search, type, situacao, loja, format } = params;
   // Modo seleção só existe para a tabela do sistema (announce)
   const selectedIds = source === "announce" ? params.selectedIds : null;
   const layout = LAYOUTS[source];
@@ -596,65 +644,111 @@ async function handleExport(
         }
 
         // ============================================================
-        // MODO FILTRO/PAGINAÇÃO (comportamento original, sem alterações)
+        // ✅ MODO FILTRO/PAGINAÇÃO — replica fielmente a lógica de
+        // applySharedFilters do useAnnounce (client), para que o
+        // export traga exatamente o mesmo resultado que a tela mostra.
+        //
+        //   situacao:
+        //     - "Ativos"            -> deleted_at is null and active = true
+        //     - "Inativos"          -> deleted_at is null and active = false
+        //     - "Excluídos"         -> deleted_at is not null
+        //     - "Últimos incluídos" -> deleted_at is null, order by created_at desc
+        //     - "Todos"             -> sem filtro de situação
+        //   store:  igualdade exata, se informado
+        //   search: ILIKE em product / reference / id_bling
+        //   type:   "products" exclui referências "VAR%"; "variations" exige "VAR%"
+        //   marks:  IN (...)
         // ============================================================
-        const [{ count: announceCount }] = store
-          ? await transaction<{ count: number }[]>`
-              select count(*)::int as count
-              from newsystem.announce
-              where deleted_at is null and store = ${store}
-            `
-          : await transaction<{ count: number }[]>`
-              select count(*)::int as count
-              from newsystem.announce
-              where deleted_at is null
-            `;
+        const isUltimosIncluidos = situacao === "Últimos incluídos";
+        const searchTerm = search ? `%${search}%` : null;
+        const hasMarks = marks.length > 0;
+
+        // Condições de situação, resolvidas em SQL puro via booleans
+        // (evita montar WHERE dinamicamente string a string).
+        const filtroAtivos = situacao === "Ativos";
+        const filtroInativos = situacao === "Inativos";
+        const filtroExcluidos = situacao === "Excluídos";
+        const filtroUltimos = isUltimosIncluidos;
+        // "Todos" não aplica nenhum dos filtros acima
+
+        const [{ count: announceCount }] = await transaction<{ count: number }[]>`
+          select count(*)::int as count
+          from newsystem.announce
+          where (
+            (${filtroAtivos} and deleted_at is null and active = true)
+            or (${filtroInativos} and deleted_at is null and active = false)
+            or (${filtroExcluidos} and deleted_at is not null)
+            or (${filtroUltimos} and deleted_at is null)
+            or (not ${filtroAtivos} and not ${filtroInativos} and not ${filtroExcluidos} and not ${filtroUltimos})
+          )
+            and (${store}::text is null or store = ${store})
+            and (
+              ${searchTerm}::text is null
+              or product ilike ${searchTerm}
+              or reference ilike ${searchTerm}
+              or id_bling ilike ${searchTerm}
+            )
+            and (${type} <> 'products' or reference not ilike 'VAR%')
+            and (${type} <> 'variations' or reference ilike 'VAR%')
+            and (not ${hasMarks} or mark = any(${marks}))
+        `;
         totalRows = Math.min(announceCount, MAX_LINHAS);
 
         let lastStore: string | null = null;
         let lastReference: string | null = null;
+        let lastCreatedAt: string | null = null;
 
         while (true) {
           checkDisconnected(); // ← aborta o loop se o cliente já saiu
 
-          let rows: AnnounceRow[];
-
-          if (store && lastStore !== null) {
-            rows = await transaction<AnnounceRow[]>`
-              select store, id_bling, reference, product, mark, code_id
-              from newsystem.announce
-              where deleted_at is null
-                and store = ${store}
-                and (store, reference) > (${lastStore}, ${lastReference})
-              order by store, reference
-              limit ${PAGE_SIZE}
-            `;
-          } else if (store) {
-            rows = await transaction<AnnounceRow[]>`
-              select store, id_bling, reference, product, mark, code_id
-              from newsystem.announce
-              where deleted_at is null and store = ${store}
-              order by store, reference
-              limit ${PAGE_SIZE}
-            `;
-          } else if (lastStore !== null) {
-            rows = await transaction<AnnounceRow[]>`
-              select store, id_bling, reference, product, mark, code_id
-              from newsystem.announce
-              where deleted_at is null
-                and (store, reference) > (${lastStore}, ${lastReference})
-              order by store, reference
-              limit ${PAGE_SIZE}
-            `;
-          } else {
-            rows = await transaction<AnnounceRow[]>`
-              select store, id_bling, reference, product, mark, code_id
-              from newsystem.announce
-              where deleted_at is null
-              order by store, reference
-              limit ${PAGE_SIZE}
-            `;
-          }
+          const rows: AnnounceRow[] = isUltimosIncluidos
+            ? await transaction<AnnounceRow[]>`
+                select store, id_bling, reference, product, mark, code_id, created_at
+                from newsystem.announce
+                where deleted_at is null
+                  and (${store}::text is null or store = ${store})
+                  and (
+                    ${searchTerm}::text is null
+                    or product ilike ${searchTerm}
+                    or reference ilike ${searchTerm}
+                    or id_bling ilike ${searchTerm}
+                  )
+                  and (${type} <> 'products' or reference not ilike 'VAR%')
+                  and (${type} <> 'variations' or reference ilike 'VAR%')
+                  and (not ${hasMarks} or mark = any(${marks}))
+                  and (
+                    ${lastCreatedAt}::timestamptz is null
+                    or created_at < ${lastCreatedAt}::timestamptz
+                  )
+                order by created_at desc
+                limit ${PAGE_SIZE}
+              `
+            : await transaction<AnnounceRow[]>`
+                select store, id_bling, reference, product, mark, code_id
+                from newsystem.announce
+                where (
+                  (${filtroAtivos} and deleted_at is null and active = true)
+                  or (${filtroInativos} and deleted_at is null and active = false)
+                  or (${filtroExcluidos} and deleted_at is not null)
+                  or (not ${filtroAtivos} and not ${filtroInativos} and not ${filtroExcluidos})
+                )
+                  and (${store}::text is null or store = ${store})
+                  and (
+                    ${searchTerm}::text is null
+                    or product ilike ${searchTerm}
+                    or reference ilike ${searchTerm}
+                    or id_bling ilike ${searchTerm}
+                  )
+                  and (${type} <> 'products' or reference not ilike 'VAR%')
+                  and (${type} <> 'variations' or reference ilike 'VAR%')
+                  and (not ${hasMarks} or mark = any(${marks}))
+                  and (
+                    ${lastStore}::text is null
+                    or (store, reference) > (${lastStore}, ${lastReference})
+                  )
+                order by store, reference
+                limit ${PAGE_SIZE}
+              `;
 
           checkDisconnected(); // ← checa de novo antes de escrever no stream
 
@@ -663,8 +757,12 @@ async function handleExport(
           collected.push(...rows);
 
           const last = rows[rows.length - 1];
-          lastStore = last.store;
-          lastReference = last.reference;
+          if (isUltimosIncluidos) {
+            lastCreatedAt = last.created_at ?? null;
+          } else {
+            lastStore = last.store;
+            lastReference = last.reference;
+          }
 
           await sendProgress(
             Math.min(70, 1 + Math.round((collected.length / MAX_LINHAS) * 69)),
@@ -850,6 +948,10 @@ async function handleExport(
  * Exportação por filtro/loja (comportamento original) e, com
  * `?source=bling&loja=sobaquetas`, exportação do espelho do Bling.
  * Com `?source=frete&loja=sobaquetas`, exporta o frete do vendedor (ML).
+ *
+ * ✅ Suporta também os filtros usados pela tela (iguais aos aplicados
+ * pelo useAnnounce no client): `marks`, `search`, `type`, `situacao`.
+ *
  * Não use para listas grandes de IDs — nesse caso, use POST.
  */
 export async function GET(request: NextRequest): Promise<Response> {
@@ -858,11 +960,25 @@ export async function GET(request: NextRequest): Promise<Response> {
   const source: Source =
     s === "bling" ? "bling" : s === "frete" ? "frete" : "announce";
   const store = searchParams.get("store")?.trim() || null;
+  const marks = parseMarksParam(searchParams);
+  const search = searchParams.get("search")?.trim() || null;
+  const type = normalizeTypeFilter(searchParams.get("type"));
+  const situacao = normalizeSituacao(searchParams.get("situacao"));
   const loja = searchParams.get("loja")?.trim().toLowerCase() || null;
   const format = (searchParams.get("format") ?? "xlsx").toLowerCase();
   const selectedIds = parseIdsParam(searchParams);
 
-  return handleExport(request, { source, store, loja, format, selectedIds });
+  return handleExport(request, {
+    source,
+    store,
+    marks,
+    search,
+    type,
+    situacao,
+    loja,
+    format,
+    selectedIds,
+  });
 }
 
 /**
@@ -872,6 +988,10 @@ export async function GET(request: NextRequest): Promise<Response> {
  * selecionados (centenas/milhares de UUIDs).
  *
  * Body esperado: { ids: string[], format?: "xlsx" | "csv" }
+ *
+ * No modo seleção os filtros não se aplicam (os IDs já definem
+ * exatamente quais registros exportar), por isso são enviados como
+ * valores "vazios"/neutros para handleExport.
  */
 export async function POST(request: NextRequest): Promise<Response> {
   let body: { ids?: unknown; format?: unknown; store?: unknown } = {};
@@ -895,6 +1015,10 @@ export async function POST(request: NextRequest): Promise<Response> {
   return handleExport(request, {
     source: "announce",
     store,
+    marks: [],
+    search: null,
+    type: "all",
+    situacao: "Ativos",
     loja: null,
     format,
     selectedIds,

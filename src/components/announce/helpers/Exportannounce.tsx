@@ -305,12 +305,21 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
  *
  * Modos:
  *    - Seleção: se `ids` tiver itens, exporta SÓ essas linhas, via POST.
- *    - Filtro: caso contrário, via GET, com `store` (announce) ou
- *      `source` + `loja` (bling / frete).
+ *    - Filtro: caso contrário, via GET, com `store`, `marks`, `search`,
+ *      `type`, `situacao` (announce) ou `source` + `loja` (bling / frete).
+ *
+ * ✅ `marks`, `search`, `type`, `situacao` replicam exatamente os
+ * mesmos filtros aplicados pelo useAnnounce na tela — sem eles, o
+ * export (fonte "announce") sempre trazia TODOS os registros,
+ * ignorando qualquer filtro visual aplicado.
  */
 export async function exportAnnounceFromApi(
   options: {
     store?: string;
+    marks?: string[]; // marcas selecionadas (filtro múltiplo)
+    search?: string; // busca por código/produto/referência/id_bling
+    type?: string; // "Todos" | "Produtos" | "Variações" (ou all/products/variations)
+    situacao?: string; // "Todos" | "Ativos" | "Inativos" | "Excluídos" | "Últimos incluídos"
     format?: "xlsx" | "csv";
     ids?: string[]; // ids selecionados na tabela
     source?: "announce" | "bling" | "frete"; // fonte dos dados
@@ -319,7 +328,18 @@ export async function exportAnnounceFromApi(
   } = {},
   onProgress?: ExportProgressCallback
 ): Promise<void> {
-  const { store, format = "xlsx", ids, source, loja, signal } = options;
+  const {
+    store,
+    marks,
+    search,
+    type,
+    situacao,
+    format = "xlsx",
+    ids,
+    source,
+    loja,
+    signal,
+  } = options;
 
   const isSelectionMode = Array.isArray(ids) && ids.length > 0;
 
@@ -332,6 +352,8 @@ export async function exportAnnounceFromApi(
   if (isSelectionMode) {
     // Modo seleção — envia os IDs no body via POST.
     // Evita o limite de tamanho de URL em seleções grandes.
+    // Filtros (marks/search/type/situacao) não se aplicam aqui: os
+    // IDs já definem exatamente quais registros exportar.
     response = await fetch(`/api/announce/export`, {
       method: "POST",
       headers: {
@@ -345,6 +367,10 @@ export async function exportAnnounceFromApi(
     // Modo filtro/loja/fonte — via GET com querystring.
     const params = new URLSearchParams();
     if (store) params.set("store", store);
+    if (marks && marks.length > 0) params.set("marks", marks.join(","));
+    if (search) params.set("search", search);
+    if (type) params.set("type", type);
+    if (situacao) params.set("situacao", situacao);
     if (source) params.set("source", source);
     if (loja) params.set("loja", loja);
     params.set("format", format);

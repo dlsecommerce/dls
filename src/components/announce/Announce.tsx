@@ -611,6 +611,12 @@ export default function Announce() {
         {
           ids: hasSelection ? selectedIds : undefined,
           store: hasSelection ? undefined : storeValue,
+          marks: hasSelection ? undefined : appliedBrands,
+          search: hasSelection
+            ? undefined
+            : appliedFilters.codigo || appliedFilters.produto || undefined,
+          type: hasSelection ? undefined : (appliedFilters.tipo as string),
+          situacao: hasSelection ? undefined : appliedFilters.situacao,
           format: "xlsx",
           signal: controller.signal,
         },
