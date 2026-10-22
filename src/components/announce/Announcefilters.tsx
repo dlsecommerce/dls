@@ -13,9 +13,10 @@ import { Loader2, X, ChevronDown, Check } from "lucide-react";
 import {
   AnnounceFilters as AnnounceFiltersType,
   SITUACAO_OPTIONS,
-  STORE_OPTIONS,
+  STORE_OPTIONS_FALLBACK,
   TIPO_OPTIONS,
 } from "@/components/announce/hooks/types";
+import { fetchDistinctStores } from "@/components/announce/hooks/useannounce";
 
 type Props = {
   filters: AnnounceFiltersType;
@@ -54,6 +55,47 @@ const inputClass = `
 `;
 
 const norm = (v: string) => v.trim().toLocaleLowerCase("pt-BR");
+
+/**
+ * ✅ Lojas dinâmicas — busca no banco (newsystem.announce) todas as
+ * lojas já cadastradas, em vez de depender de uma lista fixa no
+ * código. Assim, lojas novas criadas via importação de planilha ou
+ * cadastro manual (ex.: "PIKOT KIDS") aparecem automaticamente no
+ * dropdown, sem precisar alterar nenhum arquivo.
+ *
+ * Usa STORE_OPTIONS_FALLBACK só como placeholder inicial, para o
+ * dropdown nunca ficar vazio antes do fetch completar.
+ */
+function useStoreOptions() {
+  const [stores, setStores] = React.useState<string[]>(
+    STORE_OPTIONS_FALLBACK.filter((s) => s !== "Todos")
+  );
+  const [loadingStores, setLoadingStores] = React.useState(true);
+
+  React.useEffect(() => {
+    let active = true;
+
+    fetchDistinctStores()
+      .then((lista) => {
+        if (!active) return;
+        if (lista.length > 0) setStores(lista);
+      })
+      .catch((err) => {
+        console.error("Erro ao buscar lojas:", err);
+      })
+      .finally(() => {
+        if (active) setLoadingStores(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const options = React.useMemo(() => ["Todos", ...stores], [stores]);
+
+  return { storeOptions: options, loadingStores };
+}
 
 /**
  * Dropdown de marcas (mark) com múltipla seleção:
@@ -276,6 +318,8 @@ export default function AnnounceFilters({
   const [tipoOpen, setTipoOpen] = React.useState(false);
   const [lojaOpen, setLojaOpen] = React.useState(false);
 
+  const { storeOptions, loadingStores } = useStoreOptions();
+
   const updateFilter = (key: keyof AnnounceFiltersType, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
@@ -492,6 +536,9 @@ export default function AnnounceFilters({
                   "
                 >
                   <SelectValue placeholder="Todos" />
+                  {loadingStores && (
+                    <Loader2 className="ml-2 h-3.5 w-3.5 animate-spin text-neutral-500" />
+                  )}
                 </SelectTrigger>
 
                 <SelectContent
@@ -503,7 +550,7 @@ export default function AnnounceFilters({
                     p-1 shadow-2xl
                   "
                 >
-                  {STORE_OPTIONS.map((option) => {
+                  {storeOptions.map((option) => {
                     const isActive = filters.loja === option;
 
                     return (

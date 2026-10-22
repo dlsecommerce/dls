@@ -1,4 +1,3 @@
-// announce/hooks/useAnnounce.ts
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -109,15 +108,24 @@ function isVariationReference(reference: string | null | undefined): boolean {
 }
 
 /* ─────────────────────────────────────────────
- * NORMALIZAÇÃO
+ * NORMALIZAÇÃO DE LOJA
+ *
+ * ✅ Lojas não são mais uma lista fechada. Qualquer texto cadastrado
+ * (ex.: "PIKOT KIDS") é aceito como loja válida. Apenas alguns apelidos
+ * conhecidos ("pk", "sb") continuam sendo normalizados para o nome
+ * oficial, por compatibilidade com planilhas/importações antigas.
  * ───────────────────────────────────────────── */
 
-function anyToStoreName(v: any): StoreName | null {
-  const s = String(v ?? "").trim().toLowerCase();
-  if (!s) return null;
-  if (s === "pk" || s === "pikot shop" || s === "pikot") return "Pikot Shop";
-  if (s === "sb" || s === "sóbaquetas" || s === "sobaquetas") return "Sóbaquetas";
-  return null;
+function normalizeStoreInput(v: any): string | null {
+  const raw = String(v ?? "").trim();
+  if (!raw) return null;
+
+  const low = raw.toLowerCase();
+  if (low === "pk" || low === "pikot" || low === "pikot shop") return "Pikot Shop";
+  if (low === "sb" || low === "sobaquetas" || low === "sóbaquetas") return "Sóbaquetas";
+
+  // Qualquer outra loja (ex.: "PIKOT KIDS") passa como está, sem bloquear.
+  return raw;
 }
 
 function normalizeNullable(v: any): string | null {
@@ -169,7 +177,7 @@ function getProdutoLabel(produto: ProdutoInput, fallback: string) {
   );
 }
 
-function buildAnnouncementLink(id: string, store: StoreName) {
+function buildAnnouncementLink(id: string, store: string) {
   return `/dashboard/anuncios/edit?id=${encodeURIComponent(id)}&loja=${encodeURIComponent(store)}`;
 }
 
@@ -340,7 +348,7 @@ function applySharedFilters(query: any, args: SharedFilterArgs) {
   }
 
   if (store && store !== "Todos") {
-    const storeName = anyToStoreName(store) ?? store;
+    const storeName = normalizeStoreInput(store) ?? store;
     query = query.eq("store", storeName);
   }
 
@@ -383,6 +391,34 @@ export async function fetchDistinctBrands(): Promise<string[]> {
   const set = new Set<string>();
   (data ?? []).forEach((row: any) => {
     if (row.mark) set.add(row.mark);
+  });
+
+  return Array.from(set).sort();
+}
+
+/* ─────────────────────────────────────────────
+ * ✅ LOJAS DISTINTAS (para o dropdown de filtro)
+ *
+ * Substitui a lista fixa STORE_OPTIONS: busca direto no banco todas
+ * as lojas já cadastradas (ativas), incluindo lojas novas criadas via
+ * importação de planilha ou cadastro manual (ex.: "PIKOT KIDS").
+ * ───────────────────────────────────────────── */
+
+export async function fetchDistinctStores(): Promise<string[]> {
+  const { data, error } = await withRetry(() =>
+    supabase
+      .schema("newsystem")
+      .from("announce")
+      .select("store")
+      .is("deleted_at", null)
+      .not("store", "is", null)
+  );
+
+  if (error) throw error;
+
+  const set = new Set<string>();
+  (data ?? []).forEach((row: any) => {
+    if (row.store) set.add(row.store);
   });
 
   return Array.from(set).sort();
@@ -580,7 +616,7 @@ export function useAnnounce(filters?: UseAnnounceFilters) {
 
   const saveMutation = useMutation({
     mutationFn: async (produto: ProdutoInput) => {
-      const storeVal = anyToStoreName(produto?.store ?? produto?.loja ?? produto?.Loja);
+      const storeVal = normalizeStoreInput(produto?.store ?? produto?.loja ?? produto?.Loja);
       if (!storeVal) throw new Error("Selecione uma loja válida antes de salvar.");
 
       const reference = normalizeRequired(

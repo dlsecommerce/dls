@@ -13,10 +13,11 @@ import { Loader2, X, ChevronDown, Check } from "lucide-react";
 import {
   MarketplaceFilters as MarketplaceFiltersType,
   SITUACAO_OPTIONS,
-  STORE_OPTIONS,
+  STORE_OPTIONS_FALLBACK,
   TIPO_OPTIONS,
   CONDICAO_OPTIONS,
 } from "@/components/marketplace/hooks/types";
+import { useMarketplaceStores } from "@/components/marketplace/hooks/usemarketplace";
 
 type Props = {
   filters: MarketplaceFiltersType;
@@ -263,6 +264,17 @@ export default function MarketplaceFilters({
 
   const showCondicaoFilter = isMercadoLivre(filters.canal);
 
+  // ✅ Lojas agora vêm do banco (distinct_marketplace_stores), não de uma
+  // lista fixa. Assim, lojas novas (ex: "PIKOT KIDS") aparecem no filtro
+  // automaticamente, sem precisar alterar código. Enquanto a busca não
+  // resolve, usa o fallback só para o dropdown nunca ficar vazio.
+  const { data: storesData, isLoading: loadingStores } = useMarketplaceStores();
+  const storeOptions = React.useMemo(() => {
+    const fromDb = storesData ?? [];
+    const base = fromDb.length > 0 ? fromDb : STORE_OPTIONS_FALLBACK.filter((s) => s !== "Todos");
+    return ["Todos", ...base];
+  }, [storesData]);
+
   const updateFilter = (key: keyof MarketplaceFiltersType, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
@@ -418,10 +430,17 @@ export default function MarketplaceFilters({
                 onOpenChange={setLojaOpen}
               >
                 <SelectTrigger id="filtro-loja" onKeyDown={(e) => handleTriggerKeyDown(e, lojaOpen)} className={selectTriggerClass}>
-                  <SelectValue placeholder="Todos" />
+                  {loadingStores ? (
+                    <span className="flex items-center gap-2 text-neutral-500">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Carregando...
+                    </span>
+                  ) : (
+                    <SelectValue placeholder="Todos" />
+                  )}
                 </SelectTrigger>
                 <SelectContent position="popper" sideOffset={4} className={selectContentClass}>
-                  {STORE_OPTIONS.map((option) => (
+                  {storeOptions.map((option) => (
                     <SelectItem key={option} value={option} className={selectItemClass(filters.loja === option)}>
                       {option}
                     </SelectItem>

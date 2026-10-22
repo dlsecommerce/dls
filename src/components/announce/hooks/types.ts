@@ -1,6 +1,9 @@
 // src/components/announce/hooks/types.ts
 
-export type StoreName = "Pikot Shop" | "Sóbaquetas";
+// ✅ Loja agora é dinâmica — qualquer texto cadastrado em newsystem.announce.store
+// é uma loja válida. Não há mais union fixa, pois novas lojas (ex: "PIKOT KIDS")
+// podem ser criadas livremente via importação ou cadastro manual.
+export type StoreName = string;
 
 export interface Announce {
   id: string;
@@ -25,7 +28,14 @@ export interface AnnounceFilters {
 
 export const SITUACAO_OPTIONS = ["Todos", "Ativos", "Inativos", "Excluídos"] as const;
 
-export const STORE_OPTIONS = ["Todos", "Pikot Shop", "Sóbaquetas"] as const;
+// ✅ Lista fixa removida. As opções de loja agora vêm do banco
+// (ver fetchDistinctStores em hooks/useannounce.ts), carregadas
+// dinamicamente — assim, novas lojas aparecem no filtro automaticamente,
+// sem precisar alterar código.
+//
+// Mantido aqui apenas como fallback/opção inicial, para o dropdown
+// nunca ficar vazio antes do fetch completar.
+export const STORE_OPTIONS_FALLBACK = ["Todos", "Pikot Shop", "Sóbaquetas"] as const;
 
 export const TIPO_OPTIONS = [
   "Todos",
@@ -52,4 +62,3 @@ export const DEFAULT_ANUNCIO_FILTERS: AnnounceFilters = {
   produto: "",
   tipo: "Todos",
 };
-

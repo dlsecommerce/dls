@@ -44,7 +44,15 @@ export interface MarketplaceFilters {
 
 export const SITUACAO_OPTIONS = ["Todos", "Ativos", "Inativos"] as const;
 
-export const STORE_OPTIONS = ["Todos", "Pikot Shop", "Sóbaquetas"] as const;
+// ✅ Lista fixa removida. As opções de loja devem vir do banco
+// (fetchDistinctStores — mesmo padrão usado em announce/hooks/useannounce.ts),
+// carregadas dinamicamente no hook principal do marketplace. Assim, novas
+// lojas (ex: "PIKOT KIDS") aparecem no filtro automaticamente, sem precisar
+// alterar código.
+//
+// Mantido aqui apenas como fallback/opção inicial, para o dropdown
+// nunca ficar vazio antes do fetch completar.
+export const STORE_OPTIONS_FALLBACK = ["Todos", "Pikot Shop", "Sóbaquetas"] as const;
 
 export const TIPO_OPTIONS = ["Todos", "Produtos", "Variações"] as const;
 

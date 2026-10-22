@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-export type StoreName = "Pikot Shop" | "Sóbaquetas";
+// ✅ Loja agora é dinâmica — qualquer texto cadastrado é válido.
+export type StoreName = string;
 
 export interface Announce {
   id: string;
@@ -72,8 +73,26 @@ export const formatValorBR = (v: number | string): string => {
 };
 
 // ===========================================================
-// ✅ NORMALIZAÇÃO DE LOJA (sigla <-> nome completo)
+// ✅ NORMALIZAÇÃO DE LOJA
+//
+// Mantém os apelidos curtos "PK"/"SB" (compatibilidade com telas
+// antigas que usam sigla), mas NÃO bloqueia nem reescreve lojas
+// novas (ex: "PIKOT KIDS"). Antes, `includes("pikot")` casava
+// qualquer loja que contivesse "pikot" no nome e a substituía
+// silenciosamente por "Pikot Shop" — bug grave de integridade de
+// dados. Agora só os valores exatos de sigla/nome conhecido são
+// mapeados; qualquer outro texto passa como está.
 // ===========================================================
+
+const LOJA_CODIGO_MAP: Record<string, "PK" | "SB"> = {
+  pk: "PK",
+  "pikot shop": "PK",
+  pikot: "PK",
+  sb: "SB",
+  sóbaquetas: "SB",
+  sobaquetas: "SB",
+};
+
 export function lojaNomeToCodigo(value: string | null | undefined): "PK" | "SB" | null {
   if (!value) return null;
 
@@ -83,10 +102,7 @@ export function lojaNomeToCodigo(value: string | null | undefined): "PK" | "SB" 
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "");
 
-  if (norm === "pk" || norm.includes("pikot")) return "PK";
-  if (norm === "sb" || norm.includes("sobaquetas")) return "SB";
-
-  return null;
+  return LOJA_CODIGO_MAP[norm] ?? null;
 }
 
 export function lojaCodigoToNome(codigo: "PK" | "SB" | null | undefined): StoreName | null {
@@ -96,18 +112,21 @@ export function lojaCodigoToNome(codigo: "PK" | "SB" | null | undefined): StoreN
 }
 
 /**
- * ✅ Aceita sigla ("PK"/"SB") ou nome completo e sempre
- * retorna o nome completo, que é o formato salvo na coluna `store`.
+ * ✅ Aceita sigla ("PK"/"SB"), nome completo conhecido, OU qualquer
+ * outra loja cadastrada livremente (ex: "PIKOT KIDS") — nesse caso,
+ * devolve o próprio valor (trim), sem bloquear nem reescrever.
  */
 export function toStoreName(value: string | null | undefined): StoreName | null {
   if (!value) return null;
 
   const v = String(value).trim();
-
-  if (v === "Pikot Shop" || v === "Sóbaquetas") return v as StoreName;
+  if (!v) return null;
 
   const codigo = lojaNomeToCodigo(v);
-  return lojaCodigoToNome(codigo);
+  if (codigo) return lojaCodigoToNome(codigo);
+
+  // Loja nova/desconhecida: passa como texto livre.
+  return v;
 }
 
 // ===========================================================
