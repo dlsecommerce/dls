@@ -70,11 +70,18 @@ function calcularShopee(custoProduto: number, profitMargin: number): ShopeeTierR
 const isShopee = (channel: string) => channel.trim().toLocaleLowerCase("pt-BR") === "shopee";
 
 // ───────────────────────────────
-// Cálculo de preço — espelha fielmente newsystem.fn_calc_marketplace_price
+// Cálculo de preço — espelha fielmente newsystem.fn_calc_marketplace_price_full
 // ───────────────────────────────
 //
+// ✅ FIX: o frete entra DENTRO do numerador (junto ao custo), igual ao SQL
+// do backend. Antes, aqui no front o frete era somado FORA do divisor
+// (".../divisor + freight"), o que fazia o preço calculado no modal
+// divergir do preço que o recálculo automático do banco gerava — e esse
+// preço errado acabava sendo salvo como "manual" (has_manual_pricing),
+// ficando preservado e incorreto para sempre.
+//
 // v_divisor := 1 - (tax + margin/100 + commission/100 + marketing)
-// v_price   := ((cost_total * (1 - discount)) + packaging) / v_divisor + freight
+// v_price   := ((cost_total * (1 - discount)) + packaging + freight) / v_divisor
 //
 // Retorna null quando o divisor é <= 0 (equivalente à exceção lançada pelo banco).
 
@@ -97,7 +104,8 @@ function calcularPrecoVenda(
   const divisor = 1 - (tax + margin + commission + mkt);
   if (divisor <= 0) return null;
 
-  const preco = (Number(custoTotal) * (1 - disc) + Number(embalagem)) / divisor + Number(freight);
+  const preco =
+    (Number(custoTotal) * (1 - disc) + Number(embalagem) + Number(freight)) / divisor;
   return Number.isFinite(preco) ? Math.round(preco * 100) / 100 : null;
 }
 
@@ -396,6 +404,9 @@ export default function MarketplacePricingModal({
     [base, freteEfetivo, comissaoEfetiva, data.profit_margin, rules]
   );
 
+  // ✅ FIX: frete agora entra na mesma base usada no numerador do cálculo
+  // (consistente com calcularPrecoVenda), então a barra de proporção
+  // custo/comissão/margem e o card "Custo" exibido batem com o preço final.
   const custoBase = base.custoTotal * (1 - rules.desconto / 100) + base.embalagem + freteEfetivo;
 
   const divisorInvalido = precoFinal === null;
