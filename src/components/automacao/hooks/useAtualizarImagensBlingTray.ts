@@ -8,14 +8,18 @@ type Status = "idle" | "processing" | "success" | "error";
 
 type PlanilhasState = Record<ImagensPlanilhaKey, File | null>;
 
+const TIMEOUT_MS = 180000;
+
 const getApiBaseUrl = () => {
   const envUrl = process.env.NEXT_PUBLIC_AUTOMACAO_API_URL;
 
-  if (envUrl) {
-    return envUrl.replace(/\/$/, "");
+  if (!envUrl || !envUrl.trim()) {
+    throw new Error(
+      "NEXT_PUBLIC_AUTOMACAO_API_URL não está definida no build. Configure na Vercel (Production) e faça redeploy sem cache."
+    );
   }
 
-  return "https://sua-api-do-render.onrender.com";
+  return envUrl.trim().replace(/\/$/, "");
 };
 
 const getFilenameFromDisposition = (contentDisposition: string | null) => {
@@ -51,7 +55,7 @@ const baixarBlob = (blob: Blob, filename: string) => {
 };
 
 const getErrorMessageFromResponse = async (response: Response) => {
-  const fallback = "Erro ao atualizar imagens.";
+  const fallback = `Erro ao atualizar imagens (HTTP ${response.status}).`;
 
   try {
     const text = await response.text();
@@ -121,11 +125,10 @@ export function useAtualizarImagensBlingTray() {
 
     const timeout = window.setTimeout(() => {
       controller.abort();
-    }, 180000);
+    }, TIMEOUT_MS);
 
     try {
       const apiBaseUrl = getApiBaseUrl();
-
       const endpoint = `${apiBaseUrl}/atualizar-imagens-bling-tray`;
 
       console.log("API usada na automação de imagens:", apiBaseUrl);
@@ -135,6 +138,8 @@ export function useAtualizarImagensBlingTray() {
         method: "POST",
         body: formData,
         signal: controller.signal,
+        mode: "cors",
+        credentials: "omit",
       });
 
       window.clearTimeout(timeout);
@@ -158,10 +163,19 @@ export function useAtualizarImagensBlingTray() {
     } catch (err: any) {
       window.clearTimeout(timeout);
 
-      const message =
-        err?.name === "AbortError"
-          ? "Tempo limite excedido. O Render demorou demais para responder."
-          : err?.message || "Erro inesperado ao processar planilhas.";
+      let message: string;
+
+      if (err?.name === "AbortError") {
+        message =
+          "Tempo limite excedido. O servidor demorou demais para responder.";
+      } else if (err instanceof TypeError) {
+        message =
+          "Falha de conexão com a API (Failed to fetch). Verifique se o serviço está no ar e se o CORS do backend libera o domínio do front.";
+      } else {
+        message = err?.message || "Erro inesperado ao processar planilhas.";
+      }
+
+      console.error("Detalhe do erro na automação de imagens:", err);
 
       setErro(message);
       setStatus("error");
