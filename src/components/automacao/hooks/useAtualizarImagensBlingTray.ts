@@ -74,6 +74,29 @@ const getErrorMessageFromResponse = async (response: Response) => {
   }
 };
 
+/**
+ * Acorda o serviço no Render (cold start) enquanto o usuário seleciona
+ * o segundo arquivo. Não bloqueia nada e ignora qualquer erro.
+ */
+const warmUpApi = () => {
+  try {
+    const base = process.env.NEXT_PUBLIC_AUTOMACAO_API_URL?.trim().replace(
+      /\/$/,
+      ""
+    );
+
+    if (!base) return;
+
+    fetch(`${base}/health`, {
+      mode: "no-cors",
+      credentials: "omit",
+      cache: "no-store",
+    }).catch(() => {});
+  } catch {
+    // silencioso: aquecimento é apenas otimização
+  }
+};
+
 export function useAtualizarImagensBlingTray() {
   const [planilhas, setPlanilhas] = useState<PlanilhasState>({
     bling: null,
@@ -84,6 +107,8 @@ export function useAtualizarImagensBlingTray() {
   const [erro, setErro] = useState<string>("");
 
   const handleFileSelect = (key: ImagensPlanilhaKey, file: File | null) => {
+    if (file) warmUpApi();
+
     setPlanilhas((prev) => ({
       ...prev,
       [key]: file,
@@ -131,8 +156,6 @@ export function useAtualizarImagensBlingTray() {
       const apiBaseUrl = getApiBaseUrl();
       const endpoint = `${apiBaseUrl}/atualizar-imagens-bling-tray`;
 
-      console.log("API usada na automação de imagens:", apiBaseUrl);
-      console.log("Endpoint usado na automação de imagens:", endpoint);
 
       const response = await fetch(endpoint, {
         method: "POST",
@@ -141,8 +164,6 @@ export function useAtualizarImagensBlingTray() {
         mode: "cors",
         credentials: "omit",
       });
-
-      window.clearTimeout(timeout);
 
       if (!response.ok) {
         const message = await getErrorMessageFromResponse(response);
@@ -156,6 +177,8 @@ export function useAtualizarImagensBlingTray() {
         getFilenameFromDisposition(
           response.headers.get("Content-Disposition")
         ) || "BLING - IMAGENS ATUALIZADAS.xlsx";
+
+      window.clearTimeout(timeout);
 
       baixarBlob(blob, filename);
 
