@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import * as XLSX from "xlsx";
 
 export type ImagensPlanilhaKey = "bling" | "tray";
 
@@ -8,93 +9,158 @@ type Status = "idle" | "processing" | "success" | "error";
 
 type PlanilhasState = Record<ImagensPlanilhaKey, File | null>;
 
-const TIMEOUT_MS = 180000;
-
-const getApiBaseUrl = () => {
-  const envUrl = process.env.NEXT_PUBLIC_AUTOMACAO_API_URL;
-
-  if (!envUrl || !envUrl.trim()) {
-    throw new Error(
-      "NEXT_PUBLIC_AUTOMACAO_API_URL não está definida no build. Configure na Vercel (Production) e faça redeploy sem cache."
-    );
-  }
-
-  return envUrl.trim().replace(/\/$/, "");
+export type ResultadoAtualizacao = {
+  atualizados: number;
+  semId: number;
+  semImagem: number;
 };
 
-const getFilenameFromDisposition = (contentDisposition: string | null) => {
-  if (!contentDisposition) return "";
+const NOME_SAIDA = "BLING - IMAGENS ATUALIZADAS.xlsx";
 
-  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+const COL_TRAY_CHAVE = "Referência";
+const COLUNAS_TRAY_IMAGEM = ["Imagem principal", "Imagem 2", "Imagem 3", "Imagem 4"];
+const COL_TRAY_ADICIONAIS = "Imagens adicionais";
 
-  if (utf8Match?.[1]) {
-    try {
-      return decodeURIComponent(utf8Match[1]);
-    } catch {
-      return utf8Match[1];
-    }
-  }
+const COL_BLING_CHAVE = "Código";
+const COL_BLING_DESTINO = "URL Imagens Externas";
 
-  const normalMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
+const normaliza = (valor: unknown) => (valor == null ? "" : String(valor).trim());
 
-  return normalMatch?.[1] || "";
-};
-
-const baixarBlob = (blob: Blob, filename: string) => {
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement("a");
-
-  a.href = url;
-  a.download = filename || "BLING - IMAGENS ATUALIZADAS.xlsx";
-
-  document.body.appendChild(a);
-  a.click();
-
-  a.remove();
-  window.URL.revokeObjectURL(url);
-};
-
-const getErrorMessageFromResponse = async (response: Response) => {
-  const fallback = `Erro ao atualizar imagens (HTTP ${response.status}).`;
-
+const decodificaTexto = (buffer: ArrayBuffer) => {
   try {
-    const text = await response.text();
-
-    if (!text) return fallback;
-
-    try {
-      const json = JSON.parse(text);
-
-      return json?.error || json?.message || text || fallback;
-    } catch {
-      return text || fallback;
-    }
+    return new TextDecoder("utf-8", { fatal: true }).decode(buffer);
   } catch {
-    return fallback;
+    return new TextDecoder("windows-1252").decode(buffer);
   }
 };
 
-/**
- * Acorda o serviço no Render (cold start) enquanto o usuário seleciona
- * o segundo arquivo. Não bloqueia nada e ignora qualquer erro.
- */
-const warmUpApi = () => {
-  try {
-    const base = process.env.NEXT_PUBLIC_AUTOMACAO_API_URL?.trim().replace(
-      /\/$/,
-      ""
+const detectaSeparadorCsv = (texto: string) => {
+  const primeiraLinha = texto.split(/\r?\n/, 1)[0] ?? "";
+  const pontoEVirgula = primeiraLinha.split(";").length;
+  const virgula = primeiraLinha.split(",").length;
+  return pontoEVirgula > virgula ? ";" : ",";
+};
+
+const lerAba = async (file: File) => {
+  const buffer = await file.arrayBuffer();
+  const ehCsv = file.name.toLowerCase().endsWith(".csv");
+
+  let wb: XLSX.WorkBook;
+
+  if (ehCsv) {
+    const texto = decodificaTexto(buffer);
+    wb = XLSX.read(texto, { type: "string", FS: detectaSeparadorCsv(texto) });
+  } else {
+    wb = XLSX.read(buffer, { type: "array" });
+  }
+
+  const nomeAba = wb.SheetNames[0];
+
+  if (!nomeAba) {
+    throw new Error(`Não foi possível ler a planilha ${file.name}.`);
+  }
+
+  const matriz = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[nomeAba], {
+    header: 1,
+    defval: "",
+    raw: false,
+    blankrows: false,
+  });
+
+  return { nomeAba, matriz };
+};
+
+const atualizarImagens = async (
+  blingFile: File,
+  trayFile: File
+): Promise<ResultadoAtualizacao> => {
+  const tray = await lerAba(trayFile);
+  const bling = await lerAba(blingFile);
+
+  // Tray: Referência -> URLs das imagens
+  const trayHeaders = (tray.matriz[0] ?? []).map(normaliza);
+  const idxRef = trayHeaders.indexOf(COL_TRAY_CHAVE);
+
+  if (idxRef === -1) {
+    throw new Error(`Coluna "${COL_TRAY_CHAVE}" não encontrada na planilha Tray.`);
+  }
+
+  const idxImagens = COLUNAS_TRAY_IMAGEM.map((c) => trayHeaders.indexOf(c)).filter(
+    (i) => i !== -1
+  );
+  const idxAdicionais = trayHeaders.indexOf(COL_TRAY_ADICIONAIS);
+
+  const mapa = new Map<string, string>();
+
+  for (const row of tray.matriz.slice(1)) {
+    const ref = normaliza(row[idxRef]);
+    if (!ref) continue;
+
+    const imagens = idxImagens.map((i) => normaliza(row[i]));
+    const adicionais =
+      idxAdicionais === -1
+        ? []
+        : normaliza(row[idxAdicionais])
+            .split(",")
+            .map((u) => u.trim());
+
+    const urls = [...imagens, ...adicionais].filter(
+      (u) => u && !u.toLowerCase().includes("youtube.com")
     );
 
-    if (!base) return;
-
-    fetch(`${base}/health`, {
-      mode: "no-cors",
-      credentials: "omit",
-      cache: "no-store",
-    }).catch(() => {});
-  } catch {
-    // silencioso: aquecimento é apenas otimização
+    mapa.set(ref, [...new Set(urls)].join("|"));
   }
+
+  // Bling: aplica as URLs pelo Código
+  const blingHeader = bling.matriz[0] ?? [];
+  const blingHeaders = blingHeader.map(normaliza);
+  const idxCodigo = blingHeaders.indexOf(COL_BLING_CHAVE);
+
+  if (idxCodigo === -1) {
+    throw new Error(`Coluna "${COL_BLING_CHAVE}" não encontrada na planilha Bling.`);
+  }
+
+  let idxDestino = blingHeaders.indexOf(COL_BLING_DESTINO);
+
+  if (idxDestino === -1) {
+    blingHeader.push(COL_BLING_DESTINO);
+    idxDestino = blingHeader.length - 1;
+  }
+
+  const resultado: ResultadoAtualizacao = {
+    atualizados: 0,
+    semId: 0,
+    semImagem: 0,
+  };
+
+  for (const row of bling.matriz.slice(1)) {
+    const codigo = normaliza(row[idxCodigo]);
+    if (!codigo) continue;
+
+    while (row.length < blingHeader.length) row.push("");
+
+    if (!mapa.has(codigo)) {
+      resultado.semId++;
+      continue;
+    }
+
+    const urls = mapa.get(codigo) ?? "";
+
+    if (!urls) {
+      resultado.semImagem++;
+      continue;
+    }
+
+    row[idxDestino] = urls;
+    resultado.atualizados++;
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(bling.matriz);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, bling.nomeAba);
+  XLSX.writeFile(wb, NOME_SAIDA);
+
+  return resultado;
 };
 
 export function useAtualizarImagensBlingTray() {
@@ -105,16 +171,16 @@ export function useAtualizarImagensBlingTray() {
 
   const [status, setStatus] = useState<Status>("idle");
   const [erro, setErro] = useState<string>("");
+  const [resultado, setResultado] = useState<ResultadoAtualizacao | null>(null);
 
   const handleFileSelect = (key: ImagensPlanilhaKey, file: File | null) => {
-    if (file) warmUpApi();
-
     setPlanilhas((prev) => ({
       ...prev,
       [key]: file,
     }));
 
     setErro("");
+    setResultado(null);
     setStatus("idle");
   };
 
@@ -125,6 +191,7 @@ export function useAtualizarImagensBlingTray() {
     });
 
     setErro("");
+    setResultado(null);
     setStatus("idle");
   };
 
@@ -138,65 +205,19 @@ export function useAtualizarImagensBlingTray() {
       throw new Error(message);
     }
 
-    const formData = new FormData();
-
-    formData.append("bling", planilhas.bling);
-    formData.append("tray", planilhas.tray);
-
     setStatus("processing");
     setErro("");
 
-    const controller = new AbortController();
-
-    const timeout = window.setTimeout(() => {
-      controller.abort();
-    }, TIMEOUT_MS);
-
     try {
-      const apiBaseUrl = getApiBaseUrl();
-      const endpoint = `${apiBaseUrl}/atualizar-imagens-bling-tray`;
+      const res = await atualizarImagens(planilhas.bling, planilhas.tray);
 
-
-      const response = await fetch(endpoint, {
-        method: "POST",
-        body: formData,
-        signal: controller.signal,
-        mode: "cors",
-        credentials: "omit",
-      });
-
-      if (!response.ok) {
-        const message = await getErrorMessageFromResponse(response);
-
-        throw new Error(message);
-      }
-
-      const blob = await response.blob();
-
-      const filename =
-        getFilenameFromDisposition(
-          response.headers.get("Content-Disposition")
-        ) || "BLING - IMAGENS ATUALIZADAS.xlsx";
-
-      window.clearTimeout(timeout);
-
-      baixarBlob(blob, filename);
-
+      setResultado(res);
       setStatus("success");
+
+      return res;
     } catch (err: any) {
-      window.clearTimeout(timeout);
-
-      let message: string;
-
-      if (err?.name === "AbortError") {
-        message =
-          "Tempo limite excedido. O servidor demorou demais para responder.";
-      } else if (err instanceof TypeError) {
-        message =
-          "Falha de conexão com a API (Failed to fetch). Verifique se o serviço está no ar e se o CORS do backend libera o domínio do front.";
-      } else {
-        message = err?.message || "Erro inesperado ao processar planilhas.";
-      }
+      const message =
+        err?.message || "Erro inesperado ao processar planilhas.";
 
       console.error("Detalhe do erro na automação de imagens:", err);
 
@@ -211,6 +232,7 @@ export function useAtualizarImagensBlingTray() {
     planilhas,
     status,
     erro,
+    resultado,
     handleFileSelect,
     limparArquivos,
     iniciarAutomacao,
