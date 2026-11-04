@@ -1,10 +1,21 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Info, Plus, X, Loader2, AlertTriangle, DollarSign, Copy, Check } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
+
+type ItemComposicao = {
+  uid?: string;
+  id?: string;
+  codigo: string;
+  produto?: string;
+  descricao?: string;
+  custo: number;
+  quantidade: string;
+  [key: string]: any;
+};
 
 type Sugestao = {
   codigo: string;
@@ -13,23 +24,29 @@ type Sugestao = {
   descricao?: string;
 };
 
-type CompositionSectionProps = {
-  composicao: any[];
-  setComposicao: any;
-  custoTotal?: number | string;
-  AnimatedNumber?: React.ComponentType<{ value: number }>;
+type CustoRow = {
+  codigo: string;
+  produto: string;
+  descricao: string;
+  custo: number;
 };
 
-const DefaultAnimatedNumber = ({ value }: { value: number }) => {
-  return (
-    <>
-      {Number(value || 0).toLocaleString("pt-BR", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })}
-    </>
-  );
-};
+type PatchItem =
+  | Partial<ItemComposicao>
+  | ((item: ItemComposicao) => Partial<ItemComposicao>);
+
+const CACHE_TTL_MS = 60_000;
+const EMPTY_SUGESTOES: Sugestao[] = [];
+const EMPTY_LISTA: ItemComposicao[] = [];
+
+const DefaultAnimatedNumber = ({ value }: { value: number }) => (
+  <>
+    {Number(value || 0).toLocaleString("pt-BR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}
+  </>
+);
 
 const formatBR = (v: any) => {
   const num = typeof v === "number" ? v : Number(v);
@@ -42,63 +59,38 @@ const formatBR = (v: any) => {
 
 const parseInputMoney = (raw: string): number => {
   if (!raw || !String(raw).trim()) return NaN;
-  let str = String(raw).trim();
-  str = str.replace(/[^\d.,-]/g, "");
+  let str = String(raw).trim().replace(/[^\d.,-]/g, "");
   const temVirgula = str.includes(",");
   const temPonto = str.includes(".");
   if (temVirgula && temPonto) {
     if (str.lastIndexOf(",") > str.lastIndexOf(".")) {
-      str = str.replace(/\./g, "");
-      str = str.replace(",", ".");
+      str = str.replace(/\./g, "").replace(",", ".");
     } else {
       str = str.replace(/,/g, "");
     }
   } else if (temVirgula) {
-    str = str.replace(/\./g, "");
-    str = str.replace(",", ".");
+    str = str.replace(/\./g, "").replace(",", ".");
   }
   const n = Number(str);
   return Number.isFinite(n) ? n : NaN;
 };
 
-const normalizeNumberString = (value: any) => {
-  if (value === null || value === undefined) return "";
-  return String(value).replace(".", ",");
-};
+const toInteger = (value: string) => String(value ?? "").replace(/[^\d]/g, "");
 
-const toInternal = (value: string) => {
-  if (value === null || value === undefined) return "";
-  return String(value).replace(/[^\d,.-]/g, "").replace(",", ".");
-};
+// Escapa curingas do ILIKE (% e _) para que o termo seja tratado literalmente
+const escapeLike = (s: string) => s.replace(/[\\%_]/g, "\\$&");
 
-const toInteger = (value: string) => {
-  const digits = String(value ?? "").replace(/[^\d]/g, "");
-  return digits;
-};
-
-const getRowDescription = (item: any) => {
-  const descricao = String(
-    item?.produto ||
-      item?.descricao ||
-      item?.Produto ||
-      item?.nome ||
-      item?.label ||
-      ""
-  ).trim();
-  return descricao;
-};
+const getRowDescription = (item: any) =>
+  String(item?.produto || item?.descricao || item?.Produto || item?.nome || item?.label || "").trim();
 
 // ---------------------------------------------------------------------------
-// Normalização da tabela newsystem.costs
+// Normalização e busca em newsystem.costs
 // ---------------------------------------------------------------------------
-const normalizarCustoRow = (row: any) => {
+const normalizarCustoRow = (row: any): CustoRow => {
   const codigo = String(row?.code ?? "").trim();
   const produto = String(row?.product ?? "").trim();
   const custoRaw = row?.current_cost ?? 0;
-  const custo =
-    typeof custoRaw === "number"
-      ? custoRaw
-      : parseInputMoney(String(custoRaw ?? ""));
+  const custo = typeof custoRaw === "number" ? custoRaw : parseInputMoney(String(custoRaw ?? ""));
   return {
     codigo,
     produto,
@@ -107,19 +99,27 @@ const normalizarCustoRow = (row: any) => {
   };
 };
 
-// ---------------------------------------------------------------------------
-// Cache global
-// ---------------------------------------------------------------------------
-const cacheCustoExato = new Map<string, ReturnType<typeof normalizarCustoRow> | null>();
-const cacheSugestoes = new Map<string, Sugestao[]>();
+type CacheEntry<T> = { valor: T; t: number };
 
-const buscarCustoExatoPorCodigo = async (codigo: string) => {
+const lerCache = <T,>(m: Map<string, CacheEntry<T>>, k: string): T | undefined => {
+  const e = m.get(k);
+  if (!e) return undefined;
+  if (Date.now() - e.t > CACHE_TTL_MS) {
+    m.delete(k);
+    return undefined;
+  }
+  return e.valor;
+};
+
+const cacheCustoExato = new Map<string, CacheEntry<CustoRow | null>>();
+const cacheSugestoes = new Map<string, CacheEntry<Sugestao[]>>();
+
+const buscarCustoExatoPorCodigo = async (codigo: string): Promise<CustoRow | null> => {
   const codigoLimpo = String(codigo || "").trim();
   if (!codigoLimpo) return null;
 
-  if (cacheCustoExato.has(codigoLimpo)) {
-    return cacheCustoExato.get(codigoLimpo) ?? null;
-  }
+  const emCache = lerCache(cacheCustoExato, codigoLimpo);
+  if (emCache !== undefined) return emCache;
 
   const { data: dataExata, error: errorExata } = await supabase
     .schema("newsystem")
@@ -133,39 +133,34 @@ const buscarCustoExatoPorCodigo = async (codigo: string) => {
 
   if (Array.isArray(dataExata) && dataExata.length > 0) {
     const resultado = normalizarCustoRow(dataExata[0]);
-    cacheCustoExato.set(codigoLimpo, resultado);
+    cacheCustoExato.set(codigoLimpo, { valor: resultado, t: Date.now() });
     return resultado;
   }
 
+  // Fallback case-insensitive, com curingas escapados
   const { data: dataLike, error: errorLike } = await supabase
     .schema("newsystem")
     .from("costs")
     .select("code, current_cost, product")
-    .ilike("code", codigoLimpo)
+    .ilike("code", escapeLike(codigoLimpo))
     .is("deleted_at", null)
     .limit(1);
 
   if (errorLike) {
     console.error("Erro ao buscar custo por ilike:", errorLike);
-    cacheCustoExato.set(codigoLimpo, null);
-    return null;
+    return null; // não cacheia erro
   }
 
-  if (Array.isArray(dataLike) && dataLike.length > 0) {
-    const resultado = normalizarCustoRow(dataLike[0]);
-    cacheCustoExato.set(codigoLimpo, resultado);
-    return resultado;
-  }
-
-  cacheCustoExato.set(codigoLimpo, null);
-  return null;
+  const resultado =
+    Array.isArray(dataLike) && dataLike.length > 0 ? normalizarCustoRow(dataLike[0]) : null;
+  cacheCustoExato.set(codigoLimpo, { valor: resultado, t: Date.now() });
+  return resultado;
 };
 
 // ---------------------------------------------------------------------------
 // Dropdown de sugestões
 // ---------------------------------------------------------------------------
 type SuggestionDropdownProps = {
-  isActive: boolean;
   sugestoes: Sugestao[];
   buscando: boolean;
   listaRef: React.RefObject<HTMLDivElement | null>;
@@ -174,24 +169,18 @@ type SuggestionDropdownProps = {
 };
 
 const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
-  isActive,
   sugestoes,
   buscando,
   listaRef,
   indiceSelecionado,
   onSelect,
 }) => {
-  if (!isActive || (sugestoes.length === 0 && !buscando)) return null;
+  if (sugestoes.length === 0 && !buscando) return null;
 
   return (
     <div
       ref={listaRef}
-      className="
-        absolute left-0 top-full z-[9999] mt-1
-        max-h-60 w-full min-w-[280px] overflow-y-auto overscroll-contain
-        border border-neutral-800 bg-[#0a0a0a]
-        shadow-[0_12px_32px_rgba(0,0,0,0.6)]
-      "
+      className="absolute left-0 top-full z-[9999] mt-1 max-h-60 w-full min-w-[280px] overflow-y-auto overscroll-contain border border-neutral-800 bg-[#0a0a0a] shadow-[0_12px_32px_rgba(0,0,0,0.6)]"
     >
       {buscando && (
         <div className="flex items-center gap-2 px-3 py-3 text-[11px] tracking-wide text-neutral-500">
@@ -209,12 +198,9 @@ const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
               e.preventDefault();
               onSelect(s.codigo, s.custo, s.produto, s.descricao);
             }}
-            className={`
-              flex w-full items-center justify-between gap-3 border-b
-              border-neutral-900 px-3 py-2.5 text-left transition-colors
-              last:border-b-0
-              ${i === indiceSelecionado ? "bg-[#1a8ceb]/[0.08]" : "hover:bg-neutral-900/60"}
-            `}
+            className={`flex w-full items-center justify-between gap-3 border-b border-neutral-900 px-3 py-2.5 text-left transition-colors last:border-b-0 ${
+              i === indiceSelecionado ? "bg-[#1a8ceb]/[0.08]" : "hover:bg-neutral-900/60"
+            }`}
           >
             <div className="min-w-0 flex-1 overflow-hidden">
               <div className="truncate text-[13px] font-medium text-[#1a8ceb]">
@@ -236,94 +222,98 @@ const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
 };
 
 // ---------------------------------------------------------------------------
-// Linha de item de custo (memoizada)
+// Linha de item de custo
+// Não recebe a composição inteira: recebe só o próprio item e callbacks
+// estáveis. Alterações passam por `onAtualizar`, que usa atualização funcional.
 // ---------------------------------------------------------------------------
 type CostItemRowProps = {
-  item: any;
+  item: ItemComposicao;
   idx: number;
-  composicao: any[];
-  setComposicao: any;
-  removerItem: (idx: number) => void;
   isDuplicado: boolean;
-  campoAtivo: number | null;
+  isAtivo: boolean;
   sugestoes: Sugestao[];
   buscandoSugestoes: boolean;
   indiceSelecionado: number;
   listaRef: React.RefObject<HTMLDivElement | null>;
-  buscarSugestoes: (termo: string, idx: number) => void;
-  handleSugestoesKeys: (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => boolean;
-  selecionarSugestao: (codigo: string, custo: number, idx: number, produto?: string, descricao?: string) => void;
   inputRefs: React.MutableRefObject<HTMLInputElement[][]>;
-  handleGridNav: (e: React.KeyboardEvent<HTMLInputElement>, row: number, col: number) => void;
-  editing: Record<string, boolean>;
-  setEditing: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  onAtualizar: (idx: number, patch: PatchItem) => void;
+  onRemover: (idx: number) => void;
+  onBuscarSugestoes: (termo: string, idx: number) => void;
+  onTeclasSugestoes: (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => boolean;
+  onSelecionarSugestao: (
+    codigo: string,
+    custo: number,
+    idx: number,
+    produto?: string,
+    descricao?: string
+  ) => void;
+  onGridNav: (e: React.KeyboardEvent<HTMLInputElement>, row: number, col: number) => void;
 };
 
 const CostItemRowBase: React.FC<CostItemRowProps> = ({
   item,
   idx,
-  composicao,
-  setComposicao,
-  removerItem,
   isDuplicado,
-  campoAtivo,
+  isAtivo,
   sugestoes,
   buscandoSugestoes,
   indiceSelecionado,
   listaRef,
-  buscarSugestoes,
-  handleSugestoesKeys,
-  selecionarSugestao,
   inputRefs,
-  handleGridNav,
-  editing,
-  setEditing,
+  onAtualizar,
+  onRemover,
+  onBuscarSugestoes,
+  onTeclasSugestoes,
+  onSelecionarSugestao,
+  onGridNav,
 }) => {
-  const description = getRowDescription(item);
-  const editingKey = `c-${idx}`;
-
   const [codigoLocal, setCodigoLocal] = useState(item.codigo || "");
   const [buscandoCodigo, setBuscandoCodigo] = useState(false);
+  const [codigoErro, setCodigoErro] = useState<string | null>(null);
   const [copiado, setCopiado] = useState(false);
+  // null = não está editando o custo; string = rascunho digitado
+  const [custoDraft, setCustoDraft] = useState<string | null>(null);
 
   useEffect(() => {
     setCodigoLocal(item.codigo || "");
+    setCodigoErro(null);
   }, [item.codigo]);
 
+  const description = getRowDescription(item);
   const custoNum = Number(item.custo) || 0;
   const custoZero = custoNum === 0;
 
-  const salvarCodigoLocal = async () => {
-    const codigoAtual = String(composicao[idx]?.codigo || "").trim();
-    const codigoNovo = String(codigoLocal || "").trim();
+  // Confirma o código digitado: só aceita o que existe em newsystem.costs
+  const confirmarCodigo = async () => {
+    const novo = codigoLocal.trim();
+    const atual = String(item.codigo || "").trim();
 
-    if (!codigoNovo) {
-      const novo = [...composicao];
-      novo[idx] = { ...novo[idx], codigo: "", produto: "", descricao: "", custo: 0 };
-      setComposicao(novo);
+    if (novo === atual) {
+      setCodigoLocal(atual);
       return;
     }
 
-    const custoAtual = Number(composicao[idx]?.custo || 0);
-    if (codigoAtual === codigoNovo && custoAtual > 0) return;
+    if (!novo) {
+      onAtualizar(idx, { codigo: "", produto: "", descricao: "", custo: 0 });
+      return;
+    }
 
     setBuscandoCodigo(true);
     try {
-      const custoEncontrado = await buscarCustoExatoPorCodigo(codigoNovo);
-      const novo = [...composicao];
+      const encontrado = await buscarCustoExatoPorCodigo(novo);
 
-      novo[idx] = {
-        ...novo[idx],
-        codigo: custoEncontrado?.codigo || codigoNovo,
-        produto: custoEncontrado?.produto || novo[idx]?.produto || novo[idx]?.Produto || "",
-        descricao: custoEncontrado?.descricao || novo[idx]?.descricao || novo[idx]?.produto || "",
-        custo:
-          custoEncontrado && Number(custoEncontrado.custo) > 0
-            ? Number(custoEncontrado.custo)
-            : Number(novo[idx]?.custo || 0),
-      };
+      if (!encontrado) {
+        setCodigoLocal(atual);
+        setCodigoErro(`Código "${novo}" não existe no cadastro de custos`);
+        return;
+      }
 
-      setComposicao(novo);
+      onAtualizar(idx, {
+        codigo: encontrado.codigo,
+        produto: encontrado.produto,
+        descricao: encontrado.descricao,
+        custo: encontrado.custo,
+      });
     } finally {
       setBuscandoCodigo(false);
     }
@@ -339,55 +329,45 @@ const CostItemRowBase: React.FC<CostItemRowProps> = ({
     }
   };
 
+  const setRef = (col: number) => (el: HTMLInputElement | null) => {
+    if (!inputRefs.current[idx]) inputRefs.current[idx] = [];
+    inputRefs.current[idx][col] = el as HTMLInputElement;
+  };
+
   return (
     <div
-      className={`
-        group relative border-b border-neutral-900 px-4 py-3
-        transition-colors last:border-b-0
-        ${isDuplicado ? "bg-[#1a8ceb]/[0.03]" : "hover:bg-neutral-950/60"}
-      `}
+      className={`group relative border-b border-neutral-900 px-4 py-3 transition-colors last:border-b-0 ${
+        isDuplicado ? "bg-[#1a8ceb]/[0.03]" : "hover:bg-neutral-950/60"
+      }`}
     >
       <div className="flex items-start justify-between gap-4">
-        {/* Código + descrição + quantidade */}
         <div className="relative min-w-0 flex-1">
           <div className="relative flex items-center gap-1.5">
             <Input
-              ref={(el) => {
-                if (!inputRefs.current[idx]) inputRefs.current[idx] = [];
-                inputRefs.current[idx][0] = el!;
-              }}
+              ref={setRef(0)}
               type="text"
               inputMode="text"
               placeholder="Código"
               value={codigoLocal}
               onChange={(e) => {
-                const value = e.target.value;
-                setCodigoLocal(value);
-                buscarSugestoes(value, idx);
+                setCodigoLocal(e.target.value);
+                setCodigoErro(null);
+                onBuscarSugestoes(e.target.value, idx);
               }}
-              onBlur={() => void salvarCodigoLocal()}
+              onBlur={() => void confirmarCodigo()}
               onKeyDown={(e) => {
-                const handled = handleSugestoesKeys(e, idx);
-                if (handled) return;
+                if (onTeclasSugestoes(e, idx)) return;
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  void salvarCodigoLocal();
+                  void confirmarCodigo();
                   return;
                 }
-                handleGridNav(e, idx, 0);
+                onGridNav(e, idx, 0);
               }}
-              className="
-                !h-7 !rounded-none !border-0 !bg-transparent !px-0
-                !text-[13px] !font-semibold !text-[#1a8ceb] !shadow-none !outline-none
-                placeholder:!text-neutral-600 placeholder:!font-medium
-                focus:!ring-0 focus:!outline-none
-                focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none
-              "
+              className="!h-7 !rounded-none !border-0 !bg-transparent !px-0 !text-[13px] !font-semibold !text-[#1a8ceb] !shadow-none !outline-none placeholder:!text-neutral-600 placeholder:!font-medium focus:!ring-0 focus:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none"
             />
 
-            {buscandoCodigo && (
-              <Loader2 className="h-3 w-3 shrink-0 animate-spin text-neutral-500" />
-            )}
+            {buscandoCodigo && <Loader2 className="h-3 w-3 shrink-0 animate-spin text-neutral-500" />}
 
             {isDuplicado && (
               <span
@@ -399,123 +379,93 @@ const CostItemRowBase: React.FC<CostItemRowProps> = ({
               </span>
             )}
 
-            <SuggestionDropdown
-              isActive={campoAtivo === idx}
-              sugestoes={sugestoes}
-              buscando={buscandoSugestoes}
-              listaRef={listaRef}
-              indiceSelecionado={indiceSelecionado}
-              onSelect={(codigo, custo, produto, descricao) =>
-                selecionarSugestao(codigo, custo, idx, produto, descricao)
-              }
-            />
+            {isAtivo && (
+              <SuggestionDropdown
+                sugestoes={sugestoes}
+                buscando={buscandoSugestoes}
+                listaRef={listaRef}
+                indiceSelecionado={indiceSelecionado}
+                onSelect={(codigo, custo, produto, descricao) =>
+                  onSelecionarSugestao(codigo, custo, idx, produto, descricao)
+                }
+              />
+            )}
           </div>
 
-          {/* Descrição + Quantidade */}
+          {codigoErro && (
+            <p className="mt-0.5 flex items-center gap-1 text-[11px] text-red-400">
+              <AlertTriangle className="h-3 w-3" />
+              {codigoErro}
+            </p>
+          )}
+
           <div className="mt-1 flex items-center gap-1.5 text-[11px] text-neutral-500">
             <span className="truncate">{description || "Sem descrição"}</span>
             <span className="shrink-0 text-neutral-700">/</span>
             <span className="shrink-0 uppercase tracking-wide text-neutral-600">Quantidade</span>
             <Input
-              ref={(el) => {
-                if (!inputRefs.current[idx]) inputRefs.current[idx] = [];
-                inputRefs.current[idx][1] = el!;
-              }}
+              ref={setRef(1)}
               type="text"
               inputMode="numeric"
               value={String(item.quantidade ?? "")}
-              onChange={(e) => {
-                const novo = [...composicao];
-                novo[idx] = { ...novo[idx], quantidade: toInteger(e.target.value) };
-                setComposicao(novo);
-              }}
-              onKeyDown={(e) => handleGridNav(e, idx, 1)}
-              className="
-                !h-4 !w-8 !border-0 !bg-transparent !p-0
-                !text-[11px] !text-neutral-300 !shadow-none !outline-none
-                focus:!ring-0 focus:!outline-none
-                focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none
-              "
+              onChange={(e) => onAtualizar(idx, { quantidade: toInteger(e.target.value) })}
+              onBlur={() =>
+                onAtualizar(idx, (it) => ({
+                  quantidade: (Number(it.quantidade) || 0) > 0 ? it.quantidade : "1",
+                }))
+              }
+              onKeyDown={(e) => onGridNav(e, idx, 1)}
+              className="!h-4 !w-8 !border-0 !bg-transparent !p-0 !text-[11px] !text-neutral-300 !shadow-none !outline-none focus:!ring-0 focus:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none"
             />
           </div>
         </div>
 
-        {/* Copiar + Custo + remover */}
         <div className="flex shrink-0 items-center gap-1.5">
           <button
             type="button"
             onClick={copiarCustoUnitario}
             title="Copiar custo unitário"
-            className="
-              flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center
-              text-neutral-600 transition-colors
-              hover:text-[#1a8ceb]
-              focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]
-            "
+            className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center text-neutral-600 transition-colors hover:text-[#1a8ceb] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
           >
-            {copiado ? (
-              <Check className="h-3.5 w-3.5 text-[#1a8ceb]" />
-            ) : (
-              <Copy className="h-3 w-3" />
-            )}
+            {copiado ? <Check className="h-3.5 w-3.5 text-[#1a8ceb]" /> : <Copy className="h-3 w-3" />}
           </button>
 
           <div
-            className={`
-              flex h-7 items-center border px-2
-              ${custoZero ? "border-neutral-800" : "border-[#1a8ceb]/40"}
-            `}
+            className={`flex h-7 items-center border px-2 ${
+              custoZero ? "border-neutral-800" : "border-[#1a8ceb]/40"
+            }`}
           >
             <span
-              className={`mr-1 text-[11px] font-medium ${
-                custoZero ? "text-neutral-600" : "text-[#1a8ceb]"
-              }`}
+              className={`mr-1 text-[11px] font-medium ${custoZero ? "text-neutral-600" : "text-[#1a8ceb]"}`}
             >
               R$
             </span>
             <Input
-              ref={(el) => {
-                if (!inputRefs.current[idx]) inputRefs.current[idx] = [];
-                inputRefs.current[idx][2] = el!;
-              }}
+              ref={setRef(2)}
               type="text"
               inputMode="decimal"
               placeholder="0,00"
-              value={editing[editingKey] ? normalizeNumberString(item.custo) : formatBR(item.custo)}
-              onFocus={() => setEditing((prev) => ({ ...prev, [editingKey]: true }))}
-              onBlur={(e) => {
-                setEditing((prev) => ({ ...prev, [editingKey]: false }));
-                const novo = [...composicao];
-                const num = parseInputMoney(e.target.value);
-                novo[idx] = { ...novo[idx], custo: Number.isFinite(num) ? num : item.custo };
-                setComposicao(novo);
-              }}
+              value={custoDraft !== null ? custoDraft : formatBR(item.custo)}
+              onFocus={() => setCustoDraft(custoZero ? "" : String(custoNum).replace(".", ","))}
+              onBlur={() => setCustoDraft(null)}
               onChange={(e) => {
-                const novo = [...composicao];
-                novo[idx] = { ...novo[idx], custo: toInternal(e.target.value) };
-                setComposicao(novo);
+                const valor = e.target.value;
+                setCustoDraft(valor);
+                const n = parseInputMoney(valor);
+                onAtualizar(idx, { custo: Number.isFinite(n) ? n : 0 });
               }}
-              onKeyDown={(e) => handleGridNav(e, idx, 2)}
-              className={`
-                !h-full !w-16 !border-0 !bg-transparent !p-0
-                !text-right !text-[13px] !font-semibold !shadow-none !outline-none
-                focus:!ring-0 focus:!outline-none
-                focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none
-                ${custoZero ? "!text-neutral-600" : "!text-[#1a8ceb]"}
-              `}
+              onKeyDown={(e) => onGridNav(e, idx, 2)}
+              className={`!h-full !w-16 !border-0 !bg-transparent !p-0 !text-right !text-[13px] !font-semibold !shadow-none !outline-none focus:!ring-0 focus:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none ${
+                custoZero ? "!text-neutral-600" : "!text-[#1a8ceb]"
+              }`}
             />
           </div>
 
           <button
             type="button"
-            onClick={() => removerItem(idx)}
+            onClick={() => onRemover(idx)}
             title="Remover linha"
-            className="
-              flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center
-              text-neutral-600 transition-colors
-              hover:text-red-400
-              focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500
-            "
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center text-neutral-600 transition-colors hover:text-red-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -525,127 +475,131 @@ const CostItemRowBase: React.FC<CostItemRowProps> = ({
   );
 };
 
-const CostItemRow = React.memo(CostItemRowBase, (prev, next) => {
-  return (
-    prev.item === next.item &&
-    prev.isDuplicado === next.isDuplicado &&
-    prev.campoAtivo === next.campoAtivo &&
-    prev.sugestoes === next.sugestoes &&
-    prev.buscandoSugestoes === next.buscandoSugestoes &&
-    prev.indiceSelecionado === next.indiceSelecionado &&
-    prev.editing === next.editing
-  );
-});
-
-// ---------------------------------------------------------------------------
-// Botão adicionar item
-// ---------------------------------------------------------------------------
-const AddCostButton: React.FC<{ onClick: () => void }> = ({ onClick }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className="
-      flex h-10 w-full items-center justify-center gap-2 border-t
-      border-neutral-900 text-[11px] font-medium uppercase tracking-wide
-      text-neutral-500 transition-colors
-      hover:bg-neutral-950/60 hover:text-[#1a8ceb]
-      focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]
-    "
-  >
-    <Plus className="h-3.5 w-3.5" />
-    Adicionar item
-  </button>
-);
+// Sem comparador customizado: o React compara as props por igualdade rasa,
+// e os callbacks são estáveis, então só a linha afetada re-renderiza.
+const CostItemRow = React.memo(CostItemRowBase);
 
 // ---------------------------------------------------------------------------
 // Card de resumo
 // ---------------------------------------------------------------------------
 type SummaryCardProps = {
-  composicaoSegura: any[];
+  composicaoSegura: ItemComposicao[];
   custoTotalReal: number;
-  AnimatedNumber?: React.ComponentType<{ value: number }>;
+  AnimatedNumber: React.ComponentType<{ value: number }>;
 };
 
-const SummaryCard: React.FC<SummaryCardProps> = ({
-  composicaoSegura,
-  custoTotalReal,
-  AnimatedNumber = DefaultAnimatedNumber,
-}) => {
-  return (
-    <div className="border border-neutral-800 bg-[#0a0a0a]">
-      <div className="border-b border-neutral-900 px-4 py-3">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-          Detalhamento de Custos
-        </h3>
-      </div>
+const SummaryCard: React.FC<SummaryCardProps> = ({ composicaoSegura, custoTotalReal, AnimatedNumber }) => (
+  <div className="border border-neutral-800 bg-[#0a0a0a]">
+    <div className="border-b border-neutral-900 px-4 py-3">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+        Detalhamento de Custos
+      </h3>
+    </div>
 
-      <div className="space-y-2 border-b border-neutral-900 px-4 py-3">
-        {composicaoSegura.length > 0 ? (
-          composicaoSegura.map((item: any, i: number) => {
-            const desc = getRowDescription(item) || `Item ${i + 1}`;
-            const qtd = parseInt(String(item.quantidade ?? "1"), 10) || 0;
-            const subtotal = (Number(item.custo) || 0) * qtd;
+    <div className="space-y-2 border-b border-neutral-900 px-4 py-3">
+      {composicaoSegura.length > 0 ? (
+        composicaoSegura.map((item, i) => {
+          const desc = getRowDescription(item) || `Item ${i + 1}`;
+          const qtd = parseInt(String(item.quantidade ?? "1"), 10) || 0;
+          const subtotal = (Number(item.custo) || 0) * qtd;
 
-            return (
-              <div key={item.uid || item.id || `resumo-${i}`} className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[12px] font-semibold text-[#1a8ceb]">
-                    {item.codigo || `Item ${i + 1}`}
-                    {qtd !== 1 && <span className="ml-1 text-neutral-600">× {qtd}</span>}
-                  </p>
-                  <p className="truncate text-[11px] text-neutral-600">{desc}</p>
-                </div>
-                <span className="shrink-0 text-[12px] font-medium text-neutral-400">
-                  R$ {formatBR(subtotal)}
-                </span>
+          return (
+            <div key={item.uid || item.id || `resumo-${i}`} className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[12px] font-semibold text-[#1a8ceb]">
+                  {item.codigo || `Item ${i + 1}`}
+                  {qtd !== 1 && <span className="ml-1 text-neutral-600">× {qtd}</span>}
+                </p>
+                <p className="truncate text-[11px] text-neutral-600">{desc}</p>
               </div>
-            );
-          })
-        ) : (
-          <p className="text-[12px] text-neutral-600">Nenhum item adicionado</p>
-        )}
-      </div>
+              <span className="shrink-0 text-[12px] font-medium text-neutral-400">
+                R$ {formatBR(subtotal)}
+              </span>
+            </div>
+          );
+        })
+      ) : (
+        <p className="text-[12px] text-neutral-600">Nenhum item adicionado</p>
+      )}
+    </div>
 
-      <div className="px-4 py-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] uppercase tracking-wide text-neutral-500">Custo Total</span>
-          <span className="text-lg font-semibold tabular-nums text-[#1a8ceb]">
-            R$ <AnimatedNumber value={custoTotalReal} />
-          </span>
-        </div>
-      </div>
-
-      <div className="flex gap-2 border-t border-neutral-900 px-4 py-3">
-        <Info className="mt-0.5 h-3 w-3 shrink-0 text-neutral-600" />
-        <p className="text-[10.5px] leading-relaxed text-neutral-600">
-          Impostos e comissões podem variar conforme cada marketplace.
-        </p>
+    <div className="px-4 py-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] uppercase tracking-wide text-neutral-500">Custo Total</span>
+        <span className="text-lg font-semibold tabular-nums text-[#1a8ceb]">
+          R$ <AnimatedNumber value={custoTotalReal} />
+        </span>
       </div>
     </div>
-  );
-};
+
+    <div className="flex gap-2 border-t border-neutral-900 px-4 py-3">
+      <Info className="mt-0.5 h-3 w-3 shrink-0 text-neutral-600" />
+      <p className="text-[10.5px] leading-relaxed text-neutral-600">
+        Impostos e comissões podem variar conforme cada marketplace.
+      </p>
+    </div>
+  </div>
+);
 
 // ---------------------------------------------------------------------------
 // Seção principal
 // ---------------------------------------------------------------------------
+type CompositionSectionProps = {
+  composicao: ItemComposicao[];
+  setComposicao: any; // setState do hook (aceita atualização funcional)
+  AnimatedNumber?: React.ComponentType<{ value: number }>;
+};
+
 const CompositionSection: React.FC<CompositionSectionProps> = ({
-  composicao = [],
+  composicao,
   setComposicao,
   AnimatedNumber = DefaultAnimatedNumber,
 }) => {
   const inputRefs = useRef<HTMLInputElement[][]>([]);
   const listaRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const buscaIdRef = useRef(0);
 
   const [sugestoes, setSugestoes] = useState<Sugestao[]>([]);
   const [campoAtivo, setCampoAtivo] = useState<number | null>(null);
   const [indiceSelecionado, setIndiceSelecionado] = useState<number>(-1);
-  const [editing, setEditing] = useState<Record<string, boolean>>({});
   const [buscandoSugestoes, setBuscandoSugestoes] = useState(false);
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const buscaIdRef = useRef(0);
+  const lista: ItemComposicao[] = Array.isArray(composicao) ? composicao : EMPTY_LISTA;
 
-  const buscarSugestoes = (termo: string, idx: number) => {
+  // Todas as alterações passam por atualização funcional sobre o estado atual
+  const atualizarItem = useCallback(
+    (idx: number, patch: PatchItem) => {
+      setComposicao((prev: ItemComposicao[]) => {
+        const base = Array.isArray(prev) ? prev : [];
+        const atual = base[idx];
+        if (!atual) return base;
+        const delta = typeof patch === "function" ? patch(atual) : patch;
+        const novo = [...base];
+        novo[idx] = { ...atual, ...delta };
+        return novo;
+      });
+    },
+    [setComposicao]
+  );
+
+  const removerItem = useCallback(
+    (idx: number) => {
+      setComposicao((prev: ItemComposicao[]) =>
+        Array.isArray(prev) ? prev.filter((_, i) => i !== idx) : []
+      );
+    },
+    [setComposicao]
+  );
+
+  const adicionarItem = () => {
+    setComposicao((prev: ItemComposicao[]) => [
+      ...(Array.isArray(prev) ? prev : []),
+      { uid: crypto.randomUUID(), codigo: "", produto: "", descricao: "", quantidade: "1", custo: 0 },
+    ]);
+  };
+
+  const buscarSugestoes = useCallback((termo: string, idx: number) => {
     const termoLimpo = String(termo || "").trim();
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -660,10 +614,10 @@ const CompositionSection: React.FC<CompositionSectionProps> = ({
 
     setCampoAtivo(idx);
 
-    if (cacheSugestoes.has(termoLimpo)) {
-      const cache = cacheSugestoes.get(termoLimpo)!;
-      setSugestoes(cache);
-      setIndiceSelecionado(cache.length > 0 ? 0 : -1);
+    const emCache = lerCache(cacheSugestoes, termoLimpo);
+    if (emCache !== undefined) {
+      setSugestoes(emCache);
+      setIndiceSelecionado(emCache.length > 0 ? 0 : -1);
       setBuscandoSugestoes(false);
       return;
     }
@@ -671,14 +625,13 @@ const CompositionSection: React.FC<CompositionSectionProps> = ({
     setBuscandoSugestoes(true);
 
     debounceRef.current = setTimeout(async () => {
-      const buscaAtual = buscaIdRef.current + 1;
-      buscaIdRef.current = buscaAtual;
+      const buscaAtual = ++buscaIdRef.current;
 
       const { data, error } = await supabase
         .schema("newsystem")
         .from("costs")
         .select("code, current_cost, product")
-        .ilike("code", `%${termoLimpo}%`)
+        .ilike("code", `%${escapeLike(termoLimpo)}%`)
         .is("deleted_at", null)
         .limit(8);
 
@@ -692,85 +645,64 @@ const CompositionSection: React.FC<CompositionSectionProps> = ({
         return;
       }
 
-      const sugestoesFormatadas = data?.map((d: any) => normalizarCustoRow(d)) || [];
-      cacheSugestoes.set(termoLimpo, sugestoesFormatadas);
+      const formatadas: Sugestao[] = (data ?? []).map((d: any) => normalizarCustoRow(d));
+      cacheSugestoes.set(termoLimpo, { valor: formatadas, t: Date.now() });
 
       setCampoAtivo(idx);
-      setSugestoes(sugestoesFormatadas);
-      setIndiceSelecionado(sugestoesFormatadas.length > 0 ? 0 : -1);
+      setSugestoes(formatadas);
+      setIndiceSelecionado(formatadas.length > 0 ? 0 : -1);
       setBuscandoSugestoes(false);
     }, 250);
-  };
+  }, []);
 
-  const selecionarSugestao = (
-    codigo: string,
-    custo: number,
-    idx: number,
-    produto?: string,
-    descricao?: string
-  ) => {
-    const descricaoFinal =
-      produto ||
-      descricao ||
-      sugestoes.find((s) => s.codigo === codigo)?.produto ||
-      sugestoes.find((s) => s.codigo === codigo)?.descricao ||
-      "";
-
-    const novo = [...composicao];
-    novo[idx] = {
-      ...novo[idx],
-      codigo,
-      produto: descricaoFinal || novo[idx]?.produto || "",
-      descricao: descricaoFinal || novo[idx]?.descricao || "",
-      custo: Number.isFinite(Number(custo)) ? Number(custo) : 0,
-    };
-
-    setComposicao(novo);
-    setSugestoes([]);
-    setCampoAtivo(null);
-    setIndiceSelecionado(-1);
-  };
-
-  const adicionarItem = () => {
-    setComposicao((prev: any[]) => [
-      ...(Array.isArray(prev) ? prev : []),
-      { uid: crypto.randomUUID(), codigo: "", produto: "", descricao: "", quantidade: 1, custo: 0 },
-    ]);
-  };
-
-  const removerItem = (idx: number) => {
-    setComposicao((prev: any[]) => (Array.isArray(prev) ? prev.filter((_: any, i: number) => i !== idx) : []));
-  };
-
-  const handleSugestoesKeys = (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
-    if (campoAtivo !== idx || sugestoes.length === 0) return false;
-
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setIndiceSelecionado((p) => (p < sugestoes.length - 1 ? p + 1 : 0));
-      return true;
-    }
-    if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setIndiceSelecionado((p) => (p > 0 ? p - 1 : sugestoes.length - 1));
-      return true;
-    }
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const s = sugestoes[indiceSelecionado];
-      if (s) selecionarSugestao(s.codigo, s.custo, idx, s.produto, s.descricao);
-      return true;
-    }
-    if (e.key === "Escape") {
+  const selecionarSugestao = useCallback(
+    (codigo: string, custo: number, idx: number, produto?: string, descricao?: string) => {
+      const desc = produto || descricao || "";
+      atualizarItem(idx, {
+        codigo,
+        produto: desc,
+        descricao: desc,
+        custo: Number.isFinite(Number(custo)) ? Number(custo) : 0,
+      });
       setSugestoes([]);
       setCampoAtivo(null);
       setIndiceSelecionado(-1);
-      return true;
-    }
-    return false;
-  };
+    },
+    [atualizarItem]
+  );
 
-  const handleGridNav = (e: React.KeyboardEvent<HTMLInputElement>, row: number, col: number) => {
+  const handleSugestoesKeys = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>, idx: number) => {
+      if (campoAtivo !== idx || sugestoes.length === 0) return false;
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setIndiceSelecionado((p) => (p < sugestoes.length - 1 ? p + 1 : 0));
+        return true;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setIndiceSelecionado((p) => (p > 0 ? p - 1 : sugestoes.length - 1));
+        return true;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const s = sugestoes[indiceSelecionado];
+        if (s) selecionarSugestao(s.codigo, s.custo, idx, s.produto, s.descricao);
+        return true;
+      }
+      if (e.key === "Escape") {
+        setSugestoes([]);
+        setCampoAtivo(null);
+        setIndiceSelecionado(-1);
+        return true;
+      }
+      return false;
+    },
+    [campoAtivo, sugestoes, indiceSelecionado, selecionarSugestao]
+  );
+
+  const handleGridNav = useCallback((e: React.KeyboardEvent<HTMLInputElement>, row: number, col: number) => {
     const input = e.currentTarget;
     const start = input.selectionStart ?? 0;
     const end = input.selectionEnd ?? 0;
@@ -779,24 +711,19 @@ const CompositionSection: React.FC<CompositionSectionProps> = ({
     if (e.key === "ArrowDown") {
       e.preventDefault();
       inputRefs.current[row + 1]?.[col]?.focus();
-      return;
-    }
-    if (e.key === "ArrowUp") {
+    } else if (e.key === "ArrowUp") {
       e.preventDefault();
       inputRefs.current[row - 1]?.[col]?.focus();
-      return;
-    }
-    if (e.key === "ArrowRight" && end === len) {
+    } else if (e.key === "ArrowRight" && end === len) {
       e.preventDefault();
       inputRefs.current[row]?.[col + 1]?.focus();
-      return;
-    }
-    if (e.key === "ArrowLeft" && start === 0) {
+    } else if (e.key === "ArrowLeft" && start === 0) {
       e.preventDefault();
       inputRefs.current[row]?.[col - 1]?.focus();
     }
-  };
+  }, []);
 
+  // Fecha o dropdown ao clicar fora
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (listaRef.current?.contains(e.target as Node)) return;
@@ -812,56 +739,51 @@ const CompositionSection: React.FC<CompositionSectionProps> = ({
     };
   }, []);
 
-  const composicaoSegura = Array.isArray(composicao) ? composicao : [];
-
-  const custoTotalReal = useMemo(() => {
-    return composicaoSegura.reduce((acc: number, item: any) => {
-      const qtd = parseInt(String(item.quantidade ?? "1"), 10) || 0;
-      const custo = Number(item.custo) || 0;
-      return acc + custo * qtd;
-    }, 0);
-  }, [composicaoSegura]);
+  const custoTotalReal = useMemo(
+    () =>
+      lista.reduce((acc, item) => {
+        const qtd = parseInt(String(item.quantidade ?? "1"), 10) || 0;
+        return acc + (Number(item.custo) || 0) * qtd;
+      }, 0),
+    [lista]
+  );
 
   const codigosDuplicados = useMemo(() => {
     const contagem = new Map<string, number>();
-    composicaoSegura.forEach((item: any) => {
+    lista.forEach((item) => {
       const codigo = String(item?.codigo || "").trim();
       if (!codigo) return;
       contagem.set(codigo, (contagem.get(codigo) || 0) + 1);
     });
     return new Set([...contagem.entries()].filter(([, c]) => c > 1).map(([codigo]) => codigo));
-  }, [composicaoSegura]);
+  }, [lista]);
 
   return (
     <section className="grid grid-cols-1 gap-4 p-0 lg:grid-cols-[1.4fr_1fr]">
-      {/* Coluna esquerda: itens de custo */}
       <div className="min-w-0 border border-neutral-800 bg-[#0a0a0a]">
-        {composicaoSegura.length > 0 ? (
-          composicaoSegura.map((item: any, idx: number) => {
+        {lista.length > 0 ? (
+          lista.map((item, idx) => {
             const codigoAtual = String(item?.codigo || "").trim();
-            const isDuplicado = codigoAtual !== "" && codigosDuplicados.has(codigoAtual);
+            const isAtivo = campoAtivo === idx;
 
             return (
               <CostItemRow
-                key={item.uid || item.id || item.ID || `item-${idx}`}
+                key={item.uid || item.id || `item-${idx}`}
                 item={item}
                 idx={idx}
-                composicao={composicaoSegura}
-                setComposicao={setComposicao}
-                removerItem={removerItem}
-                isDuplicado={isDuplicado}
-                campoAtivo={campoAtivo}
-                sugestoes={sugestoes}
-                buscandoSugestoes={buscandoSugestoes}
-                indiceSelecionado={indiceSelecionado}
+                isDuplicado={codigoAtual !== "" && codigosDuplicados.has(codigoAtual)}
+                isAtivo={isAtivo}
+                sugestoes={isAtivo ? sugestoes : EMPTY_SUGESTOES}
+                buscandoSugestoes={isAtivo && buscandoSugestoes}
+                indiceSelecionado={isAtivo ? indiceSelecionado : -1}
                 listaRef={listaRef}
-                buscarSugestoes={buscarSugestoes}
-                handleSugestoesKeys={handleSugestoesKeys}
-                selecionarSugestao={selecionarSugestao}
                 inputRefs={inputRefs}
-                handleGridNav={handleGridNav}
-                editing={editing}
-                setEditing={setEditing}
+                onAtualizar={atualizarItem}
+                onRemover={removerItem}
+                onBuscarSugestoes={buscarSugestoes}
+                onTeclasSugestoes={handleSugestoesKeys}
+                onSelecionarSugestao={selecionarSugestao}
+                onGridNav={handleGridNav}
               />
             );
           })
@@ -874,16 +796,18 @@ const CompositionSection: React.FC<CompositionSectionProps> = ({
           </div>
         )}
 
-        <AddCostButton onClick={adicionarItem} />
+        <button
+          type="button"
+          onClick={adicionarItem}
+          className="flex h-10 w-full items-center justify-center gap-2 border-t border-neutral-900 text-[11px] font-medium uppercase tracking-wide text-neutral-500 transition-colors hover:bg-neutral-950/60 hover:text-[#1a8ceb] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Adicionar item
+        </button>
       </div>
 
-      {/* Coluna direita: detalhamento */}
       <div className="lg:sticky lg:top-0">
-        <SummaryCard
-          composicaoSegura={composicaoSegura}
-          custoTotalReal={custoTotalReal}
-          AnimatedNumber={AnimatedNumber}
-        />
+        <SummaryCard composicaoSegura={lista} custoTotalReal={custoTotalReal} AnimatedNumber={AnimatedNumber} />
       </div>
     </section>
   );
@@ -896,11 +820,21 @@ type CompositionModalProps = {
   open: boolean;
   onClose: () => void;
   announceId: string;
-  composicao: any[];
+  composicao: ItemComposicao[];
   setComposicao: any;
-  custoTotal?: number | string;
   AnimatedNumber?: React.ComponentType<{ value: number }>;
+  /** Incremente após salvar no banco para forçar recarga da composição. */
+  versao?: number;
 };
+
+const mapearComposicao = (row: any): ItemComposicao => ({
+  uid: row.uid,
+  codigo: row.code,
+  produto: row.product,
+  descricao: row.product,
+  custo: Number(row.current_cost) || 0,
+  quantidade: row.amount != null ? String(row.amount) : "1",
+});
 
 export default function CompositionModal({
   open,
@@ -909,16 +843,25 @@ export default function CompositionModal({
   composicao,
   setComposicao,
   AnimatedNumber,
+  versao = 0,
 }: CompositionModalProps) {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const carregouRef = useRef<string | null>(null);
+  const carregadoKeyRef = useRef<string | null>(null);
 
-  // Carrega a composição existente ao abrir o modal
+  // Carrega a composição ao abrir, ou quando o id/versão mudam.
+  // O cleanup cancela respostas atrasadas de uma carga anterior.
   useEffect(() => {
-    if (!open || !announceId) return;
-    if (carregouRef.current === announceId) return;
+    if (!open) {
+      carregadoKeyRef.current = null;
+      return;
+    }
+    if (!announceId) return;
 
+    const key = `${announceId}:${versao}`;
+    if (carregadoKeyRef.current === key) return;
+
+    let cancelado = false;
     setCarregando(true);
     setErro(null);
 
@@ -927,6 +870,8 @@ export default function CompositionModal({
         .schema("newsystem")
         .rpc("get_announce_composition", { p_announce_id: announceId });
 
+      if (cancelado) return;
+
       if (error) {
         console.error("Erro ao carregar composição:", error);
         setErro("Não foi possível carregar a composição.");
@@ -934,43 +879,25 @@ export default function CompositionModal({
         return;
       }
 
-      const mapeado = (data || []).map((row: any) => ({
-        uid: row.uid,
-        codigo: row.code,
-        produto: row.product,
-        descricao: row.product,
-        custo: Number(row.current_cost) || 0,
-        quantidade: row.amount != null ? String(row.amount) : "1",
-      }));
-
-      setComposicao(mapeado);
-      carregouRef.current = announceId;
+      setComposicao((data ?? []).map(mapearComposicao));
+      carregadoKeyRef.current = key;
       setCarregando(false);
     })();
-  }, [open, announceId, setComposicao]);
 
-  // Reseta o "cache" de carregamento quando o modal fecha, para recarregar na próxima abertura
-  useEffect(() => {
-    if (!open) carregouRef.current = null;
-  }, [open]);
+    return () => {
+      cancelado = true;
+    };
+  }, [open, announceId, versao, setComposicao]);
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent
         onEscapeKeyDown={(e) => {
-          // Fecha apenas este modal e impede que o ESC se
-          // propague e feche também a tela de edição do anúncio.
+          // Fecha só este modal, sem propagar o ESC para a tela de edição
           e.stopPropagation();
           onClose();
         }}
-        className="
-          !rounded-none bg-[#0a0a0a] border border-neutral-800 shadow-2xl
-          w-[calc(100vw-16px)] max-w-[calc(100vw-16px)]
-          max-h-[calc(100dvh-16px)]
-          sm:w-[95%] sm:max-w-5xl
-          lg:max-w-6xl
-          flex flex-col overflow-hidden p-0
-        "
+        className="!rounded-none bg-[#0a0a0a] border border-neutral-800 shadow-2xl w-[calc(100vw-16px)] max-w-[calc(100vw-16px)] max-h-[calc(100dvh-16px)] sm:w-[95%] sm:max-w-5xl lg:max-w-6xl flex flex-col overflow-hidden p-0"
       >
         <DialogHeader className="shrink-0 border-b border-neutral-900 px-4 pt-4 pb-3 sm:px-6">
           <DialogTitle className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-neutral-300">
@@ -1005,11 +932,7 @@ export default function CompositionModal({
           <button
             type="button"
             onClick={onClose}
-            className="
-              flex h-9 w-full items-center justify-center gap-2
-              bg-neutral-900 text-[12px] font-medium uppercase tracking-wide text-white
-              transition-opacity hover:opacity-90
-            "
+            className="flex h-9 w-full items-center justify-center gap-2 bg-neutral-900 text-[12px] font-medium uppercase tracking-wide text-white transition-opacity hover:opacity-90"
           >
             Fechar
           </button>

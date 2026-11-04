@@ -77,11 +77,8 @@ export const formatValorBR = (v: number | string): string => {
 //
 // Mantém os apelidos curtos "PK"/"SB" (compatibilidade com telas
 // antigas que usam sigla), mas NÃO bloqueia nem reescreve lojas
-// novas (ex: "PIKOT KIDS"). Antes, `includes("pikot")` casava
-// qualquer loja que contivesse "pikot" no nome e a substituía
-// silenciosamente por "Pikot Shop" — bug grave de integridade de
-// dados. Agora só os valores exatos de sigla/nome conhecido são
-// mapeados; qualquer outro texto passa como está.
+// novas (ex: "PIKOT KIDS"). Só os valores exatos de sigla/nome
+// conhecido são mapeados; qualquer outro texto passa como está.
 // ===========================================================
 
 const LOJA_CODIGO_MAP: Record<string, "PK" | "SB"> = {
@@ -225,6 +222,22 @@ export const calcCustoTotal = (composicao: ComposicaoItem[]) => {
     return total + quantidade * custo;
   }, 0);
 };
+
+// ===========================================================
+// ✅ Assinatura da composição para comparar conteúdo
+// (ignora custo e ordem; considera código e quantidade)
+// ===========================================================
+const normalizarComposicao = (lista: ComposicaoItem[]) =>
+  (Array.isArray(lista) ? lista : [])
+    .filter((item) => String(item?.codigo || "").trim() !== "")
+    .map((item) => ({
+      codigo: String(item.codigo).trim(),
+      quantidade: parseValorBR(item.quantidade),
+    }))
+    .sort((a, b) => a.codigo.localeCompare(b.codigo));
+
+const composicoesIguais = (a: ComposicaoItem[], b: ComposicaoItem[]) =>
+  JSON.stringify(normalizarComposicao(a)) === JSON.stringify(normalizarComposicao(b));
 
 // ===========================================================
 // Buscar variações do pai (via reference — sem FK física)
@@ -392,8 +405,6 @@ async function fetchAnuncioCompleto(
 /**
  * ✅ Prefetch — chame no onMouseEnter/onFocus de um item da lista.
  * Não atualiza nenhum estado de componente, só popula o cache.
- * Quando o usuário efetivamente abrir o anúncio, `carregarAnuncio`
- * vai encontrar os dados já prontos e exibir instantaneamente.
  */
 export async function prefetchAnuncio(id: string) {
   const idLimpo = String(id).trim();
@@ -437,6 +448,11 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
   const mountedRef = useRef(true);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // ✅ Linha de base do que está no banco (última carga ou último save).
+  // Usada para detectar se a referência e/ou a composição foram de fato alteradas.
+  const referenciaBaseRef = useRef<string>("");
+  const composicaoBaseRef = useRef<ComposicaoItem[]>([]);
+
   // snapshot para rollback do optimistic UI
   const preSaveSnapshotRef = useRef<{
     produto: Announce | null;
@@ -455,8 +471,7 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
   }, []);
 
   // ---------------------------------------------------------
-  // Carregar variações do pai (por reference) — chamada isolada,
-  // não usa closures de `produto` para evitar recriações do callback.
+  // Carregar variações do pai (por reference)
   // ---------------------------------------------------------
   const carregarVariacoes = useCallback(
     async (storeParam?: string, referenciaParam?: string | null) => {
@@ -515,6 +530,9 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
     const isFresh = cached && Date.now() - cached.timestamp < CACHE_TTL_MS;
 
     if (cached) {
+      referenciaBaseRef.current = normalizarReferencia(cached.produto?.reference);
+      composicaoBaseRef.current = cached.composicao;
+
       setProduto(cached.produto);
       setVariacoes(cached.variacoes);
       setComposicao(cached.composicao);
@@ -537,6 +555,8 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
 
       if (!entry) {
         if (!cached) {
+          referenciaBaseRef.current = "";
+          composicaoBaseRef.current = [];
           setProduto(null);
           setVariacoes([]);
           setComposicao([]);
@@ -544,6 +564,9 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
         }
         return;
       }
+
+      referenciaBaseRef.current = normalizarReferencia(entry.produto?.reference);
+      composicaoBaseRef.current = entry.composicao;
 
       setProduto(entry.produto);
       setVariacoes(entry.variacoes);
@@ -562,14 +585,17 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
   // ---------------------------------------------------------
   // ✅ Salvar anúncio (pai + variações) via RPC combinada
   // upsert_announce_with_variations — 1 única chamada de rede.
-  // Composição e canais continuam sendo RPCs separadas (regras próprias).
   //
-  // ✅ Envia p_id quando o produto já tiver um id (ex.: rascunho
-  // criado via create_draft_announce), garantindo UPDATE direto
-  // por id no banco em vez de gerar um registro novo por engano.
+  // Composição:
+  //  - Se a lista NÃO foi alterada pelo usuário, não é enviada.
+  //    Assim, a composição gerada pelo trigger após troca de
+  //    referência nunca é sobrescrita por uma lista obsoleta.
+  //  - Se a lista FOI alterada, é enviada com p_replace = true,
+  //    substituindo a composição atual pela editada.
+  //  - Se a referência mudou e a composição não, a composição é
+  //    recarregada do banco para refletir o que o trigger gerou.
   //
-  // ✅ channelsAtual: lista de canais (marketplaces) selecionados na
-  // UI. Se omitido, usa o `channels` atual do estado do hook.
+  // Canais continuam em RPC própria.
   // ---------------------------------------------------------
   const salvarAnuncio = useCallback(
     async (
@@ -605,6 +631,14 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
           ? String(produtoAtual.id).trim()
           : null;
 
+      // ✅ Detecta o que realmente mudou em relação ao banco
+      const referenciaMudou =
+        normalizarReferencia(reference) !== referenciaBaseRef.current;
+      const composicaoMudou = !composicoesIguais(
+        composicaoAtual,
+        composicaoBaseRef.current
+      );
+
       // -------------------------------------------------
       // OPTIMISTIC UI — assume sucesso e atualiza a tela já
       // -------------------------------------------------
@@ -613,6 +647,14 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
       setComposicao(composicaoAtual);
       setChannels(canaisFinal);
       setSaving(true);
+
+      const reverter = () => {
+        if (preSaveSnapshotRef.current) {
+          setProduto(preSaveSnapshotRef.current.produto);
+          setComposicao(preSaveSnapshotRef.current.composicao);
+          setChannels(preSaveSnapshotRef.current.channels);
+        }
+      };
 
       try {
         const listaVariacoes = Array.isArray(produtoAtual?.variacoes)
@@ -651,23 +693,19 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
 
         if (error) {
           console.error("Erro ao salvar anúncio:", error);
-          if (preSaveSnapshotRef.current) {
-            setProduto(preSaveSnapshotRef.current.produto);
-            setComposicao(preSaveSnapshotRef.current.composicao);
-            setChannels(preSaveSnapshotRef.current.channels);
-          }
+          reverter();
           return { success: false, error: error.message };
         }
 
         const announceId = String(data ?? produtoAtual.id);
 
-        // Composição segue como RPC própria (regra independente do pai)
-        if (announceId) {
+        // ✅ Composição: só envia se o usuário alterou a lista
+        if (announceId && composicaoMudou) {
           const items = (Array.isArray(composicaoAtual) ? composicaoAtual : [])
             .filter((item) => String(item?.codigo || "").trim() !== "")
             .map((item) => ({
               code: String(item.codigo).trim(),
-              quantidade: Number(item.quantidade) || 0,
+              quantidade: parseValorBR(item.quantidade),
             }));
 
           const { error: compError } = await supabase
@@ -675,15 +713,12 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
             .rpc("save_announce_composition", {
               p_announce_id: announceId,
               p_items: items,
+              p_replace: true,
             });
 
           if (compError) {
             console.error("Erro ao salvar composição:", compError);
-            if (preSaveSnapshotRef.current) {
-              setProduto(preSaveSnapshotRef.current.produto);
-              setComposicao(preSaveSnapshotRef.current.composicao);
-              setChannels(preSaveSnapshotRef.current.channels);
-            }
+            reverter();
             return { success: false, error: compError.message };
           }
         }
@@ -699,25 +734,29 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
 
           if (channelsError) {
             console.error("Erro ao salvar canais:", channelsError);
-            if (preSaveSnapshotRef.current) {
-              setProduto(preSaveSnapshotRef.current.produto);
-              setComposicao(preSaveSnapshotRef.current.composicao);
-              setChannels(preSaveSnapshotRef.current.channels);
-            }
+            reverter();
             return { success: false, error: channelsError.message };
           }
         }
+
+        // ✅ Se a referência mudou sem edição manual da composição,
+        // a composição atual é a que o trigger gerou: recarrega do banco.
+        let composicaoFinal = composicaoAtual;
+        if (announceId && referenciaMudou && !composicaoMudou) {
+          composicaoFinal = await fetchComposicao(announceId);
+          if (mountedRef.current) setComposicao(composicaoFinal);
+        }
+
+        // Nova linha de base = o que acabou de ser gravado
+        referenciaBaseRef.current = normalizarReferencia(reference);
+        composicaoBaseRef.current = composicaoFinal;
 
         invalidateAnuncioCache(announceId);
         preSaveSnapshotRef.current = null;
 
         return { success: true, announceId };
       } catch (e: any) {
-        if (preSaveSnapshotRef.current) {
-          setProduto(preSaveSnapshotRef.current.produto);
-          setComposicao(preSaveSnapshotRef.current.composicao);
-          setChannels(preSaveSnapshotRef.current.channels);
-        }
+        reverter();
         return { success: false, error: e?.message ?? "erro inesperado" };
       } finally {
         setSaving(false);
@@ -728,7 +767,6 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
 
   // ---------------------------------------------------------
   // 🔧 FALLBACK — salvar uma variação individual isolada
-  // (útil fora do fluxo principal, ex: editar só uma variação)
   // ---------------------------------------------------------
   const salvarVariacao = useCallback(async (variacao: Announce) => {
     const storeVal = toStoreName(variacao?.store);
@@ -765,7 +803,7 @@ export function useAnnounceEdit(id?: string, lojaParam?: string | null) {
 
   /**
    * 🔧 FALLBACK — salva um lote de variações em paralelo, fora do
-   * fluxo principal (que agora usa a RPC combinada em salvarAnuncio).
+   * fluxo principal (que usa a RPC combinada em salvarAnuncio).
    */
   const salvarVariacoesEmLote = useCallback(
     async (variacoesLista: Announce[]) => {

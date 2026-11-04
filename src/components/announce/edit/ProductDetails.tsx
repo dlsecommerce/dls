@@ -65,7 +65,6 @@ export default function ProductDetails({
     setProduto,
     composicao,
     setComposicao,
-    custoTotal,
     channels,
     setChannels,
     loading,
@@ -140,6 +139,9 @@ export default function ProductDetails({
   // clicar em "Salvar" no formulário principal.
   // -----------------------------------------------------------------
   const [showCompositionModal, setShowCompositionModal] = useState(false);
+
+  // Incrementado após salvar com sucesso para o modal recarregar a composição do banco
+  const [composicaoVersao, setComposicaoVersao] = useState(0);
 
   const handleOpenComposition = useCallback(() => {
     setShowCompositionModal(true);
@@ -252,6 +254,7 @@ export default function ProductDetails({
     const announceId = resultado.announceId;
 
     setProduto((prev) => (prev ? { ...prev, id: announceId } : prev));
+    setComposicaoVersao((v) => v + 1);
 
     toast.success(isEditing ? "Anúncio editado com sucesso!" : "Anúncio criado com sucesso!");
 
@@ -405,7 +408,7 @@ export default function ProductDetails({
         announceId={produtoId}
         composicao={composicao}
         setComposicao={setComposicao}
-        custoTotal={custoTotal}
+        versao={composicaoVersao}
         AnimatedNumber={AnimatedNumber}
       />
     </>
