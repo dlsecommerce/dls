@@ -1,5 +1,3 @@
-// src/app/api/announce/import/route.ts
-
 import { NextRequest, NextResponse } from "next/server";
 import { getPostgresClient } from "@/lib/postgres";
 import { getUserFromAccessToken, extractBearerToken } from "@/integrations/supabase/admin";
@@ -15,8 +13,7 @@ type RegistroInput = {
   reference: string;
   product: string | null;
   mark: string | null;
-  // ✅ Canais específicos desta linha (linha a linha). Se vazio/ausente,
-  // usa o array `channels` global enviado no corpo da requisição.
+  // Canais específicos desta linha. Se vazio/ausente, usa o array `channels` global.
   channels: string[];
 };
 
@@ -53,9 +50,8 @@ function isValidModo(m: unknown): m is ModoImportacao {
 }
 
 /**
- * Sanitiza a lista de canais recebida do cliente: aceita apenas
- * array de strings não vazias, remove duplicadas e limita o
- * tamanho (proteção contra payload malicioso/gigante).
+ * Aceita apenas array de strings não vazias, remove duplicadas
+ * e limita o tamanho (proteção contra payload gigante).
  */
 function sanitizeChannels(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
@@ -68,10 +64,8 @@ function sanitizeChannels(raw: unknown): string[] {
 }
 
 /**
- * ✅ Retorna uma chave estável (canônica) para um array de canais,
- * usada para agrupar anúncios que recebem exatamente o mesmo
- * conjunto de canais (permite fazer um único INSERT em lote por
- * grupo, em vez de um INSERT por anúncio).
+ * Chave canônica de um conjunto de canais, usada para agrupar
+ * anúncios que recebem exatamente os mesmos canais.
  */
 function channelsSignature(channels: string[]): string {
   return [...channels].sort().join("\u0000");
@@ -81,8 +75,8 @@ function keyOfInclusao(store: string, reference: string): string {
   return `${store}::ref::${reference}`;
 }
 
-// ✅ A constraint unq_announce_id_bling_active é sobre id_bling GLOBAL
-// (sem considerar store) — WHERE deleted_at IS NULL.
+// A constraint unq_announce_id_bling_active é sobre id_bling GLOBAL
+// (sem considerar store), com WHERE deleted_at IS NULL.
 function keyOfIdBling(idBling: string | null): string {
   return `bling::${idBling ?? ""}`;
 }
@@ -92,7 +86,7 @@ function keyOfAlteracao(store: string, idBling: string | null): string {
 }
 
 // -----------------------------------------------------------------------
-// PRÉ-CHECAGEM: verifica quais (store, reference) já existem e estão ativos
+// PRÉ-CHECAGEM (inclusão): verifica quais (store, reference) já existem ativos
 // -----------------------------------------------------------------------
 async function findExistingReferences(
   transaction: any,
@@ -123,9 +117,8 @@ async function findExistingReferences(
 }
 
 // -----------------------------------------------------------------------
-// PRÉ-CHECAGEM: verifica quais id_bling já existem ATIVOS no banco,
-// em QUALQUER loja, vinculados a uma referência diferente da enviada.
-// A constraint unq_announce_id_bling_active é global (sem store).
+// PRÉ-CHECAGEM (inclusão): verifica id_bling ATIVOS em QUALQUER loja,
+// vinculados a uma referência diferente da enviada.
 // -----------------------------------------------------------------------
 async function findConflictingIdBling(
   transaction: any,
@@ -159,9 +152,87 @@ async function findConflictingIdBling(
 }
 
 // -----------------------------------------------------------------------
-// ✅ Detecta id_bling duplicado DENTRO do próprio payload, vinculado a
-// referências diferentes. A constraint é global, então isso vale mesmo
-// entre linhas de lojas diferentes no mesmo arquivo.
+// PRÉ-CHECAGEM (alteração): só aceita anúncios ATIVOS localizados por
+// (store, id_bling). Nunca reativa excluídos. A nova referência não pode
+// pertencer a outro anúncio ativo da mesma loja.
+// -----------------------------------------------------------------------
+async function validarAlteracao(
+  transaction: any,
+  registros: RegistroInput[],
+  erros: RegistroResultado[]
+): Promise<RegistroInput[]> {
+  // store::bling::idBling -> referência atual do anúncio ativo
+  const ativosPorBling = new Map<string, string>();
+  // store::ref::reference -> id_bling do anúncio ativo que ocupa a referência
+  const donoDaRef = new Map<string, string>();
+
+  const totalBatches = Math.ceil(registros.length / CHECK_BATCH_SIZE);
+
+  for (let i = 0; i < totalBatches; i++) {
+    const batch = registros.slice(i * CHECK_BATCH_SIZE, (i + 1) * CHECK_BATCH_SIZE);
+    const stores = batch.map((r) => r.store);
+    const idBlings = batch.map((r) => r.id_bling ?? "");
+    const references = batch.map((r) => r.reference);
+
+    const ativos: any[] = await transaction`
+      select a.store, a.id_bling, a.reference
+      from newsystem.announce a
+      join unnest(${stores}::text[], ${idBlings}::text[]) as s(store, id_bling)
+        on a.store = s.store and a.id_bling = s.id_bling
+      where a.deleted_at is null
+    `;
+
+    for (const r of ativos) {
+      ativosPorBling.set(keyOfAlteracao(r.store, r.id_bling), r.reference);
+    }
+
+    const ocupantes: any[] = await transaction`
+      select a.store, a.id_bling, a.reference
+      from newsystem.announce a
+      join unnest(${stores}::text[], ${references}::text[]) as s(store, reference)
+        on a.store = s.store and a.reference = s.reference
+      where a.deleted_at is null
+    `;
+
+    for (const r of ocupantes) {
+      donoDaRef.set(keyOfInclusao(r.store, r.reference), r.id_bling);
+    }
+  }
+
+  const idsVistos = new Set<string>();
+  const refsNoArquivo = new Map<string, string>();
+  const validos: RegistroInput[] = [];
+
+  for (const r of registros) {
+    const kId = keyOfAlteracao(r.store, r.id_bling);
+    const kRef = keyOfInclusao(r.store, r.reference);
+
+    const rejeitar = (message: string) =>
+      erros.push({ store: r.store, reference: r.reference, status: "erro", message });
+
+    if (!ativosPorBling.has(kId)) {
+      rejeitar(
+        "ID Bling não encontrado entre os anúncios ativos desta loja. Registros excluídos não são reativados por alteração."
+      );
+    } else if (idsVistos.has(kId)) {
+      rejeitar("ID Bling repetido no arquivo.");
+    } else if (donoDaRef.has(kRef) && donoDaRef.get(kRef) !== r.id_bling) {
+      rejeitar("Referência já pertence a outro anúncio ativo desta loja.");
+    } else if (refsNoArquivo.has(kRef) && refsNoArquivo.get(kRef) !== r.id_bling) {
+      rejeitar("Referência repetida no arquivo para outro ID Bling.");
+    } else {
+      idsVistos.add(kId);
+      refsNoArquivo.set(kRef, r.id_bling ?? "");
+      validos.push(r);
+    }
+  }
+
+  return validos;
+}
+
+// -----------------------------------------------------------------------
+// Detecta id_bling duplicado DENTRO do payload, vinculado a referências
+// diferentes. A constraint é global, então vale entre lojas também.
 // -----------------------------------------------------------------------
 function filterIntraBatchIdBlingDuplicates(
   registros: RegistroInput[],
@@ -195,9 +266,7 @@ function filterIntraBatchIdBlingDuplicates(
 }
 
 // -----------------------------------------------------------------------
-// INCLUSÃO (apenas registros já filtrados como "novos" e sem conflito de id_bling)
-// Retorna as linhas afetadas com sua chave de correspondência (key),
-// usadas depois para localizar o registro original e seus `channels`.
+// INCLUSÃO (apenas registros já filtrados como novos e sem conflito)
 // -----------------------------------------------------------------------
 async function insertBatchOnlyNew(
   transaction: any,
@@ -244,8 +313,7 @@ async function insertBatchOnlyNew(
 }
 
 // -----------------------------------------------------------------------
-// ALTERAÇÃO — idem, retorna as linhas afetadas com sua chave de
-// correspondência (key).
+// ALTERAÇÃO: só atualiza anúncios ATIVOS. Não reativa excluídos.
 // -----------------------------------------------------------------------
 async function updateBatchOnlyExisting(
   transaction: any,
@@ -263,8 +331,7 @@ async function updateBatchOnlyExisting(
       reference  = s.reference,
       product    = s.product,
       mark       = s.mark,
-      updated_at = now(),
-      deleted_at = null
+      updated_at = now()
     from unnest(
       ${stores}::text[],
       ${idBlings}::text[],
@@ -272,7 +339,9 @@ async function updateBatchOnlyExisting(
       ${products}::text[],
       ${marks}::text[]
     ) as s(store, id_bling, reference, product, mark)
-    where a.store = s.store and a.id_bling = s.id_bling
+    where a.store = s.store
+      and a.id_bling = s.id_bling
+      and a.deleted_at is null
     returning a.id, a.store, a.id_bling
   `;
 
@@ -289,22 +358,9 @@ async function updateBatchOnlyExisting(
 }
 
 // -----------------------------------------------------------------------
-// ✅ Vincula os canais de marketplace selecionados na UI aos anúncios
-// afetados pela importação (inclusão ou alteração).
-//
-// Insere direto em `newsystem.marketplace` — o trigger
-// `trg_marketplace_apply_rules` (BEFORE INSERT) calcula preço/margem
-// normalmente, igual ao fluxo manual do ChannelSelector.
-//
-// `ON CONFLICT DO NOTHING` cobre AMBOS os índices únicos parciais:
-//   - (store, channel, announce_id) WHERE deleted_at IS NULL → já
-//     vinculado a este canal, não faz nada.
-//   - (channel, id_bling) WHERE deleted_at IS NULL → id_bling já em
-//     uso nesse canal por outro anúncio: ignora silenciosamente.
-//
-// Como id_bling agora é OBRIGATÓRIO para criar/alterar o anúncio
-// (ver validação no POST), todo `announceId` passado aqui já tem
-// id_bling preenchido — o vínculo sempre pode ser tentado.
+// Vincula os canais de marketplace aos anúncios afetados.
+// O trigger trg_marketplace_apply_rules calcula preço/margem normalmente.
+// ON CONFLICT DO NOTHING cobre os índices únicos parciais de marketplace.
 // -----------------------------------------------------------------------
 async function linkChannelsToAnnounces(
   transaction: any,
@@ -328,11 +384,8 @@ async function linkChannelsToAnnounces(
 }
 
 /**
- * ✅ Agrupa uma lista de anúncios afetados (id + key de correspondência)
- * pelo conjunto de canais efetivo de cada registro original, e chama
- * `linkChannelsToAnnounces` uma vez por grupo — permitindo que cada
- * linha do arquivo tenha seus próprios canais, com o mínimo de
- * round-trips ao banco (agrupa quem tem exatamente o mesmo conjunto).
+ * Agrupa os anúncios afetados pelo conjunto de canais efetivo de cada
+ * registro, e chama linkChannelsToAnnounces uma vez por grupo.
  */
 async function linkChannelsPerRow(
   transaction: any,
@@ -413,9 +466,10 @@ async function processRowByRow(
             reference  = ${registro.reference},
             product    = ${registro.product},
             mark       = ${registro.mark},
-            updated_at = now(),
-            deleted_at = null
-          where store = ${registro.store} and id_bling = ${registro.id_bling}
+            updated_at = now()
+          where store = ${registro.store}
+            and id_bling = ${registro.id_bling}
+            and deleted_at is null
           returning id
         `;
 
@@ -424,7 +478,8 @@ async function processRowByRow(
             store: registro.store,
             reference: registro.reference,
             status: "erro",
-            message: "ID Bling não encontrado. Use o modo 'Inclusão' para criá-lo, ou verifique se o ID Bling está correto.",
+            message:
+              "ID Bling não encontrado entre os anúncios ativos desta loja. Registros excluídos não são reativados por alteração.",
           });
           continue;
         }
@@ -470,9 +525,6 @@ async function processAllBatches(
     const batch = registros.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE);
     const savepointName = `sp_batch_${i}`;
 
-    // ✅ Mapa key → registro do próprio batch, usado para localizar o
-    // `channels` efetivo (por linha, com fallback ao global) de cada
-    // anúncio afetado pelo INSERT/UPDATE em massa.
     const registrosPorKey = new Map<string, RegistroInput>();
     for (const registro of batch) {
       const key =
@@ -510,7 +562,7 @@ async function processAllBatches(
             message:
               modo === "inclusao"
                 ? "Referência já existe. Use o modo 'Alteração' para atualizá-la."
-                : "ID Bling não encontrado. Use o modo 'Inclusão' para criá-lo, ou verifique se o ID Bling está correto.",
+                : "ID Bling não encontrado entre os anúncios ativos desta loja. Registros excluídos não são reativados por alteração.",
           });
         }
       }
@@ -521,7 +573,6 @@ async function processAllBatches(
       const processados = await processRowByRow(transaction, batch, modo, erros);
       importados += processados.length;
 
-      // ✅ Fallback linha a linha também respeita canais por registro.
       const grupos = new Map<string, { channels: string[]; ids: string[] }>();
       for (const { id, channels } of processados) {
         const efetivo = channels.length > 0 ? channels : channelsGlobal;
@@ -569,8 +620,6 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   const modo: ModoImportacao = body.modo;
-  // ✅ Canais globais (fallback): usados por qualquer linha que não
-  // defina o seu próprio `channels`.
   const channelsGlobal = sanitizeChannels(body?.channels);
   const registrosRaw = Array.isArray(body?.registros) ? body.registros : null;
 
@@ -596,8 +645,6 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   for (const raw of registrosRaw) {
     if (isValidRegistro(raw)) {
-      // ✅ Prioriza `raw.channels` (canais específicos da linha). Se
-      // ausente/vazio, usa o array global como fallback.
       const channelsLinha = sanitizeChannels((raw as any)?.channels);
       const channelsEfetivo = channelsLinha.length > 0 ? channelsLinha : channelsGlobal;
 
@@ -619,8 +666,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
   }
 
-  // ✅ REGRA: ID Bling é obrigatório em AMBOS os modos. Sem ID Bling,
-  // o registro não é criado nem alterado — só rejeitado com erro.
+  // ID Bling é obrigatório em AMBOS os modos.
   const semIdBling = registros.filter((r) => !r.id_bling || String(r.id_bling).trim() === "");
 
   for (const r of semIdBling) {
@@ -636,8 +682,6 @@ export async function POST(request: NextRequest): Promise<Response> {
     (r) => r.id_bling && String(r.id_bling).trim() !== ""
   );
 
-  // ✅ Remove duplicidade de id_bling dentro do próprio arquivo
-  // (constraint é global, então aplica-se independente do modo)
   registrosParaProcessar = filterIntraBatchIdBlingDuplicates(registrosParaProcessar, erros);
 
   if (registrosParaProcessar.length === 0) {
@@ -647,14 +691,11 @@ export async function POST(request: NextRequest): Promise<Response> {
     );
   }
 
-  // ✅ Aviso: nenhum canal (nem por linha, nem global) foi definido —
-  // os registros afetados serão importados/alterados, mas SEM vínculo
-  // em nenhum marketplace.
   const nenhumRegistroTemCanal = registrosParaProcessar.every((r) => r.channels.length === 0);
 
   if (nenhumRegistroTemCanal) {
     warnings.push(
-      `Nenhum canal de marketplace foi selecionado. Os registros importados NÃO serão vinculados a nenhum canal.`
+      "Nenhum canal de marketplace foi selecionado. Os registros importados NÃO serão vinculados a nenhum canal."
     );
   }
 
@@ -683,14 +724,9 @@ export async function POST(request: NextRequest): Promise<Response> {
         { prepare: false }
       );
 
-      let registrosFinais = registrosParaProcessar;
+      let registrosFinais: RegistroInput[] = registrosParaProcessar;
 
-      // -----------------------------------------------------------------
-      // PRÉ-CHECAGEM (somente no modo inclusão):
-      // 1) Rejeita quem já existe por (store, reference)
-      // 2) ✅ Rejeita quem tem id_bling já vinculado a OUTRA referência ativa
-      //    em QUALQUER loja (constraint global)
-      // -----------------------------------------------------------------
+      // PRÉ-CHECAGEM DA INCLUSÃO
       if (modo === "inclusao") {
         const existentes = await findExistingReferences(transaction, registrosParaProcessar);
 
@@ -730,6 +766,11 @@ export async function POST(request: NextRequest): Promise<Response> {
         }
 
         registrosFinais = novos;
+      }
+
+      // PRÉ-CHECAGEM DA ALTERAÇÃO
+      if (modo === "alteracao") {
+        registrosFinais = await validarAlteracao(transaction, registrosParaProcessar, erros);
       }
 
       if (registrosFinais.length > 0) {
