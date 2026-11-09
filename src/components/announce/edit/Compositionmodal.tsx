@@ -57,6 +57,7 @@ const formatBR = (v: any) => {
   });
 };
 
+// Converte texto decimal (pt-BR ou en) em número. Aceita "0,5", "0.5", ",5", "1.000,50".
 const parseInputMoney = (raw: string): number => {
   if (!raw || !String(raw).trim()) return NaN;
   let str = String(raw).trim().replace(/[^\d.,-]/g, "");
@@ -76,15 +77,22 @@ const parseInputMoney = (raw: string): number => {
 };
 
 // Mantém só dígitos e UM separador decimal. Ponto vira vírgula.
-// Assim "0.50", "0,50" e "0,5." resultam em "0,50", "0,50" e "0,5".
-const sanitizeMoneyInput = (raw: string): string => {
+// Assim "0.5", "0,5" e "0,5." resultam em "0,5", "0,5" e "0,5".
+const sanitizeDecimalInput = (raw: string): string => {
   const limpo = String(raw ?? "").replace(/[^\d.,]/g, "").replace(/\./g, ",");
   const i = limpo.indexOf(",");
   if (i === -1) return limpo;
   return limpo.slice(0, i + 1) + limpo.slice(i + 1).replace(/,/g, "");
 };
 
-const toInteger = (value: string) => String(value ?? "").replace(/[^\d]/g, "");
+// Quantidade decimal. Retorna 0 se inválida ou não positiva.
+const parseQuantidade = (raw: unknown): number => {
+  const n = parseInputMoney(String(raw ?? ""));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
+
+// Exibe a quantidade com vírgula decimal, ex.: 0.5 -> "0,5"
+const formatQuantidade = (n: number): string => String(n).replace(".", ",");
 
 // Escapa curingas do ILIKE (% e _) para que o termo seja tratado literalmente
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, "\\$&");
@@ -232,8 +240,8 @@ const SuggestionDropdown: React.FC<SuggestionDropdownProps> = ({
 
 // ---------------------------------------------------------------------------
 // Linha de item de custo
-// Não recebe a composição inteira: recebe só o próprio item e callbacks
-// estáveis. Alterações passam por `onAtualizar`, que usa atualização funcional.
+// Quantidade e custo ficam em rascunho enquanto o usuário digita e só são
+// gravados no estado ao sair do campo ou ao pressionar Enter.
 // ---------------------------------------------------------------------------
 type CostItemRowProps = {
   item: ItemComposicao;
@@ -280,8 +288,9 @@ const CostItemRowBase: React.FC<CostItemRowProps> = ({
   const [buscandoCodigo, setBuscandoCodigo] = useState(false);
   const [codigoErro, setCodigoErro] = useState<string | null>(null);
   const [copiado, setCopiado] = useState(false);
-  // null = não está editando o custo; string = rascunho digitado
+  // null = não está editando; string = rascunho digitado
   const [custoDraft, setCustoDraft] = useState<string | null>(null);
+  const [qtdDraft, setQtdDraft] = useState<string | null>(null);
 
   useEffect(() => {
     setCodigoLocal(item.codigo || "");
@@ -326,6 +335,18 @@ const CostItemRowBase: React.FC<CostItemRowProps> = ({
     } finally {
       setBuscandoCodigo(false);
     }
+  };
+
+  const commitQuantidade = () => {
+    const n = parseQuantidade(qtdDraft ?? String(item.quantidade ?? ""));
+    onAtualizar(idx, { quantidade: formatQuantidade(n > 0 ? n : 1) });
+    setQtdDraft(null);
+  };
+
+  const commitCusto = () => {
+    const n = parseInputMoney(custoDraft ?? "");
+    onAtualizar(idx, { custo: Number.isFinite(n) ? n : 0 });
+    setCustoDraft(null);
   };
 
   const copiarCustoUnitario = async () => {
@@ -415,16 +436,20 @@ const CostItemRowBase: React.FC<CostItemRowProps> = ({
             <Input
               ref={setRef(1)}
               type="text"
-              inputMode="numeric"
-              value={String(item.quantidade ?? "")}
-              onChange={(e) => onAtualizar(idx, { quantidade: toInteger(e.target.value) })}
-              onBlur={() =>
-                onAtualizar(idx, (it) => ({
-                  quantidade: (Number(it.quantidade) || 0) > 0 ? it.quantidade : "1",
-                }))
-              }
-              onKeyDown={(e) => onGridNav(e, idx, 1)}
-              className="!h-4 !w-8 !border-0 !bg-transparent !p-0 !text-[11px] !text-neutral-300 !shadow-none !outline-none focus:!ring-0 focus:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none"
+              inputMode="decimal"
+              value={qtdDraft !== null ? qtdDraft : String(item.quantidade ?? "")}
+              onFocus={() => setQtdDraft(String(item.quantidade ?? ""))}
+              onChange={(e) => setQtdDraft(sanitizeDecimalInput(e.target.value))}
+              onBlur={commitQuantidade}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                  return;
+                }
+                onGridNav(e, idx, 1);
+              }}
+              className="!h-4 !w-10 !border-0 !bg-transparent !p-0 !text-[11px] !text-neutral-300 !shadow-none !outline-none focus:!ring-0 focus:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none"
             />
           </div>
         </div>
@@ -456,14 +481,16 @@ const CostItemRowBase: React.FC<CostItemRowProps> = ({
               placeholder="0,00"
               value={custoDraft !== null ? custoDraft : formatBR(item.custo)}
               onFocus={() => setCustoDraft(custoZero ? "" : String(custoNum).replace(".", ","))}
-              onBlur={() => setCustoDraft(null)}
-              onChange={(e) => {
-                const valor = sanitizeMoneyInput(e.target.value);
-                setCustoDraft(valor);
-                const n = parseInputMoney(valor);
-                onAtualizar(idx, { custo: Number.isFinite(n) ? n : 0 });
+              onChange={(e) => setCustoDraft(sanitizeDecimalInput(e.target.value))}
+              onBlur={commitCusto}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                  return;
+                }
+                onGridNav(e, idx, 2);
               }}
-              onKeyDown={(e) => onGridNav(e, idx, 2)}
               className={`!h-full !w-16 !border-0 !bg-transparent !p-0 !text-right !text-[13px] !font-semibold !shadow-none !outline-none focus:!ring-0 focus:!outline-none focus-visible:!ring-0 focus-visible:!ring-offset-0 focus-visible:!outline-none ${
                 custoZero ? "!text-neutral-600" : "!text-[#1a8ceb]"
               }`}
@@ -509,7 +536,7 @@ const SummaryCard: React.FC<SummaryCardProps> = ({ composicaoSegura, custoTotalR
       {composicaoSegura.length > 0 ? (
         composicaoSegura.map((item, i) => {
           const desc = getRowDescription(item) || `Item ${i + 1}`;
-          const qtd = parseInt(String(item.quantidade ?? "1"), 10) || 0;
+          const qtd = parseQuantidade(item.quantidade);
           const subtotal = (Number(item.custo) || 0) * qtd;
 
           return (
@@ -517,7 +544,9 @@ const SummaryCard: React.FC<SummaryCardProps> = ({ composicaoSegura, custoTotalR
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[12px] font-semibold text-[#1a8ceb]">
                   {item.codigo || `Item ${i + 1}`}
-                  {qtd !== 1 && <span className="ml-1 text-neutral-600">× {qtd}</span>}
+                  {qtd !== 1 && (
+                    <span className="ml-1 text-neutral-600">× {formatQuantidade(qtd)}</span>
+                  )}
                 </p>
                 <p className="truncate text-[11px] text-neutral-600">{desc}</p>
               </div>
@@ -751,7 +780,7 @@ const CompositionSection: React.FC<CompositionSectionProps> = ({
   const custoTotalReal = useMemo(
     () =>
       lista.reduce((acc, item) => {
-        const qtd = parseInt(String(item.quantidade ?? "1"), 10) || 0;
+        const qtd = parseQuantidade(item.quantidade);
         return acc + (Number(item.custo) || 0) * qtd;
       }, 0),
     [lista]
@@ -842,7 +871,7 @@ const mapearComposicao = (row: any): ItemComposicao => ({
   produto: row.product,
   descricao: row.product,
   custo: Number(row.current_cost) || 0,
-  quantidade: row.amount != null ? String(row.amount) : "1",
+  quantidade: row.amount != null ? formatQuantidade(Number(row.amount)) : "1",
 });
 
 export default function CompositionModal({
