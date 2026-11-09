@@ -75,6 +75,15 @@ const parseInputMoney = (raw: string): number => {
   return Number.isFinite(n) ? n : NaN;
 };
 
+// Mantém só dígitos e UM separador decimal. Ponto vira vírgula.
+// Assim "0.50", "0,50" e "0,5." resultam em "0,50", "0,50" e "0,5".
+const sanitizeMoneyInput = (raw: string): string => {
+  const limpo = String(raw ?? "").replace(/[^\d.,]/g, "").replace(/\./g, ",");
+  const i = limpo.indexOf(",");
+  if (i === -1) return limpo;
+  return limpo.slice(0, i + 1) + limpo.slice(i + 1).replace(/,/g, "");
+};
+
 const toInteger = (value: string) => String(value ?? "").replace(/[^\d]/g, "");
 
 // Escapa curingas do ILIKE (% e _) para que o termo seja tratado literalmente
@@ -449,7 +458,7 @@ const CostItemRowBase: React.FC<CostItemRowProps> = ({
               onFocus={() => setCustoDraft(custoZero ? "" : String(custoNum).replace(".", ","))}
               onBlur={() => setCustoDraft(null)}
               onChange={(e) => {
-                const valor = e.target.value;
+                const valor = sanitizeMoneyInput(e.target.value);
                 setCustoDraft(valor);
                 const n = parseInputMoney(valor);
                 onAtualizar(idx, { custo: Number.isFinite(n) ? n : 0 });

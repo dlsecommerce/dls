@@ -1,5 +1,3 @@
-// app/api/composicao/import/route.ts
-
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { createClient } from "@supabase/supabase-js";
@@ -21,16 +19,28 @@ type ResultadoLinha = {
   motivo: string;
 };
 
+type MotivoCodigo =
+  | "id_bling_ausente"
+  | "codigo_ausente"
+  | "quantidade_invalida"
+  | "quantidade_ambigua"
+  | "duplicado_arquivo";
+
 type SkippedDetalhe = {
   linha: number;
   id_bling: string;
   store: string;
   reference: string;
   code: string;
+  motivo_codigo: MotivoCodigo;
   motivo: string;
 };
 
 type ModoImportacaoComposicao = "merge" | "replace";
+
+type ResultadoQuantidade =
+  | { ok: true; valor: number }
+  | { ok: false; codigo: "quantidade_invalida" | "quantidade_ambigua"; motivo: string };
 
 const MAX_REGISTROS = 5000;
 const MAX_FILE_SIZE_MB = 15;
@@ -66,17 +76,87 @@ function findValue(normalized: Record<string, any>, aliases: string[]): string {
   return key ? String(normalized[key] ?? "").trim() : "";
 }
 
-function parseAmount(raw: unknown): number | null {
-  if (raw === null || raw === undefined || raw === "") return null;
-
-  if (typeof raw === "number") {
-    return Number.isFinite(raw) && raw > 0 ? raw : null;
+/**
+ * Interpreta a quantidade da planilha.
+ *
+ * - number: usado direto (precisa ser > 0).
+ * - texto com vírgula e ponto: o último separador é o decimal.
+ * - texto só com vírgula: vírgula é decimal ("0,5" -> 0.5).
+ * - texto só com ponto: "0.5" e "2.25" são decimais, mas ponto seguido de
+ *   3 dígitos ("1.000") é ambíguo (milhar ou decimal) e é rejeitado,
+ *   para não gerar quantidade errada sem aviso.
+ */
+function parseQuantidade(raw: unknown): ResultadoQuantidade {
+  if (raw === null || raw === undefined || String(raw).trim() === "") {
+    return { ok: false, codigo: "quantidade_invalida", motivo: "Quantidade não informada." };
   }
 
-  const normalized = String(raw).trim().replace(/\./g, "").replace(",", ".");
-  const parsed = Number(normalized);
+  if (typeof raw === "number") {
+    if (Number.isFinite(raw) && raw > 0) return { ok: true, valor: raw };
+    return {
+      ok: false,
+      codigo: "quantidade_invalida",
+      motivo: `Quantidade inválida (${raw}). Deve ser maior que zero.`,
+    };
+  }
 
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  const original = String(raw).trim();
+  const s = original.replace(/\s+/g, "");
+
+  if (!/^[0-9.,]+$/.test(s)) {
+    return {
+      ok: false,
+      codigo: "quantidade_invalida",
+      motivo: `Quantidade inválida ("${original}"). Use apenas números, com vírgula ou ponto decimal.`,
+    };
+  }
+
+  const temVirgula = s.includes(",");
+  const temPonto = s.includes(".");
+  let normalizado: string;
+
+  if (temVirgula && temPonto) {
+    if (s.lastIndexOf(",") > s.lastIndexOf(".")) {
+      // "1.000,5" -> "1000.5"
+      normalizado = s.replace(/\./g, "").replace(",", ".");
+    } else {
+      // "1,000.5" -> "1000.5"
+      normalizado = s.replace(/,/g, "");
+    }
+  } else if (temVirgula) {
+    const partes = s.split(",");
+    if (partes.length > 2) {
+      return {
+        ok: false,
+        codigo: "quantidade_invalida",
+        motivo: `Quantidade inválida ("${original}"). Use apenas uma vírgula decimal.`,
+      };
+    }
+    normalizado = s.replace(",", ".");
+  } else if (temPonto) {
+    const partes = s.split(".");
+    if (partes.length > 2 || (partes.length === 2 && partes[1].length === 3)) {
+      return {
+        ok: false,
+        codigo: "quantidade_ambigua",
+        motivo: `Quantidade ambígua ("${original}"): ponto seguido de 3 dígitos pode ser milhar ou decimal. Use vírgula para decimal (ex.: "${partes[0]},${partes[1] ?? ""}") ou um número sem separador.`,
+      };
+    }
+    normalizado = s;
+  } else {
+    normalizado = s;
+  }
+
+  const valor = Number(normalizado);
+  if (!Number.isFinite(valor) || valor <= 0) {
+    return {
+      ok: false,
+      codigo: "quantidade_invalida",
+      motivo: `Quantidade inválida ("${original}", interpretada como ${normalizado}). Deve ser maior que zero.`,
+    };
+  }
+
+  return { ok: true, valor };
 }
 
 function parseMode(raw: FormDataEntryValue | null): ModoImportacaoComposicao {
@@ -84,8 +164,6 @@ function parseMode(raw: FormDataEntryValue | null): ModoImportacaoComposicao {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  // ✅ LOG: id único por requisição, facilita rastrear no console
-  // quando há importações concorrentes/paralelas.
   const requestId = Math.random().toString(36).slice(2, 8);
   const logPrefix = `[composicao/import:${requestId}]`;
   const startedAt = Date.now();
@@ -129,7 +207,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    console.info(`${logPrefix} Usuário autenticado:`, userData.user.email);
+    const usuario = userData.user.email ?? userData.user.id;
+    console.info(`${logPrefix} Usuário autenticado:`, usuario);
 
     // ---------- 2. Leitura do arquivo ----------
     const formData = await req.formData();
@@ -186,31 +265,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const sheet = workbook.Sheets[sheetName];
     const raw = XLSX.utils.sheet_to_json<RawRow>(sheet, { raw: true, defval: "" });
 
-    // ✅ LOG: cabeçalhos reais encontrados na planilha — essencial
-    // pra detectar nome de coluna diferente do esperado.
     if (raw.length > 0) {
       console.info(`${logPrefix} Colunas detectadas na planilha:`, Object.keys(raw[0]));
-      console.info(`${logPrefix} Primeira linha (amostra bruta):`, raw[0]);
     }
 
     const nonEmptyRaw = raw.filter((row) =>
       Object.values(row).some((v) => String(v ?? "").trim() !== "")
     );
 
-    console.info(`${logPrefix} Total de linhas lidas (raw):`, raw.length);
-    console.info(`${logPrefix} Total de linhas não-vazias:`, nonEmptyRaw.length);
+    console.info(`${logPrefix} Linhas lidas: ${raw.length} (não-vazias: ${nonEmptyRaw.length})`);
 
     if (nonEmptyRaw.length === 0) {
       return NextResponse.json({ error: "A planilha está vazia." }, { status: 400 });
     }
 
     if (nonEmptyRaw.length > MAX_REGISTROS) {
-      console.warn(
-        `${logPrefix} Excedeu MAX_REGISTROS:`,
-        nonEmptyRaw.length,
-        ">",
-        MAX_REGISTROS
-      );
+      console.warn(`${logPrefix} Excedeu MAX_REGISTROS:`, nonEmptyRaw.length, ">", MAX_REGISTROS);
       return NextResponse.json(
         {
           error: `A importação não pode ultrapassar ${MAX_REGISTROS.toLocaleString(
@@ -222,13 +292,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     // ---------- 3. Normalização e validação linha a linha ----------
-    // ✅ Cada item registra os identificadores da linha (id_bling, store,
-    // reference, code) além do motivo — permite ao frontend montar uma
-    // tabela detalhada "linha X da planilha falhou por Y", sem precisar
-    // adivinhar nada a partir de um erro genérico.
     const skippedDetalhado: SkippedDetalhe[] = [];
     const registros: Record<string, unknown>[] = [];
-    const chavesVistas = new Map<string, number>();
+    const chavesVistas = new Map<string, { linha: number; amount: number }>();
+
+    const pular = (
+      linha: number,
+      idBling: string,
+      store: string,
+      reference: string,
+      code: string,
+      motivo_codigo: MotivoCodigo,
+      motivo: string
+    ) => {
+      skippedDetalhado.push({ linha, id_bling: idBling, store, reference, code, motivo_codigo, motivo });
+    };
 
     for (let index = 0; index < nonEmptyRaw.length; index++) {
       const row = nonEmptyRaw[index];
@@ -248,55 +326,36 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const amountRaw = amountRawKey ? normalized[amountRawKey] : undefined;
 
       if (!idBling) {
-        skippedDetalhado.push({
-          linha: excelLine,
-          id_bling: "",
-          store,
-          reference,
-          code,
-          motivo: "ID Bling não informado.",
-        });
+        pular(excelLine, "", store, reference, code, "id_bling_ausente", "ID Bling não informado.");
         continue;
       }
+
       if (!code) {
-        skippedDetalhado.push({
-          linha: excelLine,
-          id_bling: idBling,
-          store,
-          reference,
-          code: "",
-          motivo: "Código do Item não informado.",
-        });
+        pular(excelLine, idBling, store, reference, "", "codigo_ausente", "Código do Item não informado.");
         continue;
       }
 
-      const amount = parseAmount(amountRaw);
-      if (amount === null) {
-        skippedDetalhado.push({
-          linha: excelLine,
-          id_bling: idBling,
-          store,
-          reference,
-          code,
-          motivo: `Quantidade inválida ("${amountRaw ?? ""}"). Deve ser um número maior que zero.`,
-        });
+      const quantidade = parseQuantidade(amountRaw);
+      if (!quantidade.ok) {
+        pular(excelLine, idBling, store, reference, code, quantidade.codigo, quantidade.motivo);
         continue;
       }
 
+      const amount = quantidade.valor;
       const chave = `${idBling}::${code}`;
-      const linhaAnterior = chavesVistas.get(chave);
-      if (linhaAnterior !== undefined) {
-        skippedDetalhado.push({
-          linha: excelLine,
-          id_bling: idBling,
-          store,
-          reference,
-          code,
-          motivo: `Duplicado da linha ${linhaAnterior} (mesmo ID Bling + Código do Item). Apenas a primeira ocorrência foi processada.`,
-        });
+      const anterior = chavesVistas.get(chave);
+
+      if (anterior) {
+        const mesmaQuantidade = anterior.amount === amount;
+        const motivo = mesmaQuantidade
+          ? `Duplicado da linha ${anterior.linha} (mesmo ID Bling + Código do Item e mesma quantidade). Ignorada.`
+          : `Duplicado da linha ${anterior.linha} (mesmo ID Bling + Código do Item) com quantidade diferente (${anterior.amount} na linha ${anterior.linha}, ${amount} nesta). Apenas a primeira foi processada; revise o arquivo.`;
+
+        pular(excelLine, idBling, store, reference, code, "duplicado_arquivo", motivo);
         continue;
       }
-      chavesVistas.set(chave, excelLine);
+
+      chavesVistas.set(chave, { linha: excelLine, amount });
 
       registros.push({
         linha: excelLine,
@@ -309,31 +368,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       });
     }
 
-    console.info(`${logPrefix} Registros válidos montados:`, registros.length);
-    console.info(`${logPrefix} Linhas puladas:`, skippedDetalhado.length);
+    console.info(`${logPrefix} Registros válidos: ${registros.length}, puladas: ${skippedDetalhado.length}`);
 
-    // ✅ LOG: motivo agregado das linhas puladas (top motivos mais
-    // comuns), pra rapidamente saber se o problema é sistemático.
     if (skippedDetalhado.length > 0) {
       const motivosAgrupados = skippedDetalhado.reduce<Record<string, number>>((acc, item) => {
-        const chaveMotivo = item.motivo.split("(")[0].trim();
-        acc[chaveMotivo] = (acc[chaveMotivo] ?? 0) + 1;
+        acc[item.motivo_codigo] = (acc[item.motivo_codigo] ?? 0) + 1;
         return acc;
       }, {});
-      console.info(`${logPrefix} Motivos de linhas puladas (agrupado):`, motivosAgrupados);
-      console.info(
-        `${logPrefix} Amostra de linhas puladas (até 5):`,
-        skippedDetalhado.slice(0, 5)
-      );
-    }
-
-    // ✅ LOG: amostra dos primeiros registros que serão enviados ao
-    // banco — confirma se id_bling/code/amount vieram corretos.
-    if (registros.length > 0) {
-      console.info(
-        `${logPrefix} Amostra de registros enviados ao banco (até 3):`,
-        registros.slice(0, 3)
-      );
+      console.info(`${logPrefix} Puladas por motivo:`, motivosAgrupados);
     }
 
     if (registros.length === 0) {
@@ -341,11 +383,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json(
         {
           success: false,
+          status: "erro",
           processed: 0,
           skipped: skippedDetalhado.length,
-          // ✅ Sem slice — devolve todas as linhas rejeitadas, com
-          // todos os identificadores, pro frontend montar a tabela
-          // detalhada completa.
           skippedDetails: skippedDetalhado,
           errors: [],
           message:
@@ -358,7 +398,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // ---------- 4. Execução no banco ----------
     const sql = getPostgresClient();
 
-    console.info(`${logPrefix} Iniciando transação SQL com`, registros.length, "registros.");
+    console.info(`${logPrefix} Iniciando transação com ${registros.length} registros (modo ${mode}).`);
 
     const resultados = await sql.begin(async (transaction) => {
       const jwtClaims = JSON.stringify({
@@ -380,11 +420,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return rows;
     });
 
-    console.info(`${logPrefix} Retorno do banco: ${resultados.length} linhas processadas.`);
-
-    // ✅ Mantém store e reference no erro do banco, além de id_bling e
-    // code — a função upsert_composition_lote já devolve todos esses
-    // campos, então só precisamos parar de descartá-los aqui.
     const errors = resultados
       .filter((r) => r.status === "erro")
       .map((r) => ({
@@ -398,39 +433,41 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const processed = resultados.filter((r) => r.status === "ok").length;
 
-    // ✅ LOG: motivos agregados dos erros de banco (top motivos),
-    // mesmo raciocínio de agrupamento do skip.
     if (errors.length > 0) {
       const motivosErroAgrupados = errors.reduce<Record<string, number>>((acc, item) => {
-        const chaveMotivo = item.motivo.split("(")[0].trim();
-        acc[chaveMotivo] = (acc[chaveMotivo] ?? 0) + 1;
+        acc[item.motivo] = (acc[item.motivo] ?? 0) + 1;
         return acc;
       }, {});
-      console.warn(`${logPrefix} Motivos de erro no banco (agrupado):`, motivosErroAgrupados);
-      console.warn(`${logPrefix} Amostra de erros de banco (até 5):`, errors.slice(0, 5));
+      console.warn(`${logPrefix} Erros no banco por motivo:`, motivosErroAgrupados);
     }
 
-    const duracaoMs = Date.now() - startedAt;
+    // sucesso: tudo processado, sem puladas e sem erros
+    // parcial: algo processado, mas com puladas ou erros
+    // erro: nada processado
+    const status: "sucesso" | "parcial" | "erro" =
+      errors.length === 0 && skippedDetalhado.length === 0
+        ? "sucesso"
+        : processed > 0
+          ? "parcial"
+          : "erro";
 
     console.info(`${logPrefix} Importação concluída:`, {
-      usuario: userData.user.email,
+      usuario,
       modo: mode,
+      status,
       totalLinhasArquivo: nonEmptyRaw.length,
       processadas: processed,
       puladas: skippedDetalhado.length,
       comErro: errors.length,
-      duracaoMs,
+      duracaoMs: Date.now() - startedAt,
     });
 
     return NextResponse.json({
-      success: errors.length === 0,
+      success: status === "sucesso",
+      status,
       processed,
       skipped: skippedDetalhado.length,
-      // ✅ Sem slice — todas as linhas rejeitadas na validação, com
-      // todos os identificadores da linha original da planilha.
       skippedDetails: skippedDetalhado,
-      // ✅ Todas as linhas que falharam no upsert do banco, com
-      // id_bling, store, reference, code e motivo.
       errors,
     });
   } catch (error: unknown) {
@@ -443,9 +480,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       where?: string;
     };
 
-    const duracaoMs = Date.now() - startedAt;
-
-    console.error(`${logPrefix} Erro fatal na importação (após ${duracaoMs}ms):`, {
+    console.error(`${logPrefix} Erro fatal na importação (após ${Date.now() - startedAt}ms):`, {
       name: databaseError?.name ?? null,
       message: databaseError?.message ?? null,
       code: databaseError?.code ?? null,
