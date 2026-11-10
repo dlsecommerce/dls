@@ -30,7 +30,15 @@ import { toast } from "sonner";
 
 const ACCENT = "#1a8ceb";
 
+// =====================
+// Convenções de armazenamento (todas validadas no front antes de salvar):
+// - Taxas de comissão são gravadas como FRAÇÃO (12% -> 0.12).
+// - Frete em modo "percent" é gravado como FRAÇÃO; em "fixed", em R$.
+// - Campo opcional vazio é gravado como null (herda o fallback), nunca 0.
+// =====================
+
 type PricingMode = "flat" | "tiered" | "brand";
+type FreteMode = "fixed" | "percent";
 
 interface PriceTier {
   min: string;
@@ -56,21 +64,66 @@ interface ListingTypeRule {
   rate: string;
   fixedFee: string;
   frete: string;
-  freteMode: "fixed" | "percent";
+  freteMode: FreteMode;
 }
 
 // =====================
-// Condição (Clássico/Premium) agora é um "slice" completo por
-// pricing_mode — cada modo (flat/tiered/brand) tem seu próprio
-// checkbox "enabled" + seus próprios valores de classico/premium.
-// Isso substitui os antigos `useConditionFlat`/`classico`/`premium`
-// únicos, que eram compartilhados entre os 3 modos e se misturavam
-// ao trocar de aba.
+// Condição (Clássico/Premium) é um "slice" por pricing_mode —
+// cada modo (flat/tiered/brand) tem seu próprio checkbox "enabled"
+// e seus próprios valores de classico/premium.
 // =====================
 interface ConditionSlice {
   enabled: boolean;
   classico: ListingTypeRule;
   premium: ListingTypeRule;
+}
+
+// Contrato de envio para saveMarketplaceChannelRule.
+// null = herdar do fallback (ou "não definido"); nunca 0 para campo vazio.
+interface CommissionTierPayload {
+  min: number;
+  max: number | null;
+  rate: number;
+  fixedFee: number | null;
+}
+
+interface BrandListingPayload {
+  rate: number | null;
+  fixedFee: number | null;
+}
+
+interface BrandRulePayload {
+  brand: string;
+  commission_rate: number | null;
+  fixed_fee: number | null;
+  classico?: BrandListingPayload;
+  premium?: BrandListingPayload;
+}
+
+interface ListingRulePayload {
+  commission_rate: number | null;
+  fixed_fee: number | null;
+  frete: number | null;
+  frete_mode: FreteMode | null;
+}
+
+interface MarketplaceRulePayload {
+  channel: string;
+  pricing_mode: PricingMode;
+  comissao: number | null;
+  frete: number | null;
+  freteMode: FreteMode;
+  commission_tiers?: CommissionTierPayload[];
+  default_rule?: {
+    commission_rate: number | null;
+    fixed_fee: number | null;
+  };
+  brand_rules?: BrandRulePayload[];
+  // null remove APENAS a condição do modo ativo (merge no hook).
+  listing_type_rules?: {
+    classico: ListingRulePayload | null;
+    premium: ListingRulePayload | null;
+  } | null;
 }
 
 type Props = {
@@ -81,10 +134,24 @@ type Props = {
   allBrands?: string[];
 };
 
-function parseValue(raw: string): number {
-  if (!raw || raw.trim() === "") return 0;
-  const parsed = parseFloat(raw.replace(",", "."));
-  return Number.isNaN(parsed) ? 0 : parsed;
+// Converte para número; vazio ou inválido vira null (nunca 0).
+function toNumOrNull(raw: string | undefined): number | null {
+  if (raw == null) return null;
+  const t = raw.trim();
+  if (t === "") return null;
+  const n = parseFloat(t.replace(",", "."));
+  return Number.isNaN(n) ? null : n;
+}
+
+// Taxa digitada em percentual -> fração. Vazio vira null.
+function toRateOrNull(raw: string | undefined): number | null {
+  const n = toNumOrNull(raw);
+  return n != null ? n / 100 : null;
+}
+
+// Frete: em "percent" grava fração; em "fixed" grava R$.
+function toFreteValue(raw: string | undefined, mode: FreteMode): number | null {
+  return mode === "percent" ? toRateOrNull(raw) : toNumOrNull(raw);
 }
 
 // Converte uma taxa decimal (ex: 0.14000000000000002) em percentual
@@ -93,6 +160,12 @@ function toPercentDisplay(rate: number | null | undefined): string {
   if (rate == null || Number.isNaN(rate)) return "";
   const pct = Math.round(rate * 100 * 1e6) / 1e6;
   return String(pct);
+}
+
+// Valor de frete para exibição, respeitando o modo gravado.
+function freteForDisplay(value: number | null | undefined, mode: FreteMode): string {
+  if (value == null || Number.isNaN(value)) return "";
+  return mode === "percent" ? toPercentDisplay(value) : String(value);
 }
 
 const isMercadoLivre = (channel: string) =>
@@ -130,28 +203,130 @@ function emptyConditionByMode(): Record<PricingMode, ConditionSlice> {
   };
 }
 
-// Uma brand rule só é considerada "com condição preenchida" se pelo
-// menos um dos 4 campos (classico.rate/fixedFee, premium.rate/fixedFee)
-// tiver valor real. Evita gravar objetos classico/premium "vazios"
-// (que o parseValue transformaria silenciosamente em 0%), o que travava
-// a marca em taxa fixa 0 em vez de cair no fallback (default_rule).
+// Uma condição por marca só existe se algum campo tiver valor real.
+// Evita gravar objetos vazios que travariam a marca em 0%.
 function hasFilledValue(sub?: BrandListingSubRule): boolean {
-  return Boolean(
-    (sub?.rate ?? "").trim() !== "" || (sub?.fixedFee ?? "").trim() !== ""
-  );
+  if (!sub) return false;
+  return sub.rate.trim() !== "" || sub.fixedFee.trim() !== "";
 }
 
-// A mesma checagem, usada para decidir se o bloco Clássico/Premium do
-// modo ativo (listing_type_rules[pricingMode]) tem valor real
-// preenchido em pelo menos um dos dois listing types — evita enviar um
-// objeto "vazio" quando o checkbox está marcado mas nenhum campo foi
-// preenchido.
+// Verifica se o bloco Clássico/Premium do modo ativo tem valor real.
 function hasFilledListingType(rule: ListingTypeRule): boolean {
   return (
     rule.rate.trim() !== "" ||
     rule.fixedFee.trim() !== "" ||
     rule.frete.trim() !== ""
   );
+}
+
+function hasTierContent(t: PriceTier): boolean {
+  return [t.min, t.max, t.rate, t.fixedFee].some((v) => v.trim() !== "");
+}
+
+function buildBrandSub(sub: BrandListingSubRule): BrandListingPayload {
+  return {
+    rate: toRateOrNull(sub.rate),
+    fixedFee: toNumOrNull(sub.fixedFee),
+  };
+}
+
+// Monta o contrato de listing type (Clássico/Premium) do modo ativo.
+function buildListingRule(r: ListingTypeRule): ListingRulePayload {
+  const frete = toFreteValue(r.frete, r.freteMode);
+  return {
+    commission_rate: toRateOrNull(r.rate),
+    fixed_fee: toNumOrNull(r.fixedFee),
+    frete,
+    frete_mode: frete != null ? r.freteMode : null,
+  };
+}
+
+// Faixas: linhas sem conteúdo são ignoradas; linhas preenchidas já foram validadas.
+function buildTiers(tiers: PriceTier[]): CommissionTierPayload[] {
+  const out: CommissionTierPayload[] = [];
+  for (const t of tiers) {
+    if (!hasTierContent(t)) continue;
+    const min = toNumOrNull(t.min);
+    const rate = toRateOrNull(t.rate);
+    if (min == null || rate == null) continue;
+    out.push({
+      min,
+      max: toNumOrNull(t.max), // vazio = sem limite superior
+      rate,
+      fixedFee: toNumOrNull(t.fixedFee),
+    });
+  }
+  return out;
+}
+
+// Quando a condição por marca está ativa, a comissão geral da marca some da
+// tela; por isso é enviada como null (a marca usa a condição ou o fallback).
+function buildBrandRule(b: BrandRule, showCondition: boolean): BrandRulePayload {
+  const rule: BrandRulePayload = {
+    brand: b.brand.trim(),
+    commission_rate: showCondition ? null : toRateOrNull(b.rate),
+    fixed_fee: showCondition ? null : toNumOrNull(b.fixedFee),
+  };
+  if (showCondition && b.classico && hasFilledValue(b.classico)) {
+    rule.classico = buildBrandSub(b.classico);
+  }
+  if (showCondition && b.premium && hasFilledValue(b.premium)) {
+    rule.premium = buildBrandSub(b.premium);
+  }
+  return rule;
+}
+
+// Valida antes de salvar. Retorna a mensagem do primeiro problema, ou null.
+function validateForm(
+  mode: PricingMode,
+  comissao: string,
+  tiers: PriceTier[],
+  defaultRate: string,
+  brandRules: BrandRule[]
+): string | null {
+  if (mode === "flat" && toRateOrNull(comissao) == null) {
+    return "Informe a comissão do marketplace.";
+  }
+
+  if (mode === "tiered") {
+    const filled = tiers.filter(hasTierContent);
+    if (filled.length === 0) return "Adicione ao menos uma faixa de preço.";
+
+    for (const t of filled) {
+      const min = toNumOrNull(t.min);
+      const max = toNumOrNull(t.max);
+      if (min == null) return "Preencha o valor mínimo de todas as faixas.";
+      if (toRateOrNull(t.rate) == null) return "Preencha a comissão de todas as faixas.";
+      if (max != null && max < min) {
+        return "Em uma faixa, o valor máximo é menor que o mínimo.";
+      }
+    }
+  }
+
+  if (mode === "brand") {
+    if (toRateOrNull(defaultRate) == null) {
+      return "Informe a comissão da regra padrão (fallback).";
+    }
+
+    const seen = new Set<string>();
+    for (const b of brandRules) {
+      const brand = b.brand.trim();
+      const hasValues =
+        b.rate.trim() !== "" ||
+        b.fixedFee.trim() !== "" ||
+        hasFilledValue(b.classico) ||
+        hasFilledValue(b.premium);
+
+      if (!brand) {
+        if (hasValues) return "Selecione a marca em todas as linhas preenchidas.";
+        continue;
+      }
+      if (seen.has(brand)) return `A marca "${brand}" está repetida.`;
+      seen.add(brand);
+    }
+  }
+
+  return null;
 }
 
 const modeTabClass = (active: boolean) => `
@@ -171,6 +346,81 @@ const miniInputClass = `
   disabled:opacity-40
 `;
 
+// Bloco Clássico ou Premium da condição do modo ativo.
+function ConditionSide({
+  label,
+  value,
+  disabled,
+  onPatch,
+  onFreteModeChange,
+}: {
+  label: string;
+  value: ListingTypeRule;
+  disabled: boolean;
+  onPatch: (patch: Partial<ListingTypeRule>) => void;
+  onFreteModeChange: (mode: FreteMode) => void;
+}) {
+  return (
+    <div>
+      <span className="mb-1 block text-[10.5px] text-neutral-500">{label}</span>
+      <div className="grid grid-cols-2 gap-1.5 mb-1.5">
+        <input
+          inputMode="decimal"
+          value={value.rate}
+          disabled={disabled}
+          onChange={(e) => onPatch({ rate: sanitizeDecimalInput(e.target.value) })}
+          placeholder="% comissão"
+          className={miniInputClass}
+        />
+        <input
+          inputMode="decimal"
+          value={value.fixedFee}
+          disabled={disabled}
+          onChange={(e) => onPatch({ fixedFee: sanitizeDecimalInput(e.target.value) })}
+          placeholder="Taxa fixa R$"
+          className={miniInputClass}
+        />
+      </div>
+      <div className="flex items-center gap-1.5">
+        <div className="flex overflow-hidden border border-neutral-800 text-[10px] shrink-0">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onFreteModeChange("fixed")}
+            className={`px-2 h-9 transition-colors cursor-pointer ${
+              value.freteMode === "fixed"
+                ? "bg-neutral-800 text-white"
+                : "text-neutral-500 hover:text-neutral-300"
+            }`}
+          >
+            R$
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onFreteModeChange("percent")}
+            className={`px-2 h-9 transition-colors cursor-pointer ${
+              value.freteMode === "percent"
+                ? "bg-neutral-800 text-white"
+                : "text-neutral-500 hover:text-neutral-300"
+            }`}
+          >
+            %
+          </button>
+        </div>
+        <input
+          inputMode="decimal"
+          value={value.frete}
+          disabled={disabled}
+          onChange={(e) => onPatch({ frete: sanitizeDecimalInput(e.target.value) })}
+          placeholder={`Frete ${label}`}
+          className={miniInputClass}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function ChannelPricingRulesModal({
   open,
   onOpenChange,
@@ -179,6 +429,7 @@ export default function ChannelPricingRulesModal({
   allBrands = [],
 }: Props) {
   const [loading, setLoading] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -192,14 +443,10 @@ export default function ChannelPricingRulesModal({
   const [defaultFixedFee, setDefaultFixedFee] = useState("");
   const [brandRules, setBrandRules] = useState<BrandRule[]>([emptyBrandRule()]);
 
+  // Camada 1 (marca): ativa a condição Clássico/Premium por marca.
   const [useConditionBrand, setUseConditionBrand] = useState(false);
 
-  // =====================
-  // Condição (Clássico/Premium) indexada por pricing_mode — cada modo
-  // (Fixo/Por Preço/Marca) tem sua PRÓPRIA condição, independente das
-  // demais. Substitui os antigos `useConditionFlat`/`classico`/`premium`
-  // únicos e compartilhados entre modos.
-  // =====================
+  // Camada 2 (modo): condição Clássico/Premium indexada por pricing_mode.
   const [conditionByMode, setConditionByMode] = useState<Record<PricingMode, ConditionSlice>>(
     emptyConditionByMode
   );
@@ -216,12 +463,32 @@ export default function ChannelPricingRulesModal({
     [pricingMode]
   );
 
+  const patchActiveSide = (side: "classico" | "premium", patch: Partial<ListingTypeRule>) =>
+    setActiveCondition((prev) => ({
+      ...prev,
+      [side]: { ...prev[side], ...patch },
+    }));
+
+  // Trocar R$/% limpa o valor, para não gravar um R$ como percentual.
+  const setListingFreteMode = (side: "classico" | "premium", mode: FreteMode) =>
+    setActiveCondition((prev) =>
+      prev[side].freteMode === mode
+        ? prev
+        : { ...prev, [side]: { ...prev[side], freteMode: mode, frete: "" } }
+    );
+
   const [frete, setFrete] = useState("");
-  const [freteMode, setFreteMode] = useState<"fixed" | "percent">("fixed");
+  const [freteMode, setFreteMode] = useState<FreteMode>("fixed");
 
   const [margemMinima, setMargemMinima] = useState<string | null>(null);
 
   const channelIsML = isMercadoLivre(channel);
+
+  const changeFreteMode = (mode: FreteMode) => {
+    if (mode === freteMode) return;
+    setFreteMode(mode);
+    setFrete("");
+  };
 
   const resetState = useCallback(() => {
     setPricingMode("flat");
@@ -236,25 +503,41 @@ export default function ChannelPricingRulesModal({
     setFreteMode("fixed");
     setMargemMinima(null);
     setError(null);
+    setLoadFailed(false);
   }, []);
 
   useEffect(() => {
     if (!open || !channel) return;
+
+    // Descarta respostas de um canal/abertura anterior (corrida de carga).
+    let cancelled = false;
+
+    resetState();
     setLoading(true);
     setError(null);
+    setLoadFailed(false);
 
     Promise.all([
       loadMarketplaceChannelRule(channel),
       loadChannelPricingRule(channel),
     ])
       .then(([marketplaceRule, pricingRule]) => {
+        if (cancelled) return;
+
         if (marketplaceRule) {
           const mode = (marketplaceRule.pricing_mode as PricingMode) ?? "flat";
           setPricingMode(mode);
 
-          setComissao(String(marketplaceRule.comissao ?? ""));
-          setFrete(String(marketplaceRule.frete ?? ""));
-          setFreteMode(marketplaceRule.frete_mode ?? "fixed");
+          const loadedFreteMode: FreteMode =
+            marketplaceRule.frete_mode === "percent" ? "percent" : "fixed";
+
+          setComissao(
+            toPercentDisplay(marketplaceRule.comissao as number | null | undefined)
+          );
+          setFreteMode(loadedFreteMode);
+          setFrete(
+            freteForDisplay(marketplaceRule.frete as number | null | undefined, loadedFreteMode)
+          );
 
           if (marketplaceRule.commission_tiers?.length) {
             setTiers(
@@ -262,14 +545,18 @@ export default function ChannelPricingRulesModal({
                 min: String(t.min ?? ""),
                 max: t.max != null ? String(t.max) : "",
                 rate: toPercentDisplay(t.rate),
-                fixedFee: String(t.fixedFee ?? ""),
+                fixedFee: t.fixedFee != null ? String(t.fixedFee) : "",
               }))
             );
           }
 
           if (marketplaceRule.default_rule) {
             setDefaultRate(toPercentDisplay(marketplaceRule.default_rule.commission_rate));
-            setDefaultFixedFee(String(marketplaceRule.default_rule.fixed_fee ?? ""));
+            setDefaultFixedFee(
+              marketplaceRule.default_rule.fixed_fee != null
+                ? String(marketplaceRule.default_rule.fixed_fee)
+                : ""
+            );
           }
 
           if (marketplaceRule.brand_rules?.length) {
@@ -283,17 +570,17 @@ export default function ChannelPricingRulesModal({
               return {
                 brand: b.brand,
                 rate: toPercentDisplay(b.commission_rate),
-                fixedFee: String(b.fixed_fee ?? ""),
+                fixedFee: b.fixed_fee != null ? String(b.fixed_fee) : "",
                 classico: hasClassico
                   ? {
                       rate: toPercentDisplay(b.classico.rate),
-                      fixedFee: String(b.classico.fixedFee ?? ""),
+                      fixedFee: b.classico.fixedFee != null ? String(b.classico.fixedFee) : "",
                     }
                   : undefined,
                 premium: hasPremium
                   ? {
                       rate: toPercentDisplay(b.premium.rate),
-                      fixedFee: String(b.premium.fixedFee ?? ""),
+                      fixedFee: b.premium.fixedFee != null ? String(b.premium.fixedFee) : "",
                     }
                   : undefined,
               };
@@ -303,9 +590,7 @@ export default function ChannelPricingRulesModal({
             if (anyBrandCondition) setUseConditionBrand(true);
           }
 
-          // listing_type_rules agora é indexado por pricing_mode — cada
-          // modo (flat/tiered/brand) carrega sua PRÓPRIA condição
-          // Clássico/Premium, independente dos demais.
+          // listing_type_rules é indexado por pricing_mode.
           if (marketplaceRule.listing_type_rules) {
             const nextByMode = emptyConditionByMode();
 
@@ -316,19 +601,22 @@ export default function ChannelPricingRulesModal({
               const lc = block.classico;
               const lp = block.premium;
 
+              const cFreteMode: FreteMode = lc?.frete_mode === "percent" ? "percent" : "fixed";
+              const pFreteMode: FreteMode = lp?.frete_mode === "percent" ? "percent" : "fixed";
+
               nextByMode[m] = {
                 enabled: true,
                 classico: {
                   rate: toPercentDisplay(lc?.commission_rate),
-                  fixedFee: String(lc?.fixed_fee ?? ""),
-                  frete: String(lc?.frete ?? ""),
-                  freteMode: lc?.frete_mode ?? "fixed",
+                  fixedFee: lc?.fixed_fee != null ? String(lc.fixed_fee) : "",
+                  frete: freteForDisplay(lc?.frete, cFreteMode),
+                  freteMode: cFreteMode,
                 },
                 premium: {
                   rate: toPercentDisplay(lp?.commission_rate),
-                  fixedFee: String(lp?.fixed_fee ?? ""),
-                  frete: String(lp?.frete ?? ""),
-                  freteMode: lp?.frete_mode ?? "fixed",
+                  fixedFee: lp?.fixed_fee != null ? String(lp.fixed_fee) : "",
+                  frete: freteForDisplay(lp?.frete, pFreteMode),
+                  freteMode: pFreteMode,
                 },
               };
             });
@@ -336,13 +624,25 @@ export default function ChannelPricingRulesModal({
             setConditionByMode(nextByMode);
           }
         }
+
         if (pricingRule) {
           setMargemMinima(String(pricingRule.margemMinima ?? pricingRule.margem_minima ?? ""));
         }
       })
-      .catch(() => setError("Não foi possível carregar as regras deste canal."))
-      .finally(() => setLoading(false));
-  }, [open, channel]);
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        console.error("[ChannelPricingRulesModal] falha ao carregar regras:", err);
+        setLoadFailed(true);
+        setError("Não foi possível carregar as regras deste canal. Feche e abra novamente.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, channel, resetState]);
 
   const handleClose = useCallback(
     (v: boolean) => {
@@ -388,116 +688,82 @@ export default function ChannelPricingRulesModal({
     );
 
   const handleSave = useCallback(async () => {
-    if (!channel) return;
+    // Não grava se a carga falhou: evita sobrescrever regras reais com campos vazios.
+    if (!channel || loading || loadFailed) return;
+
+    const validationError = validateForm(pricingMode, comissao, tiers, defaultRate, brandRules);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setSaving(true);
     setError(null);
     try {
-      const payload: Record<string, unknown> = {
+      const showCondition = channelIsML && useConditionBrand;
+
+      const payload: MarketplaceRulePayload = {
         channel,
         pricing_mode: pricingMode,
-        comissao: parseValue(comissao),
-        frete: parseValue(frete),
+        // Comissão geral só existe no modo Fixo; nos demais é null.
+        comissao: pricingMode === "flat" ? toRateOrNull(comissao) : null,
+        // Frete geral não se aplica ao modo Por Preço (frete fica em cada faixa).
+        frete: pricingMode === "tiered" ? null : toFreteValue(frete, freteMode),
         freteMode,
       };
 
       if (pricingMode === "tiered") {
-        // min é obrigatório; max vazio = "sem limite superior" (null)
-        payload.commission_tiers = tiers
-          .filter((t) => t.min !== "")
-          .map((t) => ({
-            min: parseValue(t.min),
-            max: t.max !== "" ? parseValue(t.max) : null,
-            rate: parseValue(t.rate) / 100,
-            fixedFee: parseValue(t.fixedFee),
-          }));
+        payload.commission_tiers = buildTiers(tiers);
       }
 
       if (pricingMode === "brand") {
         payload.default_rule = {
-          commission_rate: parseValue(defaultRate) / 100,
-          fixed_fee: parseValue(defaultFixedFee),
+          commission_rate: toRateOrNull(defaultRate),
+          fixed_fee: toNumOrNull(defaultFixedFee),
         };
 
         payload.brand_rules = brandRules
           .filter((b) => b.brand.trim() !== "")
-          .map((b) => {
-            const hasClassico = hasFilledValue(b.classico);
-            const hasPremium = hasFilledValue(b.premium);
-
-            return {
-              brand: b.brand,
-              commission_rate: parseValue(b.rate) / 100,
-              fixed_fee: parseValue(b.fixedFee),
-              // Só grava classico/premium se houver valor REAL preenchido
-              // para aquele listing type específico. Antes, com a
-              // condição ativa, TODA marca ganhava classico+premium
-              // mesmo vazios — e parseValue("") = 0 travava a marca em
-              // taxa fixa 0% em vez de cair no fallback (default_rule).
-              ...(channelIsML && useConditionBrand && hasClassico
-                ? {
-                    classico: {
-                      rate: parseValue(b.classico?.rate ?? "") / 100,
-                      fixedFee: parseValue(b.classico?.fixedFee ?? ""),
-                    },
-                  }
-                : {}),
-              ...(channelIsML && useConditionBrand && hasPremium
-                ? {
-                    premium: {
-                      rate: parseValue(b.premium?.rate ?? "") / 100,
-                      fixedFee: parseValue(b.premium?.fixedFee ?? ""),
-                    },
-                  }
-                : {}),
-            };
-          });
+          .map((b) => buildBrandRule(b, showCondition));
       }
 
       // =====================
-      // listing_type_rules agora é enviado relativo ao MODO ATIVO
-      // (conditionByMode[pricingMode]) — cada modo tem sua própria
-      // condição Clássico/Premium, persistida sob
-      // listing_type_rules[pricing_mode] no banco (merge feito em
-      // saveMarketplaceChannelRule, que preserva os demais modos).
-      //
-      // Se o usuário desmarcar o checkbox deste modo, enviamos `null`
-      // explicitamente para remover APENAS a condição deste modo,
-      // preservando as condições configuradas nos outros modos.
+      // Precedência do resolver (documentar no SQL):
+      //   condição da marca -> condição global do modo -> fallback (default_rule / comissão do modo)
+      // listing_type_rules é relativo ao MODO ATIVO. null remove apenas
+      // a condição deste modo; os demais modos são preservados no merge do hook.
       // =====================
       if (channelIsML) {
         const { enabled, classico, premium } = activeCondition;
+        const classicoFilled = hasFilledListingType(classico);
+        const premiumFilled = hasFilledListingType(premium);
 
-        if (enabled && (hasFilledListingType(classico) || hasFilledListingType(premium))) {
-          payload.listing_type_rules = {
-            classico: {
-              commission_rate: parseValue(classico.rate) / 100,
-              fixed_fee: parseValue(classico.fixedFee),
-              frete: classico.frete !== "" ? parseValue(classico.frete) : null,
-              frete_mode: classico.freteMode,
-            },
-            premium: {
-              commission_rate: parseValue(premium.rate) / 100,
-              fixed_fee: parseValue(premium.fixedFee),
-              frete: premium.frete !== "" ? parseValue(premium.frete) : null,
-              frete_mode: premium.freteMode,
-            },
-          };
-        } else if (!enabled) {
-          payload.listing_type_rules = null;
-        }
+        payload.listing_type_rules =
+          enabled && (classicoFilled || premiumFilled)
+            ? {
+                classico: classicoFilled ? buildListingRule(classico) : null,
+                premium: premiumFilled ? buildListingRule(premium) : null,
+              }
+            : null;
       }
 
-      await saveMarketplaceChannelRule(payload as any);
+      await saveMarketplaceChannelRule(payload);
 
       const { data: result, error: rpcError } = await supabase
         .schema("newsystem")
         .rpc("recalc_channel_pricing", { p_channel: channel });
 
       if (rpcError) {
-        setError(
-          "Regras salvas, mas houve um erro ao recalcular os preços do canal."
-        );
-      } else if (result?.[0]) {
+        // As regras foram salvas: atualiza a lista, mas mantém o modal aberto
+        // exibindo o erro para o usuário.
+        console.error("[ChannelPricingRulesModal] falha no recálculo:", rpcError);
+        toast.error("Regras salvas, mas houve erro ao recalcular os preços do canal.");
+        setError("Regras salvas, mas houve erro ao recalcular os preços. Tente novamente.");
+        onApplied?.();
+        return;
+      }
+
+      if (result?.[0]) {
         const { updated_count, queued_count } = result[0];
         toast.success(
           `${updated_count} anúncio(s) atualizados. ${queued_count} entrando na fila de recálculo de preço.`
@@ -507,13 +773,20 @@ export default function ChannelPricingRulesModal({
       onApplied?.();
       resetState();
       onOpenChange(false);
-    } catch {
-      setError("Erro ao salvar as regras. Tente novamente.");
+    } catch (err: unknown) {
+      console.error("[ChannelPricingRulesModal] falha ao salvar regras:", err);
+      setError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Erro ao salvar as regras. Tente novamente."
+      );
     } finally {
       setSaving(false);
     }
   }, [
     channel,
+    loading,
+    loadFailed,
     pricingMode,
     comissao,
     frete,
@@ -913,10 +1186,7 @@ export default function ChannelPricingRulesModal({
 
               {/*
                 Bloco de Condição (Clássico/Premium) DO MODO ATIVO —
-                cada aba (Fixo/Por Preço/Marca) tem seu próprio checkbox
-                "enabled" e seus próprios valores, lidos de
-                conditionByMode[pricingMode] via activeCondition. Trocar
-                de aba troca automaticamente os valores exibidos aqui.
+                lido de conditionByMode[pricingMode] via activeCondition.
               */}
               {channelIsML && (
                 <div className="mb-4 border border-neutral-900 p-3">
@@ -937,171 +1207,21 @@ export default function ChannelPricingRulesModal({
 
                   {activeCondition.enabled && (
                     <div className="mt-3 space-y-3">
-                      <div>
-                        <span className="mb-1 block text-[10.5px] text-neutral-500">Clássico</span>
-                        <div className="grid grid-cols-2 gap-1.5 mb-1.5">
-                          <input
-                            inputMode="decimal"
-                            value={activeCondition.classico.rate}
-                            disabled={saving}
-                            onChange={(e) =>
-                              setActiveCondition((prev) => ({
-                                ...prev,
-                                classico: { ...prev.classico, rate: sanitizeDecimalInput(e.target.value) },
-                              }))
-                            }
-                            placeholder="% comissão"
-                            className={miniInputClass}
-                          />
-                          <input
-                            inputMode="decimal"
-                            value={activeCondition.classico.fixedFee}
-                            disabled={saving}
-                            onChange={(e) =>
-                              setActiveCondition((prev) => ({
-                                ...prev,
-                                classico: { ...prev.classico, fixedFee: sanitizeDecimalInput(e.target.value) },
-                              }))
-                            }
-                            placeholder="Taxa fixa R$"
-                            className={miniInputClass}
-                          />
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <div className="flex overflow-hidden border border-neutral-800 text-[10px] shrink-0">
-                            <button
-                              type="button"
-                              disabled={saving}
-                              onClick={() =>
-                                setActiveCondition((prev) => ({
-                                  ...prev,
-                                  classico: { ...prev.classico, freteMode: "fixed" },
-                                }))
-                              }
-                              className={`px-2 h-9 transition-colors cursor-pointer ${
-                                activeCondition.classico.freteMode === "fixed"
-                                  ? "bg-neutral-800 text-white"
-                                  : "text-neutral-500 hover:text-neutral-300"
-                              }`}
-                            >
-                              R$
-                            </button>
-                            <button
-                              type="button"
-                              disabled={saving}
-                              onClick={() =>
-                                setActiveCondition((prev) => ({
-                                  ...prev,
-                                  classico: { ...prev.classico, freteMode: "percent" },
-                                }))
-                              }
-                              className={`px-2 h-9 transition-colors cursor-pointer ${
-                                activeCondition.classico.freteMode === "percent"
-                                  ? "bg-neutral-800 text-white"
-                                  : "text-neutral-500 hover:text-neutral-300"
-                              }`}
-                            >
-                              %
-                            </button>
-                          </div>
-                          <input
-                            inputMode="decimal"
-                            value={activeCondition.classico.frete}
-                            disabled={saving}
-                            onChange={(e) =>
-                              setActiveCondition((prev) => ({
-                                ...prev,
-                                classico: { ...prev.classico, frete: sanitizeDecimalInput(e.target.value) },
-                              }))
-                            }
-                            placeholder="Frete Clássico"
-                            className={miniInputClass}
-                          />
-                        </div>
-                      </div>
+                      <ConditionSide
+                        label="Clássico"
+                        value={activeCondition.classico}
+                        disabled={saving}
+                        onPatch={(patch) => patchActiveSide("classico", patch)}
+                        onFreteModeChange={(mode) => setListingFreteMode("classico", mode)}
+                      />
 
-                      <div>
-                        <span className="mb-1 block text-[10.5px] text-neutral-500">Premium</span>
-                        <div className="grid grid-cols-2 gap-1.5 mb-1.5">
-                          <input
-                            inputMode="decimal"
-                            value={activeCondition.premium.rate}
-                            disabled={saving}
-                            onChange={(e) =>
-                              setActiveCondition((prev) => ({
-                                ...prev,
-                                premium: { ...prev.premium, rate: sanitizeDecimalInput(e.target.value) },
-                              }))
-                            }
-                            placeholder="% comissão"
-                            className={miniInputClass}
-                          />
-                          <input
-                            inputMode="decimal"
-                            value={activeCondition.premium.fixedFee}
-                            disabled={saving}
-                            onChange={(e) =>
-                              setActiveCondition((prev) => ({
-                                ...prev,
-                                premium: { ...prev.premium, fixedFee: sanitizeDecimalInput(e.target.value) },
-                              }))
-                            }
-                            placeholder="Taxa fixa R$"
-                            className={miniInputClass}
-                          />
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <div className="flex overflow-hidden border border-neutral-800 text-[10px] shrink-0">
-                            <button
-                              type="button"
-                              disabled={saving}
-                              onClick={() =>
-                                setActiveCondition((prev) => ({
-                                  ...prev,
-                                  premium: { ...prev.premium, freteMode: "fixed" },
-                                }))
-                              }
-                              className={`px-2 h-9 transition-colors cursor-pointer ${
-                                activeCondition.premium.freteMode === "fixed"
-                                  ? "bg-neutral-800 text-white"
-                                  : "text-neutral-500 hover:text-neutral-300"
-                              }`}
-                            >
-                              R$
-                            </button>
-                            <button
-                              type="button"
-                              disabled={saving}
-                              onClick={() =>
-                                setActiveCondition((prev) => ({
-                                  ...prev,
-                                  premium: { ...prev.premium, freteMode: "percent" },
-                                }))
-                              }
-                              className={`px-2 h-9 transition-colors cursor-pointer ${
-                                activeCondition.premium.freteMode === "percent"
-                                  ? "bg-neutral-800 text-white"
-                                  : "text-neutral-500 hover:text-neutral-300"
-                              }`}
-                            >
-                              %
-                            </button>
-                          </div>
-                          <input
-                            inputMode="decimal"
-                            value={activeCondition.premium.frete}
-                            disabled={saving}
-                            onChange={(e) =>
-                              setActiveCondition((prev) => ({
-                                ...prev,
-                                premium: { ...prev.premium, frete: sanitizeDecimalInput(e.target.value) },
-                              }))
-                            }
-                            placeholder="Frete Premium"
-                            className={miniInputClass}
-                          />
-                        </div>
-                      </div>
+                      <ConditionSide
+                        label="Premium"
+                        value={activeCondition.premium}
+                        disabled={saving}
+                        onPatch={(patch) => patchActiveSide("premium", patch)}
+                        onFreteModeChange={(mode) => setListingFreteMode("premium", mode)}
+                      />
 
                       <p className="text-[10px] text-neutral-600">
                         Essa condição é exclusiva do modo selecionado acima ({pricingMode === "flat" ? "Fixo" : pricingMode === "tiered" ? "Por Preço" : "Marca"}).
@@ -1139,7 +1259,7 @@ export default function ChannelPricingRulesModal({
                       <button
                         type="button"
                         disabled={saving}
-                        onClick={() => setFreteMode("fixed")}
+                        onClick={() => changeFreteMode("fixed")}
                         className={`px-2 py-0.5 transition-colors cursor-pointer ${
                           freteMode === "fixed" ? "bg-neutral-800 text-white" : "text-neutral-500 hover:text-neutral-300"
                         }`}
@@ -1149,7 +1269,7 @@ export default function ChannelPricingRulesModal({
                       <button
                         type="button"
                         disabled={saving}
-                        onClick={() => setFreteMode("percent")}
+                        onClick={() => changeFreteMode("percent")}
                         className={`px-2 py-0.5 transition-colors cursor-pointer ${
                           freteMode === "percent" ? "bg-neutral-800 text-white" : "text-neutral-500 hover:text-neutral-300"
                         }`}
@@ -1207,7 +1327,7 @@ export default function ChannelPricingRulesModal({
           </button>
           <button
             type="button"
-            disabled={saving || loading}
+            disabled={saving || loading || loadFailed}
             onClick={handleSave}
             className="flex h-11 w-full items-center justify-center gap-2 border text-sm font-medium transition-colors sm:h-10 sm:w-auto sm:px-6 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             style={{ backgroundColor: ACCENT, borderColor: ACCENT }}

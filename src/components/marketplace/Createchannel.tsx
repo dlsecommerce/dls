@@ -1,4 +1,3 @@
-// marketplace/Createchannelmodal.tsx
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
@@ -29,6 +28,254 @@ type CreateChannelModalProps = {
   onSuccess?: () => void;
 };
 
+// ---------------------------------------------------------------------
+// Tipos e formatação das regras do canal
+// ---------------------------------------------------------------------
+type Modo = "fixed" | "percent";
+type PricingMode = "flat" | "tiered" | "brand";
+
+type RegraListing = {
+  commission_rate?: number;
+  fixed_fee?: number;
+  frete?: number | null;
+  frete_mode?: Modo | null;
+};
+
+type RegraCanal = {
+  pricing_mode: PricingMode | null;
+  // flat: percentual (12 = 12%)
+  comissao: number | null;
+  // frete geral: percentual se frete_mode = percent, senão R$
+  frete: number | null;
+  frete_mode: Modo | null;
+  commission_tiers: Array<{
+    min: number;
+    max: number | null;
+    rate: number; // fração (0.12 = 12%)
+    fixedFee: number; // R$
+  }> | null;
+  default_rule: { commission_rate: number; fixed_fee: number } | null;
+  brand_rules: Array<{
+    brand: string;
+    commission_rate: number; // fração
+    fixed_fee: number; // R$
+    classico?: { rate: number; fixedFee: number };
+    premium?: { rate: number; fixedFee: number };
+  }> | null;
+  listing_type_rules: Record<string, unknown> | null;
+};
+
+const MODO_LABEL: Record<string, string> = {
+  flat: "Fixo",
+  tiered: "Por Preço",
+  brand: "Por Marca",
+};
+
+const LISTING_LABEL: Record<string, string> = {
+  classico: "Clássico",
+  premium: "Premium",
+};
+
+const nf = (n: number, casas = 2) =>
+  n.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: casas });
+
+// Valor já em percentual (ex.: 12 -> "12%")
+const fmtPctDireto = (p: number | null | undefined) => (p == null ? "—" : `${nf(p)}%`);
+
+// Valor em fração (ex.: 0.12 -> "12%")
+const fmtPctFracao = (f: number | null | undefined) => (f == null ? "—" : `${nf(f * 100)}%`);
+
+const fmtBRL = (v: number | null | undefined) =>
+  v == null ? "—" : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+const fmtFrete = (valor: number | null | undefined, modo: Modo | null | undefined) =>
+  valor == null ? "—" : modo === "percent" ? fmtPctDireto(valor) : fmtBRL(valor);
+
+// Achata listing_type_rules. O import grava em dois níveis (modo -> listing),
+// mas aceita também o formato sem modo, para que o resumo mostre o que estiver gravado.
+type LinhaListing = { modo: string; listing: string; regra: RegraListing };
+
+function linhasListing(lt: Record<string, unknown> | null): LinhaListing[] {
+  if (!lt) return [];
+  const out: LinhaListing[] = [];
+
+  for (const [chave, valor] of Object.entries(lt)) {
+    if (!valor || typeof valor !== "object") continue;
+
+    if ("commission_rate" in (valor as object)) {
+      out.push({ modo: "", listing: chave, regra: valor as RegraListing });
+      continue;
+    }
+
+    for (const [listing, regra] of Object.entries(valor as Record<string, unknown>)) {
+      if (regra && typeof regra === "object") {
+        out.push({ modo: chave, listing, regra: regra as RegraListing });
+      }
+    }
+  }
+
+  return out;
+}
+
+// ---------------------------------------------------------------------
+// Resumo visual da regra do canal selecionado
+// ---------------------------------------------------------------------
+function Campo({ rotulo, valor }: { rotulo: string; valor: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1">
+      <span className="text-[11.5px] text-neutral-500">{rotulo}</span>
+      <span className="text-right text-[12px] font-medium text-neutral-200">{valor}</span>
+    </div>
+  );
+}
+
+function Bloco({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+  return (
+    <div className="border-t border-neutral-900 pt-2.5 first:border-t-0 first:pt-0">
+      <p className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-neutral-500">
+        {titulo}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+function RegraCanalResumo({
+  regra,
+  produtos,
+  carregando,
+  erro,
+}: {
+  regra: RegraCanal | null;
+  produtos: number | null;
+  carregando: boolean;
+  erro: string | null;
+}) {
+  if (carregando) {
+    return (
+      <div className="mt-3 flex items-center gap-2 border border-neutral-900 px-3 py-2.5 text-[11.5px] text-neutral-500">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Carregando regras do canal...
+      </div>
+    );
+  }
+
+  if (erro) {
+    return (
+      <div className="mt-3 flex items-center gap-1.5 border border-red-500/30 px-3 py-2.5 text-[11.5px] text-red-400">
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+        {erro}
+      </div>
+    );
+  }
+
+  if (!regra || !regra.pricing_mode) {
+    return (
+      <div className="mt-3 border border-neutral-900 bg-neutral-950/50 px-3 py-2.5 text-[11.5px] text-neutral-500">
+        Nenhuma regra de precificação configurada para este canal.
+      </div>
+    );
+  }
+
+  const listings = linhasListing(regra.listing_type_rules);
+
+  return (
+    <div className="mt-3 space-y-3 border border-neutral-900 bg-neutral-950/50 px-3 py-3">
+      <Bloco titulo="Geral">
+        <Campo rotulo="Modo" valor={MODO_LABEL[regra.pricing_mode] ?? regra.pricing_mode} />
+        {regra.pricing_mode === "flat" && (
+          <Campo rotulo="Comissão" valor={fmtPctDireto(regra.comissao)} />
+        )}
+        <Campo rotulo="Frete geral" valor={fmtFrete(regra.frete, regra.frete_mode)} />
+        <Campo
+          rotulo="Regras por produto"
+          valor={produtos == null ? "—" : `${produtos} produto(s)`}
+        />
+      </Bloco>
+
+      {listings.length > 0 && (
+        <Bloco titulo="Clássico / Premium (prioridade sobre o modo)">
+          {listings.map(({ modo, listing, regra: r }) => (
+            <div key={`${modo}-${listing}`} className="py-1">
+              <p className="text-[12px] font-medium text-neutral-200">
+                {LISTING_LABEL[listing] ?? listing}
+                {modo && (
+                  <span className="font-normal text-neutral-500">
+                    {" "}
+                    · {MODO_LABEL[modo] ?? modo}
+                  </span>
+                )}
+              </p>
+              <p className="text-[11.5px] text-neutral-400">
+                Comissão {fmtPctFracao(r.commission_rate)} · Taxa fixa {fmtBRL(r.fixed_fee)} · Frete{" "}
+                {fmtFrete(r.frete, r.frete_mode)}
+              </p>
+            </div>
+          ))}
+        </Bloco>
+      )}
+
+      {regra.pricing_mode === "tiered" && (
+        <Bloco titulo="Faixas de preço">
+          {regra.commission_tiers && regra.commission_tiers.length > 0 ? (
+            regra.commission_tiers.map((t, i) => (
+              <div key={i} className="py-1">
+                <p className="text-[12px] font-medium text-neutral-200">
+                  {fmtBRL(t.min)} até {t.max == null ? "sem limite" : fmtBRL(t.max)}
+                </p>
+                <p className="text-[11.5px] text-neutral-400">
+                  Comissão {fmtPctFracao(t.rate)} · Taxa fixa {fmtBRL(t.fixedFee)}
+                </p>
+              </div>
+            ))
+          ) : (
+            <p className="text-[11.5px] text-neutral-500">Nenhuma faixa cadastrada.</p>
+          )}
+        </Bloco>
+      )}
+
+      {regra.pricing_mode === "brand" && (
+        <Bloco titulo="Por marca">
+          {regra.default_rule && (
+            <div className="py-1">
+              <p className="text-[12px] font-medium text-neutral-200">Padrão (demais marcas)</p>
+              <p className="text-[11.5px] text-neutral-400">
+                Comissão {fmtPctFracao(regra.default_rule.commission_rate)} · Taxa fixa{" "}
+                {fmtBRL(regra.default_rule.fixed_fee)}
+              </p>
+            </div>
+          )}
+          {regra.brand_rules && regra.brand_rules.length > 0 ? (
+            regra.brand_rules.map((b, i) => (
+              <div key={`${b.brand}-${i}`} className="py-1">
+                <p className="text-[12px] font-medium text-neutral-200">{b.brand}</p>
+                <p className="text-[11.5px] text-neutral-400">
+                  Comissão {fmtPctFracao(b.commission_rate)} · Taxa fixa {fmtBRL(b.fixed_fee)}
+                </p>
+                {b.classico && (
+                  <p className="text-[11.5px] text-neutral-500">
+                    Clássico {fmtPctFracao(b.classico.rate)} + {fmtBRL(b.classico.fixedFee)}
+                  </p>
+                )}
+                {b.premium && (
+                  <p className="text-[11.5px] text-neutral-500">
+                    Premium {fmtPctFracao(b.premium.rate)} + {fmtBRL(b.premium.fixedFee)}
+                  </p>
+                )}
+              </div>
+            ))
+          ) : (
+            <p className="text-[11.5px] text-neutral-500">Nenhuma marca cadastrada.</p>
+          )}
+        </Bloco>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Modal
+// ---------------------------------------------------------------------
 function normalizeChannelName(v: string): string {
   return String(v ?? "").trim();
 }
@@ -78,6 +325,14 @@ export default function CreateChannelModal({
   );
   const [openPricingRulesModal, setOpenPricingRulesModal] = useState(false);
 
+  // Resumo da regra do canal selecionado
+  const [regraCanal, setRegraCanal] = useState<RegraCanal | null>(null);
+  const [produtosCanal, setProdutosCanal] = useState<number | null>(null);
+  const [carregandoResumo, setCarregandoResumo] = useState(false);
+  const [erroResumo, setErroResumo] = useState<string | null>(null);
+  // Incrementa após aplicar regras, para recarregar o resumo
+  const [reloadKey, setReloadKey] = useState(0);
+
   const rulesDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -107,6 +362,62 @@ export default function CreateChannelModal({
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
+
+  // Carrega a regra e a contagem de produtos do canal selecionado.
+  // O flag "cancelado" descarta respostas antigas quando o usuário troca de canal.
+  useEffect(() => {
+    if (!selectedChannelForRules) {
+      setRegraCanal(null);
+      setProdutosCanal(null);
+      setErroResumo(null);
+      setCarregandoResumo(false);
+      return;
+    }
+
+    let cancelado = false;
+    setCarregandoResumo(true);
+    setErroResumo(null);
+
+    (async () => {
+      try {
+        const [regraRes, prodRes] = await Promise.all([
+          supabase
+            .schema("newsystem")
+            .from("marketplace_channel_rules")
+            .select(
+              "pricing_mode, comissao, frete, frete_mode, commission_tiers, default_rule, brand_rules, listing_type_rules"
+            )
+            .eq("channel", selectedChannelForRules)
+            .maybeSingle(),
+          supabase
+            .schema("newsystem")
+            .from("marketplace_product_rules")
+            .select("channel", { count: "exact", head: true })
+            .eq("channel", selectedChannelForRules)
+            .is("deleted_at", null),
+        ]);
+
+        if (cancelado) return;
+        if (regraRes.error) throw regraRes.error;
+        if (prodRes.error) throw prodRes.error;
+
+        setRegraCanal((regraRes.data as RegraCanal | null) ?? null);
+        setProdutosCanal(prodRes.count ?? 0);
+      } catch (err: any) {
+        if (cancelado) return;
+        console.error("[CreateChannelModal] carregar regras do canal:", err);
+        setRegraCanal(null);
+        setProdutosCanal(null);
+        setErroResumo(err?.message ?? "Erro ao carregar as regras do canal.");
+      } finally {
+        if (!cancelado) setCarregandoResumo(false);
+      }
+    })();
+
+    return () => {
+      cancelado = true;
+    };
+  }, [selectedChannelForRules, reloadKey]);
 
   const resetState = () => {
     setChannelName("");
@@ -566,14 +877,23 @@ export default function CreateChannelModal({
               </div>
 
               {selectedChannelForRules && (
-                <div className="mt-3 border border-[#1a8ceb]/30 bg-[#1a8ceb]/[0.04] px-3 py-2.5">
-                  <p className="text-[12px] text-neutral-300">
-                    Canal selecionado:{" "}
-                    <span className="font-semibold text-white">
-                      {selectedChannelForRules}
-                    </span>
-                  </p>
-                </div>
+                <>
+                  <div className="mt-3 border border-[#1a8ceb]/30 bg-[#1a8ceb]/[0.04] px-3 py-2.5">
+                    <p className="text-[12px] text-neutral-300">
+                      Canal selecionado:{" "}
+                      <span className="font-semibold text-white">
+                        {selectedChannelForRules}
+                      </span>
+                    </p>
+                  </div>
+
+                  <RegraCanalResumo
+                    regra={regraCanal}
+                    produtos={produtosCanal}
+                    carregando={carregandoResumo}
+                    erro={erroResumo}
+                  />
+                </>
               )}
 
               <button
@@ -812,12 +1132,12 @@ export default function CreateChannelModal({
         onOpenChange={setOpenPricingRulesModal}
         channel={selectedChannelForRules ?? ""}
         onApplied={() => {
-          // ← NOVO: invalida o cache global de dbRules e notifica
-          // qualquer instância de useChannelPricing já montada (ex: a
-          // calculadora aberta em outra aba/tela), eliminando a
-          // necessidade de reload de página para a nova regra
-          // (flat/tiered/brand) surtir efeito.
+          // Invalida o cache global de dbRules e notifica qualquer instância
+          // de useChannelPricing já montada (ex: a calculadora aberta em outra tela),
+          // para que a nova regra (flat/tiered/brand) surta efeito sem reload.
           invalidateAndRefetchDbRules();
+          // Recarrega o resumo exibido neste modal
+          setReloadKey((k) => k + 1);
           onSuccess?.();
         }}
       />

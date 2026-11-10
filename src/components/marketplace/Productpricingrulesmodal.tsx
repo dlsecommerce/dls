@@ -46,6 +46,14 @@ function toPercentDisplay(rate: number | null | undefined): string {
   return String(pct);
 }
 
+// Taxa fixa sem comissão percentual é ignorada pelo resolver: avisa o usuário.
+function avisoTaxaSemComissao(rate: string, fee: string): string | null {
+  if (parseValue(fee) != null && parseValue(rate) == null) {
+    return "Taxa fixa sem % de comissão: o sistema ignora esta linha e usa a regra do canal.";
+  }
+  return null;
+}
+
 const miniInputClass = `
   h-9 w-full border border-neutral-800 bg-transparent px-2 text-[12.5px] text-white
   placeholder:text-neutral-600 outline-none transition-colors
@@ -96,11 +104,16 @@ export default function ProductPricingRulesModal({
 
   useEffect(() => {
     if (!open || !channel || !store || !idBling) return;
+
+    // Evita que uma resposta antiga sobrescreva o formulário após trocar de produto
+    let ativo = true;
+
     setLoading(true);
     setError(null);
 
     loadProductPricingRule({ channel, store, id_bling: idBling })
       .then((rule) => {
+        if (!ativo) return;
         if (rule) {
           setHasExistingRule(true);
           setClassicoRate(toPercentDisplay(rule.classico_rate));
@@ -116,8 +129,16 @@ export default function ProductPricingRulesModal({
           setHasExistingRule(false);
         }
       })
-      .catch(() => setError("Não foi possível carregar a regra deste produto."))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (ativo) setError("Não foi possível carregar a regra deste produto.");
+      })
+      .finally(() => {
+        if (ativo) setLoading(false);
+      });
+
+    return () => {
+      ativo = false;
+    };
   }, [open, channel, store, idBling]);
 
   const handleClose = useCallback(
@@ -143,12 +164,12 @@ export default function ProductPricingRulesModal({
           parseValue(classicoRate) != null ? parseValue(classicoRate)! / 100 : null,
         classico_fixed_fee: parseValue(classicoFixedFee),
         frete_classico: parseValue(freteClassico),
-        frete_classico_mode: freteClassicoMode,
+        frete_classico_mode: parseValue(freteClassico) != null ? freteClassicoMode : null,
         premium_rate:
           parseValue(premiumRate) != null ? parseValue(premiumRate)! / 100 : null,
         premium_fixed_fee: parseValue(premiumFixedFee),
         frete_premium: parseValue(fretePremium),
-        frete_premium_mode: fretePremiumMode,
+        frete_premium_mode: parseValue(fretePremium) != null ? fretePremiumMode : null,
       };
 
       await saveProductPricingRule(payload);
@@ -202,6 +223,9 @@ export default function ProductPricingRulesModal({
     return null;
   }
 
+  const avisoClassico = avisoTaxaSemComissao(classicoRate, classicoFixedFee);
+  const avisoPremium = avisoTaxaSemComissao(premiumRate, premiumFixedFee);
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent
@@ -226,8 +250,8 @@ export default function ProductPricingRulesModal({
             {referencia ? ` · Ref. ${referencia}` : ""}
           </p>
           <p className="mt-1 text-[10.5px] text-neutral-600">
-            Tem prioridade máxima sobre a regra do canal e da marca. Deixe em branco
-            para usar a regra geral do canal.
+            Tem prioridade máxima sobre a regra do canal e da marca. Campo em branco usa a
+            regra geral do canal.
           </p>
         </DialogHeader>
 
@@ -261,6 +285,9 @@ export default function ProductPricingRulesModal({
                     className={miniInputClass}
                   />
                 </div>
+                {avisoClassico && (
+                  <p className="mb-1.5 text-[10.5px] text-amber-400">{avisoClassico}</p>
+                )}
                 <div className="flex items-center gap-1.5">
                   <div className="flex overflow-hidden border border-neutral-800 text-[10px] shrink-0">
                     <button
@@ -293,7 +320,7 @@ export default function ProductPricingRulesModal({
                     value={freteClassico}
                     disabled={saving || deleting}
                     onChange={(e) => setFreteClassico(sanitizeDecimalInput(e.target.value))}
-                    placeholder="Frete Clássico"
+                    placeholder="Frete Clássico (vazio = canal)"
                     className={miniInputClass}
                   />
                 </div>
@@ -322,6 +349,9 @@ export default function ProductPricingRulesModal({
                     className={miniInputClass}
                   />
                 </div>
+                {avisoPremium && (
+                  <p className="mb-1.5 text-[10.5px] text-amber-400">{avisoPremium}</p>
+                )}
                 <div className="flex items-center gap-1.5">
                   <div className="flex overflow-hidden border border-neutral-800 text-[10px] shrink-0">
                     <button
@@ -354,7 +384,7 @@ export default function ProductPricingRulesModal({
                     value={fretePremium}
                     disabled={saving || deleting}
                     onChange={(e) => setFretePremium(sanitizeDecimalInput(e.target.value))}
-                    placeholder="Frete Premium"
+                    placeholder="Frete Premium (vazio = canal)"
                     className={miniInputClass}
                   />
                 </div>
