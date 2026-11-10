@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 const SCHEMA = "newsystem";
 const PRODUCT_SHEET = "Por Produto";
 const UPSERT_CHUNK = 500;
+const PAGE_SIZE = 1000;
 const CANAL_ML = "Mercado Livre";
 
 // Canais canônicos. Chave em minúsculas, valor com o nome gravado no banco.
@@ -87,7 +88,7 @@ function normalizaCanal(val: unknown): string {
 
 type NumeroLido = { ok: true; value: number | null } | { ok: false };
 
-// Aceita número, "12,5", "R$ 1.234,56" e "12%". Vazio vira null. Lixo vira ok: false.
+// Aceita número, "12,5", "R$ 1.234,56", "1.234" (milhar) e "12%". Vazio vira null. Lixo vira ok: false.
 function lerNumero(val: unknown): NumeroLido {
   if (vazio(val)) return { ok: true, value: null };
   if (typeof val === "number") {
@@ -96,7 +97,15 @@ function lerNumero(val: unknown): NumeroLido {
 
   let s = String(val).replace(/R\$/gi, "").replace(/%/g, "").replace(/\s/g, "");
   if (s === "") return { ok: true, value: null };
-  if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+
+  if (s.includes(",")) {
+    // Formato brasileiro com decimal: 1.234,56 -> 1234.56
+    s = s.replace(/\./g, "").replace(",", ".");
+  } else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) {
+    // Só pontos seguidos de três dígitos: separador de milhar (1.234 -> 1234)
+    s = s.replace(/\./g, "");
+  }
+
   if (!/^-?\d+(\.\d+)?$/.test(s)) return { ok: false };
 
   return { ok: true, value: Number(s) };
@@ -148,6 +157,33 @@ function mesclarListingTypeRules(
     }
   }
   return Object.keys(out).length ? out : null;
+}
+
+// Contas do Mercado Livre existentes em ml_fretes (usadas para validar a coluna Loja)
+async function buscarContasML(): Promise<Set<string>> {
+  const contas = new Set<string>();
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabaseAdmin
+      .schema(SCHEMA)
+      .from("ml_fretes")
+      .select("conta")
+      .order("conta", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) throw error;
+
+    for (const r of data ?? []) {
+      const conta = String(r.conta ?? "").trim();
+      if (conta) contas.add(conta);
+    }
+
+    if (!data || data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+
+  return contas;
 }
 
 // ---------- Aba Por Produto ----------
@@ -263,6 +299,7 @@ export async function POST(req: Request) {
     await workbook.xlsx.load(await file.arrayBuffer());
 
     const errors: string[] = [];
+    const warnings: string[] = [];
     const byChannel: ByChannel = {};
 
     const ensureChannel = (channel: string): ChannelEntry => {
@@ -323,6 +360,10 @@ export async function POST(req: Request) {
       const entry = ensureChannel(canal);
       entry.pricing_mode = "brand";
 
+      // Se a aba trouxe qualquer linha para o canal, a lista de marcas é substituída.
+      // Sem isso, marcas antigas do banco seriam mantidas em silêncio.
+      if (!entry.brand_rules) entry.brand_rules = [];
+
       const marca = cellText(row.getCell(2));
       const isDefault = cellText(row.getCell(9)).toUpperCase() === "SIM";
       const comissao = taxa(row.getCell(3).value, "Comissão (%)", local, errors) ?? 0;
@@ -335,8 +376,6 @@ export async function POST(req: Request) {
 
       const temClassico = !vazio(row.getCell(5).value) || !vazio(row.getCell(6).value);
       const temPremium = !vazio(row.getCell(7).value) || !vazio(row.getCell(8).value);
-
-      if (!entry.brand_rules) entry.brand_rules = [];
 
       entry.brand_rules.push({
         brand: marca,
@@ -424,9 +463,51 @@ export async function POST(req: Request) {
       );
     }
 
-    // ---------- Salva regras por canal ----------
-    let updatedCount = 0;
+    // ---------- Valida lojas do Mercado Livre (aviso, não bloqueia) ----------
+    const lojasML = new Set(
+      productRows.filter((p) => p.channel === CANAL_ML).map((p) => p.store)
+    );
+
+    if (lojasML.size) {
+      try {
+        const contas = await buscarContasML();
+        for (const loja of lojasML) {
+          if (!contas.has(loja)) {
+            warnings.push(
+              `Loja "${loja}" não existe em ml_fretes.conta. A regra será gravada, mas não casa com nenhum anúncio no export até haver frete consultado para essa loja.`
+            );
+          }
+        }
+      } catch {
+        warnings.push("Não foi possível validar as lojas do Mercado Livre.");
+      }
+    }
+
     const saveErrors: string[] = [];
+
+    // ---------- 1) Salva regras por produto (antes do canal e do recálculo) ----------
+    let productsSaved = 0;
+
+    for (let i = 0; i < productRows.length; i += UPSERT_CHUNK) {
+      const chunk = productRows.slice(i, i + UPSERT_CHUNK);
+
+      // Exige a constraint completa (channel, store, id_bling); índice parcial não serve para ON CONFLICT
+      const { error: productError } = await supabaseAdmin
+        .schema(SCHEMA)
+        .from("marketplace_product_rules")
+        .upsert(chunk, { onConflict: "channel,store,id_bling" });
+
+      if (productError) {
+        saveErrors.push(
+          `Por Produto (linhas ${i + 1} a ${i + chunk.length}): ${productError.message}.`
+        );
+      } else {
+        productsSaved += chunk.length;
+      }
+    }
+
+    // ---------- 2) Salva regras por canal (sem recalcular ainda) ----------
+    const canaisSalvos: string[] = [];
 
     for (const channel of channels) {
       const entry = byChannel[channel];
@@ -475,49 +556,62 @@ export async function POST(req: Request) {
 
         if (upsertError) throw upsertError;
 
-        const { error: rpcError } = await supabaseAdmin
-          .schema(SCHEMA)
-          .rpc("recalc_channel_pricing", { p_channel: channel });
-
-        if (rpcError) {
-          throw new Error(`regras salvas, mas o recálculo falhou: ${rpcError.message}`);
-        }
-
-        updatedCount++;
+        canaisSalvos.push(channel);
       } catch (err: any) {
         saveErrors.push(`Canal "${channel}": ${err?.message ?? "erro desconhecido"}.`);
       }
     }
 
-    // ---------- Salva regras por produto ----------
-    let productsSaved = 0;
+    // ---------- 3) Recalcula uma vez por canal salvo, após produtos e canais ----------
+    const recalculos: Array<Record<string, unknown>> = [];
 
-    for (let i = 0; i < productRows.length; i += UPSERT_CHUNK) {
-      const chunk = productRows.slice(i, i + UPSERT_CHUNK);
+    for (const channel of canaisSalvos) {
+      try {
+        const { data, error: rpcError } = await supabaseAdmin
+          .schema(SCHEMA)
+          .rpc("recalc_channel_pricing", { p_channel: channel });
 
-      // Exige a constraint completa (channel, store, id_bling); índice parcial não serve para ON CONFLICT
-      const { error: productError } = await supabaseAdmin
-        .schema(SCHEMA)
-        .from("marketplace_product_rules")
-        .upsert(chunk, { onConflict: "channel,store,id_bling" });
+        if (rpcError) throw rpcError;
 
-      if (productError) {
+        const resumo = Array.isArray(data) ? data[0] : data;
+        recalculos.push({ channel, ...(resumo ?? {}) });
+
+        // Linhas com preço manual mantêm comissão e frete; a regra de produto não se aplica a elas
+        const { count, error: countError } = await supabaseAdmin
+          .schema(SCHEMA)
+          .from("marketplace")
+          .select("announce_id", { count: "exact", head: true })
+          .ilike("channel", channel)
+          .eq("has_manual_pricing", true)
+          .is("deleted_at", null);
+
+        if (!countError && count) {
+          warnings.push(
+            `Canal "${channel}": ${count} anúncio(s) com preço manual preservaram comissão e frete. As regras importadas não se aplicam a eles.`
+          );
+        }
+      } catch (err: any) {
         saveErrors.push(
-          `Por Produto (linhas ${i + 1} a ${i + chunk.length}): ${productError.message}.`
+          `Canal "${channel}": regras salvas, mas o recálculo falhou: ${err?.message ?? "erro desconhecido"}.`
         );
-      } else {
-        productsSaved += chunk.length;
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      updatedChannels: updatedCount,
-      totalChannels: channels.length,
-      updatedProducts: productsSaved,
-      totalProducts: productRows.length,
-      errors: saveErrors.length ? saveErrors : undefined,
-    });
+    const sucesso = saveErrors.length === 0;
+
+    return NextResponse.json(
+      {
+        success: sucesso,
+        updatedChannels: canaisSalvos.length,
+        totalChannels: channels.length,
+        updatedProducts: productsSaved,
+        totalProducts: productRows.length,
+        recalculos,
+        warnings: warnings.length ? warnings : undefined,
+        errors: saveErrors.length ? saveErrors : undefined,
+      },
+      { status: sucesso ? 200 : 207 }
+    );
   } catch (err: any) {
     console.error("Erro ao importar regras de canal:", err);
     return NextResponse.json(
