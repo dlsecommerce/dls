@@ -6,6 +6,9 @@ const SCHEMA = "newsystem";
 const ACCENT = "1A8CEB";
 const PAGE_SIZE = 1000;
 
+// Canal canônico do Mercado Livre. A comparação ignora maiúsculas e espaços.
+const CANAL_ML = "mercado livre";
+
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -36,6 +39,10 @@ const toPct = (v: unknown) =>
 const orEmpty = (v: unknown) => (v == null ? "" : v);
 
 const normaliza = (v: unknown) => (v == null ? "" : String(v).trim());
+
+// Compara o canal sem diferenciar maiúsculas e espaços
+const ehMercadoLivre = (channel: unknown) =>
+  normaliza(channel).toLowerCase() === CANAL_ML;
 
 // Busca todas as páginas de uma consulta paginada por range()
 async function fetchAllPaginated(
@@ -302,9 +309,13 @@ export async function GET() {
     }
 
     // ---------- Preenche a aba Por Produto ----------
+    // Base: regras gravadas, de qualquer canal.
+    // MLB, título e frete vêm da view do ML somente quando o canal é Mercado Livre.
     for (const p of productRules) {
       const idBling = normaliza(p.id_bling);
-      const anuncio = listingMap.get(idBling);
+      const anuncio = ehMercadoLivre(p.channel)
+        ? listingMap.get(idBling)
+        : undefined;
 
       // Referência gravada na regra tem prioridade sobre o SKU da view
       const referencia = normaliza(p.referencia) || anuncio?.referencia || "";

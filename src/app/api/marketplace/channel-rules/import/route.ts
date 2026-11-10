@@ -5,6 +5,12 @@ import { createClient } from "@supabase/supabase-js";
 const SCHEMA = "newsystem";
 const PRODUCT_SHEET = "Por Produto";
 const UPSERT_CHUNK = 500;
+const CANAL_ML = "Mercado Livre";
+
+// Canais canônicos. Chave em minúsculas, valor com o nome gravado no banco.
+const CANAIS_CANONICOS: Record<string, string> = {
+  "mercado livre": CANAL_ML,
+};
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -29,37 +35,22 @@ const COL = {
   frete_premium_mode: "Modo Frete Premium (fixed/percent)",
 } as const;
 
-function toNumber(val: any): number {
-  if (val == null || val === "") return 0;
-  const n = typeof val === "number" ? val : parseFloat(String(val).replace(",", "."));
-  return Number.isNaN(n) ? 0 : n;
-}
-
-function toNumberOrNull(val: unknown): number | null {
-  if (val == null || val === "") return null;
-  const n = typeof val === "number" ? val : parseFloat(String(val).replace(",", "."));
-  return Number.isNaN(n) ? null : n;
-}
-
-// Planilha guarda percentual (12 = 12%); o banco guarda fração (0.12)
-function toRateOrNull(val: unknown): number | null {
-  const n = toNumberOrNull(val);
-  return n == null ? null : n / 100;
-}
-
-function cellText(cell: ExcelJS.Cell): string {
-  return String(cell.value ?? "").trim();
-}
-
 type Mode = "fixed" | "percent";
+type Pricing = "flat" | "tiered" | "brand";
 
-// Retorna null para vazio, undefined para valor inválido
-function parseMode(raw: string): Mode | null | undefined {
-  if (!raw) return null;
-  const v = raw.toLowerCase();
-  if (v === "fixed" || v === "percent") return v;
-  return undefined;
-}
+type ChannelEntry = {
+  pricing_mode?: Pricing;
+  comissao?: number;
+  frete?: number;
+  frete_mode?: Mode;
+  commission_tiers?: any[];
+  default_rule?: { commission_rate: number; fixed_fee: number } | null;
+  brand_rules?: any[];
+  // modo -> listing -> regra
+  listing_type_rules?: Record<string, Record<string, any>>;
+};
+
+type ByChannel = Record<string, ChannelEntry>;
 
 type ProductRow = {
   channel: string;
@@ -78,19 +69,88 @@ type ProductRow = {
   deleted_at: null;
 };
 
-type ByChannel = Record<
-  string,
-  {
-    pricing_mode?: "flat" | "tiered" | "brand";
-    comissao?: number;
-    frete?: number;
-    frete_mode?: "fixed" | "percent";
-    commission_tiers?: any[];
-    default_rule?: { commission_rate: number; fixed_fee: number } | null;
-    brand_rules?: any[];
-    listing_type_rules?: Record<string, { classico?: any; premium?: any }>;
+// ---------- Helpers de leitura ----------
+
+function cellText(cell: ExcelJS.Cell): string {
+  return String(cell.value ?? "").trim();
+}
+
+function vazio(val: unknown): boolean {
+  return val == null || val === "";
+}
+
+function normalizaCanal(val: unknown): string {
+  const texto = String(val ?? "").trim().replace(/\s+/g, " ");
+  if (!texto) return "";
+  return CANAIS_CANONICOS[texto.toLowerCase()] ?? texto;
+}
+
+type NumeroLido = { ok: true; value: number | null } | { ok: false };
+
+// Aceita número, "12,5", "R$ 1.234,56" e "12%". Vazio vira null. Lixo vira ok: false.
+function lerNumero(val: unknown): NumeroLido {
+  if (vazio(val)) return { ok: true, value: null };
+  if (typeof val === "number") {
+    return Number.isFinite(val) ? { ok: true, value: val } : { ok: false };
   }
->;
+
+  let s = String(val).replace(/R\$/gi, "").replace(/%/g, "").replace(/\s/g, "");
+  if (s === "") return { ok: true, value: null };
+  if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+  if (!/^-?\d+(\.\d+)?$/.test(s)) return { ok: false };
+
+  return { ok: true, value: Number(s) };
+}
+
+// Registra erro quando o valor não é número. Retorna null para vazio ou inválido.
+function numero(val: unknown, rotulo: string, local: string, errors: string[]): number | null {
+  const r = lerNumero(val);
+  if (!r.ok) {
+    errors.push(`${local}: "${rotulo}" inválido (${String(val)})`);
+    return null;
+  }
+  return r.value;
+}
+
+// Planilha guarda percentual (12 = 12%); o banco guarda fração (0.12)
+function taxa(val: unknown, rotulo: string, local: string, errors: string[]): number | null {
+  const n = numero(val, rotulo, local, errors);
+  return n == null ? null : n / 100;
+}
+
+// Modo de frete: vazio vira "fixed" quando há valor, senão null.
+function modoFrete(
+  raw: string,
+  temValor: boolean,
+  rotulo: string,
+  local: string,
+  errors: string[]
+): Mode | null {
+  const v = raw.toLowerCase();
+  if (v === "fixed" || v === "percent") return v;
+  if (v) {
+    errors.push(`${local}: "${rotulo}" deve ser fixed ou percent`);
+    return null;
+  }
+  return temValor ? "fixed" : null;
+}
+
+// Mescla listing_type_rules em dois níveis (modo -> listing),
+// para que importar só "brand.premium" não apague "brand.classico".
+function mesclarListingTypeRules(
+  base: unknown,
+  extra: unknown
+): Record<string, Record<string, any>> | null {
+  const out: Record<string, Record<string, any>> = {};
+  for (const origem of [base ?? {}, extra ?? {}] as Array<Record<string, Record<string, any>>>) {
+    for (const [modo, listings] of Object.entries(origem)) {
+      out[modo] = { ...(out[modo] ?? {}), ...listings };
+    }
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+// ---------- Aba Por Produto ----------
 
 function parseProductSheet(workbook: ExcelJS.Workbook, errors: string[]): ProductRow[] {
   const sheet = workbook.getWorksheet(PRODUCT_SHEET);
@@ -105,7 +165,7 @@ function parseProductSheet(workbook: ExcelJS.Workbook, errors: string[]): Produc
   const obrigatorias = [COL.channel, COL.id_bling];
   const ausentes = obrigatorias.filter((h) => !headerIdx.has(h));
   if (ausentes.length) {
-    errors.push(`Por Produto: colunas obrigatórias ausentes: ${ausentes.join(", ")}.`);
+    errors.push(`Por Produto: colunas obrigatórias ausentes: ${ausentes.join(", ")}`);
     return [];
   }
 
@@ -113,8 +173,7 @@ function parseProductSheet(workbook: ExcelJS.Workbook, errors: string[]): Produc
     const idx = headerIdx.get(header);
     return idx ? row.getCell(idx).value : null;
   };
-  const txt = (row: ExcelJS.Row, header: string) =>
-    String(raw(row, header) ?? "").trim();
+  const txt = (row: ExcelJS.Row, header: string) => String(raw(row, header) ?? "").trim();
 
   const rows: ProductRow[] = [];
   const seen = new Set<string>();
@@ -122,43 +181,40 @@ function parseProductSheet(workbook: ExcelJS.Workbook, errors: string[]): Produc
   sheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return;
 
-    const channel = txt(row, COL.channel);
+    const local = `Por Produto, linha ${rowNumber}`;
+    const channel = normalizaCanal(txt(row, COL.channel));
     const idBling = txt(row, COL.id_bling);
 
     // Linha totalmente vazia: ignora
     if (!channel && !idBling) return;
 
     if (!channel) {
-      errors.push(`Por Produto, linha ${rowNumber}: "Canal" é obrigatório.`);
+      errors.push(`${local}: "Canal" é obrigatório`);
       return;
     }
     if (!idBling) {
-      errors.push(`Por Produto, linha ${rowNumber}: "ID Bling" é obrigatório.`);
+      errors.push(`${local}: "ID Bling" é obrigatório`);
       return;
     }
 
-    // Loja vazia é salva como string vazia, para que a chave de conflito funcione
+    // Loja é a chave de ligação com ml_fretes.conta; sem ela a regra nunca casa no export
     const store = txt(row, COL.store);
+    if (channel === CANAL_ML && !store) {
+      errors.push(`${local}: "Loja" é obrigatória para o Mercado Livre`);
+      return;
+    }
+
     const key = `${channel}|${store}|${idBling}`;
     if (seen.has(key)) {
       errors.push(
-        `Por Produto, linha ${rowNumber}: ID Bling "${idBling}" repetido para o canal "${channel}" e loja "${store}".`
+        `${local}: ID Bling "${idBling}" repetido para o canal "${channel}" e loja "${store}"`
       );
       return;
     }
     seen.add(key);
 
-    const freteClassicoMode = parseMode(txt(row, COL.frete_classico_mode));
-    const fretePremiumMode = parseMode(txt(row, COL.frete_premium_mode));
-
-    if (freteClassicoMode === undefined) {
-      errors.push(`Por Produto, linha ${rowNumber}: "Modo Frete Clássico" deve ser fixed ou percent.`);
-      return;
-    }
-    if (fretePremiumMode === undefined) {
-      errors.push(`Por Produto, linha ${rowNumber}: "Modo Frete Premium" deve ser fixed ou percent.`);
-      return;
-    }
+    const freteClassico = numero(raw(row, COL.frete_classico), "Frete Clássico", local, errors);
+    const fretePremium = numero(raw(row, COL.frete_premium), "Frete Premium", local, errors);
 
     rows.push({
       channel,
@@ -166,20 +222,34 @@ function parseProductSheet(workbook: ExcelJS.Workbook, errors: string[]): Produc
       id_bling: idBling,
       referencia: txt(row, COL.referencia) || null,
       brand: txt(row, COL.brand) || null,
-      classico_rate: toRateOrNull(raw(row, COL.classico_rate)),
-      classico_fixed_fee: toNumberOrNull(raw(row, COL.classico_fixed_fee)),
-      premium_rate: toRateOrNull(raw(row, COL.premium_rate)),
-      premium_fixed_fee: toNumberOrNull(raw(row, COL.premium_fixed_fee)),
-      frete_classico: toNumberOrNull(raw(row, COL.frete_classico)),
-      frete_classico_mode: freteClassicoMode,
-      frete_premium: toNumberOrNull(raw(row, COL.frete_premium)),
-      frete_premium_mode: fretePremiumMode,
+      classico_rate: taxa(raw(row, COL.classico_rate), "Clássico (%)", local, errors),
+      classico_fixed_fee: numero(raw(row, COL.classico_fixed_fee), "Clássico Taxa Fixa (R$)", local, errors),
+      premium_rate: taxa(raw(row, COL.premium_rate), "Premium (%)", local, errors),
+      premium_fixed_fee: numero(raw(row, COL.premium_fixed_fee), "Premium Taxa Fixa (R$)", local, errors),
+      frete_classico: freteClassico,
+      frete_classico_mode: modoFrete(
+        txt(row, COL.frete_classico_mode),
+        freteClassico != null,
+        "Modo Frete Clássico",
+        local,
+        errors
+      ),
+      frete_premium: fretePremium,
+      frete_premium_mode: modoFrete(
+        txt(row, COL.frete_premium_mode),
+        fretePremium != null,
+        "Modo Frete Premium",
+        local,
+        errors
+      ),
       deleted_at: null,
     });
   });
 
   return rows;
 }
+
+// ---------- Handler ----------
 
 export async function POST(req: Request) {
   try {
@@ -189,145 +259,152 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Nenhum arquivo enviado." }, { status: 400 });
     }
 
-    const arrayBuffer = await file.arrayBuffer();
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(arrayBuffer);
+    await workbook.xlsx.load(await file.arrayBuffer());
 
     const errors: string[] = [];
     const byChannel: ByChannel = {};
 
-    const ensureChannel = (channel: string) => {
+    const ensureChannel = (channel: string): ChannelEntry => {
       if (!byChannel[channel]) byChannel[channel] = {};
       return byChannel[channel];
     };
 
     // ---------- Aba Fixo ----------
     const flatSheet = workbook.getWorksheet("Fixo");
-    if (flatSheet) {
-      flatSheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return;
-        const channel = cellText(row.getCell(1));
-        if (!channel) return;
+    flatSheet?.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const canal = normalizaCanal(cellText(row.getCell(1)));
+      if (!canal) return;
 
-        const entry = ensureChannel(channel);
-        entry.pricing_mode = "flat";
-        entry.comissao = toNumber(row.getCell(2).value);
-        entry.frete = toNumber(row.getCell(3).value);
-        const modeRaw = cellText(row.getCell(4)).toLowerCase();
-        entry.frete_mode = modeRaw === "percent" ? "percent" : "fixed";
-      });
-    }
+      const local = `Fixo, linha ${rowNumber}`;
+      const entry = ensureChannel(canal);
+      entry.pricing_mode = "flat";
+      entry.comissao = numero(row.getCell(2).value, "Comissão (%)", local, errors) ?? 0;
+      entry.frete = numero(row.getCell(3).value, "Frete", local, errors) ?? 0;
+      entry.frete_mode =
+        modoFrete(cellText(row.getCell(4)), true, "Modo Frete", local, errors) ?? "fixed";
+    });
 
     // ---------- Aba Por Preço ----------
     const tieredSheet = workbook.getWorksheet("Por Preço");
-    if (tieredSheet) {
-      tieredSheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return;
-        const channel = cellText(row.getCell(1));
-        if (!channel) return;
+    tieredSheet?.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const canal = normalizaCanal(cellText(row.getCell(1)));
+      if (!canal) return;
 
-        const min = row.getCell(2).value;
-        if (min == null || min === "") {
-          errors.push(`Por Preço, linha ${rowNumber}: "Mín (R$)" é obrigatório.`);
-          return;
-        }
+      const local = `Por Preço, linha ${rowNumber}`;
+      const minRaw = row.getCell(2).value;
+      if (vazio(minRaw)) {
+        errors.push(`${local}: "Mín (R$)" é obrigatório`);
+        return;
+      }
 
-        const entry = ensureChannel(channel);
-        entry.pricing_mode = "tiered";
-        if (!entry.commission_tiers) entry.commission_tiers = [];
+      const entry = ensureChannel(canal);
+      entry.pricing_mode = "tiered";
+      if (!entry.commission_tiers) entry.commission_tiers = [];
 
-        const maxRaw = row.getCell(3).value;
-        entry.commission_tiers.push({
-          min: toNumber(min),
-          max: maxRaw != null && maxRaw !== "" ? toNumber(maxRaw) : null,
-          rate: toNumber(row.getCell(4).value) / 100,
-          fixedFee: toNumber(row.getCell(5).value),
-        });
+      entry.commission_tiers.push({
+        min: numero(minRaw, "Mín (R$)", local, errors) ?? 0,
+        max: numero(row.getCell(3).value, "Máx (R$)", local, errors),
+        rate: taxa(row.getCell(4).value, "Taxa (%)", local, errors) ?? 0,
+        fixedFee: numero(row.getCell(5).value, "Frete Fixo (R$)", local, errors) ?? 0,
       });
-    }
+    });
 
     // ---------- Aba Por Marca ----------
     const brandSheet = workbook.getWorksheet("Por Marca");
-    if (brandSheet) {
-      brandSheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return;
-        const channel = cellText(row.getCell(1));
-        if (!channel) return;
+    brandSheet?.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const canal = normalizaCanal(cellText(row.getCell(1)));
+      if (!canal) return;
 
-        const entry = ensureChannel(channel);
-        entry.pricing_mode = "brand";
+      const local = `Por Marca, linha ${rowNumber}`;
+      const entry = ensureChannel(canal);
+      entry.pricing_mode = "brand";
 
-        const brand = cellText(row.getCell(2));
-        const isDefault = cellText(row.getCell(9)).toUpperCase() === "SIM";
+      const marca = cellText(row.getCell(2));
+      const isDefault = cellText(row.getCell(9)).toUpperCase() === "SIM";
+      const comissao = taxa(row.getCell(3).value, "Comissão (%)", local, errors) ?? 0;
+      const taxaFixa = numero(row.getCell(4).value, "Taxa Fixa (R$)", local, errors) ?? 0;
 
-        if (isDefault || !brand) {
-          entry.default_rule = {
-            commission_rate: toNumber(row.getCell(3).value) / 100,
-            fixed_fee: toNumber(row.getCell(4).value),
-          };
-          return;
-        }
+      if (isDefault || !marca) {
+        entry.default_rule = { commission_rate: comissao, fixed_fee: taxaFixa };
+        return;
+      }
 
-        if (!entry.brand_rules) entry.brand_rules = [];
+      const temClassico = !vazio(row.getCell(5).value) || !vazio(row.getCell(6).value);
+      const temPremium = !vazio(row.getCell(7).value) || !vazio(row.getCell(8).value);
 
-        const classicoRate = row.getCell(5).value;
-        const classicoFee = row.getCell(6).value;
-        const premiumRate = row.getCell(7).value;
-        const premiumFee = row.getCell(8).value;
+      if (!entry.brand_rules) entry.brand_rules = [];
 
-        const hasClassico =
-          (classicoRate != null && classicoRate !== "") ||
-          (classicoFee != null && classicoFee !== "");
-        const hasPremium =
-          (premiumRate != null && premiumRate !== "") ||
-          (premiumFee != null && premiumFee !== "");
-
-        entry.brand_rules.push({
-          brand,
-          commission_rate: toNumber(row.getCell(3).value) / 100,
-          fixed_fee: toNumber(row.getCell(4).value),
-          ...(hasClassico
-            ? { classico: { rate: toNumber(classicoRate) / 100, fixedFee: toNumber(classicoFee) } }
-            : {}),
-          ...(hasPremium
-            ? { premium: { rate: toNumber(premiumRate) / 100, fixedFee: toNumber(premiumFee) } }
-            : {}),
-        });
+      entry.brand_rules.push({
+        brand: marca,
+        commission_rate: comissao,
+        fixed_fee: taxaFixa,
+        ...(temClassico
+          ? {
+              classico: {
+                rate: taxa(row.getCell(5).value, "Clássico (%)", local, errors) ?? 0,
+                fixedFee: numero(row.getCell(6).value, "Clássico R$", local, errors) ?? 0,
+              },
+            }
+          : {}),
+        ...(temPremium
+          ? {
+              premium: {
+                rate: taxa(row.getCell(7).value, "Premium (%)", local, errors) ?? 0,
+                fixedFee: numero(row.getCell(8).value, "Premium R$", local, errors) ?? 0,
+              },
+            }
+          : {}),
       });
-    }
+    });
 
     // ---------- Aba Condição ML (Global) ----------
     const conditionSheet = workbook.getWorksheet("Condição ML (Global)");
-    if (conditionSheet) {
-      conditionSheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return;
-        const channel = cellText(row.getCell(1));
-        const mode = cellText(row.getCell(2)).toLowerCase() as "flat" | "tiered" | "brand";
-        const listing = cellText(row.getCell(3)).toLowerCase() as "classico" | "premium";
-        if (!channel || !mode || !listing) return;
+    conditionSheet?.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
 
-        if (!["flat", "tiered", "brand"].includes(mode)) {
-          errors.push(`Condição ML, linha ${rowNumber}: modo "${mode}" inválido.`);
-          return;
-        }
-        if (!["classico", "premium"].includes(listing)) {
-          errors.push(`Condição ML, linha ${rowNumber}: listing "${listing}" inválido.`);
-          return;
-        }
+      const canal = normalizaCanal(cellText(row.getCell(1)));
+      const mode = cellText(row.getCell(2)).toLowerCase();
+      const listing = cellText(row.getCell(3)).toLowerCase();
 
-        const entry = ensureChannel(channel);
-        if (!entry.listing_type_rules) entry.listing_type_rules = {};
-        if (!entry.listing_type_rules[mode]) entry.listing_type_rules[mode] = {};
+      // Linha totalmente vazia: ignora
+      if (!canal && !mode && !listing) return;
 
-        const freteRaw = row.getCell(6).value;
-        entry.listing_type_rules[mode][listing] = {
-          commission_rate: toNumber(row.getCell(4).value) / 100,
-          fixed_fee: toNumber(row.getCell(5).value),
-          frete: freteRaw != null && freteRaw !== "" ? toNumber(freteRaw) : null,
-          frete_mode: cellText(row.getCell(7)).toLowerCase() === "percent" ? "percent" : "fixed",
-        };
-      });
-    }
+      const local = `Condição ML, linha ${rowNumber}`;
+
+      if (!canal) {
+        errors.push(`${local}: "Canal" é obrigatório`);
+        return;
+      }
+      if (!mode || !listing) {
+        errors.push(`${local}: "Modo" e "Listing" são obrigatórios`);
+        return;
+      }
+      if (!["flat", "tiered", "brand"].includes(mode)) {
+        errors.push(`${local}: modo "${mode}" inválido`);
+        return;
+      }
+      if (!["classico", "premium"].includes(listing)) {
+        errors.push(`${local}: listing "${listing}" inválido`);
+        return;
+      }
+
+      const frete = numero(row.getCell(6).value, "Frete", local, errors);
+
+      const entry = ensureChannel(canal);
+      if (!entry.listing_type_rules) entry.listing_type_rules = {};
+      if (!entry.listing_type_rules[mode]) entry.listing_type_rules[mode] = {};
+
+      entry.listing_type_rules[mode][listing] = {
+        commission_rate: taxa(row.getCell(4).value, "Comissão (%)", local, errors) ?? 0,
+        fixed_fee: numero(row.getCell(5).value, "Taxa Fixa (R$)", local, errors) ?? 0,
+        frete,
+        frete_mode: modoFrete(cellText(row.getCell(7)), frete != null, "Modo Frete", local, errors),
+      };
+    });
 
     // ---------- Aba Por Produto ----------
     const productRows = parseProductSheet(workbook, errors);
@@ -353,38 +430,42 @@ export async function POST(req: Request) {
 
     for (const channel of channels) {
       const entry = byChannel[channel];
-      if (!entry.pricing_mode) continue;
 
       try {
-        const { data: existing } = await supabaseAdmin
+        const { data: existing, error: readError } = await supabaseAdmin
           .schema(SCHEMA)
           .from("marketplace_channel_rules")
           .select("*")
           .eq("channel", channel)
           .maybeSingle();
 
-        const existingListingTypeRules = existing?.listing_type_rules ?? {};
-        const importedListingTypeRules = entry.listing_type_rules ?? {};
+        if (readError) throw readError;
 
-        const mergedListingTypeRules = {
-          ...existingListingTypeRules,
-          ...importedListingTypeRules,
-        };
+        // Canal que só traz Condição ML herda o modo e os campos já gravados
+        const mode = entry.pricing_mode ?? existing?.pricing_mode;
+        if (!mode) {
+          throw new Error("sem regra de precificação. Preencha Fixo, Por Preço ou Por Marca");
+        }
 
-        const mode = entry.pricing_mode;
+        const doc: ChannelEntry = entry.pricing_mode ? entry : {};
 
+        // Upsert com todas as colunas obrigatórias, para não depender do estado da linha
         const row = {
           channel,
           pricing_mode: mode,
-          comissao: mode === "flat" ? entry.comissao ?? 0 : existing?.comissao ?? 0,
-          frete: mode === "flat" ? entry.frete ?? 0 : existing?.frete ?? 0,
-          frete_mode: mode === "flat" ? entry.frete_mode ?? "fixed" : existing?.frete_mode ?? "fixed",
-          commission_tiers: mode === "tiered" ? entry.commission_tiers ?? null : null,
-          default_rule: mode === "brand" ? entry.default_rule ?? null : null,
-          brand_rules: mode === "brand" ? entry.brand_rules ?? null : null,
-          listing_type_rules: Object.keys(mergedListingTypeRules).length
-            ? mergedListingTypeRules
-            : null,
+          comissao: doc.comissao ?? existing?.comissao ?? 0,
+          frete: doc.frete ?? existing?.frete ?? 0,
+          frete_mode: doc.frete_mode ?? existing?.frete_mode ?? "fixed",
+          commission_tiers:
+            mode === "tiered" ? doc.commission_tiers ?? existing?.commission_tiers ?? null : null,
+          default_rule:
+            mode === "brand" ? doc.default_rule ?? existing?.default_rule ?? null : null,
+          brand_rules:
+            mode === "brand" ? doc.brand_rules ?? existing?.brand_rules ?? null : null,
+          listing_type_rules: mesclarListingTypeRules(
+            existing?.listing_type_rules,
+            entry.listing_type_rules
+          ),
         };
 
         const { error: upsertError } = await supabaseAdmin
@@ -394,13 +475,17 @@ export async function POST(req: Request) {
 
         if (upsertError) throw upsertError;
 
-        await supabaseAdmin
+        const { error: rpcError } = await supabaseAdmin
           .schema(SCHEMA)
           .rpc("recalc_channel_pricing", { p_channel: channel });
 
+        if (rpcError) {
+          throw new Error(`regras salvas, mas o recálculo falhou: ${rpcError.message}`);
+        }
+
         updatedCount++;
       } catch (err: any) {
-        saveErrors.push(`Canal "${channel}": ${err.message ?? "erro desconhecido"}.`);
+        saveErrors.push(`Canal "${channel}": ${err?.message ?? "erro desconhecido"}.`);
       }
     }
 
@@ -410,6 +495,7 @@ export async function POST(req: Request) {
     for (let i = 0; i < productRows.length; i += UPSERT_CHUNK) {
       const chunk = productRows.slice(i, i + UPSERT_CHUNK);
 
+      // Exige a constraint completa (channel, store, id_bling); índice parcial não serve para ON CONFLICT
       const { error: productError } = await supabaseAdmin
         .schema(SCHEMA)
         .from("marketplace_product_rules")
