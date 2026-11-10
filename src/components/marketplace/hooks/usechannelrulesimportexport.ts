@@ -10,6 +10,22 @@ type ImportResult = {
   errors?: string[];
 };
 
+type IntervalRef = React.MutableRefObject<ReturnType<typeof setInterval> | null>;
+
+function startFakeProgress(setProgress: (fn: (p: number) => number) => void, ref: IntervalRef) {
+  if (ref.current) clearInterval(ref.current);
+  ref.current = setInterval(() => {
+    setProgress((p) => (p >= 85 ? 85 : p + Math.random() * 12));
+  }, 200);
+}
+
+function stopFakeProgress(ref: IntervalRef) {
+  if (ref.current) {
+    clearInterval(ref.current);
+    ref.current = null;
+  }
+}
+
 export function useChannelRulesImportExport() {
   const [exportingChannelRules, setExportingChannelRules] = useState(false);
   const [exportProgressOpen, setExportProgressOpen] = useState(false);
@@ -22,24 +38,17 @@ export function useChannelRulesImportExport() {
   const exportIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const importIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const startFakeProgress = (
-    setProgress: (fn: (p: number) => number) => void,
-    ref: React.MutableRefObject<ReturnType<typeof setInterval> | null>
-  ) => {
-    if (ref.current) clearInterval(ref.current);
-    ref.current = setInterval(() => {
-      setProgress((p) => (p >= 85 ? 85 : p + Math.random() * 12));
-    }, 200);
-  };
+  const closeExportProgress = useCallback(() => {
+    stopFakeProgress(exportIntervalRef);
+    setExportProgressOpen(false);
+    setExportProgress(0);
+  }, []);
 
-  const stopFakeProgress = (
-    ref: React.MutableRefObject<ReturnType<typeof setInterval> | null>
-  ) => {
-    if (ref.current) {
-      clearInterval(ref.current);
-      ref.current = null;
-    }
-  };
+  const closeImportProgress = useCallback(() => {
+    stopFakeProgress(importIntervalRef);
+    setImportProgressOpen(false);
+    setImportProgress(0);
+  }, []);
 
   const handleExportChannelRules = useCallback(async () => {
     setExportingChannelRules(true);
@@ -54,9 +63,7 @@ export function useChannelRulesImportExport() {
       const blob = await res.blob();
       const disposition = res.headers.get("Content-Disposition") ?? "";
       const match = disposition.match(/filename="?([^"]+)"?/);
-      const fileName = match
-        ? decodeURIComponent(match[1])
-        : "regras-marketplace.xlsx";
+      const fileName = match ? decodeURIComponent(match[1]) : "regras-marketplace.xlsx";
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -96,8 +103,7 @@ export function useChannelRulesImportExport() {
           body: formData,
         });
 
-        const result: ImportResult & { error?: string; details?: string[] } =
-          await res.json();
+        const result: ImportResult & { error?: string; details?: string[] } = await res.json();
 
         stopFakeProgress(importIntervalRef);
 
@@ -138,10 +144,12 @@ export function useChannelRulesImportExport() {
     exportProgressOpen,
     exportProgress,
     handleExportChannelRules,
+    closeExportProgress,
 
     importingChannelRules,
     importProgressOpen,
     importProgress,
     handleImportChannelRules,
+    closeImportProgress,
   };
 }

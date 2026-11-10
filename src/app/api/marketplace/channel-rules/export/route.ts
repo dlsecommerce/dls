@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const SCHEMA = "newsystem";
 const ACCENT = "1A8CEB";
+const PAGE_SIZE = 1000;
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,6 +29,116 @@ function buildFileName() {
   return `REGRA - MARKETPLACE - ${date} ${time}.xlsx`;
 }
 
+// Taxa armazenada como fração (0.12 = 12%), igual ao restante do export
+const toPct = (v: unknown) =>
+  v == null || v === "" ? "" : Number(v) * 100;
+
+const orEmpty = (v: unknown) => (v == null ? "" : v);
+
+const normaliza = (v: unknown) => (v == null ? "" : String(v).trim());
+
+// Busca todas as páginas de uma consulta paginada por range()
+async function fetchAllPaginated(
+  build: (from: number, to: number) => PromiseLike<{ data: any[] | null; error: any }>
+): Promise<any[]> {
+  const all: any[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await build(from, from + PAGE_SIZE - 1);
+
+    if (error) throw error;
+
+    all.push(...(data ?? []));
+
+    if (!data || data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+
+  return all;
+}
+
+async function fetchAllProductRules() {
+  return fetchAllPaginated((from, to) =>
+    supabaseAdmin
+      .schema(SCHEMA)
+      .from("marketplace_product_rules")
+      .select(
+        "channel, store, id_bling, referencia, brand, classico_rate, classico_fixed_fee, premium_rate, premium_fixed_fee, frete_classico, frete_classico_mode, frete_premium, frete_premium_mode"
+      )
+      .is("deleted_at", null)
+      .order("channel", { ascending: true })
+      .order("store", { ascending: true })
+      .order("id_bling", { ascending: true })
+      .range(from, to)
+  );
+}
+
+async function fetchAllListings() {
+  return fetchAllPaginated((from, to) =>
+    supabaseAdmin
+      .schema(SCHEMA)
+      .from("vw_listing_produto")
+      .select("id_bling, mlb, variation_id, titulo, referencia, custo_vendedor")
+      .order("id_bling", { ascending: true })
+      .order("variation_id", { ascending: true })
+      .order("mlb", { ascending: true })
+      .range(from, to)
+  );
+}
+
+type ProdutoAnuncio = {
+  mlb: string;
+  titulo: string;
+  referencia: string;
+  frete: unknown;
+  isPai: boolean;
+};
+
+// Preenche campos vazios de "base" com valores de "extra"
+function mesclar(base: ProdutoAnuncio, extra: ProdutoAnuncio): ProdutoAnuncio {
+  return {
+    ...base,
+    mlb: base.mlb || extra.mlb,
+    titulo: base.titulo || extra.titulo,
+    referencia: base.referencia || extra.referencia,
+    frete: base.frete ?? extra.frete,
+  };
+}
+
+// Uma entrada por id_bling. Prefere o anúncio pai (variation_id = '0');
+// se não houver, usa a primeira variação. Campos vazios são completados
+// com os das demais linhas do mesmo id_bling.
+function buildListingMap(rows: any[]) {
+  const map = new Map<string, ProdutoAnuncio>();
+
+  for (const r of rows) {
+    const idBling = normaliza(r.id_bling);
+    if (!idBling) continue;
+
+    const variacao = normaliza(r.variation_id);
+    const novo: ProdutoAnuncio = {
+      mlb: normaliza(r.mlb),
+      titulo: normaliza(r.titulo),
+      referencia: normaliza(r.referencia),
+      frete: r.custo_vendedor ?? null,
+      isPai: variacao === "0" || variacao === "",
+    };
+
+    const atual = map.get(idBling);
+
+    if (!atual) {
+      map.set(idBling, novo);
+    } else if (novo.isPai && !atual.isPai) {
+      map.set(idBling, mesclar(novo, atual));
+    } else {
+      map.set(idBling, mesclar(atual, novo));
+    }
+  }
+
+  return map;
+}
+
 export async function GET() {
   try {
     const { data: rules, error } = await supabaseAdmin
@@ -37,6 +148,9 @@ export async function GET() {
       .order("channel", { ascending: true });
 
     if (error) throw error;
+
+    const productRules = await fetchAllProductRules();
+    const listingMap = buildListingMap(await fetchAllListings());
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "MyHUB.IA";
@@ -78,6 +192,29 @@ export async function GET() {
     ];
     brandSheet.getRow(1).eachCell(headerStyle);
 
+    // ---------- Aba: Por Produto ----------
+    const productSheet = workbook.addWorksheet("Por Produto");
+    productSheet.columns = [
+      { header: "Canal", key: "channel", width: 28 },
+      { header: "Loja", key: "store", width: 18 },
+      { header: "ID Bling", key: "id_bling", width: 16 },
+      { header: "MLB", key: "mlb", width: 16 },
+      { header: "Título", key: "titulo", width: 50 },
+      { header: "Referência", key: "referencia", width: 20 },
+      { header: "Frete Vendedor (R$)", key: "frete_vendedor", width: 20 },
+      { header: "Marca", key: "brand", width: 20 },
+      { header: "Clássico (%)", key: "classico_rate", width: 14 },
+      { header: "Clássico Taxa Fixa (R$)", key: "classico_fixed_fee", width: 22 },
+      { header: "Premium (%)", key: "premium_rate", width: 14 },
+      { header: "Premium Taxa Fixa (R$)", key: "premium_fixed_fee", width: 22 },
+      { header: "Frete Clássico", key: "frete_classico", width: 16 },
+      { header: "Modo Frete Clássico (fixed/percent)", key: "frete_classico_mode", width: 32 },
+      { header: "Frete Premium", key: "frete_premium", width: 16 },
+      { header: "Modo Frete Premium (fixed/percent)", key: "frete_premium_mode", width: 32 },
+    ];
+    productSheet.getRow(1).eachCell(headerStyle);
+    productSheet.views = [{ state: "frozen", ySplit: 1 }];
+
     // ---------- Aba: Condição ML (Global) ----------
     const conditionSheet = workbook.addWorksheet("Condição ML (Global)");
     conditionSheet.columns = [
@@ -91,7 +228,7 @@ export async function GET() {
     ];
     conditionSheet.getRow(1).eachCell(headerStyle);
 
-    // ---------- Preenche as abas ----------
+    // ---------- Preenche as abas por canal ----------
     for (const rule of rules ?? []) {
       if (rule.pricing_mode === "flat") {
         flatSheet.addRow({
@@ -162,6 +299,35 @@ export async function GET() {
           }
         }
       }
+    }
+
+    // ---------- Preenche a aba Por Produto ----------
+    for (const p of productRules) {
+      const idBling = normaliza(p.id_bling);
+      const anuncio = listingMap.get(idBling);
+
+      // Referência gravada na regra tem prioridade sobre o SKU da view
+      const referencia = normaliza(p.referencia) || anuncio?.referencia || "";
+
+      productSheet.addRow({
+        channel: orEmpty(p.channel),
+        store: orEmpty(p.store),
+        id_bling: idBling,
+        mlb: anuncio?.mlb ?? "",
+        titulo: anuncio?.titulo ?? "",
+        referencia,
+        frete_vendedor:
+          anuncio?.frete == null || anuncio?.frete === "" ? "" : Number(anuncio.frete),
+        brand: orEmpty(p.brand),
+        classico_rate: toPct(p.classico_rate),
+        classico_fixed_fee: orEmpty(p.classico_fixed_fee),
+        premium_rate: toPct(p.premium_rate),
+        premium_fixed_fee: orEmpty(p.premium_fixed_fee),
+        frete_classico: orEmpty(p.frete_classico),
+        frete_classico_mode: orEmpty(p.frete_classico_mode),
+        frete_premium: orEmpty(p.frete_premium),
+        frete_premium_mode: orEmpty(p.frete_premium_mode),
+      });
     }
 
     const buffer = await workbook.xlsx.writeBuffer();
