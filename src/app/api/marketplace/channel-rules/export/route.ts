@@ -8,6 +8,7 @@ const PAGE_SIZE = 1000;
 
 // Canal canônico do Mercado Livre. A comparação ignora maiúsculas e espaços.
 const CANAL_ML = "mercado livre";
+const CANAL_ML_EXIBICAO = "Mercado Livre";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -40,9 +41,12 @@ const orEmpty = (v: unknown) => (v == null ? "" : v);
 
 const normaliza = (v: unknown) => (v == null ? "" : String(v).trim());
 
-// Compara o canal sem diferenciar maiúsculas e espaços
 const ehMercadoLivre = (channel: unknown) =>
   normaliza(channel).toLowerCase() === CANAL_ML;
+
+// Chave de regra: canal sem diferenciar maiúsculas, loja e id_bling
+const regraKey = (channel: unknown, store: unknown, idBling: unknown) =>
+  `${normaliza(channel).toLowerCase()}|${normaliza(store)}|${normaliza(idBling)}`;
 
 // Busca todas as páginas de uma consulta paginada por range()
 async function fetchAllPaginated(
@@ -94,7 +98,31 @@ async function fetchAllListings() {
   );
 }
 
-type ProdutoAnuncio = {
+// Mapa MLB -> contas (lojas) que possuem frete cadastrado para aquele anúncio
+async function fetchContasPorMlb(): Promise<Map<string, Set<string>>> {
+  const rows = await fetchAllPaginated((from, to) =>
+    supabaseAdmin
+      .schema(SCHEMA)
+      .from("ml_fretes")
+      .select("item_id, conta")
+      .order("item_id", { ascending: true })
+      .order("conta", { ascending: true })
+      .range(from, to)
+  );
+
+  const map = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const mlb = normaliza(r.item_id);
+    const conta = normaliza(r.conta);
+    if (!mlb || !conta) continue;
+
+    if (!map.has(mlb)) map.set(mlb, new Set<string>());
+    map.get(mlb)!.add(conta);
+  }
+  return map;
+}
+
+type Anuncio = {
   mlb: string;
   titulo: string;
   referencia: string;
@@ -103,7 +131,7 @@ type ProdutoAnuncio = {
 };
 
 // Preenche campos vazios de "base" com valores de "extra"
-function mesclar(base: ProdutoAnuncio, extra: ProdutoAnuncio): ProdutoAnuncio {
+function mesclar(base: Anuncio, extra: Anuncio): Anuncio {
   return {
     ...base,
     mlb: base.mlb || extra.mlb,
@@ -113,19 +141,19 @@ function mesclar(base: ProdutoAnuncio, extra: ProdutoAnuncio): ProdutoAnuncio {
   };
 }
 
-// Uma entrada por id_bling. Prefere o anúncio pai (variation_id = '0');
-// se não houver, usa a primeira variação. Campos vazios são completados
-// com os das demais linhas do mesmo id_bling.
+// Uma entrada por id_bling. Prefere o anúncio pai (variation_id = '0').
+// Guarda também todos os MLBs do id_bling, para resolver as lojas depois.
 function buildListingMap(rows: any[]) {
-  const map = new Map<string, ProdutoAnuncio>();
+  const map = new Map<string, { anuncio: Anuncio; mlbs: Set<string> }>();
 
   for (const r of rows) {
     const idBling = normaliza(r.id_bling);
     if (!idBling) continue;
 
+    const mlb = normaliza(r.mlb);
     const variacao = normaliza(r.variation_id);
-    const novo: ProdutoAnuncio = {
-      mlb: normaliza(r.mlb),
+    const novo: Anuncio = {
+      mlb,
       titulo: normaliza(r.titulo),
       referencia: normaliza(r.referencia),
       frete: r.custo_vendedor ?? null,
@@ -135,12 +163,16 @@ function buildListingMap(rows: any[]) {
     const atual = map.get(idBling);
 
     if (!atual) {
-      map.set(idBling, novo);
-    } else if (novo.isPai && !atual.isPai) {
-      map.set(idBling, mesclar(novo, atual));
-    } else {
-      map.set(idBling, mesclar(atual, novo));
+      map.set(idBling, { anuncio: novo, mlbs: new Set(mlb ? [mlb] : []) });
+      continue;
     }
+
+    atual.anuncio =
+      novo.isPai && !atual.anuncio.isPai
+        ? mesclar(novo, atual.anuncio)
+        : mesclar(atual.anuncio, novo);
+
+    if (mlb) atual.mlbs.add(mlb);
   }
 
   return map;
@@ -158,6 +190,12 @@ export async function GET() {
 
     const productRules = await fetchAllProductRules();
     const listingMap = buildListingMap(await fetchAllListings());
+    const contasPorMlb = await fetchContasPorMlb();
+
+    const regrasPorChave = new Map<string, any>();
+    for (const p of productRules) {
+      regrasPorChave.set(regraKey(p.channel, p.store, p.id_bling), p);
+    }
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "MyHUB.IA";
@@ -308,37 +346,95 @@ export async function GET() {
       }
     }
 
-    // ---------- Preenche a aba Por Produto ----------
-    // Base: regras gravadas, de qualquer canal.
-    // MLB, título e frete vêm da view do ML somente quando o canal é Mercado Livre.
-    for (const p of productRules) {
-      const idBling = normaliza(p.id_bling);
-      const anuncio = ehMercadoLivre(p.channel)
-        ? listingMap.get(idBling)
-        : undefined;
+    // ---------- Monta as linhas da aba Por Produto ----------
+    // Base: todos os produtos de vw_listing_produto, um por (loja, id_bling).
+    // Loja vem de ml_fretes.conta pelo MLB. Sem conta, a loja fica vazia.
+    // Regra gravada é juntada por (canal, loja, id_bling).
+    type LinhaProduto = Record<string, unknown>;
 
-      // Referência gravada na regra tem prioridade sobre o SKU da view
-      const referencia = normaliza(p.referencia) || anuncio?.referencia || "";
+    const montarLinha = (
+      channel: unknown,
+      store: string,
+      idBling: string,
+      anuncio: Anuncio | undefined,
+      regra: any | undefined
+    ): LinhaProduto => {
+      // Referência gravada na regra tem prioridade sobre a da view
+      const referencia = normaliza(regra?.referencia) || anuncio?.referencia || "";
 
-      productSheet.addRow({
-        channel: orEmpty(p.channel),
-        store: orEmpty(p.store),
+      return {
+        channel: orEmpty(channel),
+        store,
         id_bling: idBling,
         mlb: anuncio?.mlb ?? "",
         titulo: anuncio?.titulo ?? "",
         referencia,
         frete_vendedor:
           anuncio?.frete == null || anuncio?.frete === "" ? "" : Number(anuncio.frete),
-        brand: orEmpty(p.brand),
-        classico_rate: toPct(p.classico_rate),
-        classico_fixed_fee: orEmpty(p.classico_fixed_fee),
-        premium_rate: toPct(p.premium_rate),
-        premium_fixed_fee: orEmpty(p.premium_fixed_fee),
-        frete_classico: orEmpty(p.frete_classico),
-        frete_classico_mode: orEmpty(p.frete_classico_mode),
-        frete_premium: orEmpty(p.frete_premium),
-        frete_premium_mode: orEmpty(p.frete_premium_mode),
-      });
+        brand: orEmpty(regra?.brand),
+        classico_rate: toPct(regra?.classico_rate),
+        classico_fixed_fee: orEmpty(regra?.classico_fixed_fee),
+        premium_rate: toPct(regra?.premium_rate),
+        premium_fixed_fee: orEmpty(regra?.premium_fixed_fee),
+        frete_classico: orEmpty(regra?.frete_classico),
+        frete_classico_mode: orEmpty(regra?.frete_classico_mode),
+        frete_premium: orEmpty(regra?.frete_premium),
+        frete_premium_mode: orEmpty(regra?.frete_premium_mode),
+      };
+    };
+
+    const linhas: LinhaProduto[] = [];
+    const emitidas = new Set<string>();
+
+    // 1) Todos os produtos da view (canal Mercado Livre)
+    for (const [idBling, { anuncio, mlbs }] of listingMap) {
+      const lojas = new Set<string>();
+      for (const m of mlbs) {
+        for (const conta of contasPorMlb.get(m) ?? new Set<string>()) {
+          lojas.add(conta);
+        }
+      }
+      const listaLojas = lojas.size ? [...lojas] : [""];
+
+      for (const loja of listaLojas) {
+        const chave = regraKey(CANAL_ML, loja, idBling);
+        emitidas.add(chave);
+        linhas.push(
+          montarLinha(
+            CANAL_ML_EXIBICAO,
+            loja,
+            idBling,
+            anuncio,
+            regrasPorChave.get(chave)
+          )
+        );
+      }
+    }
+
+    // 2) Regras gravadas que não entraram no passo 1 (outros canais
+    //    ou ML sem correspondência na view)
+    for (const r of productRules) {
+      const idBling = normaliza(r.id_bling);
+      const chave = regraKey(r.channel, r.store, idBling);
+      if (emitidas.has(chave)) continue;
+      emitidas.add(chave);
+
+      const anuncio = ehMercadoLivre(r.channel)
+        ? listingMap.get(idBling)?.anuncio
+        : undefined;
+
+      linhas.push(montarLinha(r.channel, normaliza(r.store), idBling, anuncio, r));
+    }
+
+    linhas.sort(
+      (a, b) =>
+        String(a.channel).localeCompare(String(b.channel), "pt-BR") ||
+        String(a.store).localeCompare(String(b.store), "pt-BR") ||
+        String(a.id_bling).localeCompare(String(b.id_bling), "pt-BR", { numeric: true })
+    );
+
+    for (const linha of linhas) {
+      productSheet.addRow(linha);
     }
 
     const buffer = await workbook.xlsx.writeBuffer();
