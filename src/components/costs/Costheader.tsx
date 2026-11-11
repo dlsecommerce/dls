@@ -57,7 +57,7 @@ function SortHeader({
       title={`Ordenar por ${label}`}
       aria-label={`Ordenar por ${label}`}
       className={`flex w-full cursor-pointer items-center justify-start gap-1 text-left text-[11px] font-semibold uppercase tracking-wide transition-colors hover:text-white ${
-        isActive ? "text-[#1a8ceb]" : "text-neutral-500"
+        isActive ? "text-[#1a8ceb]" : "text-neutral-400"
       }`}
     >
       <span className="truncate">{label}</span>
