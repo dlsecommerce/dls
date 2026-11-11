@@ -67,6 +67,12 @@ export function formatBR(v: any) {
   }).format(n);
 }
 
+export function getCostKey(row: Record<string, any>): string | null {
+  const candidate = row.id ?? row["Código"] ?? row.codigo;
+  if (candidate === null || candidate === undefined || candidate === "") return null;
+  return String(candidate);
+}
+
 // --- Usadas em Costadjustments.tsx e Costdatatable.tsx ---
 
 export function sanitizeDecimalInput(value: string): string {
