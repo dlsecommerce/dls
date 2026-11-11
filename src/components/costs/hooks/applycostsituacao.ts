@@ -1,4 +1,4 @@
-import type { Situacao } from "./types";
+import type { Situacao } from "@/components/costs/hooks/types";
 
 /**
  * Contrato mínimo do query builder do Supabase usado aqui.
@@ -14,10 +14,10 @@ type SituacaoFilterable = {
  * Aplica o filtro de Situação numa query de `newsystem.costs`.
  *
  * Regras:
+ * - Todos:     sem filtro de situação (ativos, inativos e excluídos)
  * - Ativos:    deleted_at IS NULL AND active = true
  * - Inativos:  deleted_at IS NULL AND active = false
  * - Excluídos: deleted_at IS NOT NULL
- * - Todos:     deleted_at IS NULL (exclui excluídos, sem filtrar active)
  *
  * Deve ser aplicada na listagem, no count, na seleção em massa e na exportação,
  * com o mesmo `situacao`, para que os três respondam o mesmo conjunto de IDs.
@@ -42,6 +42,6 @@ export function applyCostSituacao<Q extends SituacaoFilterable>(
 
     case "Todos":
     default:
-      return query.is("deleted_at", null) as Q;
+      return query;
   }
 }
