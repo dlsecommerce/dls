@@ -14,7 +14,7 @@ import {
 import { playImportSuccessSound } from "@/utils/sound";
 import { toastCustom } from "@/utils/toastCustom";
 import { createRule } from "@/components/costs/hooks/usepricingrules";
-import { applyCostSituacao } from "@/components/costs/hooks/applyCostSituacao";
+import { applyCostSituacao } from "@/components/costs/hooks/applycostsituacao";
 
 import {
   CostFilters as CostFiltersType,
