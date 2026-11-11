@@ -10,7 +10,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, X, ChevronDown, Check } from "lucide-react";
-import { CostFilters as CostFiltersType, NCM_OPTIONS } from "@/components/costs/hooks/types";
+import {
+  CostFilters as CostFiltersType,
+  DEFAULT_COST_FILTERS,
+  NCM_OPTIONS,
+  SITUACAO_OPTIONS,
+  Situacao,
+} from "@/components/costs/hooks/types";
 
 type Props = {
   filters: CostFiltersType;
@@ -46,6 +52,15 @@ const inputClass = `
   placeholder:text-neutral-500
   focus-visible:border-[#1a8ceb]/60
   focus-visible:ring-1 focus-visible:ring-[#1a8ceb]/40
+`;
+
+const selectTriggerClass = `
+  h-10 w-full cursor-pointer rounded-none
+  border border-neutral-800 bg-[#0a0a0a]
+  px-3 text-left text-sm text-white
+  outline-none transition-colors
+  focus:border-[#1a8ceb]/60 focus:ring-0
+  focus-visible:ring-1 focus-visible:ring-[#ffffff]/40
 `;
 
 const norm = (v: string) => v.trim().toLocaleLowerCase("pt-BR");
@@ -186,7 +201,7 @@ function BrandMultiSelect({
               e.stopPropagation();
               clearAllBrands();
             }}
-            className="shrink-0 cursor-pointer text-neutral-500 transition-colors hover:hover:text-white"
+            className="shrink-0 cursor-pointer text-neutral-500 transition-colors hover:text-white"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -258,8 +273,14 @@ export default function CostFilters({
   onClearFilters,
   isLoading = false,
 }: Props) {
+  const formRef = React.useRef<HTMLFormElement | null>(null);
+
   const updateFilter = (key: keyof CostFiltersType, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateSituacao = (value: Situacao) => {
+    setFilters((prev) => ({ ...prev, situacao: value }));
   };
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
@@ -267,17 +288,71 @@ export default function CostFilters({
     onApplyFilters();
   };
 
+  // Enter no trigger do Select aplica os filtros (em vez de abrir a lista)
+  const handleSituacaoTriggerKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      formRef.current?.requestSubmit();
+    }
+  };
+
+  // Compara com o padrão real, não com uma string fixa
   const hasActiveFilters =
+    filters.situacao !== DEFAULT_COST_FILTERS.situacao ||
     filters.codigo.trim() !== "" ||
     filters.produto.trim() !== "" ||
     selectedBrands.length > 0 ||
-    filters.ncm !== "Todos";
+    filters.ncm !== DEFAULT_COST_FILTERS.ncm;
+
+  const itemClass = (isActive: boolean) => `
+    relative cursor-pointer rounded-none py-2 pl-3 pr-3 text-sm
+    transition-colors
+    focus:bg-neutral-900
+    data-[state=checked]:font-medium
+    [&_svg]:hidden
+    ${
+      isActive
+        ? "text-[#1a8ceb] data-[state=checked]:text-[#1a8ceb]"
+        : "text-[#ffffff]/70 hover:text-[#1a8ceb]"
+    }
+  `;
+
+  const selectContentClass = `
+    min-w-[180px] rounded-none
+    border border-neutral-800 bg-[#0d0d0d]
+    p-1 shadow-2xl
+  `;
 
   return (
     <div className="border border-neutral-900 bg-[#0a0a0a]">
-      <form onSubmit={handleSubmit} className="w-full px-4 py-4">
+      <form ref={formRef} onSubmit={handleSubmit} className="w-full px-4 py-4">
         <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div>
+              <FieldLabel label="Situação" htmlFor="filtro-situacao" />
+              <Select value={filters.situacao} onValueChange={(v) => updateSituacao(v as Situacao)}>
+                <SelectTrigger
+                  id="filtro-situacao"
+                  onKeyDown={handleSituacaoTriggerKeyDown}
+                  className={selectTriggerClass}
+                >
+                  <SelectValue placeholder="Ativos" />
+                </SelectTrigger>
+
+                <SelectContent position="popper" sideOffset={4} className={selectContentClass}>
+                  {SITUACAO_OPTIONS.map((option) => (
+                    <SelectItem
+                      key={option}
+                      value={option}
+                      className={itemClass(filters.situacao === option)}
+                    >
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div>
               <FieldLabel label="Código" htmlFor="filtro-codigo" />
               <Input
@@ -312,53 +387,20 @@ export default function CostFilters({
             <div>
               <FieldLabel label="NCM" htmlFor="filtro-ncm" />
               <Select value={filters.ncm} onValueChange={(v) => updateFilter("ncm", v)}>
-                <SelectTrigger
-                  id="filtro-ncm"
-                  className="
-                    h-10 w-full cursor-pointer rounded-none
-                    border border-neutral-800 bg-[#0a0a0a]
-                    px-3 text-left text-sm text-white
-                    outline-none transition-colors
-                    focus:border-[#1a8ceb]/60 focus:ring-0
-                    focus-visible:ring-1 focus-visible:ring-[#ffffff]/40
-                  "
-                >
+                <SelectTrigger id="filtro-ncm" className={selectTriggerClass}>
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
 
-                <SelectContent
-                  position="popper"
-                  sideOffset={4}
-                  className="
-                    min-w-[180px] rounded-none
-                    border border-neutral-800 bg-[#0d0d0d]
-                    p-1 shadow-2xl
-                  "
-                >
-                  {NCM_OPTIONS.map((option) => {
-                    const isActive = filters.ncm === option;
-
-                    return (
-                      <SelectItem
-                        key={option}
-                        value={option}
-                        className={`
-                          relative cursor-pointer rounded-none py-2 pl-3 pr-3 text-sm
-                          transition-colors
-                          focus:bg-neutral-900
-                          data-[state=checked]:font-medium
-                          [&_svg]:hidden
-                          ${
-                            isActive
-                              ? "text-[#1a8ceb] data-[state=checked]:text-[#1a8ceb]"
-                              : "text-[#ffffff]/70 hover:text-[#1a8ceb]"
-                          }
-                        `}
-                      >
-                        {option}
-                      </SelectItem>
-                    );
-                  })}
+                <SelectContent position="popper" sideOffset={4} className={selectContentClass}>
+                  {NCM_OPTIONS.map((option) => (
+                    <SelectItem
+                      key={option}
+                      value={option}
+                      className={itemClass(filters.ncm === option)}
+                    >
+                      {option}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

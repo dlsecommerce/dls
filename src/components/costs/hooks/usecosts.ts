@@ -14,11 +14,14 @@ import {
 import { playImportSuccessSound } from "@/utils/sound";
 import { toastCustom } from "@/utils/toastCustom";
 import { createRule } from "@/components/costs/hooks/usepricingrules";
+import { applyCostSituacao } from "@/components/costs/hooks/applyCostSituacao";
 
 import {
   CostFilters as CostFiltersType,
   Custo,
   DEFAULT_COST_FILTERS,
+  SITUACAO_OPTIONS,
+  Situacao,
   ApplyPayload,
   ApplyResult,
 } from "@/components/costs/hooks/types";
@@ -64,6 +67,12 @@ const splitByComma = (value: string): string[] =>
     .map((v) => sanitizeTerm(v))
     .filter(Boolean);
 
+// Valida o valor vindo da URL contra as opções reais de Situação
+const parseSituacao = (value: string | null): Situacao =>
+  (SITUACAO_OPTIONS as readonly string[]).includes(value ?? "")
+    ? (value as Situacao)
+    : DEFAULT_COST_FILTERS.situacao;
+
 // --- Mapeamento DB (inglês, tabela "costs") <-> UI (português) ---
 const mapRowToUI = (row: any): Custo => ({
   id: row.id ?? "",
@@ -81,6 +90,8 @@ const mapRowToUI = (row: any): Custo => ({
   // CostDataTable lê row.created_at, mas esse campo era descartado
   // aqui no mapeamento (mesmo vindo no select("*") do Supabase).
   created_at: row.created_at ?? null,
+  active: typeof row.active === "boolean" ? row.active : true,
+  deleted_at: row.deleted_at ?? null,
 });
 
 // Formata um número (ou null) em string BR para exibir no input de custo do modal
@@ -146,7 +157,9 @@ const isLiverpoolBrand = (mark: string) =>
 /* ─────────────────────────────────────────────
  * QUERY BUILDER — puro, sem depender de closures do hook.
  * Reaproveitado por: useQuery principal, fetchAllRows,
- * fetchAllActiveCostCodes, exportações, etc.
+ * exportações, seleção em massa, etc.
+ * A Situação é aplicada aqui, em um único lugar, para que listagem,
+ * count, seleção e exportação respondam sempre o mesmo conjunto de IDs.
  * ───────────────────────────────────────────── */
 
 type CostsQueryParams = {
@@ -158,6 +171,9 @@ type CostsQueryParams = {
 
 function buildCostsQuery(query: any, params: CostsQueryParams) {
   const { appliedFilters, appliedSelectedBrands, sortColumn, sortDirection } = params;
+
+  // Situação (Todos / Ativos / Inativos / Excluídos) — filtro único
+  query = applyCostSituacao(query, appliedFilters.situacao);
 
   if (appliedFilters.codigo.trim()) {
     const tokens = splitByComma(appliedFilters.codigo);
@@ -212,8 +228,6 @@ function buildCostsQuery(query: any, params: CostsQueryParams) {
   if (sortColumn) {
     const dbColumn = SORT_FIELD_MAP[sortColumn] || sortColumn;
     query = query.order(dbColumn, { ascending: sortDirection === "asc" });
-  } else if (appliedFilters.situacao === "Últimos Incluídos") {
-    query = query.order("created_at", { ascending: false });
   } else {
     query = query.order("code", { ascending: true });
   }
@@ -221,12 +235,13 @@ function buildCostsQuery(query: any, params: CostsQueryParams) {
   return query;
 }
 
+// Base sem filtro de situação: quem decide Ativos/Inativos/Excluídos/Todos
+// é applyCostSituacao, dentro de buildCostsQuery.
 function baseCostsQuery(countOnly: boolean) {
   return supabase
     .schema(SCHEMA)
     .from("costs")
-    .select("*", { count: "exact", head: countOnly })
-    .is("deleted_at", null);
+    .select("*", { count: "exact", head: countOnly });
 }
 
 /* ─────────────────────────────────────────────
@@ -287,6 +302,7 @@ export function useCosts() {
   const initialCodigo = searchParams.get("codigo") ?? "";
   const initialMarca = searchParams.get("marca") ?? "";
   const initialProduto = searchParams.get("produto") ?? "";
+  const initialSituacao = parseSituacao(searchParams.get("situacao"));
   const initialPage = parsePositiveInt(searchParams.get("page"), 1);
   const initialPerPage = parsePositiveInt(searchParams.get("perPage"), 50);
   const initialBrands = parseArrayParam(searchParams.get("brands"));
@@ -312,6 +328,7 @@ export function useCosts() {
   const [selectedBrands, setSelectedBrands] = useState<string[]>(initialBrands);
   const [filters, setFilters] = useState<CostFiltersType>({
     ...DEFAULT_COST_FILTERS,
+    situacao: initialSituacao,
     codigo: initialCodigo,
     marca: initialMarca,
     produto: initialProduto,
@@ -322,6 +339,7 @@ export function useCosts() {
     useState<string[]>(initialBrands);
   const [appliedFilters, setAppliedFilters] = useState<CostFiltersType>({
     ...DEFAULT_COST_FILTERS,
+    situacao: initialSituacao,
     codigo: initialCodigo,
     marca: initialMarca,
     produto: initialProduto,
@@ -356,6 +374,7 @@ export function useCosts() {
   const [selectedRows, setSelectedRows] = useState<Custo[]>([]);
   const [openDelete, setOpenDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [togglingActive, setTogglingActive] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const [openAdjustments, setOpenAdjustments] = useState(false);
@@ -583,6 +602,8 @@ export function useCosts() {
     [appliedSelectedBrands, appliedFilters, sortColumn, sortDirection]
   );
 
+  // Usado por handleSelectAllFiltered e handleExport: respeita a Situação
+  // porque passa pelo mesmo buildCostsQuery da listagem.
   const fetchAllRows = useCallback(async (): Promise<Custo[]> => {
     const { count } = await buildQuery(true);
     const total = count || 0;
@@ -631,6 +652,7 @@ export function useCosts() {
 
   const syncUrl = useCallback(
     (params: {
+      situacao: Situacao;
       codigo: string;
       marca: string;
       produto: string;
@@ -643,6 +665,9 @@ export function useCosts() {
     }) => {
       const usp = new URLSearchParams();
 
+      if (params.situacao !== DEFAULT_COST_FILTERS.situacao) {
+        usp.set("situacao", params.situacao);
+      }
       if (params.codigo !== "") usp.set("codigo", params.codigo);
       if (params.marca !== "") usp.set("marca", params.marca);
       if (params.produto !== "") usp.set("produto", params.produto);
@@ -664,6 +689,7 @@ export function useCosts() {
   );
 
   useEffect(() => {
+    const urlSituacao = parseSituacao(searchParams.get("situacao"));
     const urlCodigo = searchParams.get("codigo") ?? "";
     const urlMarca = searchParams.get("marca") ?? "";
     const urlProduto = searchParams.get("produto") ?? "";
@@ -686,6 +712,7 @@ export function useCosts() {
 
     setFilters((prev) => ({
       ...prev,
+      situacao: urlSituacao,
       codigo: urlCodigo,
       marca: urlMarca,
       produto: urlProduto,
@@ -693,6 +720,7 @@ export function useCosts() {
     }));
     setAppliedFilters((prev) => ({
       ...prev,
+      situacao: urlSituacao,
       codigo: urlCodigo,
       marca: urlMarca,
       produto: urlProduto,
@@ -722,6 +750,7 @@ export function useCosts() {
   const applyFilterState = useCallback(
     (
       next: {
+        situacao?: Situacao;
         codigo: string;
         marca: string;
         produto: string;
@@ -730,9 +759,12 @@ export function useCosts() {
       },
       resetSelection: boolean = false
     ) => {
+      const nextSituacao = next.situacao ?? filters.situacao;
+
       setAppliedSelectedBrands(next.brands);
       setAppliedFilters((prev) => ({
         ...prev,
+        situacao: nextSituacao,
         codigo: next.codigo,
         marca: next.marca,
         produto: next.produto,
@@ -746,6 +778,7 @@ export function useCosts() {
       setCurrentPage(1);
 
       syncUrl({
+        situacao: nextSituacao,
         codigo: next.codigo,
         marca: next.marca,
         produto: next.produto,
@@ -757,7 +790,7 @@ export function useCosts() {
         sortDirection,
       });
     },
-    [filters.ncm, itemsPerPage, sortColumn, sortDirection, syncUrl]
+    [filters.situacao, filters.ncm, itemsPerPage, sortColumn, sortDirection, syncUrl]
   );
 
   const handleApplyFilters = useCallback(async () => {
@@ -768,6 +801,7 @@ export function useCosts() {
     try {
       applyFilterState(
         {
+          situacao: filters.situacao,
           codigo: filters.codigo,
           marca: filters.marca,
           produto: filters.produto,
@@ -789,6 +823,7 @@ export function useCosts() {
 
     applyFilterState(
       {
+        situacao: DEFAULT_COST_FILTERS.situacao,
         codigo: "",
         marca: "",
         produto: "",
@@ -824,6 +859,7 @@ export function useCosts() {
     setExportProgressOpen(true);
 
     try {
+      // Sem seleção, exporta o conjunto filtrado (inclui a Situação aplicada)
       const rowsToExport =
         selectedRows.length > 0 ? (selectedRows as Custo[]) : await fetchAllRows();
 
@@ -1225,14 +1261,11 @@ export function useCosts() {
   }, [loadData, loadAllBrands]);
 
   /**
-   * ✅ ALTERADO: exclusão agora é HARD DELETE (remoção física), não
-   * mais soft-delete. Antes de excluir o custo em si, removemos as
-   * pricing_rules vinculadas (via cost_id) para evitar erro de FK,
-   * já que o registro em "costs" deixará de existir de fato.
-   *
-   * Atenção: isso não trata `announce.reference` (que aponta pro
-   * `code` apenas como texto, sem FK) — anúncios que referenciam um
-   * código excluído passam a ficar "órfãos" silenciosamente.
+   * Exclusão em duas etapas, decidida por linha:
+   * - Custo ativo ou inativo (deleted_at nulo): SOFT DELETE (marca deleted_at).
+   * - Custo já em "Excluídos" (deleted_at preenchido): HARD DELETE. Remove as
+   *   pricing_rules vinculadas (cost_id) e depois a linha em costs, igual ao announce.
+   * Seleção mista é tratada corretamente: cada grupo segue sua regra.
    */
   const deleteSelected = useCallback(async () => {
     if (!selectedRows.length) return;
@@ -1240,39 +1273,62 @@ export function useCosts() {
     setDeleting(true);
 
     try {
-      const costIds = selectedRows
-        .map((r) => r.id)
-        .filter((id): id is string => Boolean(id));
+      const softIds = selectedRows
+        .filter((r) => !r.deleted_at && r.id)
+        .map((r) => r.id as string);
 
-      const codes = selectedRows.map((r) => r["Código"]);
+      const hardIds = selectedRows
+        .filter((r) => r.deleted_at && r.id)
+        .map((r) => r.id as string);
 
-      if (costIds.length > 0) {
+      // Soft delete: ativos e inativos
+      for (let i = 0; i < softIds.length; i += PAGE_SIZE_BULK) {
+        const batch = softIds.slice(i, i + PAGE_SIZE_BULK);
+        const { error } = await supabase
+          .schema(SCHEMA)
+          .from("costs")
+          .update({ deleted_at: new Date().toISOString() })
+          .in("id", batch)
+          .is("deleted_at", null);
+
+        if (error) throw error;
+      }
+
+      // Hard delete: já estão em "Excluídos"
+      for (let i = 0; i < hardIds.length; i += PAGE_SIZE_BULK) {
+        const batch = hardIds.slice(i, i + PAGE_SIZE_BULK);
+
         const { error: rulesError } = await supabase
           .schema(SCHEMA)
           .from("pricing_rules")
           .delete()
-          .in("cost_id", costIds);
+          .in("cost_id", batch);
 
         if (rulesError) throw rulesError;
+
+        const { error } = await supabase
+          .schema(SCHEMA)
+          .from("costs")
+          .delete()
+          .in("id", batch);
+
+        if (error) throw error;
       }
-
-      const { error } = await supabase
-        .schema(SCHEMA)
-        .from("costs")
-        .delete()
-        .in("code", codes);
-
-      if (error) throw error;
 
       setSelectedRows([]);
       setOpenDelete(false);
 
       toastCustom.success(
         "Exclusão concluída!",
-        "Registros removidos permanentemente."
+        [
+          softIds.length > 0 ? `${softIds.length} movido(s) para Excluídos` : null,
+          hardIds.length > 0 ? `${hardIds.length} removido(s) permanentemente` : null,
+        ]
+          .filter(Boolean)
+          .join(" • ")
       );
 
-      loadData();
+      await loadData();
     } catch (err: any) {
       toastCustom.error(
         "Erro ao excluir",
@@ -1282,6 +1338,60 @@ export function useCosts() {
       setDeleting(false);
     }
   }, [selectedRows, loadData]);
+
+  /**
+   * Ativar/desativar só altera `active`. Linhas excluídas são ignoradas.
+   */
+  const setActiveForSelected = useCallback(
+    async (active: boolean) => {
+      const ids = selectedRows
+        .filter((r) => !r.deleted_at && r.id)
+        .map((r) => r.id as string);
+
+      if (!ids.length) return;
+
+      setTogglingActive(true);
+
+      try {
+        for (let i = 0; i < ids.length; i += PAGE_SIZE_BULK) {
+          const batch = ids.slice(i, i + PAGE_SIZE_BULK);
+          const { error } = await supabase
+            .schema(SCHEMA)
+            .from("costs")
+            .update({ active })
+            .in("id", batch)
+            .is("deleted_at", null);
+
+          if (error) throw error;
+        }
+
+        toastCustom.success(
+          active ? "Produtos reativados!" : "Produtos desativados!",
+          `${ids.length} registro(s) atualizado(s).`
+        );
+
+        await loadData();
+      } catch (err: any) {
+        toastCustom.error(
+          "Erro ao alterar status",
+          err?.message || "Falha ao atualizar."
+        );
+      } finally {
+        setTogglingActive(false);
+      }
+    },
+    [selectedRows, loadData]
+  );
+
+  const handleDeactivateSelected = useCallback(
+    () => setActiveForSelected(false),
+    [setActiveForSelected]
+  );
+
+  const handleReactivateSelected = useCallback(
+    () => setActiveForSelected(true),
+    [setActiveForSelected]
+  );
 
   /**
    * Busca todos os códigos ativos de custo (escopo "global").
@@ -1296,6 +1406,7 @@ export function useCosts() {
         .schema(SCHEMA)
         .from("costs")
         .select("code")
+        .eq("active", true)
         .is("deleted_at", null)
         .range(from, to);
 
@@ -1367,6 +1478,7 @@ export function useCosts() {
             .from("costs")
             .update({ packaging_cost: embalagemValue })
             .in("code", batch)
+            .eq("active", true)
             .is("deleted_at", null);
 
           if (error) throw error;
@@ -1388,6 +1500,7 @@ export function useCosts() {
           .from("costs")
           .select("code, current_cost")
           .in("code", batch)
+          .eq("active", true)
           .is("deleted_at", null);
 
         if (error) throw error;
@@ -1402,6 +1515,7 @@ export function useCosts() {
               .from("costs")
               .update({ packaging_cost: newPackaging })
               .eq("code", row.code)
+              .eq("active", true)
               .is("deleted_at", null);
           })
         );
@@ -1794,6 +1908,7 @@ export function useCosts() {
 
     // seleção
     selectedRows,
+    selectedCount: selectedRows.length,
     setSelectedRows,
     setSelectedRowsUnique,
     allSelected,
@@ -1826,6 +1941,11 @@ export function useCosts() {
     setOpenDelete,
     deleting,
     deleteSelected,
+
+    // status (ativar/desativar)
+    togglingActive,
+    handleDeactivateSelected,
+    handleReactivateSelected,
 
     // exportação
     exporting,

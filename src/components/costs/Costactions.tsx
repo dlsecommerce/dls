@@ -9,6 +9,8 @@ import {
   ChevronDown,
   ChevronUp,
   Upload,
+  Power,
+  PowerOff,
 } from "lucide-react";
 import { unlockAudio } from "@/utils/sound";
 import TableInfoCard from "@/components/ui/Tableinfocard";
@@ -24,6 +26,10 @@ type Props = {
   onImportAlteracao: (file: File) => void | Promise<void>;
   onImportRenomeacaoCodigos: (file: File) => void | Promise<void>;
   totalCount: number;
+  selectedCount?: number;
+  togglingActive?: boolean;
+  onDeactivateSelected?: () => void | Promise<void>;
+  onReactivateSelected?: () => void | Promise<void>;
 };
 
 function ActionTextButton({
@@ -106,6 +112,10 @@ export default function CostActions({
   onImportAlteracao,
   onImportRenomeacaoCodigos,
   totalCount,
+  selectedCount = 0,
+  togglingActive = false,
+  onDeactivateSelected,
+  onReactivateSelected,
 }: Props) {
   const inputInclusaoRef = useRef<HTMLInputElement | null>(null);
   const inputAlteracaoRef = useRef<HTMLInputElement | null>(null);
@@ -147,6 +157,9 @@ export default function CostActions({
 
   if (!hydrated) return null;
 
+  const hasSelection = selectedCount > 0;
+  const showStatusActions = Boolean(onDeactivateSelected || onReactivateSelected);
+
   return (
     <div className="w-full bg-transparent px-3 py-2 sm:px-4">
       <input type="file" ref={inputInclusaoRef} className="hidden" accept=".xlsx,.csv" aria-label="Importar dados de inclusão" onChange={handleFileChange(onImportInclusao)} />
@@ -156,6 +169,33 @@ export default function CostActions({
       <div className="space-y-1.5">
         <ActionTextButton icon={<Plus className="h-4 w-4" />} label="Novo Custo" onClick={onOpenCreate} primary />
         <ActionTextButton icon={<Download className="h-4 w-4" />} label="Exportar dados para planilha" onClick={handleExport} disabled={exporting} />
+
+        {showStatusActions && (
+          <div className="mt-3 border-t border-neutral-900 pt-3">
+            <div className="mb-1 px-2.5 pt-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-neutral-500">
+              Status dos selecionados{hasSelection ? ` (${selectedCount})` : ""}
+            </div>
+
+            <div className="space-y-0.5">
+              {onDeactivateSelected && (
+                <ActionTextButton
+                  icon={<PowerOff className="h-4 w-4" />}
+                  label={togglingActive ? "Desativando..." : "Desativar selecionados"}
+                  onClick={onDeactivateSelected}
+                  disabled={!hasSelection || togglingActive || exporting}
+                />
+              )}
+              {onReactivateSelected && (
+                <ActionTextButton
+                  icon={<Power className="h-4 w-4" />}
+                  label={togglingActive ? "Reativando..." : "Reativar selecionados"}
+                  onClick={onReactivateSelected}
+                  disabled={!hasSelection || togglingActive || exporting}
+                />
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="mt-3 border-t border-neutral-900 pt-3">
           <button

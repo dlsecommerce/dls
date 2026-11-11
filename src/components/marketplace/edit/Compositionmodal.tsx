@@ -73,12 +73,7 @@ const isShopee = (channel: string) => channel.trim().toLocaleLowerCase("pt-BR") 
 // Cálculo de preço — espelha fielmente newsystem.fn_calc_marketplace_price_full
 // ───────────────────────────────
 //
-// ✅ FIX: o frete entra DENTRO do numerador (junto ao custo), igual ao SQL
-// do backend. Antes, aqui no front o frete era somado FORA do divisor
-// (".../divisor + freight"), o que fazia o preço calculado no modal
-// divergir do preço que o recálculo automático do banco gerava — e esse
-// preço errado acabava sendo salvo como "manual" (has_manual_pricing),
-// ficando preservado e incorreto para sempre.
+// O frete entra DENTRO do numerador (junto ao custo), igual ao SQL do backend.
 //
 // v_divisor := 1 - (tax + margin/100 + commission/100 + marketing)
 // v_price   := ((cost_total * (1 - discount)) + packaging + freight) / v_divisor
@@ -404,9 +399,8 @@ export default function MarketplacePricingModal({
     [base, freteEfetivo, comissaoEfetiva, data.profit_margin, rules]
   );
 
-  // ✅ FIX: frete agora entra na mesma base usada no numerador do cálculo
-  // (consistente com calcularPrecoVenda), então a barra de proporção
-  // custo/comissão/margem e o card "Custo" exibido batem com o preço final.
+  // Frete entra na mesma base usada no numerador do cálculo
+  // (consistente com calcularPrecoVenda).
   const custoBase = base.custoTotal * (1 - rules.desconto / 100) + base.embalagem + freteEfetivo;
 
   const divisorInvalido = precoFinal === null;
@@ -456,7 +450,7 @@ export default function MarketplacePricingModal({
     if (!marketplaceId || percentualInvalido || precoFinal === null || saving || loading) return;
     setSaving(true);
 
-    // ⚠️ Usa RPC em vez de .update() direto: a função no banco seta
+    // Usa RPC em vez de .update() direto: a função no banco seta
     // a flag "newsystem.manual_price_override" na transação antes do UPDATE,
     // impedindo que os triggers fn_marketplace_apply_rules e
     // trg_enqueue_on_marketplace_change sobrescrevam o preço manual depois.

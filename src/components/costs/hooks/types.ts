@@ -1,7 +1,13 @@
-// components/costs/hooks/types.ts
+export const SITUACAO_OPTIONS = ["Todos", "Ativos", "Inativos", "Excluídos"] as const;
+export type Situacao = (typeof SITUACAO_OPTIONS)[number];
+
+export const ORDER_OPTIONS = ["Últimos Incluídos"] as const;
+export type OrderOption = (typeof ORDER_OPTIONS)[number];
+
+export const NCM_OPTIONS = ["Todos", "Com NCM", "Sem NCM"] as const;
 
 export type CostFilters = {
-  situacao: string;
+  situacao: Situacao;
   ncm: string;
   marca: string;
   codigo: string;
@@ -9,15 +15,12 @@ export type CostFilters = {
 };
 
 export const DEFAULT_COST_FILTERS: CostFilters = {
-  situacao: "Todos",
+  situacao: "Ativos",
   ncm: "Todos",
   marca: "",
   codigo: "",
   produto: "",
 };
-
-export const SITUACAO_OPTIONS = ["Todos", "Últimos Incluídos"];
-export const NCM_OPTIONS = ["Todos", "Com NCM", "Sem NCM"];
 
 /**
  * Representa uma linha da tabela de custos.
@@ -32,6 +35,8 @@ export type Custo = {
   previous_cost?: number | null;
   packaging_cost?: number | null;
   created_at?: string | null; // ← usado para badge "Novo"
+  active?: boolean; // false = desativado manualmente
+  deleted_at?: string | null; // não nulo = excluído (soft delete)
 
   // Chaves de exibição (usadas na tabela/UI)
   ["Código"]: string;
