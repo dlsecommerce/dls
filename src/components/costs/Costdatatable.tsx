@@ -1,75 +1,76 @@
 "use client";
 
-import React, { useCallback } from "react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableRow,
-} from "@/components/ui/table";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import {
   CopyIcon,
   Pencil as EditIcon,
   Trash2 as TrashIcon,
   PackageSearch,
 } from "lucide-react";
-import { Custo } from "@/components/costs/helpers/types";
-import { formatBR } from "@/components/costs/hooks/utils";
+import type { Custo } from "@/components/costs/helpers/types";
+import { formatBR, getCostKey } from "@/components/costs/hooks/utils";
 import CostHeader from "@/components/costs/Costheader";
-import { getCostKey } from "@/components/costs/hooks/usecosts";
 
-const COL_WIDTHS = [48, 140, 160, 0, 150, 150, 140, 180];
+/* ─────────────────────────────────────────────
+ * LAYOUT
+ * 0 = coluna flexível (Produto). A largura mínima da tabela
+ * é derivada das colunas fixas + a largura mínima do Produto.
+ * ───────────────────────────────────────────── */
+const COL_WIDTHS = [48, 140, 160, 0, 150, 150, 140, 180] as const;
+const COL_COUNT = COL_WIDTHS.length;
+const PRODUCT_MIN_WIDTH = 220;
+const TABLE_MIN_WIDTH =
+  COL_WIDTHS.reduce((acc, w) => acc + w, 0) + PRODUCT_MIN_WIDTH;
+
+const DESKTOP_QUERY = "(min-width: 768px)";
+const NEW_THRESHOLD_MS = 5 * 24 * 60 * 60 * 1000; // 5 dias
+
+/* ─────────────────────────────────────────────
+ * HELPERS
+ * ───────────────────────────────────────────── */
+
+function useIsDesktop(): boolean | null {
+  const [isDesktop, setIsDesktop] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const mql = window.matchMedia(DESKTOP_QUERY);
+    const update = () => setIsDesktop(mql.matches);
+    update();
+    mql.addEventListener("change", update);
+    return () => mql.removeEventListener("change", update);
+  }, []);
+
+  return isDesktop;
+}
+
+function isRecent(createdAt?: string | null) {
+  if (!createdAt) return false;
+  const created = new Date(createdAt).getTime();
+  if (Number.isNaN(created)) return false;
+  return Date.now() - created <= NEW_THRESHOLD_MS;
+}
+
+/** Valor para exibição: "-" quando vazio, nunca "R$ 0,00" falso. */
+const moneyOrDash = (v: unknown) =>
+  v === null || v === undefined || v === "" ? "-" : `R$ ${formatBR(v)}`;
+
+/** Valor para cópia: vazio quando não há custo. */
+const moneyOrEmpty = (v: unknown) =>
+  v === null || v === undefined || v === "" ? "" : `R$ ${formatBR(v)}`;
+
+/* ─────────────────────────────────────────────
+ * UI PEQUENA
+ * ───────────────────────────────────────────── */
 
 function ColGroup() {
   return (
-    <colgroup>  
+    <colgroup>
       {COL_WIDTHS.map((w, i) =>
         w === 0 ? <col key={i} /> : <col key={i} style={{ width: `${w}px` }} />
       )}
     </colgroup>
   );
-}
-
-type Props = {
-  rows: Custo[];
-  loading: boolean;
-  selectedRows: Custo[];
-  setSelectedRows: React.Dispatch<React.SetStateAction<Custo[]>>;
-  copiedId: string | null;
-  handleCopy: (text: string, key: string) => void;
-  openEdit: (row: Custo) => void;
-  openDeleteOne: (row: Custo) => void;
-  openCostEditor: (
-    row: Custo,
-    e: React.MouseEvent,
-    field?: "Custo Atual" | "Custo Antigo"
-  ) => void;
-
-  // Props do header (repassadas para CostHeader)
-  allSelected: boolean;
-  situacao: string;
-  sortColumn: string | null;
-  sortDirection: "asc" | "desc";
-  onToggleSelectAll: (checked: boolean) => void;
-  onSituacaoChange: (value: string) => void;
-  onSort: (column: string) => void;
-  onDeleteSelected: () => void;
-  onOpenAdjustments: () => void;
-  onClearSelection: () => void;
-  onSelectAllTable: () => void;
-  selectingAll?: boolean;
-};
-
-/* ─────────────────────────────────────────────
- * HELPER — detecta itens recentes ("Novos")
- * ───────────────────────────────────────────── */
-const NEW_THRESHOLD_HOURS = 24 * 5; // 5 dias
-
-function isRecent(createdAt?: string | null, hours = NEW_THRESHOLD_HOURS) {
-  if (!createdAt) return false;
-  const created = new Date(createdAt).getTime();
-  if (Number.isNaN(created)) return false;
-  return Date.now() - created <= hours * 60 * 60 * 1000;
 }
 
 function NewBadge() {
@@ -102,8 +103,7 @@ function IconBtn({
       title={label}
       className={`
         flex h-8 w-8 items-center justify-center
-        border border-transparent
-        text-neutral-500
+        border border-transparent text-neutral-500
         transition-colors
         hover:border-neutral-800 hover:bg-neutral-900
         focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]
@@ -159,8 +159,7 @@ function CopyBtn({
           className="
             absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap
             border border-[#1a8ceb]/40 bg-[#0d0d0d] px-2 py-0.5
-            text-[10px] font-medium text-[#1a8ceb]
-            shadow-lg
+            text-[10px] font-medium text-[#1a8ceb] shadow-lg
           "
         >
           Copiado!
@@ -175,7 +174,7 @@ function TableSkeleton() {
     <>
       {Array.from({ length: 8 }).map((_, i) => (
         <TableRow key={`skeleton-${i}`} className="border-b border-neutral-900">
-          <TableCell colSpan={8} className="py-2.5">
+          <TableCell colSpan={COL_COUNT} className="py-2.5">
             <div className="h-4 w-full animate-pulse bg-neutral-900" />
           </TableCell>
         </TableRow>
@@ -184,171 +183,207 @@ function TableSkeleton() {
   );
 }
 
-function EmptyState() {
+function EmptyStateContent() {
   return (
-    <TableRow>
-      <TableCell colSpan={8} className="py-16 text-center">
-        <div className="flex flex-col items-center gap-2">
-          <PackageSearch className="h-8 w-8 text-neutral-700" aria-hidden="true" />
-          <p className="text-sm text-neutral-400">Nenhum registro encontrado</p>
-          <p className="text-xs text-neutral-500">
-            Tente ajustar os filtros ou limpar a busca.
-          </p>
+    <div className="flex flex-col items-center gap-2 py-14 text-center">
+      <PackageSearch className="h-8 w-8 text-neutral-700" aria-hidden="true" />
+      <p className="text-sm text-neutral-400">Nenhum registro encontrado</p>
+      <p className="text-xs text-neutral-500">
+        Tente ajustar os filtros ou limpar a busca.
+      </p>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+ * LINHA DESKTOP
+ * Memoizada. Depende só de props estáveis: os callbacks
+ * do pai devem ser estabilizados com useCallback.
+ * ───────────────────────────────────────────── */
+
+type RowProps = {
+  row: Custo;
+  rowKey: string | null;
+  isSelected: boolean;
+  copiedId: string | null;
+  handleCopy: (text: string, key: string) => void;
+  openEdit: (row: Custo) => void;
+  openDeleteOne: (row: Custo) => void;
+  openCostEditor: (
+    row: Custo,
+    e: React.MouseEvent,
+    field?: "Custo Atual" | "Custo Antigo"
+  ) => void;
+  onToggle: (row: Custo, checked: boolean) => void;
+};
+
+const CostTableRow = React.memo(function CostTableRow({
+  row,
+  rowKey,
+  isSelected,
+  copiedId,
+  handleCopy,
+  openEdit,
+  openDeleteOne,
+  openCostEditor,
+  onToggle,
+}: RowProps) {
+  const codigo = row["Código"] || "";
+  const produto = row["Produto"] || "";
+  const ncm = row["NCM"] || "";
+  const base = rowKey ?? codigo ?? "sem-chave";
+  const showNewBadge = isRecent(row.created_at);
+
+  return (
+    <TableRow
+      className={`group border-b border-neutral-900 transition-colors ${
+        isSelected
+          ? "bg-[#1a8ceb]/[0.06] hover:bg-[#1a8ceb]/[0.09]"
+          : "hover:bg-neutral-900/40"
+      }`}
+    >
+      <TableCell className="text-center">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          disabled={rowKey === null}
+          onChange={(e) => onToggle(row, e.target.checked)}
+          aria-label={`Selecionar produto ${codigo}`}
+          className="h-3.5 w-3.5 cursor-pointer accent-[#1a8ceb] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
+        />
+      </TableCell>
+
+      <TableCell className="text-left text-[13px] text-neutral-300">
+        <div className="inline-flex min-w-0 items-center gap-1.5">
+          <span className="truncate">{codigo}</span>
+          <CopyBtn
+            value={codigo}
+            copyKey={`${base}:codigo`}
+            copiedId={copiedId}
+            handleCopy={handleCopy}
+            label="código"
+          />
+        </div>
+      </TableCell>
+
+      <TableCell className="text-left text-[13px] text-neutral-300">
+        <span className="block truncate">{row["Marca"] || "-"}</span>
+      </TableCell>
+
+      <TableCell className="text-left text-[13px] text-neutral-300">
+        <div className="inline-flex max-w-full min-w-0 items-center gap-1.5">
+          <span className="min-w-0 truncate">{produto}</span>
+          {showNewBadge && <NewBadge />}
+          <CopyBtn
+            value={produto}
+            copyKey={`${base}:produto`}
+            copiedId={copiedId}
+            handleCopy={handleCopy}
+            label="produto"
+          />
+        </div>
+      </TableCell>
+
+      <TableCell className="text-right text-[13px] tabular-nums">
+        <div className="inline-flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={(e) => openCostEditor(row, e, "Custo Atual")}
+            aria-label={`Editar custo atual de ${produto}`}
+            className="text-[#1a8ceb] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
+          >
+            {moneyOrDash(row["Custo Atual"])}
+          </button>
+          <CopyBtn
+            value={moneyOrEmpty(row["Custo Atual"])}
+            copyKey={`${base}:custo-atual`}
+            copiedId={copiedId}
+            handleCopy={handleCopy}
+            label="custo atual"
+          />
+        </div>
+      </TableCell>
+
+      <TableCell className="text-right text-[13px] tabular-nums">
+        <button
+          type="button"
+          onClick={(e) => openCostEditor(row, e, "Custo Antigo")}
+          aria-label={`Editar custo antigo de ${produto}`}
+          className="text-[#1a8ceb] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
+        >
+          {moneyOrDash(row["Custo Antigo"])}
+        </button>
+      </TableCell>
+
+      <TableCell className="text-left text-[13px] text-neutral-300">
+        <div className="inline-flex min-w-0 items-center gap-1.5">
+          <span className="truncate">{ncm}</span>
+          <CopyBtn
+            value={ncm}
+            copyKey={`${base}:ncm`}
+            copiedId={copiedId}
+            handleCopy={handleCopy}
+            label="NCM"
+          />
+        </div>
+      </TableCell>
+
+      <TableCell>
+        <div className="flex justify-center gap-1">
+          <IconBtn
+            variant="edit"
+            label={`Editar ${produto}`}
+            onClick={() => openEdit(row)}
+          >
+            <EditIcon className="h-3.5 w-3.5" />
+          </IconBtn>
+          <IconBtn
+            variant="delete"
+            label={`Excluir ${produto}`}
+            onClick={() => openDeleteOne(row)}
+          >
+            <TrashIcon className="h-3.5 w-3.5" />
+          </IconBtn>
         </div>
       </TableCell>
     </TableRow>
   );
-}
+});
 
-const CostTableRow = React.memo(
-  function CostTableRow({
-    row,
-    index,
-    isSelected,
-    copiedId,
-    handleCopy,
-    openEdit,
-    openDeleteOne,
-    openCostEditor,
-    onToggle,
-  }: {
-    row: Custo;
-    index: number;
-    isSelected: boolean;
-    copiedId: string | null;
-    handleCopy: (text: string, key: string) => void;
-    openEdit: (row: Custo) => void;
-    openDeleteOne: (row: Custo) => void;
-    openCostEditor: (
-      row: Custo,
-      e: React.MouseEvent,
-      field?: "Custo Atual" | "Custo Antigo"
-    ) => void;
-    onToggle: (row: Custo, checked: boolean) => void;
-  }) {
-    const showNewBadge = isRecent((row as any)?.created_at);
+/* ─────────────────────────────────────────────
+ * COMPONENTE PRINCIPAL
+ * Renderiza UMA árvore: cards no mobile, tabela no desktop.
+ * ───────────────────────────────────────────── */
 
-    return (
-      <TableRow
-        className={`group border-b border-neutral-900 transition-colors ${
-          isSelected ? "bg-[#1a8ceb]/[0.06] hover:bg-[#1a8ceb]/[0.09]" : "hover:bg-neutral-900/40"
-        }`}
-      >
-        <TableCell className="text-center">
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={(e) => onToggle(row, e.target.checked)}
-            aria-label={`Selecionar produto ${row["Código"]}`}
-            className="h-3.5 w-3.5 cursor-pointer accent-[#1a8ceb] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
-          />
-        </TableCell>
+type Props = {
+  rows: Custo[];
+  loading: boolean;
+  selectedRows: Custo[];
+  setSelectedRows: React.Dispatch<React.SetStateAction<Custo[]>>;
+  copiedId: string | null;
+  handleCopy: (text: string, key: string) => void;
+  openEdit: (row: Custo) => void;
+  openDeleteOne: (row: Custo) => void;
+  openCostEditor: (
+    row: Custo,
+    e: React.MouseEvent,
+    field?: "Custo Atual" | "Custo Antigo"
+  ) => void;
 
-        <TableCell className="text-left text-[13px] text-neutral-300">
-          <div className="inline-flex items-center gap-1.5">
-            <span className="truncate">{row["Código"]}</span>
-            <CopyBtn
-              value={row["Código"] || ""}
-              copyKey={`codigo-${index}`}
-              copiedId={copiedId}
-              handleCopy={handleCopy}
-              label="código"
-            />
-          </div>
-        </TableCell>
-
-        <TableCell className="text-left text-[13px] text-neutral-300">
-          <span className="truncate">{row["Marca"]}</span>
-        </TableCell>
-
-        <TableCell className="text-left text-[13px] text-neutral-300">
-          <div className="inline-flex max-w-full items-center gap-1.5">
-            <span className="truncate">{row["Produto"]}</span>
-            {showNewBadge && <NewBadge />}
-            <CopyBtn
-              value={row["Produto"] || ""}
-              copyKey={`produto-${index}`}
-              copiedId={copiedId}
-              handleCopy={handleCopy}
-              label="produto"
-            />
-          </div>
-        </TableCell>
-
-        <TableCell className="text-right text-[13px] tabular-nums">
-          <div className="inline-flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={(e) => openCostEditor(row, e, "Custo Atual")}
-              aria-label={`Editar custo atual de ${row["Produto"]}`}
-              className="
-                text-[#1a8ceb] underline-offset-2 hover:underline
-                focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]
-              "
-            >
-              R$ {formatBR(row["Custo Atual"])}
-            </button>
-
-            <CopyBtn
-              value={`R$ ${formatBR(row["Custo Atual"])}`}
-              copyKey={`custo-${index}`}
-              copiedId={copiedId}
-              handleCopy={handleCopy}
-              label="custo atual"
-            />
-          </div>
-        </TableCell>
-
-        <TableCell className="text-right text-[13px] tabular-nums">
-          <button
-            type="button"
-            onClick={(e) => openCostEditor(row, e, "Custo Antigo")}
-            aria-label={`Editar custo antigo de ${row["Produto"]}`}
-            className="
-              text-[#1a8ceb] underline-offset-2 hover:underline hover:text-[#1a8ceb]/80
-              focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]
-            "
-          >
-            R$ {formatBR(row["Custo Antigo"])}
-          </button>
-        </TableCell>
-
-        <TableCell className="text-left text-[13px] text-neutral-300">
-          <div className="inline-flex items-center gap-1.5">
-            <span className="truncate">{row["NCM"]}</span>
-            <CopyBtn
-              value={row["NCM"] || ""}
-              copyKey={`ncm-${index}`}
-              copiedId={copiedId}
-              handleCopy={handleCopy}
-              label="NCM"
-            />
-          </div>
-        </TableCell>
-
-        <TableCell>
-          <div className="flex justify-center gap-1">
-            <IconBtn variant="edit" label={`Editar ${row["Produto"]}`} onClick={() => openEdit(row)}>
-              <EditIcon className="h-3.5 w-3.5" />
-            </IconBtn>
-
-            <IconBtn
-              variant="delete"
-              label={`Excluir ${row["Produto"]}`}
-              onClick={() => openDeleteOne(row)}
-            >
-              <TrashIcon className="h-3.5 w-3.5" />
-            </IconBtn>
-          </div>
-        </TableCell>
-      </TableRow>
-    );
-  },
-  (prev, next) =>
-    prev.row === next.row &&
-    prev.isSelected === next.isSelected &&
-    prev.copiedId === next.copiedId
-);
+  // Props do header (repassadas para CostHeader)
+  allSelected: boolean;
+  situacao: string;
+  sortColumn: string | null;
+  sortDirection: "asc" | "desc";
+  onToggleSelectAll: (checked: boolean) => void;
+  onSituacaoChange: (value: string) => void;
+  onSort: (column: string) => void;
+  onDeleteSelected: () => void;
+  onOpenAdjustments: () => void;
+  onClearSelection: () => void;
+  onSelectAllTable: () => void;
+  selectingAll?: boolean;
+};
 
 export default function CostDataTable({
   rows,
@@ -373,14 +408,9 @@ export default function CostDataTable({
   onSelectAllTable,
   selectingAll,
 }: Props) {
-  /**
-   * ✅ FIX: `getCostKey` agora retorna `string | null`. O filtro com
-   * type guard garante que nenhuma linha "sem identificador" (código
-   * vazio, id vazio) entre no Set — antes essas linhas colidiam todas
-   * na chave e podiam aparecer marcadas indevidamente ao trocar de
-   * página ou filtro.
-   */
-  const selectedKeys = React.useMemo(
+  const isDesktop = useIsDesktop();
+
+  const selectedKeys = useMemo(
     () =>
       new Set(
         selectedRows
@@ -396,46 +426,44 @@ export default function CostDataTable({
       if (rowKey === null) return;
 
       setSelectedRows((prev) => {
-        if (checked) {
-          const already = prev.some((r) => getCostKey(r) === rowKey);
-          if (already) return prev;
-          return [...prev, row];
-        }
-
-        return prev.filter((r) => getCostKey(r) !== rowKey);
+        const exists = prev.some((r) => getCostKey(r) === rowKey);
+        if (checked === exists) return prev; // sem mudança: evita re-render
+        return checked
+          ? [...prev, row]
+          : prev.filter((r) => getCostKey(r) !== rowKey);
       });
     },
     [setSelectedRows]
   );
 
-  return (
-    <>
-      {/* MOBILE */}
-      <div className="md:hidden space-y-2 px-2 pb-4">
+  // Evita flash de layout errado antes de saber o breakpoint
+  if (isDesktop === null) return null;
+
+  if (!isDesktop) {
+    return (
+      <div className="space-y-2 px-2 pb-4">
         {loading ? (
           Array.from({ length: 5 }).map((_, i) => (
-            <div key={`mskel-${i}`} className="h-28 animate-pulse border border-neutral-900 bg-neutral-950" />
+            <div
+              key={`mskel-${i}`}
+              className="h-28 animate-pulse border border-neutral-900 bg-neutral-950"
+            />
           ))
         ) : rows.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 py-14 text-center">
-            <PackageSearch className="h-8 w-8 text-neutral-700" aria-hidden="true" />
-            <p className="text-sm text-neutral-400">Nenhum registro encontrado</p>
-            <p className="text-xs text-neutral-500">Tente ajustar os filtros.</p>
-          </div>
+          <EmptyStateContent />
         ) : (
           rows.map((c, i) => {
             const rowKey = getCostKey(c);
             const isSelected = rowKey !== null && selectedKeys.has(rowKey);
-            const showNewBadge = isRecent((c as any)?.created_at);
+            const produto = c["Produto"] || "-";
 
             return (
               <div
-                // ✅ FIX: key estável por identidade real da linha (id/código),
-                // em vez de depender do índice `i` — que muda ao filtrar/ordenar
-                // e causava remontagem/seleção incorreta de componentes.
                 key={rowKey ?? `row-${i}`}
                 className={`border p-3 transition-colors ${
-                  isSelected ? "border-[#1a8ceb]/40 bg-[#1a8ceb]/[0.05]" : "border-neutral-800 bg-[#0a0a0a]"
+                  isSelected
+                    ? "border-[#1a8ceb]/40 bg-[#1a8ceb]/[0.05]"
+                    : "border-neutral-800 bg-[#0a0a0a]"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -444,62 +472,62 @@ export default function CostDataTable({
                       {c["Marca"] || "-"}
                     </div>
                     <div className="mt-1 flex min-w-0 items-center gap-1.5 text-sm font-medium text-white">
-                      <span className="truncate">{c["Produto"] || "-"}</span>
-                      {showNewBadge && <NewBadge />}
+                      <span className="truncate">{produto}</span>
+                      {isRecent(c.created_at) && <NewBadge />}
                     </div>
                   </div>
 
                   <input
                     type="checkbox"
                     checked={isSelected}
+                    disabled={rowKey === null}
                     onChange={(e) => toggleSelectedRow(c, e.target.checked)}
                     aria-label={`Selecionar produto ${c["Código"]}`}
-                    className="mt-1 h-3.5 w-3.5 shrink-0 cursor-pointer accent-[#1a8ceb] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
+                    className="mt-1 h-3.5 w-3.5 shrink-0 cursor-pointer accent-[#1a8ceb] disabled:opacity-40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
                   />
                 </div>
 
                 <div className="mt-3 grid grid-cols-2 gap-1.5 text-xs text-neutral-500">
                   <div className="min-w-0 border border-neutral-800 bg-[#080808] p-2">
-                    <div className="text-[10px] uppercase tracking-wide text-neutral-500">Código</div>
+                    <div className="text-[10px] uppercase tracking-wide">Código</div>
                     <div className="mt-1 truncate text-white">{c["Código"] || "-"}</div>
                   </div>
 
                   <div className="min-w-0 border border-neutral-800 bg-[#080808] p-2">
-                    <div className="text-[10px] uppercase tracking-wide text-neutral-500">NCM</div>
+                    <div className="text-[10px] uppercase tracking-wide">NCM</div>
                     <div className="mt-1 truncate text-white">{c["NCM"] || "-"}</div>
                   </div>
 
                   <div className="min-w-0 border border-neutral-800 bg-[#080808] p-2">
-                    <div className="text-[10px] uppercase tracking-wide text-neutral-500">Custo Atual</div>
+                    <div className="text-[10px] uppercase tracking-wide">Custo Atual</div>
                     <button
                       type="button"
                       onClick={(e) => openCostEditor(c, e, "Custo Atual")}
-                      aria-label={`Editar custo atual de ${c["Produto"]}`}
-                      className="mt-1 truncate text-[#1a8ceb] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
+                      aria-label={`Editar custo atual de ${produto}`}
+                      className="mt-1 block truncate text-[#1a8ceb] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
                     >
-                      R$ {formatBR(c["Custo Atual"])}
+                      {moneyOrDash(c["Custo Atual"])}
                     </button>
                   </div>
 
                   <div className="min-w-0 border border-neutral-800 bg-[#080808] p-2">
-                    <div className="text-[10px] uppercase tracking-wide text-neutral-500">Custo Antigo</div>
+                    <div className="text-[10px] uppercase tracking-wide">Custo Antigo</div>
                     <button
                       type="button"
                       onClick={(e) => openCostEditor(c, e, "Custo Antigo")}
-                      aria-label={`Editar custo antigo de ${c["Produto"]}`}
-                      className="mt-1 truncate text-[#1a8ceb] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
+                      aria-label={`Editar custo antigo de ${produto}`}
+                      className="mt-1 block truncate text-[#1a8ceb] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
                     >
-                      R$ {formatBR(c["Custo Antigo"])}
+                      {moneyOrDash(c["Custo Antigo"])}
                     </button>
                   </div>
                 </div>
 
                 <div className="mt-3 flex justify-end gap-1">
-                  <IconBtn variant="edit" label={`Editar ${c["Produto"]}`} onClick={() => openEdit(c)}>
+                  <IconBtn variant="edit" label={`Editar ${produto}`} onClick={() => openEdit(c)}>
                     <EditIcon className="h-3.5 w-3.5" />
                   </IconBtn>
-
-                  <IconBtn variant="delete" label={`Excluir ${c["Produto"]}`} onClick={() => openDeleteOne(c)}>
+                  <IconBtn variant="delete" label={`Excluir ${produto}`} onClick={() => openDeleteOne(c)}>
                     <TrashIcon className="h-3.5 w-3.5" />
                   </IconBtn>
                 </div>
@@ -508,63 +536,63 @@ export default function CostDataTable({
           })
         )}
       </div>
+    );
+  }
 
-      {/* DESKTOP */}
-      <div className="hidden md:block">
-        <div className="w-full overflow-x-auto lg:overflow-visible">
-          <Table className="min-w-[1188px] table-fixed">
-            <ColGroup />
+  return (
+    <div className="w-full overflow-x-auto">
+      <Table className="table-fixed" style={{ minWidth: `${TABLE_MIN_WIDTH}px` }}>
+        <ColGroup />
 
-            <CostHeader
-              allSelected={allSelected}
-              hasRows={rows.length > 0}
-              situacao={situacao}
-              sortColumn={sortColumn}
-              sortDirection={sortDirection}
-              selectedCount={selectedRows.length}
-              onToggleSelectAll={onToggleSelectAll}
-              onSituacaoChange={onSituacaoChange}
-              onSort={onSort}
-              onDeleteSelected={onDeleteSelected}
-              onOpenAdjustments={onOpenAdjustments}
-              onClearSelection={onClearSelection}
-              onSelectAllTable={onSelectAllTable}
-              selectingAll={selectingAll}
-            />
+        <CostHeader
+          allSelected={allSelected}
+          hasRows={rows.length > 0}
+          situacao={situacao}
+          sortColumn={sortColumn}
+          sortDirection={sortDirection}
+          selectedCount={selectedRows.length}
+          onToggleSelectAll={onToggleSelectAll}
+          onSituacaoChange={onSituacaoChange}
+          onSort={onSort}
+          onDeleteSelected={onDeleteSelected}
+          onOpenAdjustments={onOpenAdjustments}
+          onClearSelection={onClearSelection}
+          onSelectAllTable={onSelectAllTable}
+          selectingAll={selectingAll}
+        />
 
-            <TableBody>
-              {loading ? (
-                <TableSkeleton />
-              ) : rows.length === 0 ? (
-                <EmptyState />
-              ) : (
-                rows.map((c, i) => {
-                  const rowKey = getCostKey(c);
-                  const isSelected = rowKey !== null && selectedKeys.has(rowKey);
+        <TableBody>
+          {loading ? (
+            <TableSkeleton />
+          ) : rows.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={COL_COUNT} className="py-16">
+                <EmptyStateContent />
+              </TableCell>
+            </TableRow>
+          ) : (
+            rows.map((c, i) => {
+              const rowKey = getCostKey(c);
+              const isSelected = rowKey !== null && selectedKeys.has(rowKey);
 
-                  return (
-                    <CostTableRow
-                      // ✅ FIX: key estável — resolve o bug de "item some ao
-                      // selecionar com filtro aplicado" (colisão de índice
-                      // após reordenação/filtragem do array `rows`).
-                      key={rowKey ?? `row-${i}`}
-                      row={c}
-                      index={i}
-                      isSelected={isSelected}
-                      copiedId={copiedId}
-                      handleCopy={handleCopy}
-                      openEdit={openEdit}
-                      openDeleteOne={openDeleteOne}
-                      openCostEditor={openCostEditor}
-                      onToggle={toggleSelectedRow}
-                    />
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-    </>
+              return (
+                <CostTableRow
+                  key={rowKey ?? `row-${i}`}
+                  row={c}
+                  rowKey={rowKey}
+                  isSelected={isSelected}
+                  copiedId={copiedId}
+                  handleCopy={handleCopy}
+                  openEdit={openEdit}
+                  openDeleteOne={openDeleteOne}
+                  openCostEditor={openCostEditor}
+                  onToggle={toggleSelectedRow}
+                />
+              );
+            })
+          )}
+        </TableBody>
+      </Table>
+    </div>
   );
 }

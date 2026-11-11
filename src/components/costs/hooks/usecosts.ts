@@ -20,6 +20,8 @@ import {
   CostFilters as CostFiltersType,
   Custo,
   DEFAULT_COST_FILTERS,
+  ORDER_OPTIONS,
+  OrderOption,
   SITUACAO_OPTIONS,
   Situacao,
   ApplyPayload,
@@ -72,6 +74,13 @@ const parseSituacao = (value: string | null): Situacao =>
   (SITUACAO_OPTIONS as readonly string[]).includes(value ?? "")
     ? (value as Situacao)
     : DEFAULT_COST_FILTERS.situacao;
+
+// Valida a ordenação vinda da URL contra as opções oficiais.
+// `null` = ordenação padrão (por código) ou ordenação por coluna.
+const parseOrdem = (value: string | null): OrderOption | null =>
+  (ORDER_OPTIONS as readonly string[]).includes(value ?? "")
+    ? (value as OrderOption)
+    : null;
 
 // --- Mapeamento DB (inglês, tabela "costs") <-> UI (português) ---
 const mapRowToUI = (row: any): Custo => ({
@@ -160,6 +169,7 @@ const isLiverpoolBrand = (mark: string) =>
  * exportações, seleção em massa, etc.
  * A Situação é aplicada aqui, em um único lugar, para que listagem,
  * count, seleção e exportação respondam sempre o mesmo conjunto de IDs.
+ * A Ordem (ex.: "Últimos Incluídos") é independente da Situação.
  * ───────────────────────────────────────────── */
 
 type CostsQueryParams = {
@@ -167,10 +177,12 @@ type CostsQueryParams = {
   appliedSelectedBrands: string[];
   sortColumn: string | null;
   sortDirection: "asc" | "desc";
+  ordem: OrderOption | null;
 };
 
 function buildCostsQuery(query: any, params: CostsQueryParams) {
-  const { appliedFilters, appliedSelectedBrands, sortColumn, sortDirection } = params;
+  const { appliedFilters, appliedSelectedBrands, sortColumn, sortDirection, ordem } =
+    params;
 
   // Situação (Todos / Ativos / Inativos / Excluídos) — filtro único
   query = applyCostSituacao(query, appliedFilters.situacao);
@@ -225,7 +237,10 @@ function buildCostsQuery(query: any, params: CostsQueryParams) {
     query = query.or('ncm.is.null,ncm.eq.""');
   }
 
-  if (sortColumn) {
+  // Ordenação: "Últimos Incluídos" tem precedência sobre a ordenação por coluna
+  if (ordem === "Últimos Incluídos") {
+    query = query.order("created_at", { ascending: false });
+  } else if (sortColumn) {
     const dbColumn = SORT_FIELD_MAP[sortColumn] || sortColumn;
     query = query.order(dbColumn, { ascending: sortDirection === "asc" });
   } else {
@@ -258,6 +273,7 @@ function buildFiltersKey(params: CostsQueryParams) {
     brands: params.appliedSelectedBrands.slice().sort(),
     sortColumn: params.sortColumn,
     sortDirection: params.sortDirection,
+    ordem: params.ordem,
   });
 }
 
@@ -310,6 +326,7 @@ export function useCosts() {
   const initialSortDirection =
     searchParams.get("sortDirection") === "desc" ? "desc" : "asc";
   const initialNcm = searchParams.get("ncm") ?? "";
+  const initialOrdem = parseOrdem(searchParams.get("ordem"));
 
   const [exporting, setExporting] = useState(false);
   const [renamingCodes, setRenamingCodes] = useState(false);
@@ -350,6 +367,9 @@ export function useCosts() {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">(
     initialSortDirection
   );
+
+  // Ordem (ex.: "Últimos Incluídos"): separada da Situação e da ordenação por coluna
+  const [ordem, setOrdem] = useState<OrderOption | null>(initialOrdem);
 
   const [openNew, setOpenNew] = useState(false);
   const [mode, setMode] = useState<"create" | "edit">("create");
@@ -394,8 +414,14 @@ export function useCosts() {
 
   /* ── Chave de filtros estável (queryKey do React Query) ────── */
   const queryParams: CostsQueryParams = useMemo(
-    () => ({ appliedFilters, appliedSelectedBrands, sortColumn, sortDirection }),
-    [appliedFilters, appliedSelectedBrands, sortColumn, sortDirection]
+    () => ({
+      appliedFilters,
+      appliedSelectedBrands,
+      sortColumn,
+      sortDirection,
+      ordem,
+    }),
+    [appliedFilters, appliedSelectedBrands, sortColumn, sortDirection, ordem]
   );
 
   const filtersKey = useMemo(() => buildFiltersKey(queryParams), [queryParams]);
@@ -542,8 +568,14 @@ export function useCosts() {
     setTimeout(() => setCopiedId(null), 1500);
   }, []);
 
+  /**
+   * Ordenação por coluna. Clicar em uma coluna desfaz a ordem "Últimos
+   * Incluídos", pois as duas são critérios concorrentes.
+   */
   const handleSortColumn = useCallback(
     (column: string) => {
+      setOrdem(null);
+
       setSortColumn((prevColumn) => {
         if (prevColumn !== column) {
           setSortDirection("asc");
@@ -562,6 +594,32 @@ export function useCosts() {
       setCurrentPage(1);
     },
     [sortDirection]
+  );
+
+  /**
+   * Altera a ordem (ex.: "Últimos Incluídos" ou `null` para padrão).
+   * Não mexe na Situação nem nos filtros aplicados.
+   */
+  const handleOrdemChange = useCallback(
+    (value: OrderOption | null) => {
+      setOrdem(value);
+      setCurrentPage(1);
+
+      syncUrl({
+        situacao: appliedFilters.situacao,
+        codigo: appliedFilters.codigo,
+        marca: appliedFilters.marca,
+        produto: appliedFilters.produto,
+        ncm: appliedFilters.ncm,
+        page: 1,
+        perPage: itemsPerPage,
+        brands: appliedSelectedBrands,
+        sortColumn,
+        sortDirection,
+        ordem: value,
+      });
+    },
+    [appliedFilters, appliedSelectedBrands, itemsPerPage, sortColumn, sortDirection, syncUrl]
   );
 
   const loadAllBrands = useCallback(async () => {
@@ -597,9 +655,10 @@ export function useCosts() {
         appliedSelectedBrands,
         sortColumn,
         sortDirection,
+        ordem,
       });
     },
-    [appliedSelectedBrands, appliedFilters, sortColumn, sortDirection]
+    [appliedSelectedBrands, appliedFilters, sortColumn, sortDirection, ordem]
   );
 
   // Usado por handleSelectAllFiltered e handleExport: respeita a Situação
@@ -662,6 +721,7 @@ export function useCosts() {
       brands: string[];
       sortColumn: string | null;
       sortDirection: "asc" | "desc";
+      ordem: OrderOption | null;
     }) => {
       const usp = new URLSearchParams();
 
@@ -675,6 +735,7 @@ export function useCosts() {
       if (params.page > 1) usp.set("page", String(params.page));
       if (params.perPage !== 50) usp.set("perPage", String(params.perPage));
       if (params.brands.length) usp.set("brands", params.brands.join(","));
+      if (params.ordem) usp.set("ordem", params.ordem);
       if (params.sortColumn) usp.set("sortColumn", params.sortColumn);
 
       if (params.sortColumn && params.sortDirection !== "asc") {
@@ -697,6 +758,7 @@ export function useCosts() {
     const urlPage = parsePositiveInt(searchParams.get("page"), 1);
     const urlPerPage = parsePositiveInt(searchParams.get("perPage"), 50);
     const urlBrands = parseArrayParam(searchParams.get("brands"));
+    const urlOrdem = parseOrdem(searchParams.get("ordem"));
     const urlSortColumn = searchParams.get("sortColumn") || null;
     const urlSortDirection =
       searchParams.get("sortDirection") === "desc" ? "desc" : "asc";
@@ -707,6 +769,7 @@ export function useCosts() {
     setSelectedBrands(urlBrands);
     setAppliedSelectedBrands(urlBrands);
 
+    setOrdem(urlOrdem);
     setSortColumn(urlSortColumn);
     setSortDirection(urlSortDirection);
 
@@ -788,9 +851,18 @@ export function useCosts() {
         brands: next.brands,
         sortColumn,
         sortDirection,
+        ordem,
       });
     },
-    [filters.situacao, filters.ncm, itemsPerPage, sortColumn, sortDirection, syncUrl]
+    [
+      filters.situacao,
+      filters.ncm,
+      itemsPerPage,
+      sortColumn,
+      sortDirection,
+      ordem,
+      syncUrl,
+    ]
   );
 
   const handleApplyFilters = useCallback(async () => {
@@ -1901,10 +1973,18 @@ export function useCosts() {
     appliedFilters,
     setAppliedFilters,
 
+    // situação: ver `filters.situacao` / `appliedFilters.situacao`
+    // (valores oficiais de SITUACAO_OPTIONS)
+
     // ordenação
     sortColumn,
     sortDirection,
     handleSortColumn,
+
+    // ordem (ex.: "Últimos Incluídos"), independente da situação
+    ordem,
+    setOrdem,
+    handleOrdemChange,
 
     // seleção
     selectedRows,

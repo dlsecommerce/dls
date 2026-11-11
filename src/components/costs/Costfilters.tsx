@@ -14,6 +14,8 @@ import {
   CostFilters as CostFiltersType,
   DEFAULT_COST_FILTERS,
   NCM_OPTIONS,
+  ORDER_OPTIONS,
+  OrderOption,
   SITUACAO_OPTIONS,
   Situacao,
 } from "@/components/costs/hooks/types";
@@ -28,6 +30,9 @@ type Props = {
 
   onApplyFilters: () => void;
   onClearFilters: () => void;
+
+  ordem?: OrderOption | null;
+  onOrdemChange?: (value: OrderOption | null) => void;
 
   isLoading?: boolean;
 };
@@ -64,6 +69,8 @@ const selectTriggerClass = `
 `;
 
 const norm = (v: string) => v.trim().toLocaleLowerCase("pt-BR");
+
+const ORDEM_PADRAO = "__padrao__";
 
 function BrandMultiSelect({
   allBrands,
@@ -271,6 +278,8 @@ export default function CostFilters({
   setSelectedBrands,
   onApplyFilters,
   onClearFilters,
+  ordem = null,
+  onOrdemChange,
   isLoading = false,
 }: Props) {
   const formRef = React.useRef<HTMLFormElement | null>(null);
@@ -327,7 +336,7 @@ export default function CostFilters({
     <div className="border border-neutral-900 bg-[#0a0a0a]">
       <form ref={formRef} onSubmit={handleSubmit} className="w-full px-4 py-4">
         <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
             <div>
               <FieldLabel label="Código" htmlFor="filtro-codigo" />
               <Input
@@ -403,6 +412,37 @@ export default function CostFilters({
                 </SelectContent>
               </Select>
             </div>
+
+            {onOrdemChange && (
+              <div>
+                <FieldLabel label="Ordenação" htmlFor="filtro-ordem" />
+                <Select
+                  value={ordem ?? ORDEM_PADRAO}
+                  onValueChange={(v) =>
+                    onOrdemChange(v === ORDEM_PADRAO ? null : (v as OrderOption))
+                  }
+                >
+                  <SelectTrigger id="filtro-ordem" className={selectTriggerClass}>
+                    <SelectValue placeholder="Padrão (código)" />
+                  </SelectTrigger>
+
+                  <SelectContent position="popper" sideOffset={4} className={selectContentClass}>
+                    <SelectItem value={ORDEM_PADRAO} className={itemClass(!ordem)}>
+                      Padrão (código)
+                    </SelectItem>
+                    {ORDER_OPTIONS.map((option) => (
+                      <SelectItem
+                        key={option}
+                        value={option}
+                        className={itemClass(ordem === option)}
+                      >
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-1">
