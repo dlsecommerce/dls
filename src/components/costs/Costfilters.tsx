@@ -329,31 +329,6 @@ export default function CostFilters({
         <div className="flex flex-col gap-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div>
-              <FieldLabel label="Situação" htmlFor="filtro-situacao" />
-              <Select value={filters.situacao} onValueChange={(v) => updateSituacao(v as Situacao)}>
-                <SelectTrigger
-                  id="filtro-situacao"
-                  onKeyDown={handleSituacaoTriggerKeyDown}
-                  className={selectTriggerClass}
-                >
-                  <SelectValue placeholder="Ativos" />
-                </SelectTrigger>
-
-                <SelectContent position="popper" sideOffset={4} className={selectContentClass}>
-                  {SITUACAO_OPTIONS.map((option) => (
-                    <SelectItem
-                      key={option}
-                      value={option}
-                      className={itemClass(filters.situacao === option)}
-                    >
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
               <FieldLabel label="Código" htmlFor="filtro-codigo" />
               <Input
                 id="filtro-codigo"
@@ -397,6 +372,30 @@ export default function CostFilters({
                       key={option}
                       value={option}
                       className={itemClass(filters.ncm === option)}
+                    >
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <FieldLabel label="Situação" htmlFor="filtro-situacao" />
+              <Select value={filters.situacao} onValueChange={(v) => updateSituacao(v as Situacao)}>
+                <SelectTrigger
+                  id="filtro-situacao"
+                  onKeyDown={handleSituacaoTriggerKeyDown}
+                  className={selectTriggerClass}
+                >
+                  <SelectValue placeholder="Ativos" />
+                </SelectTrigger>
+
+                <SelectContent position="popper" sideOffset={4} className={selectContentClass}>
+                  {SITUACAO_OPTIONS.map((option) => (
+                    <SelectItem
+                      key={option}
+                      value={option}
+                      className={itemClass(filters.situacao === option)}
                     >
                       {option}
                     </SelectItem>
