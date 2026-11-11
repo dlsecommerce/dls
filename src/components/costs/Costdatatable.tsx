@@ -8,7 +8,7 @@ import {
   Trash2 as TrashIcon,
   PackageSearch,
 } from "lucide-react";
-import type { Custo } from "@/components/costs/helpers/types";
+import type { Custo, Situacao } from "@/components/costs/hooks/types";
 import { formatBR, getCostKey } from "@/components/costs/hooks/utils";
 import CostHeader from "@/components/costs/Costheader";
 
@@ -231,7 +231,7 @@ const CostTableRow = React.memo(function CostTableRow({
   const codigo = row["Código"] || "";
   const produto = row["Produto"] || "";
   const ncm = row["NCM"] || "";
-  const base = rowKey ?? codigo ?? "sem-chave";
+  const base = rowKey ?? (codigo || "sem-chave");
   const showNewBadge = isRecent(row.created_at);
 
   return (
@@ -372,11 +372,13 @@ type Props = {
 
   // Props do header (repassadas para CostHeader)
   allSelected: boolean;
-  situacao: string;
+  /** Se omitido, é calculado a partir de rows e selectedRows. */
+  someSelectedOnPage?: boolean;
+  situacao: Situacao;
   sortColumn: string | null;
   sortDirection: "asc" | "desc";
   onToggleSelectAll: (checked: boolean) => void;
-  onSituacaoChange: (value: string) => void;
+  onSituacaoChange: (value: Situacao) => void;
   onSort: (column: string) => void;
   onDeleteSelected: () => void;
   onOpenAdjustments: () => void;
@@ -396,6 +398,7 @@ export default function CostDataTable({
   openDeleteOne,
   openCostEditor,
   allSelected,
+  someSelectedOnPage,
   situacao,
   sortColumn,
   sortDirection,
@@ -406,7 +409,7 @@ export default function CostDataTable({
   onOpenAdjustments,
   onClearSelection,
   onSelectAllTable,
-  selectingAll,
+  selectingAll = false,
 }: Props) {
   const isDesktop = useIsDesktop();
 
@@ -418,6 +421,16 @@ export default function CostDataTable({
           .filter((k): k is string => k !== null)
       ),
     [selectedRows]
+  );
+
+  const pageHasSelection = useMemo(
+    () =>
+      someSelectedOnPage ??
+      rows.some((r) => {
+        const k = getCostKey(r);
+        return k !== null && selectedKeys.has(k);
+      }),
+    [someSelectedOnPage, rows, selectedKeys]
   );
 
   const toggleSelectedRow = useCallback(
@@ -546,6 +559,7 @@ export default function CostDataTable({
 
         <CostHeader
           allSelected={allSelected}
+          someSelectedOnPage={pageHasSelection && !allSelected}
           hasRows={rows.length > 0}
           situacao={situacao}
           sortColumn={sortColumn}

@@ -31,11 +31,15 @@ import {
 // colidir com o tipo `Custo` (chaves em português) usado na tabela/linhas.
 import type { Custo as CustoForm } from "@/components/costs/Newcost";
 import {
+  getCostKey,
   parseArrayParam,
   parsePositiveInt,
   parseSearchTokens,
   sanitizeTerm,
 } from "@/components/costs/hooks/utils";
+
+// getCostKey agora vem de utils.ts; reexportada para quem já importava daqui
+export { getCostKey };
 
 const SCHEMA = "newsystem";
 
@@ -43,24 +47,6 @@ export type RenameCodePreviewItem = {
   linha?: number;
   codigo_antigo: string;
   codigo_novo: string;
-};
-
-/**
- * ✅ FIX (chave de seleção): antes esta função retornava "" quando o
- * produto não tinha `Código`/`id`, o que fazia TODOS os produtos sem
- * código colidirem na mesma chave dentro do Set/Map de seleção — um
- * item de outra página podia aparecer "selecionado" sem o usuário ter
- * clicado nele, e um clique podia afetar a linha errada visualmente.
- *
- * Agora:
- *  - Prioriza `id` (UUID do banco, sempre único e estável).
- *  - Retorna `null` explicitamente quando não há identificador válido,
- *    para que nenhuma linha "vazia" jamais seja tratada como igual a
- *    outra.
- */
-export const getCostKey = (row: any): string | null => {
-  const key = String(row?.id ?? row?.["Código"] ?? row?.codigo ?? "").trim();
-  return key.length > 0 ? key : null;
 };
 
 const splitByComma = (value: string): string[] =>
@@ -95,15 +81,13 @@ const mapRowToUI = (row: any): Custo => ({
   current_cost: typeof row.current_cost === "number" ? row.current_cost : null,
   previous_cost: typeof row.previous_cost === "number" ? row.previous_cost : null,
   packaging_cost: typeof row.packaging_cost === "number" ? row.packaging_cost : null,
-  // ✅ FIX: sem isso, o badge "Novo" nunca aparece — o componente
-  // CostDataTable lê row.created_at, mas esse campo era descartado
-  // aqui no mapeamento (mesmo vindo no select("*") do Supabase).
+  // Necessário para o badge "Novo" (CostDataTable lê created_at)
   created_at: row.created_at ?? null,
   active: typeof row.active === "boolean" ? row.active : true,
   deleted_at: row.deleted_at ?? null,
 });
 
-// Formata um número (ou null) em string BR para exibir no input de custo do modal
+// Formata um número (ou null) em string BR para o input de custo do modal
 const formatCostForForm = (value: unknown): string => {
   if (value === null || value === undefined || value === "") return "";
   const num = typeof value === "number" ? value : parseFloat(String(value));
@@ -111,7 +95,7 @@ const formatCostForForm = (value: unknown): string => {
   return num.toFixed(2).replace(".", ",");
 };
 
-// Formata o NCM (dígitos puros vindos do banco) com máscara para exibição no modal
+// Formata o NCM (dígitos puros vindos do banco) com máscara para o modal
 const formatNcmForForm = (raw: unknown): string => {
   const digits = String(raw ?? "").replace(/\D/g, "").slice(0, 8);
   if (!digits) return "";
@@ -165,8 +149,7 @@ const isLiverpoolBrand = (mark: string) =>
 
 /* ─────────────────────────────────────────────
  * QUERY BUILDER — puro, sem depender de closures do hook.
- * Reaproveitado por: useQuery principal, fetchAllRows,
- * exportações, seleção em massa, etc.
+ * Reaproveitado por: useQuery principal, fetchAllRows, exportações, seleção.
  * A Situação é aplicada aqui, em um único lugar, para que listagem,
  * count, seleção e exportação respondam sempre o mesmo conjunto de IDs.
  * A Ordem (ex.: "Últimos Incluídos") é independente da Situação.
@@ -237,14 +220,22 @@ function buildCostsQuery(query: any, params: CostsQueryParams) {
     query = query.or('ncm.is.null,ncm.eq.""');
   }
 
-  // Ordenação: "Últimos Incluídos" tem precedência sobre a ordenação por coluna
+  // Ordenação: "Últimos Incluídos" tem precedência sobre a ordenação por coluna.
+  // `id` como critério secundário torna a paginação estável (sem linhas repetidas
+  // ou perdidas entre páginas quando há empate no critério principal).
   if (ordem === "Últimos Incluídos") {
-    query = query.order("created_at", { ascending: false });
+    query = query
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: true });
   } else if (sortColumn) {
     const dbColumn = SORT_FIELD_MAP[sortColumn] || sortColumn;
-    query = query.order(dbColumn, { ascending: sortDirection === "asc" });
+    query = query
+      .order(dbColumn, { ascending: sortDirection === "asc" })
+      .order("id", { ascending: true });
   } else {
-    query = query.order("code", { ascending: true });
+    query = query
+      .order("code", { ascending: true })
+      .order("id", { ascending: true });
   }
 
   return query;
@@ -303,11 +294,15 @@ async function fetchCostsPage(
   countQuery = buildCostsQuery(countQuery, params);
   dataQuery = buildCostsQuery(dataQuery, params).range(from, to);
 
-  const [{ count }, { data, error }] = await Promise.all([countQuery, dataQuery]);
+  const [countRes, dataRes] = await Promise.all([countQuery, dataQuery]);
 
-  if (error) throw error;
+  if (countRes.error) throw countRes.error;
+  if (dataRes.error) throw dataRes.error;
 
-  return { rows: (data || []).map(mapRowToUI), totalCount: count || 0 };
+  return {
+    rows: (dataRes.data || []).map(mapRowToUI),
+    totalCount: countRes.count || 0,
+  };
 }
 
 export function useCosts() {
@@ -412,6 +407,47 @@ export function useCosts() {
 
   const [selectingAll, setSelectingAll] = useState(false);
 
+  /* ── syncUrl — definido ANTES dos callbacks que o utilizam ──── */
+  const syncUrl = useCallback(
+    (params: {
+      situacao: Situacao;
+      codigo: string;
+      marca: string;
+      produto: string;
+      ncm: string;
+      page: number;
+      perPage: number;
+      brands: string[];
+      sortColumn: string | null;
+      sortDirection: "asc" | "desc";
+      ordem: OrderOption | null;
+    }) => {
+      const usp = new URLSearchParams();
+
+      if (params.situacao !== DEFAULT_COST_FILTERS.situacao) {
+        usp.set("situacao", params.situacao);
+      }
+      if (params.codigo !== "") usp.set("codigo", params.codigo);
+      if (params.marca !== "") usp.set("marca", params.marca);
+      if (params.produto !== "") usp.set("produto", params.produto);
+      if (params.ncm && params.ncm !== "Todos") usp.set("ncm", params.ncm);
+      if (params.page > 1) usp.set("page", String(params.page));
+      if (params.perPage !== 50) usp.set("perPage", String(params.perPage));
+      if (params.brands.length) usp.set("brands", params.brands.join(","));
+      if (params.ordem) usp.set("ordem", params.ordem);
+      if (params.sortColumn) usp.set("sortColumn", params.sortColumn);
+
+      if (params.sortColumn && params.sortDirection !== "asc") {
+        usp.set("sortDirection", params.sortDirection);
+      }
+
+      const nextUrl = usp.toString() ? `?${usp.toString()}` : "?";
+
+      router.replace(nextUrl, { scroll: false });
+    },
+    [router]
+  );
+
   /* ── Chave de filtros estável (queryKey do React Query) ────── */
   const queryParams: CostsQueryParams = useMemo(
     () => ({
@@ -435,10 +471,12 @@ export function useCosts() {
   const {
     data,
     isLoading,
+    isFetching,
     refetch: refetchQuery,
   } = useQuery({
     queryKey,
-    queryFn: ({ signal }) => fetchCostsPage(queryParams, currentPage, itemsPerPage, signal),
+    queryFn: ({ signal }) =>
+      fetchCostsPage(queryParams, currentPage, itemsPerPage, signal),
     placeholderData: keepPreviousData,
     staleTime: 30_000,
     retry: (failureCount, err: any) => {
@@ -450,7 +488,7 @@ export function useCosts() {
 
   const rows = data?.rows ?? [];
   const totalItems = data?.totalCount ?? 0;
-  const loading = isLoading;
+  const loading = isLoading || isFetching;
   const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
 
   /* ── Prefetch preditivo da próxima página ───────────────────── */
@@ -465,10 +503,7 @@ export function useCosts() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtersKey, currentPage, itemsPerPage, totalPages]);
 
-  /* ── loadData — mantido por compatibilidade com todo o código
-   *    existente (import, delete, ajustes, rename chamam await loadData()).
-   *    Agora só dispara refetch do React Query em vez de fetch manual.
-   * ───────────────────────────────────────────── */
+  /* ── loadData — compatibilidade: import, delete, ajustes e rename chamam await loadData() ── */
   const loadData = useCallback(
     async (page = currentPage, limit = itemsPerPage) => {
       if (page !== currentPage) setCurrentPage(page);
@@ -478,12 +513,9 @@ export function useCosts() {
     [currentPage, itemsPerPage, refetchQuery]
   );
 
-  const loadRequestIdRef = useRef(0); // mantido apenas por compatibilidade (não usado mais)
-
   /**
-   * ✅ FIX: agora usa `getCostKey` com tipo `string | null` e ignora
-   * explicitamente linhas sem chave válida — nunca mais duas linhas
-   * "sem identificador" serão tratadas como a mesma seleção.
+   * Atualiza a seleção sem efeitos colaterais dentro do updater.
+   * Linhas sem chave válida são descartadas; duplicatas são removidas por chave.
    */
   const setSelectedRowsUnique = useCallback(
     (updater: React.SetStateAction<Custo[]>) => {
@@ -500,26 +532,28 @@ export function useCosts() {
           if (key !== null) map.set(key, row);
         });
 
-        const result = Array.from(map.values());
-
-        if (result.length > SELECTION_WARN_LIMIT) {
-          toastCustom.warning(
-            "Seleção muito grande",
-            `Você selecionou mais de ${SELECTION_WARN_LIMIT} registros. Isso pode deixar a exportação lenta.`
-          );
-        }
-
-        return result;
+        return Array.from(map.values());
       });
     },
     []
   );
 
-  /**
-   * ✅ FIX: type guard explícito remove `null` do Set — antes o
-   * `.filter(Boolean)` deixava passar strings vazias e causava
-   * colisão de chave entre produtos sem `Código`/`id`.
-   */
+  // Aviso de seleção grande: feito por efeito, não dentro do setState
+  const warnedSelectionRef = useRef(false);
+  useEffect(() => {
+    if (selectedRows.length > SELECTION_WARN_LIMIT) {
+      if (!warnedSelectionRef.current) {
+        warnedSelectionRef.current = true;
+        toastCustom.warning(
+          "Seleção muito grande",
+          `Você selecionou mais de ${SELECTION_WARN_LIMIT} registros. Isso pode deixar a exportação lenta.`
+        );
+      }
+    } else {
+      warnedSelectionRef.current = false;
+    }
+  }, [selectedRows.length]);
+
   const selectedKeys = useMemo(
     () =>
       new Set(
@@ -569,31 +603,26 @@ export function useCosts() {
   }, []);
 
   /**
-   * Ordenação por coluna. Clicar em uma coluna desfaz a ordem "Últimos
-   * Incluídos", pois as duas são critérios concorrentes.
+   * Ordenação por coluna: ciclo asc → desc → padrão.
+   * Clicar em uma coluna desfaz a ordem "Últimos Incluídos".
    */
   const handleSortColumn = useCallback(
     (column: string) => {
       setOrdem(null);
 
-      setSortColumn((prevColumn) => {
-        if (prevColumn !== column) {
-          setSortDirection("asc");
-          return column;
-        }
-
-        if (sortDirection === "asc") {
-          setSortDirection("desc");
-          return column;
-        }
-
+      if (sortColumn !== column) {
+        setSortColumn(column);
         setSortDirection("asc");
-        return null;
-      });
+      } else if (sortDirection === "asc") {
+        setSortDirection("desc");
+      } else {
+        setSortColumn(null);
+        setSortDirection("asc");
+      }
 
       setCurrentPage(1);
     },
-    [sortDirection]
+    [sortColumn, sortDirection]
   );
 
   /**
@@ -622,6 +651,33 @@ export function useCosts() {
     [appliedFilters, appliedSelectedBrands, itemsPerPage, sortColumn, sortDirection, syncUrl]
   );
 
+  /**
+   * Altera a Situação: atualiza filtros aplicados, volta para a página 1 e
+   * sincroniza a URL. A seleção é mantida (chaves são estáveis).
+   */
+  const handleSituacaoChange = useCallback(
+    (value: Situacao) => {
+      setFilters((prev) => ({ ...prev, situacao: value }));
+      setAppliedFilters((prev) => ({ ...prev, situacao: value }));
+      setCurrentPage(1);
+
+      syncUrl({
+        situacao: value,
+        codigo: appliedFilters.codigo,
+        marca: appliedFilters.marca,
+        produto: appliedFilters.produto,
+        ncm: appliedFilters.ncm,
+        page: 1,
+        perPage: itemsPerPage,
+        brands: appliedSelectedBrands,
+        sortColumn,
+        sortDirection,
+        ordem,
+      });
+    },
+    [appliedFilters, appliedSelectedBrands, itemsPerPage, sortColumn, sortDirection, ordem, syncUrl]
+  );
+
   const loadAllBrands = useCallback(async () => {
     const { data, error } = await supabase
       .schema(SCHEMA)
@@ -644,9 +700,7 @@ export function useCosts() {
     setAllBrands(brands);
   }, []);
 
-  /* ── buildQuery (legado) — mantido para as funções que ainda
-   *    precisam de query builder ad-hoc (bulk fetch, export).
-   *    Reaproveita buildCostsQuery internamente. ────────────── */
+  /* ── buildQuery — para bulk fetch e exportações ─────────────── */
   const buildQuery = useCallback(
     (countOnly = false) => {
       const base = baseCostsQuery(countOnly);
@@ -661,12 +715,12 @@ export function useCosts() {
     [appliedSelectedBrands, appliedFilters, sortColumn, sortDirection, ordem]
   );
 
-  // Usado por handleSelectAllFiltered e handleExport: respeita a Situação
-  // porque passa pelo mesmo buildCostsQuery da listagem.
+  // Usado por seleção em massa e exportação: respeita a Situação via buildCostsQuery
   const fetchAllRows = useCallback(async (): Promise<Custo[]> => {
-    const { count } = await buildQuery(true);
-    const total = count || 0;
+    const countRes = await buildQuery(true);
+    if (countRes.error) throw countRes.error;
 
+    const total = countRes.count || 0;
     if (total === 0) return [];
 
     const pages = Math.ceil(total / PAGE_SIZE_BULK);
@@ -708,46 +762,6 @@ export function useCosts() {
       setSelectingAll(false);
     }
   }, [selectingAll, fetchAllRows, setSelectedRowsUnique]);
-
-  const syncUrl = useCallback(
-    (params: {
-      situacao: Situacao;
-      codigo: string;
-      marca: string;
-      produto: string;
-      ncm: string;
-      page: number;
-      perPage: number;
-      brands: string[];
-      sortColumn: string | null;
-      sortDirection: "asc" | "desc";
-      ordem: OrderOption | null;
-    }) => {
-      const usp = new URLSearchParams();
-
-      if (params.situacao !== DEFAULT_COST_FILTERS.situacao) {
-        usp.set("situacao", params.situacao);
-      }
-      if (params.codigo !== "") usp.set("codigo", params.codigo);
-      if (params.marca !== "") usp.set("marca", params.marca);
-      if (params.produto !== "") usp.set("produto", params.produto);
-      if (params.ncm && params.ncm !== "Todos") usp.set("ncm", params.ncm);
-      if (params.page > 1) usp.set("page", String(params.page));
-      if (params.perPage !== 50) usp.set("perPage", String(params.perPage));
-      if (params.brands.length) usp.set("brands", params.brands.join(","));
-      if (params.ordem) usp.set("ordem", params.ordem);
-      if (params.sortColumn) usp.set("sortColumn", params.sortColumn);
-
-      if (params.sortColumn && params.sortDirection !== "asc") {
-        usp.set("sortDirection", params.sortDirection);
-      }
-
-      const nextUrl = usp.toString() ? `?${usp.toString()}` : "?";
-
-      router.replace(nextUrl, { scroll: false });
-    },
-    [router]
-  );
 
   useEffect(() => {
     const urlSituacao = parseSituacao(searchParams.get("situacao"));
@@ -796,19 +810,9 @@ export function useCosts() {
     loadAllBrands();
   }, [loadAllBrands]);
 
-  // FIX: fetch automático agora é gerenciado pelo useQuery (cache/dedupe/abort
-  // nativos). Removido o useEffect manual que chamava loadData() a cada
-  // mudança de filtro/página — o React Query já refaz o fetch sozinho
-  // quando queryKey muda.
-
   /**
-   * ✅ FIX (persistência de seleção): agora aceita um parâmetro
-   * `resetSelection` (default false) para controlar se a seleção
-   * deve ser zerada. Como a seleção é indexada por `id`/`Código`
-   * (via getCostKey), ela permanece válida mesmo trocando o filtro —
-   * então ao aplicar filtros (handleApplyFilters) NÃO resetamos mais
-   * a seleção. Apenas ao limpar filtros (handleClearFilters) o reset
-   * é acionado explicitamente, já que sinaliza início de nova busca.
+   * Aplica filtros ao estado e à URL. A seleção é mantida, salvo quando
+   * `resetSelection` for true (usado ao limpar filtros).
    */
   const applyFilterState = useCallback(
     (
@@ -854,15 +858,7 @@ export function useCosts() {
         ordem,
       });
     },
-    [
-      filters.situacao,
-      filters.ncm,
-      itemsPerPage,
-      sortColumn,
-      sortDirection,
-      ordem,
-      syncUrl,
-    ]
+    [filters.situacao, filters.ncm, itemsPerPage, sortColumn, sortDirection, ordem, syncUrl]
   );
 
   const handleApplyFilters = useCallback(async () => {
@@ -871,17 +867,14 @@ export function useCosts() {
     setApplyingFilters(true);
 
     try {
-      applyFilterState(
-        {
-          situacao: filters.situacao,
-          codigo: filters.codigo,
-          marca: filters.marca,
-          produto: filters.produto,
-          brands: selectedBrands,
-          ncm: filters.ncm,
-        }
-        // resetSelection = false (default) — mantém a seleção ao filtrar
-      );
+      applyFilterState({
+        situacao: filters.situacao,
+        codigo: filters.codigo,
+        marca: filters.marca,
+        produto: filters.produto,
+        brands: selectedBrands,
+        ncm: filters.ncm,
+      });
 
       setOpenFiltersMobile(false);
     } finally {
@@ -902,7 +895,7 @@ export function useCosts() {
         brands: [],
         ncm: DEFAULT_COST_FILTERS.ncm,
       },
-      true // ✅ FIX: reseta a seleção ao limpar filtros
+      true
     );
 
     setOpenFiltersMobile(false);
@@ -967,8 +960,9 @@ export function useCosts() {
     }
   }, [appliedSelectedBrands, selectedRows, fetchAllRows]);
 
-  const handleExportModeloInclusao = useCallback(async () => {
-    try {
+  /* ── Modelos de planilha (inclusão / alteração) ─────────────── */
+  const buildModeloWorkbook = useCallback(
+    async (sheetName: string, exampleNewCost: string) => {
       const XLSX = await import("xlsx-js-style");
 
       const headers = [
@@ -1005,21 +999,21 @@ export function useCosts() {
 
       XLSX.utils.sheet_add_aoa(
         ws,
-        [
-          [
-            "12345",
-            "Liverpool",
-            "Baqueta 7A Liverpool",
-            "250.00",
-            "240.00",
-            "851821",
-          ],
-        ],
+        [["12345", "Liverpool", "Baqueta 7A Liverpool", exampleNewCost, "240.00", "851821"]],
         { origin: -1 }
       );
 
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Inclusão");
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+      return { XLSX, wb };
+    },
+    []
+  );
+
+  const handleExportModeloInclusao = useCallback(async () => {
+    try {
+      const { XLSX, wb } = await buildModeloWorkbook("Inclusão", "250.00");
 
       const now = new Date();
       const nomeArquivo = `INCLUSÃO - ${now
@@ -1037,61 +1031,11 @@ export function useCosts() {
         err?.message || "Falha ao gerar o arquivo."
       );
     }
-  }, []);
+  }, [buildModeloWorkbook]);
 
   const handleExportModeloAlteracao = useCallback(async () => {
     try {
-      const XLSX = await import("xlsx-js-style");
-
-      const headers = [
-        "Código",
-        "Marca",
-        "Produto",
-        "Custo Atual",
-        "Custo Antigo",
-        "NCM",
-      ];
-
-      const ws = XLSX.utils.aoa_to_sheet([headers]);
-
-      const style = {
-        font: { bold: true, color: { rgb: "FFFFFF" } },
-        fill: { fgColor: { rgb: "1A8CEB" } },
-        alignment: { horizontal: "center", vertical: "center" },
-      };
-
-      headers.forEach((_, idx) => {
-        const cell = XLSX.utils.encode_cell({ r: 0, c: idx });
-        (ws as any)[cell] = (ws as any)[cell] || {};
-        (ws as any)[cell].s = style;
-      });
-
-      (ws as any)["!cols"] = [
-        { wch: 15 },
-        { wch: 20 },
-        { wch: 34 },
-        { wch: 15 },
-        { wch: 15 },
-        { wch: 12 },
-      ];
-
-      XLSX.utils.sheet_add_aoa(
-        ws,
-        [
-          [
-            "12345",
-            "Liverpool",
-            "Baqueta 7A Liverpool",
-            "260.00",
-            "250.00",
-            "851821",
-          ],
-        ],
-        { origin: -1 }
-      );
-
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Alteração");
+      const { XLSX, wb } = await buildModeloWorkbook("Alteração", "260.00");
 
       const now = new Date();
       const nomeArquivo = `ALTERAÇÃO - ${now
@@ -1109,7 +1053,7 @@ export function useCosts() {
         err?.message || "Falha ao gerar o arquivo."
       );
     }
-  }, []);
+  }, [buildModeloWorkbook]);
 
   const getRowsForRenameExport = useCallback(async () => {
     if (selectedRows.length > 0) return selectedRows;
@@ -1268,6 +1212,11 @@ export function useCosts() {
     []
   );
 
+  /**
+   * Edição inline de custo com optimistic update. Atualiza tanto o campo
+   * textual em português quanto o numérico (current_cost / previous_cost),
+   * para que a UI e os cálculos fiquem consistentes antes do refetch.
+   */
   const confirmCostEdit = useCallback(async () => {
     if (!editing || savingEdit) return;
 
@@ -1277,9 +1226,12 @@ export function useCosts() {
     const novoValor = editing.value.trim();
 
     const dbField = field === "Custo Atual" ? "current_cost" : "previous_cost";
+    const numericValue = novoValor === "" ? null : parseDecimalToNumber(novoValor);
 
-    // Optimistic update no cache do React Query (substitui setRows manual)
-    const previousData = queryClient.getQueriesData({ queryKey: ["costs"], exact: false });
+    const previousData = queryClient.getQueriesData<FetchResult>({
+      queryKey: ["costs"],
+      exact: false,
+    });
 
     queryClient.setQueriesData<FetchResult>(
       { queryKey: ["costs"], exact: false },
@@ -1288,7 +1240,13 @@ export function useCosts() {
         return {
           ...old,
           rows: old.rows.map((r) =>
-            r["Código"] === codigo ? { ...r, [field]: novoValor } : r
+            r["Código"] === codigo
+              ? {
+                  ...r,
+                  [field]: numericValue ?? "",
+                  [dbField]: numericValue,
+                }
+              : r
           ),
         };
       }
@@ -1300,7 +1258,7 @@ export function useCosts() {
       const { error } = await supabase
         .schema(SCHEMA)
         .from("costs")
-        .update({ [dbField]: novoValor === "" ? null : parseDecimalToNumber(novoValor) })
+        .update({ [dbField]: numericValue })
         .eq("code", codigo)
         .is("deleted_at", null);
 
@@ -1334,10 +1292,9 @@ export function useCosts() {
 
   /**
    * Exclusão em duas etapas, decidida por linha:
-   * - Custo ativo ou inativo (deleted_at nulo): SOFT DELETE (marca deleted_at).
-   * - Custo já em "Excluídos" (deleted_at preenchido): HARD DELETE. Remove as
-   *   pricing_rules vinculadas (cost_id) e depois a linha em costs, igual ao announce.
-   * Seleção mista é tratada corretamente: cada grupo segue sua regra.
+   * - Ativo ou inativo (deleted_at nulo): SOFT DELETE.
+   * - Já em "Excluídos" (deleted_at preenchido): HARD DELETE, removendo
+   *   antes as pricing_rules vinculadas (cost_id).
    */
   const deleteSelected = useCallback(async () => {
     if (!selectedRows.length) return;
@@ -1353,7 +1310,6 @@ export function useCosts() {
         .filter((r) => r.deleted_at && r.id)
         .map((r) => r.id as string);
 
-      // Soft delete: ativos e inativos
       for (let i = 0; i < softIds.length; i += PAGE_SIZE_BULK) {
         const batch = softIds.slice(i, i + PAGE_SIZE_BULK);
         const { error } = await supabase
@@ -1366,7 +1322,6 @@ export function useCosts() {
         if (error) throw error;
       }
 
-      // Hard delete: já estão em "Excluídos"
       for (let i = 0; i < hardIds.length; i += PAGE_SIZE_BULK) {
         const batch = hardIds.slice(i, i + PAGE_SIZE_BULK);
 
@@ -1495,8 +1450,7 @@ export function useCosts() {
   }, []);
 
   /**
-   * Busca os códigos de custo vinculados a uma loja específica,
-   * via a coluna `announce.reference` (equivalente ao `costs.code`).
+   * Busca os códigos de custo vinculados a uma loja (announce.reference = costs.code).
    */
   const fetchCostCodesByStore = useCallback(async (store: string): Promise<string[]> => {
     const codes = new Set<string>();
@@ -1526,9 +1480,8 @@ export function useCosts() {
   }, []);
 
   /**
-   * Aplica o valor de embalagem (fixo ou percentual) para uma lista de
-   * códigos de custo. Quando percentual, precisa buscar o current_cost
-   * de cada código para calcular o valor individual.
+   * Aplica embalagem (fixo em R$ ou percentual sobre current_cost) em
+   * costs.packaging_cost para uma lista de códigos.
    */
   const applyPackagingToCodes = useCallback(
     async (
@@ -1538,12 +1491,12 @@ export function useCosts() {
     ): Promise<number> => {
       if (!codes.length) return 0;
 
-      if (mode === "fixed") {
-        const batches: string[][] = [];
-        for (let i = 0; i < codes.length; i += PAGE_SIZE_BULK) {
-          batches.push(codes.slice(i, i + PAGE_SIZE_BULK));
-        }
+      const batches: string[][] = [];
+      for (let i = 0; i < codes.length; i += PAGE_SIZE_BULK) {
+        batches.push(codes.slice(i, i + PAGE_SIZE_BULK));
+      }
 
+      if (mode === "fixed") {
         for (const batch of batches) {
           const { error } = await supabase
             .schema(SCHEMA)
@@ -1561,10 +1514,6 @@ export function useCosts() {
 
       // percentual: precisa do current_cost de cada código
       let updated = 0;
-      const batches: string[][] = [];
-      for (let i = 0; i < codes.length; i += PAGE_SIZE_BULK) {
-        batches.push(codes.slice(i, i + PAGE_SIZE_BULK));
-      }
 
       for (const batch of batches) {
         const { data, error } = await supabase
@@ -1605,25 +1554,13 @@ export function useCosts() {
 
   /**
    * Ajustes em massa: cria regras em pricing_rules (imposto, marketing,
-   * margem_minima, desconto) com scope "global" | "store" | "channel" | "product".
-   * Regra de negócio: Liverpool sempre recebe 23% de desconto fixo,
-   * sobrescrevendo o valor digitado no modal (apenas no escopo "product").
+   * margem_minima, desconto) com scope "global" | "store" | "channel" | "product"
+   * (ou "brand" para desconto restrito por marca).
    *
-   * Embalagem é aplicada diretamente no campo físico packaging_cost da
-   * tabela costs (fixo em R$ ou percentual sobre current_cost). Não se
-   * aplica ao escopo "channel" (canal não possui vínculo direto com
-   * costs.packaging_cost — é regra de precificação, não custo direto):
-   *  - "product": aplica apenas nos produtos selecionados.
-   *  - "global": aplica em todos os produtos ativos (costs.deleted_at is null).
-   *  - "store": aplica em todos os produtos vinculados à loja selecionada
-   *    (via announce.reference = costs.code).
-   *
-   * ✅ FIX (marca no desconto): quando um escopo global/store/channel é
-   * usado mas o usuário restringiu o campo Desconto a uma marca específica
-   * (values.brand), a regra de "desconto" é criada com scope="brand" e
-   * scope_value=values.brand — em vez de herdar o escopo principal.
-   * Isso é o que o backend (resolve_pricing_rule / fn_pricing_rules_recalc)
-   * já espera para aplicar o desconto apenas aos produtos daquela marca.
+   * Regras de negócio:
+   * - Liverpool sempre recebe 23% de desconto, sobrescrevendo o valor digitado
+   *   (apenas no escopo "product").
+   * - Embalagem vai para costs.packaging_cost e não se aplica ao escopo "channel".
    */
   const applyAdjustmentsToSelected = useCallback(
     async (values: ApplyPayload): Promise<ApplyResult> => {
@@ -1710,8 +1647,7 @@ export function useCosts() {
             });
           }
 
-          // ✅ FIX: desconto restrito por marca cria regra scope="brand",
-          // ignorando o escopo principal (global/store/channel).
+          // Desconto restrito por marca: scope="brand" em vez do escopo principal
           if (values.desconto.trim() !== "") {
             if (values.brand) {
               rulesToCreate.push({
@@ -1792,7 +1728,7 @@ export function useCosts() {
 
         const created = await Promise.all(rulesToCreate.map((r) => createRule(r)));
 
-        // Embalagem: aplicada em costs.packaging_cost (indisponível para escopo "channel")
+        // Embalagem: aplicada em costs.packaging_cost
         let costsUpdated = 0;
 
         if (embalagemValue !== null) {
@@ -1973,8 +1909,8 @@ export function useCosts() {
     appliedFilters,
     setAppliedFilters,
 
-    // situação: ver `filters.situacao` / `appliedFilters.situacao`
-    // (valores oficiais de SITUACAO_OPTIONS)
+    // situação (valores oficiais de SITUACAO_OPTIONS)
+    handleSituacaoChange,
 
     // ordenação
     sortColumn,

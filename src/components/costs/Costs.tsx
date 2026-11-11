@@ -39,6 +39,11 @@ export default function Costs() {
     appliedFilters,
     setAppliedFilters,
 
+    handleSituacaoChange,
+
+    ordem,
+    handleOrdemChange,
+
     sortColumn,
     sortDirection,
     handleSortColumn,
@@ -73,6 +78,10 @@ export default function Costs() {
     setOpenDelete,
     deleting,
     deleteSelected,
+
+    togglingActive,
+    handleDeactivateSelected,
+    handleReactivateSelected,
 
     exporting,
     handleExport,
@@ -159,6 +168,7 @@ export default function Costs() {
             {/* Filtros (desktop) */}
             <div className="hidden lg:block">
               <CostFilters
+                idPrefix="desktop"
                 filters={filters}
                 setFilters={setFilters}
                 allBrands={allBrands}
@@ -166,6 +176,8 @@ export default function Costs() {
                 setSelectedBrands={setSelectedBrands}
                 onApplyFilters={handleApplyFilters}
                 onClearFilters={handleClearFilters}
+                ordem={ordem}
+                onOrdemChange={handleOrdemChange}
                 isLoading={loading || applyingFilters}
               />
             </div>
@@ -190,11 +202,7 @@ export default function Costs() {
                 sortColumn={sortColumn}
                 sortDirection={sortDirection}
                 onToggleSelectAll={handleToggleSelectAll}
-                onSituacaoChange={(value) => {
-                  setFilters((prev) => ({ ...prev, situacao: value }));
-                  setAppliedFilters((prev) => ({ ...prev, situacao: value }));
-                  setCurrentPage(1);
-                }}
+                onSituacaoChange={handleSituacaoChange}
                 onSort={handleSortColumn}
                 onDeleteSelected={() => setOpenDelete(true)}
                 onOpenAdjustments={() => setOpenAdjustments(true)}
@@ -241,6 +249,10 @@ export default function Costs() {
               onImportAlteracao={handleImportAlteracao}
               onImportRenomeacaoCodigos={handleImportRenomeacaoCodigos}
               totalCount={totalItems}
+              selectedCount={selectedRows.length}
+              togglingActive={togglingActive}
+              onDeactivateSelected={handleDeactivateSelected}
+              onReactivateSelected={handleReactivateSelected}
             />
           </div>
         </aside>
@@ -286,6 +298,7 @@ export default function Costs() {
             </div>
 
             <CostFilters
+              idPrefix="mobile"
               filters={filters}
               setFilters={setFilters}
               allBrands={allBrands}
@@ -293,6 +306,8 @@ export default function Costs() {
               setSelectedBrands={setSelectedBrands}
               onApplyFilters={handleApplyFilters}
               onClearFilters={handleClearFilters}
+              ordem={ordem}
+              onOrdemChange={handleOrdemChange}
               isLoading={loading || applyingFilters}
             />
           </div>
@@ -356,6 +371,10 @@ export default function Costs() {
                   handleImportRenomeacaoCodigos(file);
                 }}
                 totalCount={totalItems}
+                selectedCount={selectedRows.length}
+                togglingActive={togglingActive}
+                onDeactivateSelected={handleDeactivateSelected}
+                onReactivateSelected={handleReactivateSelected}
               />
             </div>
           </div>
