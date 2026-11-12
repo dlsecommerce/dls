@@ -1,4 +1,3 @@
-// marketplace/hooks/useMarketplace.ts
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -51,7 +50,6 @@ type UseMarketplaceParams = {
 
 const DEFAULT_PAGE_SIZE = 50;
 const SEARCH_DEBOUNCE_MS = 350;
-const LIMITE_COMISSAO_CLASSICO = 14;
 const CANAL_MERCADO_LIVRE = "mercado livre";
 
 // ===========================================================================
@@ -183,9 +181,10 @@ function applyFilters(query: any, params: UseMarketplaceParams, debouncedSearch:
   if (tipo === "Produtos") query = query.eq("is_variation", false);
   else if (tipo === "Variações") query = query.eq("is_variation", true);
 
+  // ---- Condição: usa listing_type gravado no banco (classico / premium) ----
   if (condicao && condicao !== "Todos" && isMercadoLivre(channel)) {
-    if (condicao === "Clássico") query = query.lte("commission_rate", LIMITE_COMISSAO_CLASSICO);
-    else if (condicao === "Premium") query = query.gt("commission_rate", LIMITE_COMISSAO_CLASSICO);
+    if (condicao === "Clássico") query = query.eq("listing_type", "classico");
+    else if (condicao === "Premium") query = query.eq("listing_type", "premium");
   }
 
   const term = debouncedSearch.trim();
