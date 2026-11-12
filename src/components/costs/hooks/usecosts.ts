@@ -390,6 +390,7 @@ export function useCosts() {
   const [openDelete, setOpenDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [togglingActive, setTogglingActive] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const [openAdjustments, setOpenAdjustments] = useState(false);
@@ -632,6 +633,10 @@ export function useCosts() {
   const handleOrdemChange = useCallback(
     (value: OrderOption | null) => {
       setOrdem(value);
+      // Ordem e ordenação por coluna são mutuamente exclusivas: limpa a coluna
+      // ativa, para que "Todos" volte ao padrão por código.
+      setSortColumn(null);
+      setSortDirection("asc");
       setCurrentPage(1);
 
       syncUrl({
@@ -643,12 +648,12 @@ export function useCosts() {
         page: 1,
         perPage: itemsPerPage,
         brands: appliedSelectedBrands,
-        sortColumn,
-        sortDirection,
+        sortColumn: null,
+        sortDirection: "asc",
         ordem: value,
       });
     },
-    [appliedFilters, appliedSelectedBrands, itemsPerPage, sortColumn, sortDirection, syncUrl]
+    [appliedFilters, appliedSelectedBrands, itemsPerPage, syncUrl]
   );
 
   /**
@@ -1367,15 +1372,22 @@ export function useCosts() {
   }, [selectedRows, loadData]);
 
   /**
-   * Ativar/desativar só altera `active`. Linhas excluídas são ignoradas.
+   * Inativar / reativar: altera somente `active` nos custos selecionados.
+   * Ignora excluídos e linhas que já estão no status pedido.
    */
   const setActiveForSelected = useCallback(
     async (active: boolean) => {
       const ids = selectedRows
-        .filter((r) => !r.deleted_at && r.id)
+        .filter((r) => !r.deleted_at && r.id && r.active !== active)
         .map((r) => r.id as string);
 
-      if (!ids.length) return;
+      if (!ids.length) {
+        toastCustom.message(
+          active ? "Nada a reativar" : "Nada a inativar",
+          "Os selecionados já estão nesse status ou estão excluídos."
+        );
+        return;
+      }
 
       setTogglingActive(true);
 
@@ -1393,8 +1405,8 @@ export function useCosts() {
         }
 
         toastCustom.success(
-          active ? "Produtos reativados!" : "Produtos desativados!",
-          `${ids.length} registro(s) atualizado(s).`
+          active ? "Custos reativados!" : "Custos inativados!",
+          `${ids.length} custo(s) atualizado(s).`
         );
 
         await loadData();
@@ -1421,7 +1433,58 @@ export function useCosts() {
   );
 
   /**
-   * Busca todos os códigos ativos de custo (escopo "global").
+   * Restaura custos excluídos (soft delete): limpa deleted_at.
+   * Só afeta linhas que estão em "Excluídos". Após restaurar, a seleção é
+   * limpa, pois as linhas saem da visão "Excluídos".
+   */
+  const handleRestoreSelected = useCallback(async () => {
+    const ids = selectedRows
+      .filter((r) => r.deleted_at && r.id)
+      .map((r) => r.id as string);
+
+    if (!ids.length) {
+      toastCustom.message(
+        "Nada a restaurar",
+        "Selecione custos excluídos para restaurar."
+      );
+      return;
+    }
+
+    setRestoring(true);
+
+    try {
+      for (let i = 0; i < ids.length; i += PAGE_SIZE_BULK) {
+        const batch = ids.slice(i, i + PAGE_SIZE_BULK);
+        const { error } = await supabase
+          .schema(SCHEMA)
+          .from("costs")
+          .update({ deleted_at: null })
+          .in("id", batch)
+          .not("deleted_at", "is", null);
+
+        if (error) throw error;
+      }
+
+      setSelectedRows([]);
+
+      toastCustom.success(
+        "Restauração concluída!",
+        `${ids.length} custo(s) restaurado(s).`
+      );
+
+      await loadData();
+    } catch (err: any) {
+      toastCustom.error(
+        "Erro ao restaurar",
+        err?.message || "Falha ao restaurar registros."
+      );
+    } finally {
+      setRestoring(false);
+    }
+  }, [selectedRows, loadData]);
+
+  /**
+   * Busca todos os códigos ativos de custo (usado nos ajustes em massa, escopo "global").
    */
   const fetchAllActiveCostCodes = useCallback(async (): Promise<string[]> => {
     const codes: string[] = [];
@@ -1958,10 +2021,12 @@ export function useCosts() {
     deleting,
     deleteSelected,
 
-    // status (ativar/desativar)
+    // inativar / reativar / restaurar (botões do cabeçalho)
     togglingActive,
+    restoring,
     handleDeactivateSelected,
     handleReactivateSelected,
+    handleRestoreSelected,
 
     // exportação
     exporting,

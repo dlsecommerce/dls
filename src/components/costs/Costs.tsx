@@ -80,8 +80,10 @@ export default function Costs() {
     deleteSelected,
 
     togglingActive,
+    restoring,
     handleDeactivateSelected,
     handleReactivateSelected,
+    handleRestoreSelected,
 
     exporting,
     handleExport,
@@ -130,6 +132,8 @@ export default function Costs() {
     setOpenActionsMobile,
   } = useCosts();
 
+  const statusBusy = togglingActive || restoring;
+
   return (
     <div className="min-h-screen bg-[#050505] text-neutral-200 selection:bg-[#1a8ceb]/20">
       <div className="flex min-h-screen flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_280px]">
@@ -176,8 +180,6 @@ export default function Costs() {
                 setSelectedBrands={setSelectedBrands}
                 onApplyFilters={handleApplyFilters}
                 onClearFilters={handleClearFilters}
-                ordem={ordem}
-                onOrdemChange={handleOrdemChange}
                 isLoading={loading || applyingFilters}
               />
             </div>
@@ -199,9 +201,11 @@ export default function Costs() {
                 }}
                 allSelected={allSelected}
                 situacao={appliedFilters.situacao}
+                ordem={ordem}
                 sortColumn={sortColumn}
                 sortDirection={sortDirection}
                 onToggleSelectAll={handleToggleSelectAll}
+                onOrdemChange={handleOrdemChange}
                 onSituacaoChange={handleSituacaoChange}
                 onSort={handleSortColumn}
                 onDeleteSelected={() => setOpenDelete(true)}
@@ -209,6 +213,9 @@ export default function Costs() {
                 onClearSelection={() => setSelectedRows([])}
                 onSelectAllTable={handleSelectAllFiltered}
                 selectingAll={selectingAll}
+                togglingActive={statusBusy}
+                onDeactivateSelected={handleDeactivateSelected}
+                onRestoreSelected={handleRestoreSelected}
               />
 
               <div className="border-t border-neutral-900 pb-24 lg:pb-0">
@@ -306,8 +313,6 @@ export default function Costs() {
               setSelectedBrands={setSelectedBrands}
               onApplyFilters={handleApplyFilters}
               onClearFilters={handleClearFilters}
-              ordem={ordem}
-              onOrdemChange={handleOrdemChange}
               isLoading={loading || applyingFilters}
             />
           </div>

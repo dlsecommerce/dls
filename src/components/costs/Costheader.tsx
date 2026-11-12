@@ -6,33 +6,40 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
+  PowerOff,
+  RotateCcw,
   Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { TableHeader, TableRow, TableHead } from "@/components/ui/table";
-import {
-  DEFAULT_COST_FILTERS,
-  SITUACAO_OPTIONS,
-  Situacao,
-} from "@/components/costs/hooks/types";
+import type { OrderOption } from "@/components/costs/hooks/types";
+
+const ORDEM_MENU_OPTIONS: { label: string; value: OrderOption | null }[] = [
+  { label: "Todos", value: null },
+  { label: "Últimos Incluídos", value: "Últimos Incluídos" },
+];
 
 type Props = {
   allSelected: boolean;
   someSelectedOnPage: boolean;
   hasRows: boolean;
-  situacao: Situacao;
+  ordem: OrderOption | null;
   sortColumn: string | null;
   sortDirection: "asc" | "desc";
   selectedCount: number;
   onToggleSelectAll: (checked: boolean) => void;
-  onSituacaoChange: (value: Situacao) => void;
+  onOrdemChange: (value: OrderOption | null) => void;
   onSort: (column: string) => void;
   onDeleteSelected: () => void;
   onOpenAdjustments: () => void;
   onClearSelection: () => void;
   onSelectAllTable: () => void;
   selectingAll?: boolean;
+  situacao: string;
+  togglingActive?: boolean;
+  onDeactivateSelected: () => void;
+  onRestoreSelected: () => void;
 };
 
 function SortHeader({
@@ -73,16 +80,18 @@ function SortHeader({
   );
 }
 
-function SituacaoMenu({
-  situacao,
+function OrdemMenu({
+  ordem,
   onChange,
 }: {
-  situacao: Situacao;
-  onChange: (value: Situacao) => void;
+  ordem: OrderOption | null;
+  onChange: (value: OrderOption | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const isDefault = situacao === DEFAULT_COST_FILTERS.situacao;
+
+  const currentLabel =
+    ORDEM_MENU_OPTIONS.find((o) => o.value === ordem)?.label ?? "Todos";
 
   useEffect(() => {
     if (!open) return;
@@ -110,43 +119,37 @@ function SituacaoMenu({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        aria-label={`Filtrar por situação. Atual: ${situacao}`}
+        aria-label={`Ordenar lista. Atual: ${currentLabel}`}
         aria-haspopup="listbox"
         aria-expanded={open}
-        title={`Situação: ${situacao}`}
+        title={`Ordem: ${currentLabel}`}
         className="group relative flex h-5 w-5 cursor-pointer items-center justify-center transition-colors hover:bg-neutral-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
       >
         <ChevronDown
-          className={`h-3.5 w-3.5 transition-colors group-hover:text-white ${
+          className={`h-3.5 w-3.5 text-[#1a8ceb] transition-transform group-hover:text-white ${
             open ? "rotate-180" : ""
-          } text-[#1a8ceb]`}
+          }`}
           aria-hidden="true"
         />
-        {!isDefault && (
-          <span
-            className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 bg-[#1a8ceb]"
-            aria-hidden="true"
-          />
-        )}
       </button>
 
       {open && (
         <div
           role="listbox"
-          aria-label="Situação"
+          aria-label="Ordem"
           className="absolute left-0 top-7 z-50 min-w-[160px] border border-neutral-800 bg-[#0d0d0d] p-1 shadow-2xl"
         >
-          {SITUACAO_OPTIONS.map((option) => {
-            const active = situacao === option;
+          {ORDEM_MENU_OPTIONS.map((option) => {
+            const active = ordem === option.value;
 
             return (
               <button
-                key={option}
+                key={option.label}
                 type="button"
                 role="option"
                 aria-selected={active}
                 onClick={() => {
-                  onChange(option);
+                  onChange(option.value);
                   setOpen(false);
                 }}
                 className={`flex w-full cursor-pointer items-center px-2 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb] ${
@@ -155,7 +158,7 @@ function SituacaoMenu({
                     : "text-neutral-400 hover:bg-neutral-900 hover:text-white"
                 }`}
               >
-                {option}
+                {option.label}
               </button>
             );
           })}
@@ -169,18 +172,22 @@ export default function CostHeader({
   allSelected,
   someSelectedOnPage,
   hasRows,
-  situacao,
+  ordem,
   sortColumn,
   sortDirection,
   selectedCount,
   onToggleSelectAll,
-  onSituacaoChange,
+  onOrdemChange,
   onSort,
   onDeleteSelected,
   onOpenAdjustments,
   onClearSelection,
   onSelectAllTable,
   selectingAll = false,
+  situacao,
+  togglingActive = false,
+  onDeactivateSelected,
+  onRestoreSelected,
 }: Props) {
   const pageCheckRef = useRef<HTMLInputElement | null>(null);
   const hasSelectedItems = selectedCount > 0;
@@ -229,6 +236,64 @@ export default function CostHeader({
                 className="flex h-8 w-8 cursor-pointer items-center justify-center border border-neutral-700 text-neutral-400 transition-colors hover:border-neutral-500 hover:bg-neutral-900 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#1a8ceb]"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
+
+            {situacao !== "Excluídos" && (
+              <button
+                type="button"
+                onClick={onDeactivateSelected}
+                disabled={!hasSelectedItems || togglingActive}
+                aria-label={
+                  hasSelectedItems
+                    ? `Inativar ${selectedCount} selecionado(s)`
+                    : "Selecione itens para inativar"
+                }
+                title={
+                  hasSelectedItems
+                    ? selectedCount === 1
+                      ? "Inativar selecionado"
+                      : "Inativar selecionados"
+                    : "Inativar"
+                }
+                className={`flex h-8 w-8 items-center justify-center border transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500 ${
+                  hasSelectedItems
+                    ? "cursor-pointer border-amber-500/30 text-amber-500 hover:border-amber-500/50 hover:bg-amber-500/10"
+                    : "cursor-not-allowed border-neutral-800 text-neutral-600"
+                }`}
+              >
+                {togglingActive ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <PowerOff className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            )}
+
+            {situacao === "Excluídos" && (
+              <button
+                type="button"
+                onClick={hasSelectedItems ? onRestoreSelected : undefined}
+                disabled={!hasSelectedItems || togglingActive}
+                aria-label={
+                  hasSelectedItems
+                    ? `Restaurar ${selectedCount} selecionado(s)`
+                    : "Selecione itens para restaurar"
+                }
+                title={
+                  hasSelectedItems
+                    ? selectedCount === 1
+                      ? "Restaurar selecionado"
+                      : "Restaurar selecionados"
+                    : "Restaurar"
+                }
+                className={`flex h-8 w-8 items-center justify-center border transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500 ${
+                  hasSelectedItems
+                    ? "cursor-pointer border-emerald-500/30 text-emerald-500 hover:border-emerald-500/50 hover:bg-emerald-500/10"
+                    : "cursor-not-allowed border-neutral-800 text-neutral-600"
+                }`}
+              >
+                <RotateCcw className="h-4 w-4" aria-hidden="true" />
               </button>
             )}
 
@@ -297,7 +362,7 @@ export default function CostHeader({
               onChange={(e) => onToggleSelectAll(e.target.checked)}
             />
 
-            <SituacaoMenu situacao={situacao} onChange={onSituacaoChange} />
+            <OrdemMenu ordem={ordem} onChange={onOrdemChange} />
           </div>
         </TableHead>
 

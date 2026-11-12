@@ -8,7 +8,7 @@ import {
   Trash2 as TrashIcon,
   PackageSearch,
 } from "lucide-react";
-import type { Custo, Situacao } from "@/components/costs/hooks/types";
+import type { Custo, OrderOption } from "@/components/costs/hooks/types";
 import { formatBR, getCostKey } from "@/components/costs/hooks/utils";
 import CostHeader from "@/components/costs/Costheader";
 
@@ -374,11 +374,11 @@ type Props = {
   allSelected: boolean;
   /** Se omitido, é calculado a partir de rows e selectedRows. */
   someSelectedOnPage?: boolean;
-  situacao: Situacao;
+  ordem: OrderOption | null;
   sortColumn: string | null;
   sortDirection: "asc" | "desc";
   onToggleSelectAll: (checked: boolean) => void;
-  onSituacaoChange: (value: Situacao) => void;
+  onOrdemChange: (value: OrderOption | null) => void;
   onSort: (column: string) => void;
   onDeleteSelected: () => void;
   onOpenAdjustments: () => void;
@@ -399,11 +399,11 @@ export default function CostDataTable({
   openCostEditor,
   allSelected,
   someSelectedOnPage,
-  situacao,
+  ordem,
   sortColumn,
   sortDirection,
   onToggleSelectAll,
-  onSituacaoChange,
+  onOrdemChange,
   onSort,
   onDeleteSelected,
   onOpenAdjustments,
@@ -561,12 +561,12 @@ export default function CostDataTable({
           allSelected={allSelected}
           someSelectedOnPage={pageHasSelection && !allSelected}
           hasRows={rows.length > 0}
-          situacao={situacao}
+          ordem={ordem}
           sortColumn={sortColumn}
           sortDirection={sortDirection}
           selectedCount={selectedRows.length}
           onToggleSelectAll={onToggleSelectAll}
-          onSituacaoChange={onSituacaoChange}
+          onOrdemChange={onOrdemChange}
           onSort={onSort}
           onDeleteSelected={onDeleteSelected}
           onOpenAdjustments={onOpenAdjustments}

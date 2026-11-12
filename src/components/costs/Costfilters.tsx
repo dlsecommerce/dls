@@ -14,13 +14,14 @@ import {
   CostFilters as CostFiltersType,
   DEFAULT_COST_FILTERS,
   NCM_OPTIONS,
-  ORDER_OPTIONS,
-  OrderOption,
   SITUACAO_OPTIONS,
   Situacao,
 } from "@/components/costs/hooks/types";
 
 type Props = {
+  /** Prefixo dos IDs do DOM (ex.: "desktop" ou "mobile") para evitar IDs duplicados. */
+  idPrefix?: string;
+
   filters: CostFiltersType;
   setFilters: React.Dispatch<React.SetStateAction<CostFiltersType>>;
 
@@ -30,9 +31,6 @@ type Props = {
 
   onApplyFilters: () => void;
   onClearFilters: () => void;
-
-  ordem?: OrderOption | null;
-  onOrdemChange?: (value: OrderOption | null) => void;
 
   isLoading?: boolean;
 };
@@ -70,13 +68,13 @@ const selectTriggerClass = `
 
 const norm = (v: string) => v.trim().toLocaleLowerCase("pt-BR");
 
-const ORDEM_PADRAO = "__padrao__";
-
 function BrandMultiSelect({
+  inputId,
   allBrands,
   selectedBrands,
   setSelectedBrands,
 }: {
+  inputId: string;
   allBrands: string[];
   selectedBrands: string[];
   setSelectedBrands: React.Dispatch<React.SetStateAction<string[]>>;
@@ -192,6 +190,7 @@ function BrandMultiSelect({
         ))}
 
         <input
+          id={inputId}
           ref={inputRef}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
@@ -208,6 +207,7 @@ function BrandMultiSelect({
               e.stopPropagation();
               clearAllBrands();
             }}
+            aria-label="Limpar marcas"
             className="shrink-0 cursor-pointer text-neutral-500 transition-colors hover:text-white"
           >
             <X className="h-3.5 w-3.5" />
@@ -271,6 +271,7 @@ function BrandMultiSelect({
 }
 
 export default function CostFilters({
+  idPrefix = "filtro",
   filters,
   setFilters,
   allBrands,
@@ -278,11 +279,12 @@ export default function CostFilters({
   setSelectedBrands,
   onApplyFilters,
   onClearFilters,
-  ordem = null,
-  onOrdemChange,
   isLoading = false,
 }: Props) {
   const formRef = React.useRef<HTMLFormElement | null>(null);
+
+  // IDs únicos por instância (desktop/mobile não colidem no DOM)
+  const fid = (name: string) => `${idPrefix}-${name}`;
 
   const updateFilter = (key: keyof CostFiltersType, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -336,11 +338,11 @@ export default function CostFilters({
     <div className="border border-neutral-900 bg-[#0a0a0a]">
       <form ref={formRef} onSubmit={handleSubmit} className="w-full px-4 py-4">
         <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div>
-              <FieldLabel label="Código" htmlFor="filtro-codigo" />
+              <FieldLabel label="Código" htmlFor={fid("codigo")} />
               <Input
-                id="filtro-codigo"
+                id={fid("codigo")}
                 placeholder="Ex: TN 5AM, Q10 MK2"
                 value={filters.codigo}
                 onChange={(e) => updateFilter("codigo", e.target.value)}
@@ -349,9 +351,9 @@ export default function CostFilters({
             </div>
 
             <div>
-              <FieldLabel label="Nome do Produto" htmlFor="filtro-produto" />
+              <FieldLabel label="Nome do Produto" htmlFor={fid("produto")} />
               <Input
-                id="filtro-produto"
+                id={fid("produto")}
                 placeholder="Ex: Baqueta 5A, Caixa de Som"
                 value={filters.produto}
                 onChange={(e) => updateFilter("produto", e.target.value)}
@@ -360,8 +362,9 @@ export default function CostFilters({
             </div>
 
             <div>
-              <FieldLabel label="Marca" htmlFor="filtro-marca" />
+              <FieldLabel label="Marca" htmlFor={fid("marca")} />
               <BrandMultiSelect
+                inputId={fid("marca")}
                 allBrands={allBrands}
                 selectedBrands={selectedBrands}
                 setSelectedBrands={setSelectedBrands}
@@ -369,9 +372,9 @@ export default function CostFilters({
             </div>
 
             <div>
-              <FieldLabel label="NCM" htmlFor="filtro-ncm" />
+              <FieldLabel label="NCM" htmlFor={fid("ncm")} />
               <Select value={filters.ncm} onValueChange={(v) => updateFilter("ncm", v)}>
-                <SelectTrigger id="filtro-ncm" className={selectTriggerClass}>
+                <SelectTrigger id={fid("ncm")} className={selectTriggerClass}>
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
 
@@ -388,11 +391,12 @@ export default function CostFilters({
                 </SelectContent>
               </Select>
             </div>
+
             <div>
-              <FieldLabel label="Situação" htmlFor="filtro-situacao" />
+              <FieldLabel label="Situação" htmlFor={fid("situacao")} />
               <Select value={filters.situacao} onValueChange={(v) => updateSituacao(v as Situacao)}>
                 <SelectTrigger
-                  id="filtro-situacao"
+                  id={fid("situacao")}
                   onKeyDown={handleSituacaoTriggerKeyDown}
                   className={selectTriggerClass}
                 >
@@ -412,37 +416,6 @@ export default function CostFilters({
                 </SelectContent>
               </Select>
             </div>
-
-            {onOrdemChange && (
-              <div>
-                <FieldLabel label="Ordenação" htmlFor="filtro-ordem" />
-                <Select
-                  value={ordem ?? ORDEM_PADRAO}
-                  onValueChange={(v) =>
-                    onOrdemChange(v === ORDEM_PADRAO ? null : (v as OrderOption))
-                  }
-                >
-                  <SelectTrigger id="filtro-ordem" className={selectTriggerClass}>
-                    <SelectValue placeholder="Padrão (código)" />
-                  </SelectTrigger>
-
-                  <SelectContent position="popper" sideOffset={4} className={selectContentClass}>
-                    <SelectItem value={ORDEM_PADRAO} className={itemClass(!ordem)}>
-                      Padrão (código)
-                    </SelectItem>
-                    {ORDER_OPTIONS.map((option) => (
-                      <SelectItem
-                        key={option}
-                        value={option}
-                        className={itemClass(ordem === option)}
-                      >
-                        {option}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-1">
