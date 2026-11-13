@@ -53,8 +53,8 @@ function normalizePart(v: unknown): string {
   return String(v ?? "").trim().toLowerCase();
 }
 
-function resolveKey(announceId: unknown, store: unknown, channel: unknown): string {
-  return [announceId, store, channel].map(normalizePart).join("::");
+function resolveKey(announceId: unknown, store: unknown, channel: unknown, listingType: unknown): string {
+  return [announceId, store, channel, listingType].map(normalizePart).join("::");
 }
 
 function chunkArray<T>(arr: T[], size: number): T[][] {
@@ -150,7 +150,7 @@ async function fetchResolvedMap(supabase: any, rows: Row[]): Promise<Map<string,
     if (error) throw new Error(`resolve_pricing_batch: ${error.message}`);
 
     for (const r of data ?? []) {
-      map.set(resolveKey(r.announce_id, r.store, r.channel), r);
+      map.set(resolveKey(r.announce_id, r.store, r.channel, r.listing_type), r);
     }
   }
 
@@ -339,7 +339,7 @@ export async function POST(req: NextRequest) {
         for (let i = 0; i < total; i++) {
           const row = data[i];
 
-          const res: any = resolvedMap.get(resolveKey(row.announce_id, row.store, row.channel)) ?? null;
+          const res: any = resolvedMap.get(resolveKey(row.announce_id, row.store, row.channel, row.listing_type)) ?? null;
           const previewEntry = previewMap.get(String(row.id)) ?? null;
           const pv: any = previewEntry?.data ?? null;
 
