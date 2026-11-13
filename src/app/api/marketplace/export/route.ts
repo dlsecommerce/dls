@@ -9,7 +9,9 @@ export const maxDuration = 300;
 const COL = {
   ID: 1, LOJA: 2, CANAL: 3, ID_BLING: 4, REFERENCIA: 5, PRODUTO: 6, MARCA: 7,
   COMISSAO: 9, FRETE: 10, MARGEM: 11, CUSTO: 13, PRECO_VENDA: 14,
-  MARGIN_MIN: 15, // O — única coluna auxiliar restante, usada no conditional formatting
+  MARGIN_MIN: 15, // O — oculta, usada no conditional formatting
+  DESCONTO: 16,   // P — oculta, entra na fórmula do preço
+  EMBALAGEM: 17,  // Q — oculta, entra na fórmula do preço
 };
 
 const COLOR_BLUE = "FF1A8CEB";
@@ -20,6 +22,13 @@ const COLOR_MARGIN_OK = "FFC6EFCE";
 const COLOR_MARGIN_OK_FONT = "FF006100";
 const BLUE_COLS = [1, 2, 3, 4, 5, 6, 7];
 const GREEN_COLS = [9, 10, 11, 13, 14];
+const HIDDEN_COLS = [COL.MARGIN_MIN, COL.DESCONTO, COL.EMBALAGEM];
+
+const HEADERS = [
+  "ID", "Loja", "Canal", "ID Bling", "Referência", "Produto", "Marca",
+  "", "Comissão", "Frete", "Margem de Lucro", "", "Custo", "Preço de Venda",
+  "MargemMin", "Desconto", "Embalagem",
+];
 
 function getSupabaseServer(accessToken: string) {
   return createClient(
@@ -29,10 +38,30 @@ function getSupabaseServer(accessToken: string) {
   );
 }
 
-// Chave composta aid+store+channel, evitando colisão quando o mesmo
-// announce_id aparece em múltiplas lojas/canais dentro do mesmo lote.
 function resolveKey(announceId: string, store: string, channel: string) {
   return `${announceId}::${store}::${channel}`;
+}
+
+// Mesma fonte do modal "Ajustar Preço de Venda": get_pricing_preview
+// devolve cost_total, packaging, desconto, imposto, marketing e margem_minima.
+async function fetchPricingPreviews(supabase: any, ids: string[]) {
+  const map = new Map<string, any>();
+  const LOTE = 50;
+  for (let i = 0; i < ids.length; i += LOTE) {
+    const lote = ids.slice(i, i + LOTE);
+    const results = await Promise.all(
+      lote.map((id) =>
+        supabase
+          .schema("newsystem")
+          .rpc("get_pricing_preview", { p_marketplace_id: id })
+          .single()
+      )
+    );
+    results.forEach((r: any, j: number) => {
+      if (!r.error && r.data) map.set(lote[j], r.data);
+    });
+  }
+  return map;
 }
 
 export async function POST(req: NextRequest) {
@@ -107,12 +136,12 @@ export async function POST(req: NextRequest) {
         const total = data.length;
         sendProgress(3, 0, total);
 
-        // ============================================================
-        // Resolve em lote: imposto, marketing, desconto, margem mínima,
-        // margem efetiva, comissão, taxa fixa, frete% e frete fixo
-        // ✅ Inclui `freight_amount` já calculado em R$
-        // (preço_venda * frete_rate + frete_fixed), vindo direto da função SQL.
-        // ============================================================
+        // Preview de preço (mesma RPC do modal) — custo base, embalagem, desconto, imposto, marketing, margem mínima
+        const previewMap = await fetchPricingPreviews(supabase, data.map((r: any) => r.id));
+
+        sendProgress(5, 0, total);
+
+        // Resolve em lote: usado apenas para taxa fixa (fixed_fee) e para sinalizar erro de cálculo
         const { data: resolved, error: resolveError } = await supabase
           .schema("newsystem")
           .rpc("resolve_pricing_batch", {
@@ -125,9 +154,6 @@ export async function POST(req: NextRequest) {
 
         if (resolveError) throw new Error(resolveError.message);
 
-        // Chave composta (announce_id + store + channel) em vez de apenas
-        // announce_id, para não misturar regras entre canais/lojas distintos
-        // quando o mesmo produto está anunciado em múltiplos lugares.
         const resolvedMap = new Map(
           (resolved ?? []).map((r: any) => [
             resolveKey(r.announce_id, r.store, r.channel),
@@ -154,22 +180,18 @@ export async function POST(req: NextRequest) {
 
         const sheet = workbook.addWorksheet("MARKETPLACE");
 
-        const headers = [
-          "ID", "Loja", "Canal", "ID Bling", "Referência", "Produto", "Marca",
-          "", "Comissão", "Frete", "Margem de Lucro", "", "Custo", "Preço de Venda",
-          "MargemMin",
-        ];
-
-        sheet.columns = headers.map((h) => ({
+        sheet.columns = HEADERS.map((h, idx) => ({
           header: h,
-          key: h || `col_${Math.random()}`,
+          key: `c${idx + 1}`,
           width: h ? 18 : 4,
         }));
 
-        sheet.getColumn(COL.MARGIN_MIN).hidden = true;
+        HIDDEN_COLS.forEach((c) => {
+          sheet.getColumn(c).hidden = true;
+        });
 
         const headerRow = sheet.getRow(1);
-        headerRow.values = headers;
+        headerRow.values = HEADERS;
         headerRow.height = 24;
         headerRow.eachCell((cell, col) => {
           let fillColor: string | null = null;
@@ -187,6 +209,21 @@ export async function POST(req: NextRequest) {
         sheet.getColumn(COL.COMISSAO).numFmt = '0.00 " %"';
         sheet.getColumn(COL.MARGEM).numFmt = '0.00 " %"';
 
+        const writeErrorRow = (row: any, mensagem: string) => {
+          const excelRow = sheet.addRow([
+            row.id || "", row.store || "", row.channel || "", row.id_bling || "",
+            row.reference || "", row.product || "", row.mark || "", "",
+            0, 0, 0, "", 0, null, 0, 0, 0,
+          ]);
+          excelRow.getCell(COL.PRECO_VENDA).value = "ERRO: " + mensagem;
+          excelRow.eachCell((cell) => {
+            cell.alignment = { horizontal: "center", vertical: "middle" };
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_RED } };
+            cell.font = { color: { argb: COLOR_RED_FONT } };
+          });
+          excelRow.commit();
+        };
+
         const progressStep = total > 20000 ? 5000 : 1000;
 
         for (let i = 0; i < total; i++) {
@@ -194,106 +231,70 @@ export async function POST(req: NextRequest) {
 
           const res: any =
             resolvedMap.get(resolveKey(row.announce_id, row.store, row.channel)) ?? null;
+          const pv: any = previewMap.get(row.id) ?? null;
 
-          // ✅ FIX (produto sem composição / erro de cálculo): sinaliza a
-          // linha em vez de calcular com dados zerados/errados.
-          if (res?.has_error) {
-            const excelRow = sheet.addRow([
-              row.id || "", row.store || "", row.channel || "", row.id_bling || "",
-              row.reference || "", row.product || "", row.mark || "", "",
-              0, 0, 0, "", 0, null, 0,
-            ]);
-            excelRow.getCell(COL.PRECO_VENDA).value = "ERRO: " + (res.error_message || "Falha no cálculo");
-            excelRow.eachCell((cell) => {
-              cell.alignment = { horizontal: "center", vertical: "middle" };
-              cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_RED } };
-              cell.font = { color: { argb: COLOR_RED_FONT } };
-            });
-            excelRow.commit();
+          // Sem preview ou sem resolução: sinaliza em vez de calcular com dado zerado
+          if (!pv) {
+            writeErrorRow(row, "Sem preview de preço (get_pricing_preview)");
+          } else if (!res) {
+            writeErrorRow(row, "Sem resolução de taxas (resolve_pricing_batch)");
+          } else if (res.has_error) {
+            writeErrorRow(row, res.error_message || "Falha no cálculo");
+          } else {
+            // Valores idênticos ao modal "Ajustar Preço de Venda"
+            const custoProduto = Number(pv.cost_total ?? 0);
+            const embalagem = Number(pv.packaging ?? 0);
+            const descontoPct = Number(pv.desconto ?? 0);
+            const taxRate = Number(pv.imposto ?? 0) / 100;
+            const marketingRate = Number(pv.marketing ?? 0) / 100;
+            const margemMinima = Number(pv.margem_minima ?? 0);
+            const fixedFee = Number(res.fixed_fee ?? 0);
 
-            if (i % progressStep === 0 || i === total - 1) {
-              sendProgress(8 + Math.round((i / total) * 82), i + 1, total);
-              await new Promise((r) => setTimeout(r, 0));
+            // Campo CUSTO do modal: base + embalagem (sem desconto)
+            const custoExibido = custoProduto + embalagem;
+
+            // Comissão, margem e frete: colunas do próprio marketplace
+            const commissionRate = Number(row.commission_rate ?? 0); // percentual, ex: 11.5
+            const marginInicial = Number(row.profit_margin ?? 0);    // percentual, ex: 15
+            const freteExibido = Number(row.freight ?? 0);           // R$, ex: 20.45
+
+            // Mesma fórmula do modal: desconto incide só no custo base
+            const numerador =
+              custoProduto * (1 - descontoPct / 100) + embalagem + freteExibido;
+            const divisor =
+              1 - (taxRate + marketingRate + commissionRate / 100 + marginInicial / 100);
+
+            if (divisor <= 0) {
+              writeErrorRow(row, "Divisor inválido (imposto + comissão + margem + marketing >= 100%)");
+            } else {
+              const sellingPrice =
+                Math.round((numerador / divisor) * 100) / 100 + fixedFee;
+
+              const excelRow = sheet.addRow([
+                row.id || "", row.store || "", row.channel || "", row.id_bling || "",
+                row.reference || "", row.product || "", row.mark || "", "",
+                commissionRate, freteExibido, marginInicial, "",
+                custoExibido, null, margemMinima,
+                descontoPct, embalagem,
+              ]);
+
+              const rn = excelRow.number;
+              const fixedFeeStr = fixedFee.toFixed(2);
+
+              // M = custo exibido, Q = embalagem, P = desconto %, J = frete,
+              // I = comissão %, K = margem %. Editar qualquer um recalcula N.
+              excelRow.getCell(COL.PRECO_VENDA).value = {
+                formula: `ROUND((((M${rn}-Q${rn})*(1-P${rn}/100)+Q${rn}+J${rn})/(1-(${taxRate.toFixed(6)}+${marketingRate.toFixed(6)}+I${rn}/100+K${rn}/100))),2)+${fixedFeeStr}`,
+                result: sellingPrice,
+              };
+
+              excelRow.eachCell((cell) => {
+                cell.alignment = { horizontal: "center", vertical: "middle" };
+              });
+
+              excelRow.commit();
             }
-            continue;
           }
-
-          const costLiquido = res?.cost_liquido ?? 0;
-          const tax = res?.tax ?? 0;
-          const marketing = res?.marketing ?? 0;
-          const fixedFee = res?.fixed_fee ?? 0;
-
-          // ✅ Frete% (fração, ex: 0.05) — entra no DIVISOR, igual ao SQL
-          // (v_divisor usa v_frete_rate, não v_frete_fixed, como fração).
-          const freteRate = res?.frete_rate ?? 0;
-
-          // ✅ Frete fixo em R$ — soma direta, igual fixed_fee.
-          // Quando a function não tem regra de frete por canal (frete_fixed
-          // zerado), usa o frete manual importado do Excel (row.freight,
-          // valor em R$ — confirmado pelo numFmt de moeda da coluna) como
-          // insumo real do cálculo, em vez de descartá-lo.
-          const freteFixed = res?.frete_fixed || row.freight || 0;
-
-          // ✅ FIX DEFINITIVO (escala da comissão): `res.commission_rate` vem
-          // em FRAÇÃO (ex: 0.12) da function SQL, por isso é multiplicado por
-          // 100. Já `row.commission_rate` (fallback direto da tabela) vem em
-          // PERCENTUAL puro (ex: 12.00) — multiplicar por 100 de novo gerava
-          // o bug de 1200%. Agora o ×100 só ocorre quando o valor vem da
-          // function (fração); no fallback da tabela, usa direto.
-          const commissionRate = res?.commission_rate != null
-            ? res.commission_rate * 100
-            : (row.commission_rate || 0);
-
-          const marginInicial = res?.effective_margin ?? row.profit_margin ?? 0;
-
-          // ✅ Coluna "Frete" (J) agora é a COLUNA DE INSUMO EDITÁVEL:
-          // mostra o freight_amount calculado (regra de canal) ou o frete
-          // manual do Excel (freteFixed) — e a fórmula do preço (ver abaixo)
-          // referencia ESSA célula ao vivo, então editar J recalcula N.
-          const freteExibido = res?.freight_amount || freteFixed;
-
-          const excelRow = sheet.addRow([
-            row.id || "", row.store || "", row.channel || "", row.id_bling || "",
-            row.reference || "", row.product || "", row.mark || "", "",
-            commissionRate, freteExibido, marginInicial, "",
-            costLiquido, null, res?.margin_min ?? 0,
-          ]);
-
-          const rn = excelRow.number;
-
-          // ✅ FIX (preço não recalcula ao editar Frete no Excel): a
-          // fórmula anterior gravava fixedFee+freteFixed como NÚMERO FIXO
-          // no texto da fórmula — editar a célula J (Frete) no Excel não
-          // tinha efeito nenhum, pois a fórmula nunca referenciava J.
-          // Agora J{rn} entra DIRETO na fórmula: editar o frete na planilha
-          // recalcula o preço de venda automaticamente (fullCalcOnLoad já
-          // garante o recálculo ao abrir o arquivo).
-          const constPart = (tax + marketing + freteRate).toFixed(6);
-          const fixedFeeStr = fixedFee.toFixed(2);
-
-          // Valor "congelado" calculado em JS, só para a célula já nascer
-          // com o número visível antes de qualquer recálculo do Excel.
-          const denom = 1 - (tax + marketing + freteRate + commissionRate / 100 + marginInicial / 100);
-          const sellingPriceRaw =
-            denom !== 0
-              ? costLiquido / denom + fixedFee + freteFixed
-              : 0;
-
-          const sellingPrice =
-            res?.selling_price != null
-              ? res.selling_price
-              : Math.round(sellingPriceRaw * 100) / 100;
-
-          excelRow.getCell(COL.PRECO_VENDA).value = {
-            formula: `ROUND((M${rn}+J${rn})/(1-(${constPart}+I${rn}/100+K${rn}/100))+${fixedFeeStr},2)`,
-            result: sellingPrice,
-          };
-
-          excelRow.eachCell((cell) => {
-            cell.alignment = { horizontal: "center", vertical: "middle" };
-          });
-
-          excelRow.commit();
 
           if (i % progressStep === 0 || i === total - 1) {
             sendProgress(8 + Math.round((i / total) * 82), i + 1, total);
