@@ -14,11 +14,8 @@ import {
   PackageSearch,
   GripVertical,
 } from "lucide-react";
-import {
-  Marketplace,
-  CompInfo,
-  CompStatus,
-} from "@/components/marketplace/hooks/types";
+import { Marketplace } from "@/components/marketplace/hooks/types";
+import type { CompInfo, CompStatus } from "@/hooks/types";
 import MarketplaceHeaderBar from "@/components/marketplace/Marketplaceheader";
 
 const COLUMN_COUNT = 8;

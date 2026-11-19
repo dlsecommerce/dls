@@ -39,7 +39,7 @@ import {
 import { useMarketplaceImportExport } from "@/components/marketplace/hooks/Exportmarketplace";
 import { useChannelRulesImportExport } from "@/components/marketplace/hooks/usechannelrulesimportexport";
 import { useProductRulesImportExport } from "@/components/marketplace/hooks/useproductrulesimportexport";
-import { useCompositionMap } from "@/components/marketplace/hooks/useCompositionMap";
+import { useCompositionMap } from "@/hooks/useCompositionMap";
 
 const MODELO_URL = "/templates/marketplace_modelo.xlsx";
 
