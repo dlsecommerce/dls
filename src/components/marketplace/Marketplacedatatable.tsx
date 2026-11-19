@@ -119,6 +119,52 @@ const STATUS_STYLE: Record<
 
 const POPOVER_WIDTH = 272; // px
 
+/* ─────────────────────────────────────────────
+ * STATUS DO CUSTO NO ITEM DA COMPOSIÇÃO
+ * deleted_at preenchido → Excluído
+ * active === false      → Inativo
+ * ───────────────────────────────────────────── */
+type ItemStatus = "active" | "inactive" | "deleted";
+
+function getItemStatus(it: {
+  active?: boolean | null;
+  deleted_at?: string | null;
+}): ItemStatus {
+  if (it.deleted_at) return "deleted";
+  if (it.active === false) return "inactive";
+  return "active";
+}
+
+const ITEM_CODE_CLASS: Record<ItemStatus, string> = {
+  active: "text-neutral-200",
+  inactive: "text-neutral-500",
+  deleted: "text-neutral-600 line-through decoration-red-500/60",
+};
+
+const ITEM_AMOUNT_CLASS: Record<ItemStatus, string> = {
+  active: "text-neutral-400",
+  inactive: "text-neutral-600",
+  deleted: "text-neutral-600 line-through decoration-red-500/60",
+};
+
+function ItemStatusBadge({ status }: { status: ItemStatus }) {
+  if (status === "active") return null;
+
+  const isDeleted = status === "deleted";
+
+  return (
+    <span
+      className={`ml-1.5 inline-flex shrink-0 items-center border px-1.5 py-[1px] text-[9px] font-semibold uppercase tracking-wide ${
+        isDeleted
+          ? "border-red-500/40 bg-red-500/10 text-red-400"
+          : "border-neutral-700 bg-neutral-900 text-neutral-400"
+      }`}
+    >
+      {isDeleted ? "Excluído" : "Inativo"}
+    </span>
+  );
+}
+
 function CompositionHover({
   info,
   children,
@@ -207,19 +253,29 @@ function CompositionHover({
 
                 {items.length > 0 ? (
                   <ul className="mt-2 space-y-1 border-t border-neutral-800 pt-2">
-                    {items.map((it) => (
-                      <li
-                        key={it.cost_id}
-                        className="flex justify-between gap-2 text-xs text-neutral-300"
-                      >
-                        <span className="font-mono text-neutral-200">
-                          {it.code ?? "-"}
-                        </span>
-                        <span className="shrink-0 font-mono text-neutral-400">
-                          x{Number(it.amount)}
-                        </span>
-                      </li>
-                    ))}
+                    {items.map((it) => {
+                      const st = getItemStatus(it as any);
+                      return (
+                        <li
+                          key={it.cost_id}
+                          className="flex items-center justify-between gap-2 text-xs"
+                        >
+                          <span className="flex min-w-0 items-center">
+                            <span
+                              className={`truncate font-mono ${ITEM_CODE_CLASS[st]}`}
+                            >
+                              {it.code ?? "-"}
+                            </span>
+                            <ItemStatusBadge status={st} />
+                          </span>
+                          <span
+                            className={`shrink-0 font-mono ${ITEM_AMOUNT_CLASS[st]}`}
+                          >
+                            x{Number(it.amount)}
+                          </span>
+                        </li>
+                      );
+                    })}
                   </ul>
                 ) : (
                   <p className="mt-2 border-t border-neutral-800 pt-2 text-xs text-neutral-500">
