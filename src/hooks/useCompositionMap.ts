@@ -34,10 +34,11 @@ export function useCompositionMap(ids: string[]) {
           chunks.push(idsToFetch.slice(i, i + CHUNK));
         }
 
-        // O client supabaseNewSystem já está configurado para o schema "newsystem".
+        // Consulta explícita no schema "newsystem".
         const results = await Promise.all(
           chunks.map((chunk) =>
             supabaseNewSystem
+              .schema("newsystem")
               .from("v_marketplace_composition")
               .select("marketplace_id, status, items, alerts")
               .in("marketplace_id", chunk)

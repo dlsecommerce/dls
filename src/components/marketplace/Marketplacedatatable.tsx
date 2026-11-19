@@ -195,15 +195,8 @@ function CompositionHover({
                         key={it.cost_id}
                         className="flex justify-between gap-2 text-xs text-neutral-300"
                       >
-                        <span className="min-w-0">
-                          <span className="font-mono text-neutral-200">
-                            {it.code ?? it.cost_id}
-                          </span>
-                          {it.product && (
-                            <span className="ml-1.5 truncate text-neutral-500">
-                              {it.product}
-                            </span>
-                          )}
+                        <span className="font-mono text-neutral-200">
+                          {it.code ?? "-"}
                         </span>
                         <span className="shrink-0 font-mono text-neutral-400">
                           x{Number(it.amount)}
