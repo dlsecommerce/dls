@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   Table,
   TableBody,
@@ -13,13 +14,19 @@ import {
   PackageSearch,
   GripVertical,
 } from "lucide-react";
-import { Marketplace } from "@/components/marketplace/hooks/types";
+import {
+  Marketplace,
+  CompInfo,
+  CompStatus,
+} from "@/components/marketplace/hooks/types";
 import MarketplaceHeaderBar from "@/components/marketplace/Marketplaceheader";
 
 const COLUMN_COUNT = 8;
 
 // checkbox, id_bling, loja, canal, referência, produto (flex), marca, ações
 const COL_WIDTHS = [48, 130, 130, 120, 130, 0, 120, 140];
+
+const EMPTY_COMPOSITION_MAP: Record<string, CompInfo> = {};
 
 function ColGroup() {
   return (
@@ -40,6 +47,9 @@ type Props = {
   handleCopy: (text: string, key: string) => void;
   openEdit: (row: Marketplace) => void;
   openProductRules: (row: Marketplace) => void;
+
+  // Status de composição vindo de useCompositionMap (opcional enquanto carrega)
+  compositionMap?: Record<string, CompInfo>;
 
   // Props do header (repassadas para MarketplaceHeaderBar)
   allSelected: boolean;
@@ -82,6 +92,153 @@ function NewBadge() {
 
 const isMercadoLivre = (channel?: string) =>
   (channel ?? "").trim().toLocaleLowerCase("pt-BR").includes("mercado livre");
+
+/* ─────────────────────────────────────────────
+ * COMPOSIÇÃO — dropdown de leitura no hover
+ * ───────────────────────────────────────────── */
+const STATUS_STYLE: Record<
+  CompStatus,
+  { dot: string; text: string; label: string }
+> = {
+  red: {
+    dot: "bg-red-500",
+    text: "text-red-400",
+    label: "Sem composição e sem quantidade",
+  },
+  orange: {
+    dot: "bg-orange-500",
+    text: "text-orange-400",
+    label: "Composição incompleta ou quantidade divergente",
+  },
+  green: {
+    dot: "bg-emerald-500",
+    text: "text-emerald-400",
+    label: "Composição correta",
+  },
+};
+
+const POPOVER_WIDTH = 272; // w-68 aprox., em px
+
+function CompositionHover({
+  info,
+  children,
+}: {
+  info?: CompInfo;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [pos, setPos] = React.useState({ top: 0, left: 0 });
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  // Fecha ao rolar, porque o dropdown é fixo na tela
+  React.useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("scroll", close, true);
+    return () => window.removeEventListener("scroll", close, true);
+  }, [open]);
+
+  const handleEnter = () => {
+    const r = ref.current?.getBoundingClientRect();
+    if (r) {
+      const maxLeft = window.innerWidth - POPOVER_WIDTH - 8;
+      setPos({
+        top: r.bottom + 6,
+        left: Math.max(8, Math.min(r.left, maxLeft)),
+      });
+    }
+    setOpen(true);
+  };
+
+  const status: CompStatus = info?.status ?? "red";
+  const s = STATUS_STYLE[status];
+  const items = info?.items ?? [];
+  const alerts = info?.alerts ?? [];
+
+  return (
+    <div
+      ref={ref}
+      className="inline-flex max-w-full min-w-0 items-center"
+      onMouseEnter={handleEnter}
+      onMouseLeave={() => setOpen(false)}
+    >
+      {children}
+
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            style={{
+              position: "fixed",
+              top: pos.top,
+              left: pos.left,
+              zIndex: 50,
+              width: POPOVER_WIDTH,
+            }}
+            className="pointer-events-none border border-neutral-800 bg-[#0a0a0a] p-3 shadow-xl"
+          >
+            {!info ? (
+              <p className="text-xs text-neutral-500">Carregando composição...</p>
+            ) : (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${s.dot}`} />
+                  <span className={`text-[11px] font-semibold ${s.text}`}>
+                    {s.label}
+                  </span>
+                </div>
+
+                {items.length > 0 ? (
+                  <ul className="mt-2 space-y-1 border-t border-neutral-800 pt-2">
+                    {items.map((it) => (
+                      <li
+                        key={it.cost_id}
+                        className="flex justify-between gap-2 text-xs text-neutral-300"
+                      >
+                        <span className="min-w-0">
+                          <span className="font-mono text-neutral-200">
+                            {it.code ?? it.cost_id}
+                          </span>
+                          {it.product && (
+                            <span className="ml-1.5 truncate text-neutral-500">
+                              {it.product}
+                            </span>
+                          )}
+                        </span>
+                        <span className="shrink-0 font-mono text-neutral-400">
+                          x{Number(it.amount)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 border-t border-neutral-800 pt-2 text-xs text-neutral-500">
+                    Nenhum item cadastrado.
+                  </p>
+                )}
+
+                {status === "orange" && alerts.length > 0 && (
+                  <ul className="mt-2 space-y-1 border-t border-neutral-800 pt-2">
+                    {alerts.map((a, idx) => (
+                      <li key={`${a.reason}-${idx}`} className="text-[11px] leading-snug text-orange-300/90">
+                        {a.reason}
+                        {a.code && (
+                          <span className="ml-1 font-mono text-neutral-400">
+                            [{a.code}]
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </div>,
+          document.body
+        )}
+    </div>
+  );
+}
 
 function IconBtn({
   onClick,
@@ -207,6 +364,7 @@ const MarketplaceTableRow = React.memo(
     openEdit,
     openProductRules,
     onToggle,
+    compInfo,
   }: {
     row: Marketplace;
     index: number;
@@ -216,6 +374,7 @@ const MarketplaceTableRow = React.memo(
     openEdit: (row: Marketplace) => void;
     openProductRules: (row: Marketplace) => void;
     onToggle: (row: Marketplace, checked: boolean) => void;
+    compInfo?: CompInfo;
   }) {
     const showNewBadge = isRecent((row as any)?.created_at);
     const showProductRuleBtn = isMercadoLivre(row.channel);
@@ -261,10 +420,12 @@ const MarketplaceTableRow = React.memo(
           <span className="truncate">{row.channel || "-"}</span>
         </TableCell>
 
-        {/* Referência */}
+        {/* Referência (com dropdown de composição) */}
         <TableCell className="text-left text-[13px] text-neutral-300">
           <div className="inline-flex max-w-full items-center gap-1.5">
-            <span className="truncate">{(row as any).reference || "-"}</span>
+            <CompositionHover info={compInfo}>
+              <span className="truncate">{(row as any).reference || "-"}</span>
+            </CompositionHover>
             <CopyBtn
               value={String((row as any).reference || "")}
               copyKey={`reference-${index}`}
@@ -317,7 +478,8 @@ const MarketplaceTableRow = React.memo(
   (prev, next) =>
     prev.row === next.row &&
     prev.isSelected === next.isSelected &&
-    prev.copiedId === next.copiedId
+    prev.copiedId === next.copiedId &&
+    prev.compInfo === next.compInfo
 );
 
 export default function MarketplaceDataTable({
@@ -329,6 +491,7 @@ export default function MarketplaceDataTable({
   handleCopy,
   openEdit,
   openProductRules,
+  compositionMap = EMPTY_COMPOSITION_MAP,
   allSelected,
   situacao,
   appliedSituacao,
@@ -491,6 +654,7 @@ export default function MarketplaceDataTable({
                     openEdit={openEdit}
                     openProductRules={openProductRules}
                     onToggle={toggleSelectedRow}
+                    compInfo={compositionMap[String(m.id)]}
                   />
                 ))
               )}

@@ -8,12 +8,22 @@ export const maxDuration = 300;
 
 type Row = Record<string, any>;
 
+type CompStatus = "red" | "orange" | "green";
+
+type CompInfo = {
+  marketplace_id: string;
+  status: CompStatus;
+  items: any[] | null;
+  alerts: { reason: string; code?: string | null }[] | null;
+};
+
 const COL = {
   ID: 1, LOJA: 2, CANAL: 3, ID_BLING: 4, REFERENCIA: 5, PRODUTO: 6, MARCA: 7,
   COMISSAO: 9, FRETE: 10, MARGEM: 11, CUSTO: 13, PRECO_VENDA: 14,
   MARGIN_MIN: 15, // O — oculta, usada no conditional formatting
   DESCONTO: 16,   // P — oculta, entra na fórmula do preço
   EMBALAGEM: 17,  // Q — oculta, entra na fórmula do preço
+  COMPOSICAO: 18, // R — status de composição (alerta laranja)
 };
 
 const COLOR_BLUE = "FF1A8CEB";
@@ -22,6 +32,10 @@ const COLOR_RED = "FFFFC7CE";
 const COLOR_RED_FONT = "FF9C0006";
 const COLOR_MARGIN_OK = "FFC6EFCE";
 const COLOR_MARGIN_OK_FONT = "FF006100";
+const COLOR_ORANGE = "FFF4B183";
+const COLOR_ORANGE_FONT = "FF843C0C";
+const COLOR_COMP_OK_FONT = "FF006100";
+const COLOR_COMP_RED_FONT = "FFC00000";
 const BLUE_COLS = [1, 2, 3, 4, 5, 6, 7];
 const GREEN_COLS = [9, 10, 11, 13, 14];
 const HIDDEN_COLS = [COL.MARGIN_MIN, COL.DESCONTO, COL.EMBALAGEM];
@@ -29,7 +43,7 @@ const HIDDEN_COLS = [COL.MARGIN_MIN, COL.DESCONTO, COL.EMBALAGEM];
 const HEADERS = [
   "ID", "Loja", "Canal", "ID Bling", "Referência", "Produto", "Marca",
   "", "Comissão", "Frete", "Margem de Lucro", "", "Custo", "Preço de Venda",
-  "MargemMin", "Desconto", "Embalagem",
+  "MargemMin", "Desconto", "Embalagem", "Composição",
 ];
 
 const PAGE_SIZE = 1000;          // limite padrão do PostgREST
@@ -47,6 +61,10 @@ function getSupabaseServer(accessToken: string) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { global: { headers: { Authorization: `Bearer ${accessToken}` } } }
   );
+}
+
+function solidFill(argb: string): ExcelJS.FillPattern {
+  return { type: "pattern", pattern: "solid", fgColor: { argb } };
 }
 
 function normalizePart(v: unknown): string {
@@ -155,6 +173,62 @@ async function fetchResolvedMap(supabase: any, rows: Row[]): Promise<Map<string,
   }
 
   return map;
+}
+
+// Status de composição (view newsystem.v_marketplace_composition), em lotes
+async function fetchCompositionMap(supabase: any, ids: string[]): Promise<Map<string, CompInfo>> {
+  const map = new Map<string, CompInfo>();
+
+  for (const slice of chunkArray(ids, ID_CHUNK)) {
+    const { data, error } = await supabase
+      .schema("newsystem")
+      .from("v_marketplace_composition")
+      .select("marketplace_id, status, items, alerts")
+      .in("marketplace_id", slice);
+
+    if (error) throw new Error(`v_marketplace_composition: ${error.message}`);
+
+    for (const r of (data ?? []) as CompInfo[]) {
+      map.set(String(r.marketplace_id), r);
+    }
+  }
+
+  return map;
+}
+
+// Preenche a coluna "Composição". Laranja = composição incompleta (com motivos no comentário da célula).
+function applyComposition(excelRow: ExcelJS.Row, row: Row, compositionMap: Map<string, CompInfo>) {
+  const info = compositionMap.get(String(row.id));
+  const cell = excelRow.getCell(COL.COMPOSICAO);
+  const status: CompStatus = info?.status ?? "red";
+
+  cell.alignment = { horizontal: "center", vertical: "middle" };
+
+  if (status === "orange") {
+    cell.value = "Composição incompleta";
+    cell.fill = solidFill(COLOR_ORANGE);
+    cell.font = { bold: true, color: { argb: COLOR_ORANGE_FONT } };
+
+    // Destaca também a referência, para o alerta ser visto logo na linha
+    excelRow.getCell(COL.REFERENCIA).fill = solidFill(COLOR_ORANGE);
+
+    const reasons = (info?.alerts ?? []).map(
+      (a) => `• ${a.reason}${a.code ? ` [${a.code}]` : ""}`
+    );
+    cell.note = reasons.length > 0
+      ? `Composição incompleta:\n${reasons.join("\n")}`
+      : "Composição incompleta";
+    return;
+  }
+
+  if (status === "green") {
+    cell.value = "OK";
+    cell.font = { color: { argb: COLOR_COMP_OK_FONT } };
+    return;
+  }
+
+  cell.value = "Sem composição";
+  cell.font = { color: { argb: COLOR_COMP_RED_FONT } };
 }
 
 export async function POST(req: NextRequest) {
@@ -267,6 +341,9 @@ export async function POST(req: NextRequest) {
         sendProgress(5, 0, total);
 
         const resolvedMap = await fetchResolvedMap(supabase, data);
+        sendProgress(7, 0, total);
+
+        const compositionMap = await fetchCompositionMap(supabase, data.map((r) => String(r.id)));
         sendProgress(8, 0, total);
 
         const chunks: Buffer[] = [];
@@ -291,6 +368,7 @@ export async function POST(req: NextRequest) {
           key: `c${idx + 1}`,
           width: h ? 18 : 4,
         }));
+        sheet.getColumn(COL.COMPOSICAO).width = 24;
 
         HIDDEN_COLS.forEach((c) => {
           sheet.getColumn(c).hidden = true;
@@ -303,7 +381,7 @@ export async function POST(req: NextRequest) {
           let fillColor: string | null = null;
           if (BLUE_COLS.includes(col)) fillColor = COLOR_BLUE;
           if (GREEN_COLS.includes(col)) fillColor = COLOR_GREEN;
-          if (fillColor) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
+          if (fillColor) cell.fill = solidFill(fillColor);
           cell.font = { bold: true, color: { argb: BLUE_COLS.includes(col) ? "FFFFFFFF" : "FF000000" } };
           cell.alignment = { horizontal: "center", vertical: "middle" };
         });
@@ -328,9 +406,11 @@ export async function POST(req: NextRequest) {
           excelRow.getCell(COL.PRECO_VENDA).value = "ERRO: " + mensagem;
           excelRow.eachCell((cell) => {
             cell.alignment = { horizontal: "center", vertical: "middle" };
-            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_RED } };
+            cell.fill = solidFill(COLOR_RED);
             cell.font = { color: { argb: COLOR_RED_FONT } };
           });
+          // Após o vermelho de erro, para o alerta de composição prevalecer na coluna R
+          applyComposition(excelRow, row, compositionMap);
           excelRow.commit();
         };
 
@@ -395,6 +475,7 @@ export async function POST(req: NextRequest) {
                 cell.alignment = { horizontal: "center", vertical: "middle" };
               });
 
+              applyComposition(excelRow, row, compositionMap);
               excelRow.commit();
             }
           }

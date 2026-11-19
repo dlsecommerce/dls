@@ -39,6 +39,7 @@ import {
 import { useMarketplaceImportExport } from "@/components/marketplace/hooks/Exportmarketplace";
 import { useChannelRulesImportExport } from "@/components/marketplace/hooks/usechannelrulesimportexport";
 import { useProductRulesImportExport } from "@/components/marketplace/hooks/useproductrulesimportexport";
+import { useCompositionMap } from "@/components/marketplace/hooks/useCompositionMap";
 
 const MODELO_URL = "/templates/marketplace_modelo.xlsx";
 
@@ -178,6 +179,14 @@ export default function Marketplace() {
   });
 
   const paginatedRows = marketplaces;
+
+  // ── Status de composição (somente leitura) ────────────────────────
+  // Busca só os IDs da página atual, em lotes, via v_marketplace_composition.
+  const marketplaceIds = React.useMemo(
+    () => paginatedRows.map((r) => String(r.id)),
+    [paginatedRows]
+  );
+  const compositionMap = useCompositionMap(marketplaceIds);
 
   const [allChannels, setAllChannels] = React.useState<string[]>([]);
   const [channelsLoading, setChannelsLoading] = React.useState(false);
@@ -606,6 +615,7 @@ export default function Marketplace() {
                 handleCopy={handleCopy}
                 openEdit={openEditModal}
                 openProductRules={openProductRulesModal}
+                compositionMap={compositionMap}
                 allSelected={allSelected}
                 situacao={filters.situacao}
                 appliedSituacao={appliedFilters.situacao}
