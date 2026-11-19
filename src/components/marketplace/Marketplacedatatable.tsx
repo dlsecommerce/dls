@@ -127,8 +127,15 @@ function CompositionHover({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = React.useState(false);
-  const [pos, setPos] = React.useState({ top: 0, left: 0 });
+  const [anchor, setAnchor] = React.useState<DOMRect | null>(null);
+  const [popH, setPopH] = React.useState(0);
   const ref = React.useRef<HTMLDivElement>(null);
+  const popRef = React.useRef<HTMLDivElement>(null);
+
+  // Mede a altura real do popover para decidir se abre para cima
+  React.useLayoutEffect(() => {
+    if (open && popRef.current) setPopH(popRef.current.offsetHeight);
+  }, [open, info]);
 
   // Fecha ao rolar, porque o dropdown é fixo na tela
   React.useEffect(() => {
@@ -140,14 +147,23 @@ function CompositionHover({
 
   const handleEnter = () => {
     const r = ref.current?.getBoundingClientRect();
-    if (r) {
-      const maxLeft = window.innerWidth - POPOVER_WIDTH - 8;
-      setPos({
-        top: r.bottom + 6,
-        left: Math.max(8, Math.min(r.left, maxLeft)),
-      });
-    }
+    if (r) setAnchor(r);
     setOpen(true);
+  };
+
+  // Posição calculada no render: abre para cima quando não há espaço embaixo
+  const vw = typeof window !== "undefined" ? window.innerWidth : 0;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 0;
+  const maxLeft = vw - POPOVER_WIDTH - 8;
+  const spaceBelow = vh - (anchor?.bottom ?? 0) - 6 - 8;
+  const flipUp = popH > spaceBelow;
+  const pos = {
+    top: anchor
+      ? flipUp
+        ? Math.max(8, anchor.top - 6 - popH)
+        : anchor.bottom + 6
+      : 0,
+    left: anchor ? Math.max(8, Math.min(anchor.left, maxLeft)) : 0,
   };
 
   const status: CompStatus = info?.status ?? "red";
@@ -168,6 +184,7 @@ function CompositionHover({
         typeof document !== "undefined" &&
         createPortal(
           <div
+            ref={popRef}
             style={{
               position: "fixed",
               top: pos.top,
@@ -422,7 +439,7 @@ const MarketplaceTableRow = React.memo(
         <TableCell className="text-left text-[13px] text-neutral-300">
           <div className="inline-flex max-w-full items-center gap-1.5">
             <CompositionHover info={compInfo}>
-              <span className="truncate">{(row as any).reference || "-"}</span>
+              <span className="whitespace-normal break-all">{(row as any).reference || "-"}</span>
             </CompositionHover>
             <CopyBtn
               value={String((row as any).reference || "")}
@@ -590,7 +607,7 @@ export default function MarketplaceDataTable({
 
                   <div className="min-w-0 border border-neutral-800 bg-[#080808] p-2">
                     <div className="text-[10px] uppercase tracking-wide text-neutral-500">Referência</div>
-                    <div className="mt-1 truncate text-white">{(m as any).reference || "-"}</div>
+                    <div className="mt-1 whitespace-normal break-all text-white">{(m as any).reference || "-"}</div>
                   </div>
 
                   <div className="min-w-0 border border-neutral-800 bg-[#080808] p-2">
