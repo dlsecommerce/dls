@@ -14,8 +14,11 @@ import {
   PackageSearch,
   GripVertical,
 } from "lucide-react";
-import { Marketplace } from "@/components/marketplace/hooks/types";
-import type { CompInfo, CompStatus } from "@/hooks/types";
+import {
+  Marketplace,
+  CompInfo,
+  CompStatus,
+} from "@/components/marketplace/hooks/types";
 import MarketplaceHeaderBar from "@/components/marketplace/Marketplaceheader";
 
 const COLUMN_COUNT = 8;
@@ -45,7 +48,7 @@ type Props = {
   openEdit: (row: Marketplace) => void;
   openProductRules: (row: Marketplace) => void;
 
-  // Status de composição vindo de useCompositionMap (opcional enquanto carrega)
+  // Status de composição vindo de useCompositionMap
   compositionMap?: Record<string, CompInfo>;
 
   // Props do header (repassadas para MarketplaceHeaderBar)
@@ -114,7 +117,7 @@ const STATUS_STYLE: Record<
   },
 };
 
-const POPOVER_WIDTH = 272; // w-68 aprox., em px
+const POPOVER_WIDTH = 272; // px
 
 function CompositionHover({
   info,
@@ -217,7 +220,10 @@ function CompositionHover({
                 {status === "orange" && alerts.length > 0 && (
                   <ul className="mt-2 space-y-1 border-t border-neutral-800 pt-2">
                     {alerts.map((a, idx) => (
-                      <li key={`${a.reason}-${idx}`} className="text-[11px] leading-snug text-orange-300/90">
+                      <li
+                        key={`${a.reason}-${idx}`}
+                        className="text-[11px] leading-snug text-orange-300/90"
+                      >
                         {a.reason}
                         {a.code && (
                           <span className="ml-1 font-mono text-neutral-400">
@@ -379,7 +385,9 @@ const MarketplaceTableRow = React.memo(
     return (
       <TableRow
         className={`group border-b border-neutral-900 transition-colors ${
-          isSelected ? "bg-[#1a8ceb]/[0.06] hover:bg-[#1a8ceb]/[0.09]" : "hover:bg-neutral-900/40"
+          isSelected
+            ? "bg-[#1a8ceb]/[0.06] hover:bg-[#1a8ceb]/[0.09]"
+            : "hover:bg-neutral-900/40"
         }`}
       >
         {/* Checkbox */}
@@ -530,7 +538,10 @@ export default function MarketplaceDataTable({
       <div className="md:hidden space-y-2 px-2 pb-4">
         {loading ? (
           Array.from({ length: 5 }).map((_, i) => (
-            <div key={`mskel-${i}`} className="h-28 animate-pulse border border-neutral-900 bg-neutral-950" />
+            <div
+              key={`mskel-${i}`}
+              className="h-28 animate-pulse border border-neutral-900 bg-neutral-950"
+            />
           ))
         ) : rows.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-14 text-center">
@@ -548,7 +559,9 @@ export default function MarketplaceDataTable({
               <div
                 key={`${m.id}-${i}`}
                 className={`border p-3 transition-colors ${
-                  isSelected ? "border-[#1a8ceb]/40 bg-[#1a8ceb]/[0.05]" : "border-neutral-800 bg-[#0a0a0a]"
+                  isSelected
+                    ? "border-[#1a8ceb]/40 bg-[#1a8ceb]/[0.05]"
+                    : "border-neutral-800 bg-[#0a0a0a]"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
