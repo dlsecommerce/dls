@@ -18,13 +18,52 @@ type RegistroInput = {
   channels: string[];
 };
 
+/** Anúncio com o qual a linha colidiu (do arquivo ou do banco). */
+type ConflitoRef = {
+  posicao: number | null;
+  announceId: string | null;
+  store: string | null;
+  reference: string | null;
+  id_bling: string | null;
+};
+
+type TipoErro =
+  | "campos_obrigatorios_ausentes"
+  | "id_bling_ausente"
+  | "referencia_repetida_no_arquivo"
+  | "id_bling_repetido_no_arquivo"
+  | "referencia_ja_existe_no_banco"
+  | "id_bling_em_uso_no_banco"
+  | "alteracao_bling_nao_encontrado"
+  | "alteracao_referencia_ocupada"
+  | "lote_nao_gravado"
+  | "erro_banco";
+
+type CampoErro = "store" | "reference" | "id_bling";
+
+/** Formato único de erro: vale para duplicidades e para qualquer outra rejeição. */
 type RegistroResultado = {
   posicao: number;
-  store: string;
-  reference: string;
-  id_bling: string | null;
   status: "erro";
+  tipo: TipoErro;
   etapa: string;
+  campo: CampoErro | null;
+  valor: string | null;
+  store: string | null;
+  reference: string | null;
+  id_bling: string | null;
+  conflitaCom: ConflitoRef | null;
+  pgCode: string | null;
+  message: string;
+};
+
+/** Grupo de linhas do arquivo que colidem pela mesma chave. */
+type Duplicidade = {
+  tipo: "referencia" | "id_bling";
+  valor: string;
+  posicoes: number[];
+  lojas: string[];
+  references: string[];
   message: string;
 };
 
@@ -38,11 +77,30 @@ type Ctx = {
 
 type Processado = { posicao: number; id: string; channels: string[] };
 
+type AlvoErro = {
+  posicao: number;
+  store: string | null;
+  reference: string | null;
+  id_bling: string | null;
+};
+
+type ErroInput = {
+  tipo: TipoErro;
+  etapa: string;
+  message: string;
+  campo?: CampoErro | null;
+  valor?: string | null;
+  conflitaCom?: ConflitoRef | null;
+  pgCode?: string | null;
+};
+
 const MAX_REGISTROS = 100_000;
 const BATCH_SIZE = 10_000;
 const CHECK_BATCH_SIZE = 20_000;
 const MAX_CHANNELS = 20;
 const SAMPLE_LIMIT = 20;
+const MAX_ERROS_RESPOSTA = 5_000;
+const MAX_DUPLICIDADES_RESPOSTA = 500;
 const DEBUG_VERBOSE = process.env.IMPORT_ANNOUNCE_DEBUG === "1";
 
 // -----------------------------------------------------------------------
@@ -102,31 +160,39 @@ function push<K, V>(map: Map<K, V[]>, key: K, value: V) {
   else map.set(key, [value]);
 }
 
-function registrarErro(
-  ctx: Ctx,
-  r: Pick<RegistroInput, "posicao" | "store" | "reference" | "id_bling">,
-  etapa: string,
-  message: string,
-  extra: Record<string, unknown> = {}
-) {
-  ctx.erros.push({
-    posicao: r.posicao,
-    store: r.store,
-    reference: r.reference,
-    id_bling: r.id_bling ?? null,
+function registrarErro(ctx: Ctx, alvo: AlvoErro, erro: ErroInput) {
+  const item: RegistroResultado = {
+    posicao: alvo.posicao,
     status: "erro",
-    etapa,
-    message,
-  });
-  ctx.log.debug("erro_registrado", {
+    tipo: erro.tipo,
+    etapa: erro.etapa,
+    campo: erro.campo ?? null,
+    valor: erro.valor ?? null,
+    store: alvo.store ?? null,
+    reference: alvo.reference ?? null,
+    id_bling: alvo.id_bling ?? null,
+    conflitaCom: erro.conflitaCom ?? null,
+    pgCode: erro.pgCode ?? null,
+    message: erro.message,
+  };
+  ctx.erros.push(item);
+  ctx.log.debug("erro_registrado", { ...item });
+}
+
+function conflitoDeRegistro(r: RegistroInput): ConflitoRef {
+  return {
     posicao: r.posicao,
-    etapa,
+    announceId: null,
     store: r.store,
     reference: r.reference,
-    id_bling: r.id_bling ?? null,
-    message,
-    ...extra,
-  });
+    id_bling: r.id_bling,
+  };
+}
+
+function errosPorTipo(erros: RegistroResultado[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const e of erros) out[e.tipo] = (out[e.tipo] ?? 0) + 1;
+  return out;
 }
 
 // -----------------------------------------------------------------------
@@ -137,7 +203,7 @@ async function getAuthenticatedUser(request: NextRequest) {
   return getUserFromAccessToken(token);
 }
 
-function isValidRegistro(r: any): r is Omit<RegistroInput, "posicao" | "channels"> {
+function isValidRegistro(r: any): boolean {
   return (
     r &&
     typeof r === "object" &&
@@ -168,8 +234,8 @@ function keyOfInclusao(store: string, reference: string): string {
   return `${store}::ref::${reference}`;
 }
 
-function keyOfIdBling(idBling: string | null): string {
-  return `bling::${idBling ?? ""}`;
+function keyOfIdBling(idBling: string): string {
+  return `bling::${idBling}`;
 }
 
 function keyOfAlteracao(store: string, idBling: string | null): string {
@@ -183,9 +249,9 @@ function chaveDoRegistro(modo: ModoImportacao, r: RegistroInput): string {
 }
 
 // -----------------------------------------------------------------------
-// AUDITORIA DO PAYLOAD: detecta duplicidades antes de tocar no banco
+// DUPLICIDADES NO ARQUIVO: agrupamento (para o relatório)
 // -----------------------------------------------------------------------
-function auditarPayload(ctx: Ctx, registros: RegistroInput[]) {
+function montarDuplicidades(registros: RegistroInput[]): Duplicidade[] {
   const porRef = new Map<string, RegistroInput[]>();
   const porBling = new Map<string, RegistroInput[]>();
 
@@ -194,44 +260,112 @@ function auditarPayload(ctx: Ctx, registros: RegistroInput[]) {
     if (r.id_bling) push(porBling, keyOfIdBling(r.id_bling), r);
   }
 
-  const refsDup = [...porRef.entries()].filter(([, v]) => v.length > 1);
-  const blingDup = [...porBling.entries()].filter(([, v]) => v.length > 1);
+  const grupos: Duplicidade[] = [];
+  const listar = (arr: RegistroInput[]) => arr.map((x) => `#${x.posicao}`).join(", ");
 
-  ctx.log.info("auditoria_payload", {
-    registrosEntrada: registros.length,
-    referenciasUnicas: porRef.size,
-    idBlingUnicos: porBling.size,
-    referenciasDuplicadas: refsDup.length,
-    idBlingDuplicados: blingDup.length,
+  for (const arr of porRef.values()) {
+    if (arr.length < 2) continue;
+    const ref = arr[0].reference;
+    const loja = arr[0].store;
+    grupos.push({
+      tipo: "referencia",
+      valor: ref,
+      posicoes: arr.map((x) => x.posicao),
+      lojas: [loja],
+      references: [ref],
+      message: `Referência "${ref}" (loja "${loja}") aparece nas linhas ${listar(arr)}.`,
+    });
+  }
+
+  for (const arr of porBling.values()) {
+    if (arr.length < 2) continue;
+    const bling = arr[0].id_bling ?? "";
+    const refs = Array.from(new Set(arr.map((x) => x.reference)));
+    const lojas = Array.from(new Set(arr.map((x) => x.store)));
+    grupos.push({
+      tipo: "id_bling",
+      valor: bling,
+      posicoes: arr.map((x) => x.posicao),
+      lojas,
+      references: refs,
+      message:
+        `ID Bling "${bling}" aparece nas linhas ${listar(arr)}` +
+        (refs.length > 1 ? ` com referências diferentes (${refs.join(", ")}).` : "."),
+    });
+  }
+
+  return grupos;
+}
+
+// -----------------------------------------------------------------------
+// DUPLICIDADES NO ARQUIVO: rejeição (mantém a primeira ocorrência)
+// -----------------------------------------------------------------------
+function detectarDuplicidadesNoArquivo(ctx: Ctx, registros: RegistroInput[]): RegistroInput[] {
+  // 1) Referência repetida (store + reference)
+  const primeiroPorRef = new Map<string, RegistroInput>();
+  const aposRef: RegistroInput[] = [];
+
+  for (const r of registros) {
+    const k = keyOfInclusao(r.store, r.reference);
+    const first = primeiroPorRef.get(k);
+
+    if (first) {
+      const mesmoBling = first.id_bling === r.id_bling;
+      registrarErro(ctx, r, {
+        tipo: "referencia_repetida_no_arquivo",
+        etapa: "duplicidade_arquivo",
+        campo: "reference",
+        valor: r.reference,
+        conflitaCom: conflitoDeRegistro(first),
+        message:
+          `Referência "${r.reference}" da loja "${r.store}" já está na linha #${first.posicao}` +
+          (mesmoBling
+            ? " (mesmo ID Bling). Esta linha foi ignorada."
+            : ` (ID Bling ${first.id_bling ?? "-"} na linha #${first.posicao} e ${r.id_bling ?? "-"} nesta). Esta linha foi ignorada.`),
+      });
+      continue;
+    }
+
+    primeiroPorRef.set(k, r);
+    aposRef.push(r);
+  }
+
+  // 2) ID Bling repetido (global, sem considerar a loja)
+  const primeiroPorBling = new Map<string, RegistroInput>();
+  const validos: RegistroInput[] = [];
+
+  for (const r of aposRef) {
+    if (!r.id_bling) {
+      validos.push(r);
+      continue;
+    }
+
+    const k = keyOfIdBling(r.id_bling);
+    const first = primeiroPorBling.get(k);
+
+    if (first) {
+      registrarErro(ctx, r, {
+        tipo: "id_bling_repetido_no_arquivo",
+        etapa: "duplicidade_arquivo",
+        campo: "id_bling",
+        valor: r.id_bling,
+        conflitaCom: conflitoDeRegistro(first),
+        message: `O ID Bling "${r.id_bling}" já está na linha #${first.posicao} (loja "${first.store}", referência "${first.reference}"). ID Bling é único no sistema; esta linha foi ignorada.`,
+      });
+      continue;
+    }
+
+    primeiroPorBling.set(k, r);
+    validos.push(r);
+  }
+
+  ctx.log.info("filtro_duplicidades_arquivo", {
+    entrada: registros.length,
+    validos: validos.length,
+    rejeitados: registros.length - validos.length,
   });
 
-  for (const [chave, grupo] of sample(refsDup)) {
-    const mesmoIdBling = new Set(grupo.map((g) => g.id_bling)).size === 1;
-    ctx.log.warn("referencia_duplicada_no_payload", {
-      chave,
-      store: grupo[0].store,
-      reference: grupo[0].reference,
-      ocorrencias: grupo.length,
-      posicoes: grupo.map((g) => g.posicao),
-      idBlings: grupo.map((g) => g.id_bling),
-      mesmoIdBling,
-      impacto:
-        ctx.modo === "inclusao"
-          ? "Pode gerar erro 21000 (ON CONFLICT DO UPDATE affects row twice) no lote e cair no fallback linha a linha."
-          : "Repetição no UPDATE: o Postgres aplica uma das linhas e ignora a outra sem erro.",
-    });
-  }
-
-  for (const [chave, grupo] of sample(blingDup)) {
-    ctx.log.warn("id_bling_duplicado_no_payload", {
-      chave,
-      ocorrencias: grupo.length,
-      posicoes: grupo.map((g) => g.posicao),
-      stores: grupo.map((g) => g.store),
-      references: grupo.map((g) => g.reference),
-      mesmaReferencia: new Set(grupo.map((g) => g.reference)).size === 1,
-    });
-  }
+  return validos;
 }
 
 // -----------------------------------------------------------------------
@@ -241,8 +375,8 @@ async function findExistingReferences(
   ctx: Ctx,
   transaction: any,
   registros: RegistroInput[]
-): Promise<Set<string>> {
-  const existentes = new Set<string>();
+): Promise<Map<string, ConflitoRef>> {
+  const existentes = new Map<string, ConflitoRef>();
   const totalBatches = Math.ceil(registros.length / CHECK_BATCH_SIZE);
 
   for (let i = 0; i < totalBatches; i++) {
@@ -250,8 +384,8 @@ async function findExistingReferences(
     const stores = batch.map((r) => r.store);
     const references = batch.map((r) => r.reference);
 
-    const rows = await transaction`
-      select a.store, a.reference
+    const rows: any[] = await transaction`
+      select a.id, a.store, a.reference, a.id_bling
       from newsystem.announce a
       join unnest(${stores}::text[], ${references}::text[]) as s(store, reference)
         on a.store = s.store and a.reference = s.reference
@@ -265,7 +399,15 @@ async function findExistingReferences(
       encontrados: rows.length,
     });
 
-    for (const r of rows) existentes.add(keyOfInclusao(r.store, r.reference));
+    for (const r of rows) {
+      existentes.set(keyOfInclusao(r.store, r.reference), {
+        posicao: null,
+        announceId: r.id,
+        store: r.store,
+        reference: r.reference,
+        id_bling: r.id_bling,
+      });
+    }
   }
 
   return existentes;
@@ -273,13 +415,16 @@ async function findExistingReferences(
 
 // -----------------------------------------------------------------------
 // PRÉ-CHECAGEM (inclusão): id_bling ativo em QUALQUER loja
+// A constraint unq_announce_id_bling_active é global, então qualquer
+// anúncio ativo com o mesmo ID Bling é conflito.
 // -----------------------------------------------------------------------
 async function findConflictingIdBling(
   ctx: Ctx,
+  transaction: any,
   registros: RegistroInput[]
-): Promise<Map<string, { store: string; reference: string }>> {
-  const conflitos = new Map<string, { store: string; reference: string }>();
-  const comIdBling = registros.filter((r) => r.id_bling);
+): Promise<Map<string, ConflitoRef>> {
+  const conflitos = new Map<string, ConflitoRef>();
+  const comIdBling = registros.filter((r) => r.id_bling !== null);
   if (comIdBling.length === 0) return conflitos;
 
   const totalBatches = Math.ceil(comIdBling.length / CHECK_BATCH_SIZE);
@@ -288,18 +433,33 @@ async function findConflictingIdBling(
     const batch = comIdBling.slice(i * CHECK_BATCH_SIZE, (i + 1) * CHECK_BATCH_SIZE);
     const idBlings = batch.map((r) => r.id_bling);
 
-    const rows = await transaction_placeholder(ctx, idBlings);
+    const rows: any[] = await transaction`
+      select a.id, a.store, a.id_bling, a.reference
+      from newsystem.announce a
+      join unnest(${idBlings}::text[]) as s(id_bling)
+        on a.id_bling = s.id_bling
+      where a.deleted_at is null
+    `;
+
+    ctx.log.debug("pre_checagem_bling_lote", {
+      lote: i + 1,
+      totalLotes: totalBatches,
+      entrada: batch.length,
+      encontrados: rows.length,
+    });
+
     for (const r of rows) {
-      conflitos.set(keyOfIdBling(r.id_bling), { store: r.store, reference: r.reference });
+      conflitos.set(keyOfIdBling(r.id_bling), {
+        posicao: null,
+        announceId: r.id,
+        store: r.store,
+        reference: r.reference,
+        id_bling: r.id_bling,
+      });
     }
   }
 
   return conflitos;
-}
-
-// Placeholder de tipagem: substituído pelo corpo real abaixo (ver nota no final).
-async function transaction_placeholder(_ctx: Ctx, _idBlings: (string | null)[]): Promise<any[]> {
-  return [];
 }
 
 // -----------------------------------------------------------------------
@@ -310,8 +470,10 @@ async function validarAlteracao(
   transaction: any,
   registros: RegistroInput[]
 ): Promise<RegistroInput[]> {
-  const ativosPorBling = new Map<string, string>();
-  const donoDaRef = new Map<string, string>();
+  // store::bling::idBling -> anúncio ativo
+  const ativosPorBling = new Map<string, ConflitoRef>();
+  // store::ref::reference -> anúncio ativo que ocupa a referência
+  const donoDaRef = new Map<string, ConflitoRef>();
 
   const totalBatches = Math.ceil(registros.length / CHECK_BATCH_SIZE);
 
@@ -322,22 +484,38 @@ async function validarAlteracao(
     const references = batch.map((r) => r.reference);
 
     const ativos: any[] = await transaction`
-      select a.store, a.id_bling, a.reference
+      select a.id, a.store, a.id_bling, a.reference
       from newsystem.announce a
       join unnest(${stores}::text[], ${idBlings}::text[]) as s(store, id_bling)
         on a.store = s.store and a.id_bling = s.id_bling
       where a.deleted_at is null
     `;
-    for (const r of ativos) ativosPorBling.set(keyOfAlteracao(r.store, r.id_bling), r.reference);
+    for (const r of ativos) {
+      ativosPorBling.set(keyOfAlteracao(r.store, r.id_bling), {
+        posicao: null,
+        announceId: r.id,
+        store: r.store,
+        reference: r.reference,
+        id_bling: r.id_bling,
+      });
+    }
 
     const ocupantes: any[] = await transaction`
-      select a.store, a.id_bling, a.reference
+      select a.id, a.store, a.id_bling, a.reference
       from newsystem.announce a
       join unnest(${stores}::text[], ${references}::text[]) as s(store, reference)
         on a.store = s.store and a.reference = s.reference
       where a.deleted_at is null
     `;
-    for (const r of ocupantes) donoDaRef.set(keyOfInclusao(r.store, r.reference), r.id_bling);
+    for (const r of ocupantes) {
+      donoDaRef.set(keyOfInclusao(r.store, r.reference), {
+        posicao: null,
+        announceId: r.id,
+        store: r.store,
+        reference: r.reference,
+        id_bling: r.id_bling,
+      });
+    }
 
     ctx.log.debug("pre_checagem_alteracao_lote", {
       lote: i + 1,
@@ -353,83 +531,41 @@ async function validarAlteracao(
     referenciasOcupadas: donoDaRef.size,
   });
 
-  const idsVistos = new Set<string>();
-  const refsNoArquivo = new Map<string, string>();
   const validos: RegistroInput[] = [];
 
   for (const r of registros) {
     const kId = keyOfAlteracao(r.store, r.id_bling);
     const kRef = keyOfInclusao(r.store, r.reference);
+    const ativo = ativosPorBling.get(kId);
+    const dono = donoDaRef.get(kRef);
 
-    if (!ativosPorBling.has(kId)) {
-      registrarErro(
-        ctx,
-        r,
-        "alteracao_bling_nao_encontrado",
-        "ID Bling não encontrado entre os anúncios ativos desta loja. Registros excluídos não são reativados por alteração.",
-        { kId }
-      );
-    } else if (idsVistos.has(kId)) {
-      registrarErro(ctx, r, "alteracao_bling_repetido_arquivo", "ID Bling repetido no arquivo.", { kId });
-    } else if (donoDaRef.has(kRef) && donoDaRef.get(kRef) !== r.id_bling) {
-      registrarErro(
-        ctx,
-        r,
-        "alteracao_referencia_ocupada",
-        "Referência já pertence a outro anúncio ativo desta loja.",
-        { donoAtualDaReferencia: donoDaRef.get(kRef) }
-      );
-    } else if (refsNoArquivo.has(kRef) && refsNoArquivo.get(kRef) !== r.id_bling) {
-      registrarErro(
-        ctx,
-        r,
-        "alteracao_referencia_repetida_arquivo",
-        "Referência repetida no arquivo para outro ID Bling.",
-        { idBlingAnterior: refsNoArquivo.get(kRef) }
-      );
-    } else {
-      idsVistos.add(kId);
-      refsNoArquivo.set(kRef, r.id_bling ?? "");
-      validos.push(r);
-    }
-  }
-
-  ctx.log.info("validacao_alteracao_resultado", {
-    entrada: registros.length,
-    validos: validos.length,
-    rejeitados: registros.length - validos.length,
-  });
-
-  return validos;
-}
-
-// -----------------------------------------------------------------------
-// DUPLICADOS DE ID BLING NO PAYLOAD (filtro com erro)
-// -----------------------------------------------------------------------
-function filterIntraBatchIdBlingDuplicates(ctx: Ctx, registros: RegistroInput[]): RegistroInput[] {
-  const primeiraOcorrencia = new Map<string, RegistroInput>();
-  const validos: RegistroInput[] = [];
-
-  for (const r of registros) {
-    const key = keyOfIdBling(r.id_bling);
-    const existente = primeiraOcorrencia.get(key);
-
-    if (existente && existente.reference !== r.reference) {
-      registrarErro(
-        ctx,
-        r,
-        "duplicado_id_bling_arquivo",
-        `O ID Bling "${r.id_bling}" está duplicado no arquivo importado (já usado pela referência "${existente.reference}" na loja "${existente.store}").`,
-        { posicaoOriginal: existente.posicao }
-      );
+    if (!ativo) {
+      registrarErro(ctx, r, {
+        tipo: "alteracao_bling_nao_encontrado",
+        etapa: "pre_checagem_alteracao",
+        campo: "id_bling",
+        valor: r.id_bling,
+        message: `O ID Bling "${r.id_bling}" não existe entre os anúncios ativos da loja "${r.store}". Anúncios excluídos não são reativados por alteração.`,
+      });
       continue;
     }
 
-    if (!existente) primeiraOcorrencia.set(key, r);
+    if (dono && dono.id_bling !== r.id_bling) {
+      registrarErro(ctx, r, {
+        tipo: "alteracao_referencia_ocupada",
+        etapa: "pre_checagem_alteracao",
+        campo: "reference",
+        valor: r.reference,
+        conflitaCom: dono,
+        message: `A referência "${r.reference}" já pertence ao anúncio de ID Bling "${dono.id_bling}" nesta loja (id ${dono.announceId}). Esta linha não pode usar essa referência.`,
+      });
+      continue;
+    }
+
     validos.push(r);
   }
 
-  ctx.log.info("filtro_id_bling_arquivo", {
+  ctx.log.info("validacao_alteracao_resultado", {
     entrada: registros.length,
     validos: validos.length,
     rejeitados: registros.length - validos.length,
@@ -445,7 +581,7 @@ async function insertBatchOnlyNew(
   transaction: any,
   batch: RegistroInput[]
 ): Promise<{ affectedKeys: Set<string>; affected: { id: string; key: string }[] }> {
-  const inserted = await transaction`
+  const inserted: any[] = await transaction`
     insert into newsystem.announce
       (store, id_bling, reference, product, mark, updated_at, deleted_at)
     select
@@ -484,7 +620,7 @@ async function updateBatchOnlyExisting(
   transaction: any,
   batch: RegistroInput[]
 ): Promise<{ affectedKeys: Set<string>; affected: { id: string; key: string }[] }> {
-  const updated = await transaction`
+  const updated: any[] = await transaction`
     update newsystem.announce as a
     set
       reference  = s.reference,
@@ -565,81 +701,67 @@ async function vincularCanais(
 }
 
 // -----------------------------------------------------------------------
-// FALLBACK linha a linha
+// FALLBACK linha a linha (cada linha isolada em SAVEPOINT próprio)
 // -----------------------------------------------------------------------
+async function gravarUmaLinha(
+  transaction: any,
+  modo: ModoImportacao,
+  registro: RegistroInput
+): Promise<any[]> {
+  if (modo === "inclusao") {
+    return transaction`
+      insert into newsystem.announce
+        (store, id_bling, reference, product, mark, updated_at, deleted_at)
+      values (
+        ${registro.store}, ${registro.id_bling}, ${registro.reference},
+        ${registro.product}, ${registro.mark}, now(), null
+      )
+      on conflict (store, reference) do update set
+        id_bling   = excluded.id_bling,
+        product    = excluded.product,
+        mark       = excluded.mark,
+        updated_at = now(),
+        deleted_at = null
+      where newsystem.announce.deleted_at is not null
+      returning id
+    `;
+  }
+
+  return transaction`
+    update newsystem.announce
+    set
+      reference  = ${registro.reference},
+      product    = ${registro.product},
+      mark       = ${registro.mark},
+      updated_at = now()
+    where store = ${registro.store}
+      and id_bling = ${registro.id_bling}
+      and deleted_at is null
+    returning id
+  `;
+}
+
 async function processRowByRow(
   ctx: Ctx,
   transaction: any,
-  batch: RegistroInput[],
-  erros: RegistroResultado[]
+  batch: RegistroInput[]
 ): Promise<Processado[]> {
   const processados: Processado[] = [];
   const modo = ctx.modo;
 
   for (const registro of batch) {
+    const sp = `sp_row_${registro.posicao}`;
+    let result: any[] = [];
+
+    await transaction.unsafe(`savepoint ${sp}`);
     try {
-      if (modo === "inclusao") {
-        const result = await transaction`
-          insert into newsystem.announce
-            (store, id_bling, reference, product, mark, updated_at, deleted_at)
-          values (
-            ${registro.store}, ${registro.id_bling}, ${registro.reference},
-            ${registro.product}, ${registro.mark}, now(), null
-          )
-          on conflict (store, reference) do update set
-            id_bling   = excluded.id_bling,
-            product    = excluded.product,
-            mark       = excluded.mark,
-            updated_at = now(),
-            deleted_at = null
-          where newsystem.announce.deleted_at is not null
-          returning id
-        `;
-
-        if (result.length === 0) {
-          registrarErro(
-            ctx,
-            registro,
-            "fallback_referencia_existente",
-            "Referência já existe. Use o modo 'Alteração' para atualizá-la.",
-            { causa: "ON CONFLICT WHERE deleted_at IS NOT NULL não casou" }
-          );
-          continue;
-        }
-
-        ctx.log.debug("fallback_ok", { posicao: registro.posicao, id: result[0].id, modo });
-        processados.push({ posicao: registro.posicao, id: result[0].id, channels: registro.channels });
-      } else {
-        const result = await transaction`
-          update newsystem.announce
-          set
-            reference  = ${registro.reference},
-            product    = ${registro.product},
-            mark       = ${registro.mark},
-            updated_at = now()
-          where store = ${registro.store}
-            and id_bling = ${registro.id_bling}
-            and deleted_at is null
-          returning id
-        `;
-
-        if (result.length === 0) {
-          registrarErro(
-            ctx,
-            registro,
-            "fallback_bling_nao_encontrado",
-            "ID Bling não encontrado entre os anúncios ativos desta loja. Registros excluídos não são reativados por alteração.",
-            { causa: "UPDATE afetou 0 linhas" }
-          );
-          continue;
-        }
-
-        ctx.log.debug("fallback_ok", { posicao: registro.posicao, id: result[0].id, modo });
-        processados.push({ posicao: registro.posicao, id: result[0].id, channels: registro.channels });
-      }
+      result = await gravarUmaLinha(transaction, modo, registro);
+      await transaction.unsafe(`release savepoint ${sp}`);
     } catch (error: unknown) {
-      const info = pgErrorInfo(error);
+      await transaction.unsafe(`rollback to savepoint ${sp}`);
+      await transaction.unsafe(`release savepoint ${sp}`);
 
+      const info = pgErrorInfo(error);
       ctx.log.error("fallback_erro_linha", {
         posicao: registro.posicao,
         store: registro.store,
@@ -647,29 +769,53 @@ async function processRowByRow(
         id_bling: registro.id_bling,
         modo,
         pg: info,
-        alerta:
-          "Sem SAVEPOINT por linha: após este erro a transação pode estar abortada (25P02) e as próximas linhas falharão.",
+        acao: "savepoint_da_linha_revertido; demais linhas seguem",
       });
 
       if (info.code === "23505" && info.constraint === "unq_announce_id_bling_active") {
-        registrarErro(
-          ctx,
-          registro,
-          "fallback_unique_id_bling",
-          `O ID Bling "${registro.id_bling}" já está em uso por outro anúncio ativo (em qualquer loja).`,
-          { constraint: info.constraint }
-        );
-        continue;
+        registrarErro(ctx, registro, {
+          tipo: "id_bling_em_uso_no_banco",
+          etapa: "fallback_linha",
+          campo: "id_bling",
+          valor: registro.id_bling,
+          pgCode: info.code,
+          message: `O ID Bling "${registro.id_bling}" já está em uso por outro anúncio ativo (em qualquer loja).`,
+        });
+      } else {
+        registrarErro(ctx, registro, {
+          tipo: "erro_banco",
+          etapa: "fallback_linha",
+          pgCode: info.code,
+          message: info.message ?? "Erro desconhecido ao gravar o registro.",
+        });
       }
-
-      registrarErro(
-        ctx,
-        registro,
-        "fallback_erro_banco",
-        info.message ?? "Erro desconhecido ao gravar o registro.",
-        { pgCode: info.code, constraint: info.constraint }
-      );
+      continue;
     }
+
+    if (result.length === 0) {
+      if (modo === "inclusao") {
+        registrarErro(ctx, registro, {
+          tipo: "referencia_ja_existe_no_banco",
+          etapa: "fallback_linha",
+          campo: "reference",
+          valor: registro.reference,
+          message: `A referência "${registro.reference}" já existe na loja "${registro.store}". Use o modo 'Alteração' para atualizá-la.`,
+};
+
+      } else {
+        registrarErro(ctx, registro, {
+          tipo: "alteracao_bling_nao_encontrado",
+          etapa: "fallback_linha",
+          campo: "id_bling",
+          valor: registro.id_bling,
+          message: `O ID Bling "${registro.id_bling}" não existe entre os anúncios ativos da loja "${registro.store}". Anúncios excluídos não são reativados por alteração.`,
+        });
+      }
+      continue;
+    }
+
+    ctx.log.debug("fallback_ok", { posicao: registro.posicao, id: result[0].id, modo });
+    processados.push({ posicao: registro.posicao, id: result[0].id, channels: registro.channels });
   }
 
   return processados;
@@ -718,33 +864,37 @@ async function processAllBatches(
 
       await transaction.unsafe(`release savepoint ${savepointName}`);
 
-      let naoAfetados = 0;
+      let naoGravados = 0;
+      let importadosNoLote = 0;
       for (const registro of batch) {
         const key = chaveDoRegistro(ctx.modo, registro);
         if (affectedKeys.has(key)) {
           importados++;
+          importadosNoLote++;
           ctx.importadasPosicoes.add(registro.posicao);
         } else {
-          naoAfetados++;
-          registrarErro(
-            ctx,
-            registro,
-            "lote_nao_afetado",
-            ctx.modo === "inclusao"
-              ? "Referência já existe. Use o modo 'Alteração' para atualizá-la."
-              : "ID Bling não encontrado entre os anúncios ativos desta loja. Registros excluídos não são reativados por alteração.",
-            { chave: key }
-          );
+          naoGravados++;
+          registrarErro(ctx, registro, {
+            tipo: "lote_nao_gravado",
+            etapa: "lote",
+            campo: ctx.modo === "inclusao" ? "reference" : "id_bling",
+            valor: ctx.modo === "inclusao" ? registro.reference : registro.id_bling,
+            message:
+              ctx.modo === "inclusao"
+                ? `A referência "${registro.reference}" não foi gravada: já existe ativa na loja "${registro.store}" (possível inclusão concorrente).`
+                : `O anúncio de ID Bling "${registro.id_bling}" não foi atualizado: não está ativo na loja "${registro.store}" (possível alteração concorrente).`,
+          });
         }
       }
 
-      const chavesRepetidas = batch.length - new Set(batch.map((r) => chaveDoRegistro(ctx.modo, r))).size;
+      const chavesRepetidas =
+        batch.length - new Set(batch.map((r) => chaveDoRegistro(ctx.modo, r))).size;
 
       ctx.log.info("lote_concluido", {
         ...loteInfo,
         anunciosAfetados: affected.length,
-        linhasAfetadasNoLote: importados,
-        naoAfetados,
+        linhasAfetadasNoLote: importadosNoLote,
+        naoGravados,
         chavesRepetidasNoLote: chavesRepetidas,
       });
 
@@ -752,8 +902,7 @@ async function processAllBatches(
         ctx.log.warn("lote_com_chaves_repetidas", {
           ...loteInfo,
           quantidade: chavesRepetidas,
-          observacao:
-            "Linhas com a mesma chave no mesmo lote. A contagem de importados pode estar inflada.",
+          observacao: "Deveria ter sido removido pela detecção de duplicidades; verificar o filtro.",
         });
       }
     } catch (error: unknown) {
@@ -771,7 +920,7 @@ async function processAllBatches(
       await transaction.unsafe(`rollback to savepoint ${savepointName}`);
       await transaction.unsafe(`release savepoint ${savepointName}`);
 
-      const processados = await processRowByRow(ctx, transaction, batch, ctx.erros);
+      const processados = await processRowByRow(ctx, transaction, batch);
       for (const p of processados) ctx.importadasPosicoes.add(p.posicao);
       importados += processados.length;
 
@@ -808,15 +957,12 @@ function resumoFinal(
     if (!errosPorPosicao.has(p) && !ctx.importadasPosicoes.has(p)) semDesfecho.push(p);
   }
 
-  const porEtapa: Record<string, number> = {};
-  for (const e of ctx.erros) porEtapa[e.etapa] = (porEtapa[e.etapa] ?? 0) + 1;
-
   if (comMultiplosErros.length > 0) {
     ctx.log.warn("linhas_com_multiplos_erros", {
       quantidade: comMultiplosErros.length,
       amostra: sample(comMultiplosErros).map(([posicao, errs]) => ({
         posicao,
-        etapas: errs.map((e) => e.etapa),
+        tipos: errs.map((e) => e.tipo),
         mensagens: errs.map((e) => e.message),
       })),
     });
@@ -845,8 +991,7 @@ function resumoFinal(
     });
   }
 
-  const unionCobertas =
-    ctx.importadasPosicoes.size + errosPorPosicao.size - comErroEImportado.length;
+  const unionCobertas = ctx.importadasPosicoes.size + errosPorPosicao.size - comErroEImportado.length;
   const conciliado = unionCobertas + semDesfecho.length === totalRecebido;
 
   ctx.log.info("resumo_importacao", {
@@ -859,7 +1004,7 @@ function resumoFinal(
     linhasComMultiplosErros: comMultiplosErros.length,
     linhasComErroEImportado: comErroEImportado.length,
     linhasSemDesfecho: semDesfecho.length,
-    errosPorEtapa: porEtapa,
+    errosPorTipo: errosPorTipo(ctx.erros),
     conciliado,
     tempos,
   });
@@ -940,56 +1085,61 @@ export async function POST(request: NextRequest): Promise<Response> {
     importadasPosicoes: new Set<number>(),
   };
 
-  const registros: RegistroInput[] = [];
   const warnings: string[] = [];
-  const invalidos: number[] = [];
+  const registrosValidos: RegistroInput[] = [];
 
-  // 1) Parse e validação de campos
-  registrosRaw.forEach((raw, i) => {
+  // 1) Parse e validação de campos obrigatórios
+  registrosRaw.forEach((raw: any, i: number) => {
     const posicao = i + 1;
+
     if (isValidRegistro(raw)) {
-      const channelsLinha = sanitizeChannels((raw as any)?.channels);
-      registros.push({
+      const idBlingNormalizado = raw.id_bling != null ? String(raw.id_bling).trim() : "";
+      const channelsLinha = sanitizeChannels(raw.channels);
+
+      registrosValidos.push({
         posicao,
         store: raw.store,
-        id_bling: (raw as any).id_bling ?? null,
+        id_bling: idBlingNormalizado || null,
         reference: raw.reference,
-        product: (raw as any).product ?? null,
-        mark: (raw as any).mark ?? null,
+        product: raw.product ?? null,
+        mark: raw.mark ?? null,
         channels: channelsLinha.length > 0 ? channelsLinha : channelsGlobal,
       });
-    } else {
-      invalidos.push(posicao);
-      registrarErro(
-        ctx,
-        {
-          posicao,
-          store: (raw as any)?.store ?? "?",
-          reference: (raw as any)?.reference ?? "?",
-          id_bling: null,
-        },
-        "validacao_campos",
-        "Registro inválido: campos obrigatórios ausentes."
-      );
+      return;
     }
-  });
 
-  if (invalidos.length > 0) {
-    log.warn("registros_invalidos", {
-      quantidade: invalidos.length,
-      posicoes: sample(invalidos),
-    });
-  }
+    const lojaOk = typeof raw?.store === "string" && raw.store.trim() !== "";
+    const campo: CampoErro = lojaOk ? "reference" : "store";
+    const valorBruto = raw?.[campo];
 
-  // 2) ID Bling obrigatório
-  const semIdBling = registros.filter((r) => !r.id_bling || String(r.id_bling).trim() === "");
-  for (const r of semIdBling) {
     registrarErro(
       ctx,
-      r,
-      "validacao_id_bling",
-      "ID Bling é obrigatório e não foi informado. O registro não foi criado."
+      {
+        posicao,
+        store: typeof raw?.store === "string" ? raw.store : null,
+        reference: typeof raw?.reference === "string" ? raw.reference : null,
+        id_bling: null,
+      },
+      {
+        tipo: "campos_obrigatorios_ausentes",
+        etapa: "validacao_campos",
+        campo,
+        valor: valorBruto != null ? String(valorBruto) : null,
+        message: `Linha #${posicao}: o campo "${campo === "store" ? "Loja" : "Referência"}" é obrigatório e não foi informado.`,
+      }
     );
+  });
+
+  // 2) ID Bling obrigatório
+  const semIdBling = registrosValidos.filter((r) => r.id_bling === null);
+  for (const r of semIdBling) {
+    registrarErro(ctx, r, {
+      tipo: "id_bling_ausente",
+      etapa: "validacao_id_bling",
+      campo: "id_bling",
+      valor: null,
+      message: `Linha #${r.posicao}: ID Bling é obrigatório e não foi informado. O registro não foi criado.`,
+    });
   }
   if (semIdBling.length > 0) {
     log.warn("id_bling_ausente", {
@@ -998,30 +1148,51 @@ export async function POST(request: NextRequest): Promise<Response> {
     });
   }
 
-  let registrosParaProcessar = registros.filter(
-    (r) => r.id_bling && String(r.id_bling).trim() !== ""
+  // 3) Duplicidades: agrupamento para o relatório (sobre todo o payload válido)
+  const duplicidades = montarDuplicidades(registrosValidos);
+  log.info("auditoria_payload", {
+    registrosEntrada: registrosRaw.length,
+    registrosValidos: registrosValidos.length,
+    gruposDuplicados: duplicidades.length,
+  });
+  if (duplicidades.length > 0) {
+    log.warn("duplicidades_no_arquivo", {
+      grupos: duplicidades.length,
+      amostra: sample(duplicidades),
+    });
+  }
+
+  // 4) Rejeição das ocorrências repetidas (mantém a primeira) e filtro de ID Bling
+  const registrosParaProcessar = detectarDuplicidadesNoArquivo(ctx, registrosValidos).filter(
+    (r) => r.id_bling !== null
   );
 
-  // 3) Auditoria de duplicidades no payload
-  auditarPayload(ctx, registrosParaProcessar);
-
-  // 4) Filtro de id_bling duplicado com referências diferentes
-  registrosParaProcessar = filterIntraBatchIdBlingDuplicates(ctx, registrosParaProcessar);
+  const respostaComErros = (status: number, error: string) =>
+    NextResponse.json(
+      {
+        error,
+        requestId,
+        total: registrosRaw.length,
+        importados: 0,
+        rejeitados: registrosRaw.length,
+        errosCount: ctx.erros.length,
+        errosPorTipo: errosPorTipo(ctx.erros),
+        erros: ctx.erros.slice(0, MAX_ERROS_RESPOSTA),
+        errosOmitidos: Math.max(0, ctx.erros.length - MAX_ERROS_RESPOSTA),
+        duplicidades: duplicidades.slice(0, MAX_DUPLICIDADES_RESPOSTA),
+        duplicidadesCount: duplicidades.length,
+        duplicidadesOmitidas: Math.max(0, duplicidades.length - MAX_DUPLICIDADES_RESPOSTA),
+        warnings,
+      },
+      { status }
+    );
 
   if (registrosParaProcessar.length === 0) {
     log.warn("nenhum_registro_valido", { erros: ctx.erros.length });
-    return NextResponse.json(
-      {
-        error: "Nenhum registro válido foi encontrado no payload.",
-        requestId,
-        erros: ctx.erros.slice(0, 50),
-      },
-      { status: 400 }
-    );
+    return respostaComErros(400, "Nenhum registro válido foi encontrado no payload.");
   }
 
-  const nenhumRegistroTemCanal = registrosParaProcessar.every((r) => r.channels.length === 0);
-  if (nenhumRegistroTemCanal) {
+  if (registrosParaProcessar.every((r) => r.channels.length === 0)) {
     warnings.push(
       "Nenhum canal de marketplace foi selecionado. Os registros importados NÃO serão vinculados a nenhum canal."
     );
@@ -1064,13 +1235,16 @@ export async function POST(request: NextRequest): Promise<Response> {
 
         const semConflitoReferencia: RegistroInput[] = [];
         for (const r of registrosParaProcessar) {
-          if (existentes.has(keyOfInclusao(r.store, r.reference))) {
-            registrarErro(
-              ctx,
-              r,
-              "pre_checagem_referencia_existente",
-              "Referência já existe. Use o modo 'Alteração' para atualizá-la."
-            );
+          const existente = existentes.get(keyOfInclusao(r.store, r.reference));
+          if (existente) {
+            registrarErro(ctx, r, {
+              tipo: "referencia_ja_existe_no_banco",
+              etapa: "pre_checagem_referencia",
+              campo: "reference",
+              valor: r.reference,
+              conflitaCom: existente,
+              message: `A referência "${r.reference}" já existe na loja "${r.store}" (anúncio id ${existente.announceId}, ID Bling ${existente.id_bling ?? "-"}). Use o modo 'Alteração' para atualizá-la.`,
+            });
           } else {
             semConflitoReferencia.push(r);
           }
@@ -1081,19 +1255,21 @@ export async function POST(request: NextRequest): Promise<Response> {
           restantes: semConflitoReferencia.length,
         });
 
-        const conflitosIdBling = await findConflictingIdBling(ctx, semConflitoReferencia);
+        // 5b) ID Bling em uso por qualquer anúncio ativo (constraint global)
+        const conflitosIdBling = await findConflictingIdBling(ctx, transaction, semConflitoReferencia);
 
         const novos: RegistroInput[] = [];
         for (const r of semConflitoReferencia) {
-          const conflito = conflitosIdBling.get(keyOfIdBling(r.id_bling));
-          if (conflito && conflito.reference !== r.reference) {
-            registrarErro(
-              ctx,
-              r,
-              "pre_checagem_id_bling_em_uso",
-              `O ID Bling "${r.id_bling}" já está em uso pela referência "${conflito.reference}" na loja "${conflito.store}".`,
-              { donoAtual: conflito }
-            );
+          const conflito = r.id_bling ? conflitosIdBling.get(keyOfIdBling(r.id_bling)) : undefined;
+          if (conflito) {
+            registrarErro(ctx, r, {
+              tipo: "id_bling_em_uso_no_banco",
+              etapa: "pre_checagem_id_bling",
+              campo: "id_bling",
+              valor: r.id_bling,
+              conflitaCom: conflito,
+              message: `O ID Bling "${r.id_bling}" já está em uso pelo anúncio da referência "${conflito.reference}" na loja "${conflito.store}" (id ${conflito.announceId}).`,
+            });
           } else {
             novos.push(r);
           }
@@ -1108,7 +1284,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         tempos.preChecagemMs = Date.now() - t;
       }
 
-      // 5b) Pré-checagem da alteração
+      // 5c) Pré-checagem da alteração
       if (modo === "alteracao") {
         const t = Date.now();
         registrosFinais = await validarAlteracao(ctx, transaction, registrosParaProcessar);
@@ -1135,7 +1311,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       importados,
       rejeitados: totalRecebido - importados,
       errosCount: ctx.erros.length,
-      erros: ctx.erros.slice(0, 50),
+      errosPorTipo: errosPorTipo(ctx.erros),
+      erros: ctx.erros.slice(0, MAX_ERROS_RESPOSTA),
+      errosOmitidos: Math.max(0, ctx.erros.length - MAX_ERROS_RESPOSTA),
+      duplicidades: duplicidades.slice(0, MAX_DUPLICIDADES_RESPOSTA),
+      duplicidadesCount: duplicidades.length,
+      duplicidadesOmitidas: Math.max(0, duplicidades.length - MAX_DUPLICIDADES_RESPOSTA),
       warnings,
     });
   } catch (error: unknown) {
