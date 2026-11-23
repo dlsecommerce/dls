@@ -13,8 +13,6 @@ import ConfirmImportModal, { RowError } from "@/components/marketplace/Confirmim
 import { Controls } from "@/components/marketplace/Controls";
 import ExportProgressToast from "@/components/marketplace/Exportprogresstoast";
 import ImportProgressToast from "@/components/marketplace/Importprogresstoast";
-import ExportProgressToastChannelRules from "@/components/marketplace/Exportprogresstoast";
-import ImportProgressToastChannelRules from "@/components/marketplace/Importprogresstoast";
 import CreateChannelModal from "@/components/marketplace/Createchannel";
 import MarketplacePricingModal from "@/components/marketplace/edit/Compositionmodal";
 import ProductPricingRulesModal from "@/components/marketplace/Productpricingrulesmodal";
@@ -155,7 +153,6 @@ export default function Marketplace() {
   const {
     marketplaces,
     loading,
-    error,
     refetch,
 
     page,
@@ -191,9 +188,8 @@ export default function Marketplace() {
   const [allChannels, setAllChannels] = React.useState<string[]>([]);
   const [channelsLoading, setChannelsLoading] = React.useState(false);
 
-  // ✅ FIX: extraído para função reutilizável, chamável de fora do useEffect
-  // (usado no onSuccess do CreateChannelModal para atualizar o dropdown
-  // sem precisar de F5).
+  // Extraído para função reutilizável: usado também no onSuccess do
+  // CreateChannelModal para atualizar o dropdown sem precisar de F5.
   const loadChannels = React.useCallback(() => {
     setChannelsLoading(true);
     fetchDistinctChannels()
@@ -274,7 +270,6 @@ export default function Marketplace() {
   };
 
   const [selectedRows, setSelectedRows] = React.useState<MarketplaceRow[]>([]);
-  const [selectAllMatchingActive, setSelectAllMatchingActive] = React.useState(false);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
 
   const handleCopy = (text: string, key: string) => {
@@ -295,8 +290,6 @@ export default function Marketplace() {
     );
 
   const handleToggleSelectAll = (checked: boolean) => {
-    setSelectAllMatchingActive(false);
-
     if (checked) {
       setSelectedRows((prev) => {
         const map = new Map(prev.map((r) => [r.id, r]));
@@ -317,9 +310,8 @@ export default function Marketplace() {
       setSelectedRows(
         rows.map((r) => ({ id: r.id, deleted_at: r.deleted_at } as any))
       );
-      setSelectAllMatchingActive(true);
-    } catch (err) {
-      // erro já tratado/logado dentro do hook via toast, se necessário
+    } catch {
+      // erro já tratado/logado dentro do hook via toast
     } finally {
       setSelectingAll(false);
     }
@@ -327,7 +319,6 @@ export default function Marketplace() {
 
   const handleClearSelection = () => {
     setSelectedRows([]);
-    setSelectAllMatchingActive(false);
   };
 
   const [exporting, setExporting] = React.useState(false);
@@ -363,7 +354,6 @@ export default function Marketplace() {
     handleExportChannelRules,
     closeExportProgress: closeExportChannelRulesProgress,
 
-    importingChannelRules,
     importProgressOpen: importChannelRulesProgressOpen,
     importProgress: importChannelRulesProgress,
     handleImportChannelRules,
@@ -384,7 +374,6 @@ export default function Marketplace() {
     handleExportProductRules,
     closeExportProgress: closeExportProductRulesProgress,
 
-    importingProductRules,
     importProgressOpen: importProductRulesProgressOpen,
     importProgress: importProductRulesProgress,
     handleImportProductRules,
@@ -424,15 +413,6 @@ export default function Marketplace() {
       exportAbortRef.current = null;
       setTimeout(() => setExportProgressOpen(false), 1200);
     }
-  };
-
-  const handleExportModelo = async () => {
-    const a = document.createElement("a");
-    a.href = MODELO_URL;
-    a.download = buildModeloFileName();
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
   };
 
   const [openImport, setOpenImport] = React.useState(false);
@@ -475,10 +455,6 @@ export default function Marketplace() {
     await runImportPreview(file, "inclusao");
   };
 
-  const handleImportAlteracao = async (file: File) => {
-    await runImportPreview(file, "alteracao");
-  };
-
   const confirmImport = async () => {
     if (!pendingFile) return;
 
@@ -502,7 +478,6 @@ export default function Marketplace() {
   const [openCreateChannel, setOpenCreateChannel] = React.useState(false);
 
   const editId = searchParams.get("id");
-  const editLoja = searchParams.get("loja");
   const isCreating = searchParams.has("new");
   const isEditOpen = searchParams.has("id") || isCreating;
 
@@ -836,26 +811,30 @@ export default function Marketplace() {
         onClose={() => setImportProgressOpen(false)}
       />
 
-      <ExportProgressToastChannelRules
+      <ExportProgressToast
         open={exportChannelRulesProgressOpen}
         percent={Math.round(exportChannelRulesProgress)}
+        current={0}
+        total={0}
         onClose={closeExportChannelRulesProgress}
       />
 
-      <ImportProgressToastChannelRules
+      <ImportProgressToast
         open={importChannelRulesProgressOpen}
         percent={Math.round(importChannelRulesProgress)}
         onClose={closeImportChannelRulesProgress}
       />
 
       {/* Regras por Produto — reaproveita os mesmos componentes de toast */}
-      <ExportProgressToastChannelRules
+      <ExportProgressToast
         open={exportProductRulesProgressOpen}
         percent={Math.round(exportProductRulesProgress)}
+        current={0}
+        total={0}
         onClose={closeExportProductRulesProgress}
       />
 
-      <ImportProgressToastChannelRules
+      <ImportProgressToast
         open={importProductRulesProgressOpen}
         percent={Math.round(importProductRulesProgress)}
         onClose={closeImportProductRulesProgress}
