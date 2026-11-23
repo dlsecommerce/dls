@@ -800,8 +800,7 @@ async function processRowByRow(
           campo: "reference",
           valor: registro.reference,
           message: `A referência "${registro.reference}" já existe na loja "${registro.store}". Use o modo 'Alteração' para atualizá-la.`,
-};
-
+        });
       } else {
         registrarErro(ctx, registro, {
           tipo: "alteracao_bling_nao_encontrado",
